@@ -3,12 +3,15 @@
 //! The dense index says that two series are close; these functions say why. Retrieval is
 //! approximate, and the sparse vectors keep the explanation exact.
 
-/// Returns the cosine similarity of two L2-normalised sparse vectors, both sorted ascending by
+/// Returns the cosine similarity of two L2-normalised sparse vectors, both strictly ascending by
 /// feature id.
 ///
 /// The result is the dot product, which equals the cosine for normalised input; unnormalised
-/// input returns the plain dot product. It walks both vectors once and allocates nothing. Debug
-/// builds assert the sort order.
+/// input returns the plain dot product. It walks both vectors once and allocates nothing. A
+/// repeated or out-of-order id gives a wrong sum in release builds.
+///
+/// # Panics
+/// In debug builds, when either vector is not strictly ascending by id.
 ///
 /// ```
 /// use tankovault_recsys::cosine;
@@ -45,8 +48,12 @@ pub fn cosine(a: &[(i32, f32)], b: &[(i32, f32)]) -> f32 {
 
 /// Returns up to `limit` feature ids two series share, strongest contribution first.
 ///
-/// A feature's contribution is the product of its two weights, which is its share of the cosine.
-/// Ties are ordered by id.
+/// Both vectors must be strictly ascending by feature id, as for [`cosine`]; out of order, a
+/// shared feature can be missed. A feature's contribution is the product of its two weights,
+/// which is its share of the cosine. Ties are ordered by id.
+///
+/// # Panics
+/// In debug builds, when either vector is not strictly ascending by id.
 ///
 /// ```
 /// use tankovault_recsys::shared_features;
@@ -58,6 +65,14 @@ pub fn cosine(a: &[(i32, f32)], b: &[(i32, f32)]) -> f32 {
 /// ```
 #[must_use]
 pub fn shared_features(a: &[(i32, f32)], b: &[(i32, f32)], limit: usize) -> Vec<i32> {
+    debug_assert!(
+        a.windows(2).all(|w| w[0].0 < w[1].0),
+        "left vector must be sorted"
+    );
+    debug_assert!(
+        b.windows(2).all(|w| w[0].0 < w[1].0),
+        "right vector must be sorted"
+    );
     let (mut i, mut j) = (0, 0);
     let mut shared: Vec<(i32, f32)> = Vec::new();
     while i < a.len() && j < b.len() {

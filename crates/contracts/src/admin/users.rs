@@ -89,8 +89,8 @@ pub struct UserDetailView {
     #[serde(with = "time::serde::rfc3339")]
     #[schema(value_type = String)]
     pub created_at: OffsetDateTime,
-    /// Live login sessions, which tell an operator whether a suspension takes effect without
-    /// also revoking them.
+    /// Live login sessions. A suspended account is refused on every request whether or not
+    /// these are revoked.
     pub active_sessions: i64,
     /// Series the user tracks.
     pub tracked_count: i64,

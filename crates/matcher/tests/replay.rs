@@ -74,8 +74,8 @@ fn confirmed_wrong_merges_are_not_automatic() {
 }
 
 /// The tally counts stored-to-replayed transitions, and a row is replayed under the policy it was
-/// decided with: a guard switched on in the stored policy holds a merge the row without a policy
-/// lets through.
+/// decided with: a stored policy with the author guard off lets through a merge that the guard,
+/// or a row with no policy and so the defaults, holds for review.
 #[test]
 fn rows_replay_under_their_stored_policy_and_tally_by_transition() {
     use tankovault_matcher::replay::Tally;

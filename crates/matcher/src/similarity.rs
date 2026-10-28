@@ -160,7 +160,7 @@ pub(crate) fn name_set_overlap(a: &[String], b: &[String]) -> Option<f32> {
     Some(sa.intersection(&sb).count() as f32 / union as f32)
 }
 
-/// Returns whether `a` and `b` share at least one name, compared case-insensitively.
+/// Returns whether `a` and `b` share at least one name, ignoring ASCII case only.
 #[must_use]
 pub(crate) fn shares_a_name(a: &[String], b: &[String]) -> bool {
     a.iter()

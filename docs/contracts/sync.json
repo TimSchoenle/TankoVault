@@ -321,7 +321,7 @@
         "env": "TANKOVAULT_TELEMETRY__SENTRY__SAMPLE_RATE",
         "env_file": "TANKOVAULT_TELEMETRY__SENTRY__SAMPLE_RATE_FILE",
         "secrets_file": "telemetry__sentry__sample_rate",
-        "docs": "Fraction of captured events sent, `0.0`-`1.0`. It drops whole issues, not repetitions of\none, so leave it at `1.0` unless quota forces it lower.",
+        "docs": "Fraction of captured events sent, `0.0`-`1.0`, decided at random per event. A lower rate\nundercounts every issue and can miss a rare one entirely, so leave it at `1.0` unless\nquota forces it lower.",
         "ty": "f32",
         "values": [],
         "constraint": {
@@ -537,7 +537,7 @@
         "env": "TANKOVAULT_TELEMETRY__SENTRY__HTTP_TRANSACTIONS",
         "env_file": "TANKOVAULT_TELEMETRY__SENTRY__HTTP_TRANSACTIONS_FILE",
         "secrets_file": "telemetry__sentry__http_transactions",
-        "docs": "Record one Sentry transaction per request through the shared HTTP stack, named by the\nmatched route, so an id in the path does not become a transaction name.\n\n[`Self::traces_sample_rate`] decides whether a transaction is kept. This switch keeps a\nservice out of traces entirely.",
+        "docs": "Record one Sentry transaction per request through the shared HTTP stack, named by the\nmatched route, so an id in the path does not become a transaction name.\n\n[`Self::traces_sample_rate`] decides whether a transaction is kept. Off, the HTTP layer\nstarts no transactions; a broker delivery still starts one through the `tracing` layer.",
         "ty": "bool",
         "values": [],
         "constraint": {
@@ -2166,7 +2166,7 @@
         "env": "TANKOVAULT_INTERNAL__TLS__PROBE_LISTEN",
         "env_file": "TANKOVAULT_INTERNAL__TLS__PROBE_LISTEN_FILE",
         "secrets_file": "internal__tls__probe_listen",
-        "docs": "Address the credential-free `/health` and `/ready` probes bind to, in **plaintext**, on\ntheir own listener (default `0.0.0.0:9091`). Read under `mtls` only.\n\nAn orchestrator probe presents no client certificate, so on the mTLS port its plain `GET`\ngets a TLS alert and the replica is restarted as unhealthy. `null` drops the listener;\nset it only where the prober can present a certificate.",
+        "docs": "Address the credential-free `/health` and `/ready` probes bind to, in **plaintext**, on\ntheir own listener (default `0.0.0.0:9091`). Read under `mtls` only.\n\nAn orchestrator probe presents no client certificate, so on the mTLS port its plain `GET`\ngets a TLS alert and the replica is restarted as unhealthy. Set it to `null`, which drops\nthe listener, only where the prober can present a certificate.",
         "ty": "String",
         "values": [],
         "constraint": {
@@ -2258,7 +2258,7 @@
         "env": "TANKOVAULT_MATCHING__AUTO_MERGE",
         "env_file": "TANKOVAULT_MATCHING__AUTO_MERGE_FILE",
         "secrets_file": "matching__auto_merge",
-        "docs": "At or above this score, and only when a primary identity rule fired, the duplicate sweep\nmerges two existing series without an operator. [`Self::high`] files an incoming source;\nthis deletes a series that already exists. `tankovault_matcher::adjudicate` defines the\nidentity rules.",
+        "docs": "At or above this score, and only when a primary identity rule fired, the duplicate sweep\nmerges two existing series without an operator. A corroborated alias merges from\n[`Self::low`] up whatever this is set to, because its corroboration, not its score, is the\nevidence. [`Self::high`] files an incoming source; this deletes a series that already\nexists. `tankovault_matcher::adjudicate` defines the identity rules.",
         "ty": "f32",
         "values": [],
         "constraint": {
@@ -2563,7 +2563,7 @@
                 "type": "string"
               },
               "probe_listen": {
-                "description": "Address the credential-free `/health` and `/ready` probes bind to, in **plaintext**, on\ntheir own listener (default `0.0.0.0:9091`). Read under `mtls` only.\n\nAn orchestrator probe presents no client certificate, so on the mTLS port its plain `GET`\ngets a TLS alert and the replica is restarted as unhealthy. `null` drops the listener;\nset it only where the prober can present a certificate.",
+                "description": "Address the credential-free `/health` and `/ready` probes bind to, in **plaintext**, on\ntheir own listener (default `0.0.0.0:9091`). Read under `mtls` only.\n\nAn orchestrator probe presents no client certificate, so on the mTLS port its plain `GET`\ngets a TLS alert and the replica is restarted as unhealthy. Set it to `null`, which drops\nthe listener, only where the prober can present a certificate.",
                 "type": "string"
               }
             },
@@ -2581,7 +2581,7 @@
         "additionalProperties": false,
         "properties": {
           "auto_merge": {
-            "description": "At or above this score, and only when a primary identity rule fired, the duplicate sweep\nmerges two existing series without an operator. [`Self::high`] files an incoming source;\nthis deletes a series that already exists. `tankovault_matcher::adjudicate` defines the\nidentity rules.",
+            "description": "At or above this score, and only when a primary identity rule fired, the duplicate sweep\nmerges two existing series without an operator. A corroborated alias merges from\n[`Self::low`] up whatever this is set to, because its corroboration, not its score, is the\nevidence. [`Self::high`] files an incoming source; this deletes a series that already\nexists. `tankovault_matcher::adjudicate` defines the identity rules.",
             "type": "number"
           },
           "block_auto_merge_on_author_conflict": {
@@ -2961,7 +2961,7 @@
                 "type": "string"
               },
               "http_transactions": {
-                "description": "Record one Sentry transaction per request through the shared HTTP stack, named by the\nmatched route, so an id in the path does not become a transaction name.\n\n[`Self::traces_sample_rate`] decides whether a transaction is kept. This switch keeps a\nservice out of traces entirely.",
+                "description": "Record one Sentry transaction per request through the shared HTTP stack, named by the\nmatched route, so an id in the path does not become a transaction name.\n\n[`Self::traces_sample_rate`] decides whether a transaction is kept. Off, the HTTP layer\nstarts no transactions; a broker delivery still starts one through the `tracing` layer.",
                 "type": "boolean"
               },
               "max_breadcrumbs": {
@@ -2974,7 +2974,7 @@
                 "type": "string"
               },
               "sample_rate": {
-                "description": "Fraction of captured events sent, `0.0`-`1.0`. It drops whole issues, not repetitions of\none, so leave it at `1.0` unless quota forces it lower.",
+                "description": "Fraction of captured events sent, `0.0`-`1.0`, decided at random per event. A lower rate\nundercounts every issue and can miss a rare one entirely, so leave it at `1.0` unless\nquota forces it lower.",
                 "maximum": 1.0,
                 "minimum": 0.0,
                 "type": "number"

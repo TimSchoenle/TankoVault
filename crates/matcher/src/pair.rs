@@ -77,10 +77,10 @@ pub fn adjudicate_pair(
 /// Readings rank by the strength of their claim, then by score: a primary identity, a
 /// corroborated alias, an alias on its own, nothing. `trigram` is the pair's similarity over
 /// both sides' alternative titles too, so it can lift a canonical reading with no identity to
-/// the clamp ceiling, where it ties the alias reading that carries one. A reading must also agree
-/// with the query side's canonical title on numbers, edition markers and franchise name, so a
-/// shared alias such as `douluo dalu 4 zhongji douluo` cannot join `douluo dalu 4` to
-/// `douluo dalu 5`.
+/// the clamp ceiling, where it ties the alias reading that carries one. The two canonical titles
+/// must agree on numbers and edition markers in every reading, and an alias hit must also agree
+/// with the query side's canonical title, so a shared alias such as `douluo dalu 4 zhongji
+/// douluo` cannot join `douluo dalu 4` to `douluo dalu 5`.
 ///
 /// # Panics
 ///

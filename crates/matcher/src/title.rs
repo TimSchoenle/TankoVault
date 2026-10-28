@@ -14,8 +14,8 @@ use crate::similarity::{edit_ratio, is_token_subset, token_set_ratio};
 pub(crate) struct TitleMatch<'a> {
     /// The best textual agreement in `[0,1]` across all of the candidate's titles.
     pub(crate) ratio: f32,
-    /// The best edit-distance ratio, which [`MatchSignals::near_identical`] reports. The overall
-    /// `ratio` may have come from the token-set view instead.
+    /// The winning title's edit-distance ratio, which [`MatchSignals::near_identical`] reports.
+    /// Another title can have a higher one and still lose on `ratio`.
     pub(crate) edit_ratio: f32,
     pub(crate) exact: bool,
     pub(crate) compact_equal: bool,

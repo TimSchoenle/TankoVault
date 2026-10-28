@@ -497,8 +497,9 @@ pub enum PermissionPreset {
     /// No permissions at all: an ordinary reader, which is what every new account is.
     Reader,
     /// Day-to-day operation of the catalogue: read everything operational, run scans, work
-    /// the merge queue. It excludes anything that touches people: no user administration, no
-    /// privacy queue, no cross-user sync writes.
+    /// the merge queue. It can read any user's linked trackers and series mappings, but changes
+    /// nothing about people: no user administration, no privacy queue, no cross-user sync
+    /// writes.
     Operator,
     /// Everything an operator can do, plus provider lifecycle, user administration, the
     /// privacy queue and feature flags. Full control of the deployment.

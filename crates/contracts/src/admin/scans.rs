@@ -160,7 +160,7 @@ pub struct RunActivityView {
     /// Distinct workers holding a task right now.
     pub workers: i64,
     /// What the run's oldest held task is doing, as a [`tankovault_domain::ScanStage`] token.
-    /// `null` when nothing is held; with `waiting_since`, that tells the console "working" from
+    /// Omitted when nothing is held; with `waiting_since`, that tells the console "working" from
     /// "waiting for a worker".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stage: Option<String>,
@@ -360,12 +360,12 @@ pub struct ClearFailuresBody {
     /// One run's failures.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run_id: Option<ScanRunId>,
-    /// One error group, exactly as the grouped feed reported it. Send `error` with a `null`
-    /// value together with `match_null_error` to clear the group that recorded no error at all.
+    /// One error group, exactly as the grouped feed reported it. Omitted and `null` read the same,
+    /// and `match_null_error` then decides what is selected.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
-    /// Clear the group whose error is absent. An omitted `error` means "any error", which is a
-    /// different request.
+    /// With no `error`, clear only the group that recorded no error. Unset, no `error` selects
+    /// every error.
     #[serde(default)]
     pub match_null_error: bool,
 }
@@ -622,9 +622,8 @@ mod tests {
     /// An empty clear body must mean "the whole feed", not "the group with no error".
     ///
     /// `match_null_error` defaults to `false` when absent, or every unqualified clear would
-    /// narrow to one group. `error` is omitted from the wire, not sent as `null`, because the
-    /// handler reads an absent `error` as "any error" and a serialised `None` is a different
-    /// request.
+    /// narrow to one group. An omitted and a `null` `error` decode the same, so the flag alone
+    /// tells the whole feed from the null-error group.
     #[test]
     fn an_empty_clear_body_selects_the_whole_feed() {
         let body = ClearFailuresBody::default();
@@ -634,7 +633,7 @@ mod tests {
         assert_eq!(
             encoded,
             json!({ "match_null_error": false }),
-            "only the flag is on the wire; a `null` error means something else"
+            "only the flag is on the wire"
         );
 
         let decoded: ClearFailuresBody = serde_json::from_str("{}").expect("read an empty body");

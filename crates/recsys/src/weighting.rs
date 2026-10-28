@@ -38,8 +38,12 @@ pub fn idf(doc_count: i64, total_docs: i64) -> f32 {
 /// Normalised, cosine compares shape and not size: without it a series with forty tags would
 /// outscore one with eight by mass alone.
 ///
-/// A vector that is all zero after weighting stays zero. Callers treat it as not recommendable,
-/// which is the `min_features` gate.
+/// `weights` and `idfs` must be the same length; in release builds a mismatch leaves the
+/// unmatched weights unscaled. A vector that is all zero after weighting stays zero. Callers
+/// treat it as not recommendable, which is the `min_features` gate.
+///
+/// # Panics
+/// In debug builds, when `weights` and `idfs` differ in length.
 pub fn apply_idf(weights: &mut [f32], idfs: &[f32]) {
     debug_assert_eq!(weights.len(), idfs.len());
     for (weight, idf) in weights.iter_mut().zip(idfs) {

@@ -147,7 +147,8 @@ pub fn blend<Id: Copy + Eq + std::hash::Hash + Ord>(
             .entry(candidate.id)
             .or_insert((0.0, candidate.because, candidate.path));
         entry.0 += contribution;
-        // The strongest path explains, so the explanation does not depend on retrieval order.
+        // The strongest path explains. Between two candidates on one path the first one seen
+        // keeps it, so only there does retrieval order pick the explanation.
         if weights.weight(candidate.path) > weights.weight(entry.2) {
             entry.1 = candidate.because;
             entry.2 = candidate.path;

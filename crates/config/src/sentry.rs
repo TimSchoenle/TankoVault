@@ -59,8 +59,9 @@ pub struct SentryConfig {
     /// Host tag on every event. Unset, Sentry reports none.
     #[serde(default)]
     pub server_name: Option<String>,
-    /// Fraction of captured events sent, `0.0`-`1.0`. It drops whole issues, not repetitions of
-    /// one, so leave it at `1.0` unless quota forces it lower.
+    /// Fraction of captured events sent, `0.0`-`1.0`, decided at random per event. A lower rate
+    /// undercounts every issue and can miss a rare one entirely, so leave it at `1.0` unless
+    /// quota forces it lower.
     #[config(range(min = 0.0, max = 1.0))]
     #[serde(default = "SentryConfig::default_sample_rate")]
     pub sample_rate: f32,
@@ -99,8 +100,8 @@ pub struct SentryConfig {
     /// Record one Sentry transaction per request through the shared HTTP stack, named by the
     /// matched route, so an id in the path does not become a transaction name.
     ///
-    /// [`Self::traces_sample_rate`] decides whether a transaction is kept. This switch keeps a
-    /// service out of traces entirely.
+    /// [`Self::traces_sample_rate`] decides whether a transaction is kept. Off, the HTTP layer
+    /// starts no transactions; a broker delivery still starts one through the `tracing` layer.
     #[serde(default = "crate::default_true")]
     pub http_transactions: bool,
     /// Copy `tracing` span fields onto the Sentry span as attributes. Off by default, because span

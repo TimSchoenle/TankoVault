@@ -120,7 +120,8 @@ impl GramAccumulator {
 
     /// Returns the top-`k` eigenvectors of `C`, as a projection basis.
     ///
-    /// `k` is clamped to `1..=dim`. `iterations` is the orthogonal-iteration count
+    /// `k` is clamped to `1..=dim`, or to `1` when `dim` is `0`, which yields one empty column
+    /// that projects every vector to `[0.0]`. `iterations` is the orthogonal-iteration count
     /// ([`crate::BASIS_ITERATIONS`]), and `seed` makes the starting matrix, and so the basis,
     /// reproducible.
     #[must_use]

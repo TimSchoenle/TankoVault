@@ -55,7 +55,8 @@ impl ConflictPolicy {
     /// Every policy, in the order a picker offers them.
     ///
     /// Listed by hand, since Rust cannot enumerate an enum's variants without a derive macro.
-    /// `every_policy_is_listed_once_and_round_trips` catches a variant missing from it.
+    /// Nothing checks that every variant is here: one left out is missing from the picker and
+    /// refused by `from_str`.
     pub const ALL: [Self; 4] = [
         Self::LocalWins,
         Self::RemoteWins,
@@ -361,9 +362,9 @@ pub const fn sync_route_features() -> &'static [(&'static str, Feature)] {
 mod tests {
     use super::{ConflictPolicy, UnknownConflictPolicy};
 
-    /// `ALL` is the only hand-maintained part of the vocabulary, so this keeps it in step with
-    /// the `match` in `as_str`: every entry is distinct, and every entry survives `as_str` then
-    /// `from_str`. A variant missing from `ALL` would leave the picker short.
+    /// `ALL` is the only hand-maintained part of the vocabulary, so this keeps its entries in step
+    /// with the `match` in `as_str`: every entry is distinct, and every entry survives `as_str`
+    /// then `from_str`.
     #[test]
     fn every_policy_is_listed_once_and_round_trips() {
         for policy in ConflictPolicy::ALL {

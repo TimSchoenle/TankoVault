@@ -835,14 +835,14 @@
         "description": "Which failures to clear out of the triage feed. Every field narrows; a body with none of them\nclears the whole feed.",
         "properties": {
           "error": {
-            "description": "One error group, exactly as the grouped feed reported it. Send `error` with a `null`\nvalue together with `match_null_error` to clear the group that recorded no error at all.",
+            "description": "One error group, exactly as the grouped feed reported it. Omitted and `null` read the same,\nand `match_null_error` then decides what is selected.",
             "type": [
               "string",
               "null"
             ]
           },
           "match_null_error": {
-            "description": "Clear the group whose error is absent. An omitted `error` means \"any error\", which is a\ndifferent request.",
+            "description": "With no `error`, clear only the group that recorded no error. Unset, no `error` selects\nevery error.",
             "type": "boolean"
           },
           "provider": {
@@ -4737,7 +4737,7 @@
             "type": "integer"
           },
           "stage": {
-            "description": "What the run's oldest held task is doing, as a [`tankovault_domain::ScanStage`] token.\n`null` when nothing is held; with `waiting_since`, that tells the console \"working\" from\n\"waiting for a worker\".",
+            "description": "What the run's oldest held task is doing, as a [`tankovault_domain::ScanStage`] token.\nOmitted when nothing is held; with `waiting_since`, that tells the console \"working\" from\n\"waiting for a worker\".",
             "type": [
               "string",
               "null"
@@ -7189,7 +7189,7 @@
         "description": "Everything the user-detail panel shows except the grant list, which is fetched separately so\nthe panel can refresh just that part after an edit.",
         "properties": {
           "active_sessions": {
-            "description": "Live login sessions, which tell an operator whether a suspension takes effect without\nalso revoking them.",
+            "description": "Live login sessions. A suspended account is refused on every request whether or not\nthese are revoked.",
             "format": "int64",
             "type": "integer"
           },

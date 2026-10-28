@@ -53,7 +53,9 @@ fn tasks_stream_config() -> stream::Config {
 ///
 /// `max_age` is the backstop, not the cleanup. It bounds what `Interest` retention leaves
 /// behind, such as events for a consumer that is down or retired but never deleted. A notifier
-/// down for longer than `max_age` loses those chapter notifications.
+/// down for longer than `max_age` loses those chapter notifications. An event published while no
+/// consumer is bound to its subject is dropped at once, so on a fresh installation the events
+/// published before the notifier first creates its consumer are lost.
 fn events_stream_config(max_age: Duration) -> stream::Config {
     stream::Config {
         name: subjects::EVENTS_STREAM.to_owned(),
@@ -76,6 +78,9 @@ pub const TASK_ACK_HEARTBEAT: Duration = Duration::from_secs(TASK_ACK_WAIT.as_se
 /// [`AckKind::Progress`] resets the timer; raising the deadline instead would also delay crash
 /// recovery. A failed heartbeat is logged, not fatal: idempotent writes are the correctness
 /// backstop.
+///
+/// # Panics
+/// If `every` is zero, which [`tokio::time::interval`] refuses.
 pub async fn with_ack_heartbeat<F>(msg: &jetstream::Message, every: Duration, work: F) -> F::Output
 where
     F: std::future::Future,
@@ -122,8 +127,8 @@ pub async fn retry_later(msg: &jetstream::Message, delay: Duration) -> Result<()
 
 /// Returns how many times this message has been delivered, including the current delivery.
 ///
-/// Falls back to `1` when the stream metadata cannot be read. The caller still bounds the
-/// retry by its own limit, so reading an unknown count as a first attempt is safe.
+/// Falls back to `1` when the stream metadata cannot be read. A message whose metadata is never
+/// readable therefore always reads as a first attempt, and [`consume`] retries it without bound.
 #[must_use]
 pub fn delivery_count(msg: &jetstream::Message) -> u64 {
     msg.info()
@@ -276,12 +281,14 @@ impl Bus {
     /// config.
     ///
     /// It uses `create_or_update_stream` because `get_or_create_stream` returns an existing
-    /// stream untouched: a changed subject binding or retention policy would never reach an
-    /// installation that already has the stream. Every service that calls this rewrites
-    /// `events_max_age`, so they must all be given the same value.
+    /// stream untouched: a changed subject binding or `max_age` would never reach an installation
+    /// that already has the stream. Every service that calls this rewrites `events_max_age`, so
+    /// they must all be given the same value.
     ///
     /// # Errors
-    /// [`BusError::Jetstream`], including for a zero `events_max_age`.
+    /// [`BusError::Jetstream`] for a zero `events_max_age`, or if the server refuses the update.
+    /// `JetStream` refuses a retention change into or out of `WorkQueue`, so moving an existing
+    /// stream to another retention policy needs a new stream.
     pub async fn ensure_streams(&self, events_max_age: Duration) -> Result<(), BusError> {
         // Zero is JetStream's "unlimited", so it is refused instead of unbounding the stream.
         if events_max_age.is_zero() {
@@ -513,9 +520,10 @@ impl Bus {
     /// Deletes the wildcard task consumer, if present.
     ///
     /// A work-queue stream refuses a consumer whose filter overlaps an existing one, and
-    /// `scan.tasks.*` overlaps every per-provider filter, so the lanes cannot be created while
-    /// it exists. Nothing is lost: work-queue retention drops a message when it is acked, not
-    /// when a consumer goes away, so the lanes pick up everything still pending.
+    /// `scan.tasks.*` overlaps the untiered subject every full-scan lane binds, so those lanes
+    /// cannot be created while it exists. Nothing is lost: work-queue retention drops a message
+    /// when it is acked, not when a consumer goes away, so the lanes pick up everything still
+    /// pending.
     ///
     /// Idempotent: a missing consumer is the steady state.
     ///
@@ -681,6 +689,10 @@ impl Default for ConsumePolicy {
 ///
 /// # Errors
 /// [`BusError::Jetstream`] if the message stream cannot be opened.
+///
+/// # Panics
+/// On the first message if `policy.heartbeat` is `Some(Duration::ZERO)`; see
+/// [`with_ack_heartbeat`].
 pub async fn consume<T, F, Fut>(
     consumer: BrokerConsumer,
     shutdown: tokio_util::sync::CancellationToken,

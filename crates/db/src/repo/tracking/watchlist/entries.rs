@@ -8,13 +8,13 @@ use tankovault_domain::{SeriesId, SeriesSourceId, UserId, WatchStatus, Watchlist
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-/// Add or update a watchlist entry.
+/// Adds or updates a watchlist entry.
+///
+/// Re-adding a tracked series updates it. An unknown `series_id` is a foreign-key violation,
+/// which is safe only because callers resolve the series first.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Re-adding a tracked series
-/// is an update, not [`crate::DbError::Conflict`]; a `series_id` that does not exist is a
-/// foreign-key violation and so a 500 rather than a 404, which is safe only because callers
-/// resolve the series first.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn watchlist_upsert<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -37,18 +37,17 @@ pub async fn watchlist_upsert<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Start tracking `series_id` unless the user already does, leaving an existing entry exactly
-/// as it stands.
+/// Starts tracking `series_id` unless the user already does, leaving an existing entry exactly as
+/// it stands.
 ///
 /// Backs "reading a chapter means following the series": the read-progress writes call this so
-/// a series marked read is on the watchlist. The `DO NOTHING` half is the point — a reader who
-/// set `dropped`, muted the notify bell or excluded the series from external sync must not have
-/// any of that undone by reading one more chapter, so this is deliberately not
-/// [`watchlist_upsert`] with default arguments.
+/// a series marked read is on the watchlist. The `DO NOTHING` is the point: a reader who set
+/// `dropped`, muted the notify bell or excluded the series from sync must not have that undone
+/// by reading one more chapter, so this is not [`watchlist_upsert`] with default arguments.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. As in [`watchlist_upsert`], a
-/// `series_id` that does not exist is a foreign-key violation and so a 500 rather than a 404.
+/// [`crate::DbError::Sqlx`] only, including the foreign-key violation of an unknown
+/// `series_id`.
 pub async fn watchlist_track_if_absent<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -80,14 +79,16 @@ pub enum PinOutcome {
     ForeignSource,
 }
 
-/// Pin the source a series should open on for this reader, or clear the pin with `None`.
+/// Pins the source a series should open on for this reader, or clears the pin with `None`.
 ///
 /// The pin is scoped to the series in SQL, not just validated by a foreign key: `series_sources`
 /// ids are global, so without the `EXISTS` a reader could point one series' entry at another
 /// series' source and every resolution downstream would follow it.
 ///
+/// A rejected pin is a [`PinOutcome`], not an error.
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — a rejected pin is a [`PinOutcome`], not an error.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn watchlist_set_pinned_source(
     pool: &PgPool,
     user_id: UserId,
@@ -128,12 +129,13 @@ pub async fn watchlist_set_pinned_source(
     })
 }
 
-/// Remove a watchlist entry.
+/// Removes a watchlist entry.
+///
+/// Idempotent: removing an untracked series succeeds, and the caller cannot tell whether it was
+/// there.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Removing something the user
-/// was not tracking is `Ok(())`, not [`crate::DbError::NotFound`] — the count is not returned
-/// at all, so untracking is idempotent and a caller cannot answer "was it there?".
+/// [`crate::DbError::Sqlx`] only.
 pub async fn watchlist_remove<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -151,28 +153,23 @@ pub async fn watchlist_remove<'e, E: PgExecutor<'e>>(
 
 /// The largest number of ids a bulk watchlist operation will act on in one call.
 ///
-/// The cap is enforced at the edge, not here — this constant is what the edge clamps to, so
-/// the API and the repo cannot disagree about it. 200 is well past any selection a person
-/// makes by hand (select-all over a filtered tab is the realistic maximum) and keeps the
-/// `= ANY($2)` array small enough that the statement stays a single index scan.
+/// The edge clamps to this constant, so the API and the repo cannot disagree about the cap. 200
+/// is past any selection made by hand (select-all over a filtered tab is the realistic maximum)
+/// and keeps the `= ANY($2)` array small enough for a single index scan.
 pub const BULK_ID_LIMIT: usize = 200;
 
-/// Apply a status and/or notify change to many watchlist entries at once, returning the ids
-/// that were actually changed.
+/// Applies a status change, a notify change, or both to many watchlist entries, returning the ids
+/// that changed.
 ///
-/// **Update, not upsert.** [`watchlist_upsert`] creates the entry it is given; this refuses to,
-/// because the bulk bar operates on a selection made *from* the list — an id that is not on it
-/// is a stale client, and inserting it would silently re-add a title the user had just removed
-/// in another tab. Ids that matched nothing are simply absent from the result, which is what
-/// lets the handler answer per-id rather than all-or-nothing.
+/// **Update, not upsert.** The bulk bar operates on a selection made *from* the list, so an id
+/// not on it is a stale client, and inserting it would re-add a title the user just removed in
+/// another tab. Unmatched ids are absent from the result, so the handler answers per id.
 ///
 /// `None` for either field leaves that column alone, so "mute 40 titles" does not also
 /// normalise their statuses.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An empty `series_ids`, and a
-/// set of ids the user tracks none of, are both an empty `Vec` rather than
-/// [`crate::DbError::NotFound`].
+/// [`crate::DbError::Sqlx`] only.
 pub async fn watchlist_bulk_update<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -197,15 +194,13 @@ pub async fn watchlist_bulk_update<'e, E: PgExecutor<'e>>(
     Ok(changed.into_iter().map(SeriesId::from_uuid).collect())
 }
 
-/// Remove many watchlist entries at once, returning the ids that were actually removed.
+/// Removes many watchlist entries at once, returning the ids that were actually removed.
 ///
-/// Unlike [`watchlist_remove`], which is idempotent and cannot tell you whether anything was
-/// there, this reports what it deleted: removing 40 titles has to be able to say "38 of these
-/// are gone, two were not yours" rather than claim a success it did not have.
+/// Unlike [`watchlist_remove`], this reports what it deleted, so removing 40 titles can say "38
+/// are gone, two were not yours" instead of claiming a success it did not have.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Ids the user was not tracking
-/// are absent from the result rather than [`crate::DbError::NotFound`].
+/// [`crate::DbError::Sqlx`] only.
 pub async fn watchlist_bulk_remove<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -223,11 +218,10 @@ pub async fn watchlist_bulk_remove<'e, E: PgExecutor<'e>>(
     Ok(removed.into_iter().map(SeriesId::from_uuid).collect())
 }
 
-/// List a user's watchlist entries.
+/// Lists a user's watchlist entries.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An empty watchlist is an
-/// empty `Vec`.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn watchlist_list<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -260,17 +254,16 @@ pub async fn watchlist_list<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Set a watchlist entry's status without disturbing its `notify` flag, inserting the entry
-/// with `notify` on if it is absent.
+/// Sets a watchlist entry's status without disturbing its `notify` flag, inserting the entry with
+/// `notify` on if it is absent.
 ///
 /// `AniList` pull imports and refreshes statuses through it, so a remote change cannot clobber
 /// a reader's per-title notification choice.
 ///
+/// An existing entry is updated, so a pull can run repeatedly.
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. As with
-/// [`watchlist_upsert`], an existing entry is updated rather than raised as
-/// [`crate::DbError::Conflict`] — which is what lets a pull run repeatedly without the
-/// import deciding it has already happened.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn watchlist_set_status<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -291,14 +284,14 @@ pub async fn watchlist_set_status<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// A user's current watch status for a series, if tracked. Used by the targeted single-series
-/// sync push (design: immediate targeted push) to read local state without fetching the whole
-/// watchlist.
+/// Returns a user's current watch status for a series, if tracked. Used by the targeted
+/// single-series sync push (design: immediate targeted push) to read local state without fetching
+/// the whole watchlist.
+///
+/// The targeted push reads `None` as nothing local to send.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An untracked series is
-/// `Ok(None)`, which the targeted push reads as "nothing local to send" rather than as a
-/// failure.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn watchlist_status_get<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -314,15 +307,13 @@ pub async fn watchlist_status_get<'e, E: PgExecutor<'e>>(
     Ok(status)
 }
 
-/// Every watchlist status `user_id` holds, keyed by series.
+/// Returns every watchlist status `user_id` holds, keyed by series.
 ///
-/// The batched form of [`watchlist_status_get`], prefetched once per reconciliation run rather
-/// than queried per remote entry (PERF-13).
+/// The batched form of [`watchlist_status_get`], prefetched once per reconciliation run.
+/// Untracked series are **absent**, so a miss means "not tracked", never "status unknown".
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Untracked series are
-/// **absent** from the map rather than present with a default, so a lookup miss must mean
-/// "not tracked" to the caller and never "status unknown".
+/// [`crate::DbError::Sqlx`] only.
 pub async fn watchlist_statuses_for_user<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,

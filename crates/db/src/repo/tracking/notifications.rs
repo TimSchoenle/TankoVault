@@ -20,8 +20,8 @@ pub struct CreatedNotification {
     pub user_id: UserId,
     /// The persisted row the push mirrors, so a client can dedup against it.
     pub notification_id: NotificationId,
-    /// The payload *after* any coalescing merge — what the live push has to carry, since a
-    /// pushed `count: 1` for a row that now reads "12 new" is a lie the client cannot detect.
+    /// The payload *after* any coalescing merge, which the live push carries: a pushed
+    /// `count: 1` for a row that reads "12 new" is a lie the client cannot detect.
     pub payload: Json,
 }
 
@@ -35,11 +35,13 @@ pub struct NotificationContext {
     pub base_url: String,
 }
 
-/// Resolve the series and provider a chapter event refers to.
+/// Resolves the series and provider a chapter event refers to.
+///
+/// An unknown series or provider slug is `None`, which a caller treats as "write the notification
+/// without the decoration".
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; an unknown series or provider slug is `Ok(None)`, which a
-/// caller must treat as "write the notification without the decoration", not as a failure.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn notification_context<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -61,21 +63,23 @@ pub async fn notification_context<'e, E: PgExecutor<'e>>(
     }))
 }
 
-/// Insert one identical notification for each user in `user_ids`, in one statement rather than
-/// one per user, coalescing into each user's open row when `group_key` is set.
+/// Inserts one identical notification for each user in `user_ids` in one statement, coalescing
+/// into each user's open row when `group_key` is set.
 ///
 /// With a `group_key`, an unread row for the same `(user, group)` absorbs the event instead of
-/// adding a second row: `count` sums, `first_number`/`last_number` widen, `latest` keeps whichever
-/// side is further along, and everything else takes the newer document's value so a renamed series
-/// or a fresh cover lands. `notifications_open_group_idx` is both the conflict target and the
-/// concurrency guard — two notifiers handling different chapters of one series serialise on it
-/// rather than racing into two rows, so no retry loop is needed here.
+/// adding a second row: `count` sums, `first_number` and `last_number` widen, `latest` keeps
+/// whichever side is further along, and everything else takes the newer document's value so a
+/// renamed series or a fresh cover lands. `notifications_open_group_idx` is both the conflict
+/// target and the concurrency guard: two notifiers handling different chapters of one series
+/// serialise on it, so no retry loop is needed.
 ///
 /// `None` inserts unconditionally: the partial index excludes NULL `group_key`, so ungrouped kinds
 /// keep one row per event.
 ///
+/// All or nothing: one failure drops the whole fan-out.
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; all-or-nothing — one failure drops the whole fan-out.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn notifications_upsert_many<'e, E: PgExecutor<'e>>(
     exec: E,
     user_ids: &[UserId],
@@ -130,8 +134,8 @@ pub async fn notifications_upsert_many<'e, E: PgExecutor<'e>>(
 
 /// Which rows of the inbox a request wants.
 ///
-/// Applied server-side rather than by the client over a loaded page: the tabs used to filter one
-/// 50-row batch, so "Unread" showed an empty page whenever the unread rows sat on page two.
+/// Applied server-side, not by the client over a loaded page, where "Unread" would show an empty
+/// page whenever the unread rows sat on page two.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct NotificationFilter<'a> {
     /// Restrict to rows the reader has not read.
@@ -142,9 +146,8 @@ pub struct NotificationFilter<'a> {
 
 /// One page of a user's inbox, plus the two totals the page cannot be counted from.
 ///
-/// `total` counts the whole *filtered* inbox and `unread` the whole *unfiltered* one — the pager's
-/// denominator and the bell respectively. Deriving either from `items` is what capped both the
-/// list and the bell at whatever the page size happened to be.
+/// `total` counts the whole *filtered* inbox and `unread` the whole *unfiltered* one: the pager's
+/// denominator and the bell. Derived from `items`, both would be capped at the page size.
 pub struct NotificationPage {
     /// Newest first.
     pub items: Vec<Notification>,
@@ -154,10 +157,11 @@ pub struct NotificationPage {
     pub unread: i64,
 }
 
-/// One page of a user's notifications, newest first, with the totals the pager and bell need.
+/// Returns one page of a user's notifications, newest first, with the totals the pager and bell
+/// need.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; an empty inbox is an empty `Vec` and two zeroes.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn notifications_page(
     pool: &sqlx::PgPool,
     user_id: UserId,
@@ -177,7 +181,7 @@ pub async fn notifications_page(
     })
 }
 
-/// The `[offset, offset + limit)` window of the inbox, newest first.
+/// Returns the `[offset, offset + limit)` window of the inbox, newest first.
 async fn notifications_window<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -242,11 +246,11 @@ async fn notifications_totals<'e, E: PgExecutor<'e>>(
     Ok((row.total, row.unread))
 }
 
-/// Unread-notification counts for `user_ids`, grouped in one query. Users with no unread rows
-/// are absent from the map — callers must treat a miss as `0`.
+/// Returns the unread-notification counts for `user_ids`, grouped in one query. Users with no
+/// unread rows are absent, so callers treat a miss as `0`.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; an empty `user_ids` is an empty map.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn notifications_unread_counts<'e, E: PgExecutor<'e>>(
     exec: E,
     user_ids: &[UserId],
@@ -269,13 +273,13 @@ pub async fn notifications_unread_counts<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Mark every unread notification this user has read, however many that is.
+/// Marks every unread notification this user has read, however many that is.
 ///
 /// Not expressible as [`notifications_mark_read`] with a list of ids: the caller only ever holds
 /// the page it loaded, so "mark all read" driven from ids silently leaves the rest unread.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; an already-empty inbox is `0`.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn notifications_mark_all_read<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -289,10 +293,10 @@ pub async fn notifications_mark_all_read<'e, E: PgExecutor<'e>>(
     Ok(result.rows_affected())
 }
 
-/// Mark the given notifications read (scoped to the owning user).
+/// Marks the given notifications read (scoped to the owning user).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; ids not owned, unknown, or already read all contribute `0`.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn notifications_mark_read<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -314,27 +318,26 @@ pub async fn notifications_mark_read<'e, E: PgExecutor<'e>>(
 pub struct Watcher {
     /// Who to notify.
     pub user_id: UserId,
-    /// The watchlist status this reader has the series in — the axis their preferences filter on.
+    /// The watchlist status this reader has the series in, the axis their preferences filter on.
     pub status: WatchStatus,
-    /// Their decoded preference document; a malformed one decodes to the defaults rather than
-    /// failing the fan-out, since a broken preference must not cost the reader the notification.
+    /// Their decoded preference document. A malformed one decodes to the defaults, since a broken
+    /// preference must not cost the reader the notification.
     pub prefs: NotificationPrefs,
     /// Both read frontiers, or `None` with no progress row. Use
     /// [`ReadProgress::covers`](super::ReadProgress::covers), not a hand-rolled comparison.
     pub progress: Option<ReadProgress>,
 }
 
-/// All users watching `series_id` with `notify = true`, plus their watchlist status, decoded
-/// preferences and both read frontiers.
+/// Returns all users watching `series_id` with `notify = true`, plus their watchlist status,
+/// decoded preferences and both read frontiers.
 ///
-/// Returns the raw inputs rather than a verdict on purpose: the caller must call
-/// [`ReadProgress::covers`](super::ReadProgress::covers) rather than hand-rolling `number <=
-/// whole`, which announces an already-read part release as new, and it must apply
-/// [`NotificationPrefs`] *after* claiming the dedup slot, not before.
+/// Returns the raw inputs, not a verdict: the caller calls
+/// [`ReadProgress::covers`](super::ReadProgress::covers), since a hand-rolled `number <= whole`
+/// announces an already-read part release as new, and applies [`NotificationPrefs`] *after*
+/// claiming the dedup slot.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; nobody watching is an empty `Vec` — must not be read as
-/// "no watchers" and used to silently drop a retry.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn watchers_for_series<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -376,15 +379,14 @@ pub async fn watchers_for_series<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Which of `user_ids` have opted into this provider's early-access chapters.
+/// Returns which of `user_ids` have opted into this provider's early-access chapters.
 ///
-/// One statement over the whole candidate set rather than an `EXISTS` per watcher: a popular
-/// series has thousands of watchers and every one of them would otherwise cost a round trip to
-/// answer a question about a table with at most a handful of rows per reader.
+/// One statement over the whole candidate set, not an `EXISTS` per watcher: a popular series has
+/// thousands of watchers, each costing a round trip. An empty result, the common case, means
+/// announce to no one.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; nobody opted in is an empty `Vec`, which is the common case
-/// and means "announce this to no one" — never "announce to everyone".
+/// [`crate::DbError::Sqlx`] only.
 pub async fn early_access_opted_in<'e, E: PgExecutor<'e>>(
     exec: E,
     user_ids: &[UserId],
@@ -405,15 +407,17 @@ pub async fn early_access_opted_in<'e, E: PgExecutor<'e>>(
     Ok(rows.into_iter().map(UserId::from_uuid).collect())
 }
 
-/// Claim the `(user, series, chapter)` dedup slot for every user in `user_ids` at once,
-/// returning the subset genuinely new to this chapter, in one set-based statement.
+/// Claims the `(user, series, chapter)` dedup slot for every user in `user_ids` at once, returning
+/// the subset genuinely new to this chapter, in one set-based statement.
 ///
 /// `ON CONFLICT DO NOTHING ... RETURNING` makes the claim atomic and observable: a concurrent
 /// notifier handling the same event cannot also claim the same watcher.
 ///
+/// An already-claimed watcher is absent from the result, which makes the fan-out idempotent under
+/// redelivery.
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; an already-claimed watcher is absent from the result (not
-/// [`crate::DbError::Conflict`]) — this is what makes the fan-out idempotent under redelivery.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn dedup_claim_many<'e, E: PgExecutor<'e>>(
     exec: E,
     user_ids: &[UserId],

@@ -14,7 +14,7 @@ use uuid::Uuid;
 /// were due.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; nothing due is `Ok(0)`.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn sweep_unlocks(pool: &PgPool, limit: i64) -> DbResult<u64> {
     let due = sqlx::query!(
         "SELECT user_id, series_id FROM watchlist_unread \
@@ -62,7 +62,7 @@ impl UnreadDrift {
     }
 }
 
-/// Compare the `limit` least recently verified stored rows with the live computation, repair any
+/// Compares the `limit` least recently verified stored rows with the live computation, repair any
 /// that disagree, and create rows for up to `limit` watchlist entries that have none.
 ///
 /// A row whose unlock deadline has already passed is repaired but not counted: it is due for

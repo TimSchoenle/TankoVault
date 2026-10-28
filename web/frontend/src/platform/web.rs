@@ -214,7 +214,7 @@ pub(crate) fn origin() -> String {
 ///
 /// The object URL is revoked immediately after the click. The download has already been handed
 /// to the browser at that point, and leaving it alive pins the blob for the lifetime of the
-/// document: which, for a personal-data export, means keeping the reader's entire record in
+/// document, which, for a personal-data export, means keeping the reader's entire record in
 /// memory until they navigate away.
 #[expect(
     clippy::unused_async,

@@ -12,7 +12,7 @@
 //! linked for anyone who wants to `curl` it.
 //!
 //! **The inventory is fetched, not embedded.** It is 1.1 MB (71 KB over the wire, compressed),
-//! and `include_str!`ing it would put every byte into the WASM bundle every reader downloads:
+//! and `include_str!`ing it would put every byte into the WASM bundle every reader downloads,
 //! including the ones who never open this screen. That is the same reasoning that keeps the
 //! plain-text document out of the served bundle; see `FrontendConfig::notices_json_path`.
 

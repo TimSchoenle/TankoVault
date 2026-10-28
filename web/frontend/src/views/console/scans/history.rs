@@ -37,7 +37,7 @@ pub(super) fn RunHistory(
             div { class: "ik-flex", style: "justify-content:space-between;align-items:baseline;",
                 div { class: "ik-subhead", {i18n.t("console.scans.recent")} }
                 // Says what the list is a window on, so a page of 30 out of 400 does not read as
-                // the whole history: and, under a filter, states that it is one.
+                // the whole history, and, under a filter, states that it is one.
                 span { class: "ik-muted ik-mono", style: "font-size:11.5px;",
                     {
                         i18n.args(

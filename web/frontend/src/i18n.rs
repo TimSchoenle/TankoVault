@@ -421,7 +421,7 @@ mod tests {
     }
 
     /// `i18nrs` falls back to an arbitrary catalogue for a missing key, so a key that exists in
-    /// only some locales renders unpredictably: including as the literal string
+    /// only some locales renders unpredictably, including as the literal string
     /// `Key '…' not found`. Structural equality across catalogues rules that out.
     #[test]
     fn locales_define_the_same_keys() {

@@ -146,7 +146,7 @@ impl StatusFilter {
 /// The permissions in `grants` this build recognises, as a set.
 ///
 /// Unknown tokens are surfaced separately as "unknown grant", not dropped, but must stay
-/// out of this set: including one would re-submit an inert token as current on save.
+/// out of this set; including one would re-submit an inert token as current on save.
 fn known_permissions(grants: &[GrantRow]) -> BTreeSet<Permission> {
     grants
         .iter()

@@ -434,7 +434,7 @@ mod tests {
     }
 
     /// A tag slug is the one value here that comes from the catalogue instead of from this
-    /// build, so it has to survive the separators the grammar reserves: including the comma
+    /// build, so it has to survive the separators the grammar reserves, including the comma
     /// this parameter itself is split on.
     ///
     /// The bug this pins: the parser decoded the whole parameter before splitting it, so a slug

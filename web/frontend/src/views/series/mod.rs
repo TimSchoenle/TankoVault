@@ -171,7 +171,7 @@ fn SeriesPage(id: String) -> Element {
         }
     });
 
-    // The entry is the pin's home, so every refetch of it re-seeds the signal: including the
+    // The entry is the pin's home, so every refetch of it re-seeds the signal, including the
     // one a successful pin write triggers, which is what reconciles the optimistic move.
     let mut pin_signal = pinned;
     use_effect(move || {

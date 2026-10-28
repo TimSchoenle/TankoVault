@@ -200,7 +200,7 @@ enum CredentialRequest {
 ///
 /// **On Linux it is what stops the process aborting.** The Secret Service backend is
 /// `secret-service`'s blocking API, which is `zbus::blocking`, which is
-/// `tokio::runtime::Runtime::block_on`: because `notify-rust`'s `z-with-tokio` turns on zbus's
+/// `tokio::runtime::Runtime::block_on`, because `notify-rust`'s `z-with-tokio` turns on zbus's
 /// `tokio` feature for the whole graph. `block_on` panics when the calling thread is already
 /// inside a runtime ("Cannot start a runtime from within a runtime"), and [`credential_set`] is
 /// called from `reqwest`'s response path, which *is* a runtime worker. This crate builds with

@@ -94,7 +94,7 @@ pub(crate) fn flavour() -> Flavour {
 /// How the copy at `exe` was installed.
 ///
 /// Separate from [`flavour`] for the relauncher, which is a copy of this binary running from the
-/// staging directory: asking about *itself* there answers `Portable`; correctly, and uselessly.
+/// staging directory: asking about *itself* there answers `Portable`, correctly and uselessly.
 /// The install it is updating is the one it was given.
 #[cfg(windows)]
 fn flavour_of(exe: &Path) -> Flavour {

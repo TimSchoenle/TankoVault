@@ -144,7 +144,7 @@ pub(crate) fn legal_links(i18n: Translator) -> Element {
 /// server-rendered `/third-party-notices` would resolve to the app shell under the client-side
 /// router, and on desktop, which runs off a local webview origin, a relative href resolves
 /// against `file:///`. A route has neither problem, and the screen it opens links the plain-text
-/// document itself: including on desktop before a server is chosen, where it says there is
+/// document itself, including on desktop before a server is chosen, where it says there is
 /// nothing to show instead of being withheld with no explanation.
 #[component]
 fn OpenSourceColumn() -> Element {

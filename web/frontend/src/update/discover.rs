@@ -399,7 +399,7 @@ pub(crate) async fn manifest(
 /// widen what verifies for no reason anyone here needs.
 ///
 /// # Errors
-/// `…unconfigured` when `keys` is empty, `…untrusted` when no key verifies: including a
+/// `…unconfigured` when `keys` is empty, `…untrusted` when no key verifies, including a
 /// malformed signature or key, which are not worth telling apart for a reader.
 fn verify(bytes: &[u8], signature: &str, keys: &[&str]) -> Result<(), &'static str> {
     if keys.is_empty() {

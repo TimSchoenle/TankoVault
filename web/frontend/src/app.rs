@@ -148,7 +148,7 @@ pub(crate) fn App() -> Element {
 /// The router, once there is a server to point it at.
 ///
 /// Desktop starts with no origin at all, and every screen behind the router issues requests, so
-/// the choice has to be made before any of them mounts: not inside a route they could navigate
+/// the choice has to be made before any of them mounts, not inside a route they could navigate
 /// away from.
 #[cfg(feature = "desktop")]
 #[component]

@@ -250,7 +250,7 @@ mod hello {
     /// Runs a ceremony on its own thread and awaits the answer.
     ///
     /// `webauthn.dll` shows a modal system dialog and does not return until the reader has
-    /// finished with it. On the UI thread that is a frozen window for as long as they take:
+    /// finished with it. On the UI thread that is a frozen window for as long as they take,
     /// including the full timeout if they walk away.
     ///
     /// A plain `std::thread` and a channel instead of `spawn_blocking`, because that would

@@ -97,8 +97,8 @@ pub struct InternalTlsConfig {
     /// their own listener (default `0.0.0.0:9091`). Read under `mtls` only.
     ///
     /// An orchestrator probe presents no client certificate, so on the mTLS port its plain `GET`
-    /// gets a TLS alert and the replica is restarted as unhealthy. `null` drops the listener;
-    /// set it only where the prober can present a certificate.
+    /// gets a TLS alert and the replica is restarted as unhealthy. Set it to `null`, which drops
+    /// the listener, only where the prober can present a certificate.
     #[serde(default = "InternalTlsConfig::default_probe_listen")]
     pub probe_listen: Option<String>,
 }

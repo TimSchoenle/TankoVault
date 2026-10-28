@@ -54,8 +54,10 @@ pub struct Query {
 /// merge must not fire on a high fuzzy score alone. It needs [`Self::is_primary_identity`], the
 /// titles being one string under a conservative rule, or [`Self::is_corroborated_alias`].
 ///
-/// Author, year, medium and tags are recorded and rendered, but they never move a score or a
-/// verdict: across providers they are wrong or inconsistent too often to decide anything.
+/// Author, year, medium and tags are recorded and rendered but never move a score: across
+/// providers they are wrong or inconsistent too often to be weighed. An author, year or medium
+/// conflict can still hold an automatic merge for review when its guard in
+/// `tankovault_matcher::MergeGuards` is on.
 ///
 /// A flat struct of `bool`s, not a bitflag set: it is `Copy` and each field is named where it is
 /// read.

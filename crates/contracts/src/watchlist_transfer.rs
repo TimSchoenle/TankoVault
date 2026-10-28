@@ -268,7 +268,10 @@ struct Envelope {
 /// import never holds an untyped `serde_json::Value` tree of the whole document.
 ///
 /// # Errors
-/// [`DocumentError`], naming the first problem found.
+/// [`DocumentError::Malformed`] for bytes that are not the declared shape,
+/// [`DocumentError::NotAWatchlist`] for a missing `format` or `version`,
+/// [`DocumentError::UnsupportedVersion`], [`DocumentError::TooManyEntries`] past
+/// [`MAX_ENTRIES`], or [`DocumentError::InvalidEntry`] for the first entry that fails validation.
 pub fn parse_document(bytes: &[u8]) -> Result<ParsedDocument, DocumentError> {
     let malformed = |e: serde_json::Error| DocumentError::Malformed(e.to_string());
     let envelope: Envelope = serde_json::from_slice(bytes).map_err(malformed)?;

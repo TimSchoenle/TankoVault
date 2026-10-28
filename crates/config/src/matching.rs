@@ -78,9 +78,10 @@ pub struct MatchingConfig {
     #[serde(default = "default_threshold_low")]
     pub low: f32,
     /// At or above this score, and only when a primary identity rule fired, the duplicate sweep
-    /// merges two existing series without an operator. [`Self::high`] files an incoming source;
-    /// this deletes a series that already exists. `tankovault_matcher::adjudicate` defines the
-    /// identity rules.
+    /// merges two existing series without an operator. A corroborated alias merges from
+    /// [`Self::low`] up whatever this is set to, because its corroboration, not its score, is the
+    /// evidence. [`Self::high`] files an incoming source; this deletes a series that already
+    /// exists. `tankovault_matcher::adjudicate` defines the identity rules.
     #[serde(default = "default_threshold_auto_merge")]
     pub auto_merge: f32,
     /// How many trigram candidates to score per query title. A higher value widens the index scan.

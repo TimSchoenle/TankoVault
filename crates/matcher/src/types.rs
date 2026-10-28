@@ -12,9 +12,10 @@ pub struct Thresholds {
     /// The review floor. Below it a pair is not queued at all: `decide` creates a new series
     /// and [`adjudicate`](crate::adjudicate) reports [`MergeVerdict::Distinct`].
     pub low: f32,
-    /// At or above this score, two existing series are merged without asking, provided they
-    /// share a primary identity and every enabled [`MergeGuards`] guard is silent. See
-    /// [`adjudicate`](crate::adjudicate).
+    /// At or above this score, two existing series that share a primary identity are merged
+    /// without asking, provided every enabled [`MergeGuards`] guard is silent. A corroborated
+    /// alias merges from [`Self::low`] up whatever this is, since the corroboration is its
+    /// evidence. See [`adjudicate`](crate::adjudicate).
     pub auto_merge: f32,
     /// Which vetoes are switched on for this deployment.
     pub guards: MergeGuards,
@@ -177,7 +178,7 @@ pub struct Adjudication {
     pub verdict: MergeVerdict,
     /// Stable slug for the rule that decided it.
     pub reason: &'static str,
-    /// Every enabled guard that fired. Non-empty means an otherwise automatic merge was held
-    /// back, or would have been had the score reached the threshold.
+    /// Every veto and enabled guard that fired, a deciding veto first. An entry does not mean the
+    /// pair would otherwise have merged: a fuzzy match with no identity lists its guards too.
     pub blocked_by: Vec<&'static str>,
 }

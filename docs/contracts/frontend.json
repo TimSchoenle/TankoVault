@@ -264,7 +264,7 @@
         "env": "TANKOVAULT_TELEMETRY__SENTRY__SAMPLE_RATE",
         "env_file": "TANKOVAULT_TELEMETRY__SENTRY__SAMPLE_RATE_FILE",
         "secrets_file": "telemetry__sentry__sample_rate",
-        "docs": "Fraction of captured events sent, `0.0`-`1.0`. It drops whole issues, not repetitions of\none, so leave it at `1.0` unless quota forces it lower.",
+        "docs": "Fraction of captured events sent, `0.0`-`1.0`, decided at random per event. A lower rate\nundercounts every issue and can miss a rare one entirely, so leave it at `1.0` unless\nquota forces it lower.",
         "ty": "f32",
         "values": [],
         "constraint": {
@@ -480,7 +480,7 @@
         "env": "TANKOVAULT_TELEMETRY__SENTRY__HTTP_TRANSACTIONS",
         "env_file": "TANKOVAULT_TELEMETRY__SENTRY__HTTP_TRANSACTIONS_FILE",
         "secrets_file": "telemetry__sentry__http_transactions",
-        "docs": "Record one Sentry transaction per request through the shared HTTP stack, named by the\nmatched route, so an id in the path does not become a transaction name.\n\n[`Self::traces_sample_rate`] decides whether a transaction is kept. This switch keeps a\nservice out of traces entirely.",
+        "docs": "Record one Sentry transaction per request through the shared HTTP stack, named by the\nmatched route, so an id in the path does not become a transaction name.\n\n[`Self::traces_sample_rate`] decides whether a transaction is kept. Off, the HTTP layer\nstarts no transactions; a broker delivery still starts one through the `tracing` layer.",
         "ty": "bool",
         "values": [],
         "constraint": {
@@ -1372,7 +1372,7 @@
                 "type": "string"
               },
               "http_transactions": {
-                "description": "Record one Sentry transaction per request through the shared HTTP stack, named by the\nmatched route, so an id in the path does not become a transaction name.\n\n[`Self::traces_sample_rate`] decides whether a transaction is kept. This switch keeps a\nservice out of traces entirely.",
+                "description": "Record one Sentry transaction per request through the shared HTTP stack, named by the\nmatched route, so an id in the path does not become a transaction name.\n\n[`Self::traces_sample_rate`] decides whether a transaction is kept. Off, the HTTP layer\nstarts no transactions; a broker delivery still starts one through the `tracing` layer.",
                 "type": "boolean"
               },
               "max_breadcrumbs": {
@@ -1385,7 +1385,7 @@
                 "type": "string"
               },
               "sample_rate": {
-                "description": "Fraction of captured events sent, `0.0`-`1.0`. It drops whole issues, not repetitions of\none, so leave it at `1.0` unless quota forces it lower.",
+                "description": "Fraction of captured events sent, `0.0`-`1.0`, decided at random per event. A lower rate\nundercounts every issue and can miss a rare one entirely, so leave it at `1.0` unless\nquota forces it lower.",
                 "maximum": 1.0,
                 "minimum": 0.0,
                 "type": "number"

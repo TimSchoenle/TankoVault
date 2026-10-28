@@ -642,7 +642,8 @@ pub struct Plan {
 ///
 /// `resolved[i]` is `entries[i]`'s match. `local_progress` covers every series the reader has
 /// progress on, tracked or not: a progress row can outlive its watchlist entry, and an import that
-/// re-adds the series merges with it instead of writing over it. The first entry matching a series
+/// re-adds the series resolves against it through [`merged_progress`], so only `KeepLocal` is
+/// sure to keep the higher of the two. The first entry matching a series
 /// wins and a later one is reported as a duplicate, so the outcome does not depend on which of two
 /// conflicting rows a document lists last.
 ///

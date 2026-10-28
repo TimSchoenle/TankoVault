@@ -1844,14 +1844,14 @@ pub mod types {
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"error\": {"]
-    #[doc = "      \"description\": \"One error group, exactly as the grouped feed reported it. Send `error` with a `null`\\nvalue together with `match_null_error` to clear the group that recorded no error at all.\","]
+    #[doc = "      \"description\": \"One error group, exactly as the grouped feed reported it. Omitted and `null` read the same,\\nand `match_null_error` then decides what is selected.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"match_null_error\": {"]
-    #[doc = "      \"description\": \"Clear the group whose error is absent. An omitted `error` means \\\"any error\\\", which is a\\ndifferent request.\","]
+    #[doc = "      \"description\": \"With no `error`, clear only the group that recorded no error. Unset, no `error` selects\\nevery error.\","]
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"provider\": {"]
@@ -1877,10 +1877,10 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct ClearFailuresBody {
-        #[doc = "One error group, exactly as the grouped feed reported it. Send `error` with a `null`\nvalue together with `match_null_error` to clear the group that recorded no error at all."]
+        #[doc = "One error group, exactly as the grouped feed reported it. Omitted and `null` read the same,\nand `match_null_error` then decides what is selected."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub error: ::std::option::Option<::std::string::String>,
-        #[doc = "Clear the group whose error is absent. An omitted `error` means \"any error\", which is a\ndifferent request."]
+        #[doc = "With no `error`, clear only the group that recorded no error. Unset, no `error` selects\nevery error."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub match_null_error: ::std::option::Option<bool>,
         #[doc = "Provider slug."]
@@ -10154,7 +10154,7 @@ pub mod types {
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"stage\": {"]
-    #[doc = "      \"description\": \"What the run's oldest held task is doing, as a [`tankovault_domain::ScanStage`] token.\\n`null` when nothing is held; with `waiting_since`, that tells the console \\\"working\\\" from\\n\\\"waiting for a worker\\\".\","]
+    #[doc = "      \"description\": \"What the run's oldest held task is doing, as a [`tankovault_domain::ScanStage`] token.\\nOmitted when nothing is held; with `waiting_since`, that tells the console \\\"working\\\" from\\n\\\"waiting for a worker\\\".\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -10218,7 +10218,7 @@ pub mod types {
         pub run_id: ScanRunId,
         #[doc = "Tasks a worker is holding right now."]
         pub running_tasks: i64,
-        #[doc = "What the run's oldest held task is doing, as a [`tankovault_domain::ScanStage`] token.\n`null` when nothing is held; with `waiting_since`, that tells the console \"working\" from\n\"waiting for a worker\"."]
+        #[doc = "What the run's oldest held task is doing, as a [`tankovault_domain::ScanStage`] token.\nOmitted when nothing is held; with `waiting_since`, that tells the console \"working\" from\n\"waiting for a worker\"."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub stage: ::std::option::Option<::std::string::String>,
         #[doc = "When that task entered that stage. A stage stamp that stops moving is the symptom the run\ncounters cannot show."]
@@ -15388,7 +15388,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"active_sessions\": {"]
-    #[doc = "      \"description\": \"Live login sessions, which tell an operator whether a suspension takes effect without\\nalso revoking them.\","]
+    #[doc = "      \"description\": \"Live login sessions. A suspended account is refused on every request whether or not\\nthese are revoked.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -15457,7 +15457,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct UserDetail {
-        #[doc = "Live login sessions, which tell an operator whether a suspension takes effect without\nalso revoking them."]
+        #[doc = "Live login sessions. A suspended account is refused on every request whether or not\nthese are revoked."]
         pub active_sessions: i64,
         #[doc = "When it was registered."]
         pub created_at: ::std::string::String,

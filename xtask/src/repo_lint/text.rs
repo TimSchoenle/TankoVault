@@ -54,8 +54,8 @@ pub(super) fn toml_string_array(
     let mut collecting = None;
     let mut entries = Vec::new();
     for (index, line) in text.lines().enumerate() {
-        let trimmed = line.trim();
-        if is_comment(trimmed) {
+        let trimmed = without_trailing_comment(line).trim();
+        if trimmed.is_empty() {
             continue;
         }
         if collecting.is_none() && trimmed.starts_with('[') {
@@ -84,6 +84,22 @@ pub(super) fn toml_string_array(
         entries.extend(array_entries(trimmed));
     }
     None
+}
+
+/// Cuts a TOML `#` comment off `line`, leaving a `#` inside a basic string alone.
+fn without_trailing_comment(line: &str) -> &str {
+    let mut in_string = false;
+    let mut escaped = false;
+    for (at, ch) in line.char_indices() {
+        match ch {
+            _ if escaped => escaped = false,
+            '\\' if in_string => escaped = true,
+            '"' => in_string = !in_string,
+            '#' if !in_string => return &line[..at],
+            _ => {}
+        }
+    }
+    line
 }
 
 /// Splits one line of array items into their unquoted, non-empty entries.
@@ -235,11 +251,31 @@ mod tests {
         );
     }
 
+    /// An end-of-line comment after an array or an entry hid the closing `]` and turned the
+    /// comment into an entry, so a valid `ignore = [] # no exceptions` read as a missing key.
+    #[test]
+    fn trailing_comments_are_not_part_of_the_array() {
+        let toml = "[advisories]\n\
+                    ignore = [ # reviewed\n\
+                    \x20   \"RUSTSEC-2024-0001\", # unmaintained, no fix\n\
+                    \x20   \"a#b\",\n\
+                    ] # end\n";
+        assert_eq!(
+            toml_string_array(toml, "[advisories]", "ignore"),
+            Some((2, vec!["RUSTSEC-2024-0001".to_owned(), "a#b".to_owned()]))
+        );
+    }
+
     /// `ignore = []` was read as an absent key, so the advisories rule refused the very form its
     /// own error message told the user to write.
     #[test]
     fn a_single_line_array_is_read() {
         let toml = "[advisories]\nignore = []\n";
+        assert_eq!(
+            toml_string_array(toml, "[advisories]", "ignore"),
+            Some((2, Vec::new()))
+        );
+        let toml = "[advisories]\nignore = [] # no exceptions\n";
         assert_eq!(
             toml_string_array(toml, "[advisories]", "ignore"),
             Some((2, Vec::new()))

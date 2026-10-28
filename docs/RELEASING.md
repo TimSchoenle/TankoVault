@@ -108,8 +108,9 @@ from the chart, not from a tag you assumed exists.
 ## The desktop update channel
 
 Every release also carries the desktop client (Windows `.msi` and NSIS `.exe`, Linux `.deb` and
-`.AppImage`, and a portable archive per platform) and an installed client can update *itself*
-from these releases (`web/frontend/src/update`). Because that means downloading an executable and
+`.AppImage`, and a portable archive per platform). An MSI, NSIS or writable AppImage install can
+update *itself* from these releases (`web/frontend/src/update`); the `.deb` belongs to the package
+manager and a portable copy to whoever unpacked it, so those two only say that an update exists. Because that means downloading an executable and
 running it, the release publishes a document the client can check first:
 
 | Asset | What it is |
@@ -494,8 +495,9 @@ image is a copy of the software, and the Notices clause requires the terms to tr
 Pulling an image does not grant commercial use.
 
 Publishing is not gated: merging a release pull request publishes, and the structure tests run
-on the publishing path, before the push. `ci.yml`'s `docker-arm64` job is unconditional, so the
-arm64 path is built on every `ci.yml` run and a release is never the first time it runs. The
+on the publishing path, before the push. `ci.yml`'s `docker-arm64` job runs on every push and
+every full run (pull requests build amd64 only), so the arm64 path is built on `main` before a
+release reaches it. The
 `ALLOW_IMAGE_PUBLISH` and `ENABLE_ARM64_CI` repository variables are read by nothing and can be
 deleted from the repository settings. `wreq-util` is pinned to 3.x, which is Apache-2.0; the 2.x
 line is GPL-3.0.

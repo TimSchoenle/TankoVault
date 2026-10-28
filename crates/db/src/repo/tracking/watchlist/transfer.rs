@@ -24,7 +24,7 @@ use uuid::Uuid;
 /// [`PortableEntry::sanitized`], so the result always re-imports.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an empty watchlist is an empty `Vec`.
 pub async fn watchlist_export<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,

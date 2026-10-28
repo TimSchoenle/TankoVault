@@ -123,7 +123,7 @@ pub struct AdminRequestRow {
 /// [`has_open_of_kind`] is the duplicate guard; this does not refuse a second request.
 ///
 /// # Errors
-/// `Sqlx` only.
+/// `Sqlx` only; a second request of the same kind is not [`DbError::Conflict`].
 pub async fn create<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -176,7 +176,7 @@ impl From<RawRequest> for RequestRow {
 /// Returns a subject's own requests, newest first.
 ///
 /// # Errors
-/// `Sqlx` only.
+/// `Sqlx` only; nothing filed is `Ok(vec![])`.
 pub async fn list_for_user<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -199,7 +199,7 @@ pub async fn list_for_user<'e, E: PgExecutor<'e>>(
 /// propagate an error, since defaulting to `false` admits the duplicate.
 ///
 /// # Errors
-/// `Sqlx` only.
+/// `Sqlx` only; `EXISTS` always returns a row, so "none open" is `Ok(false)`.
 pub async fn has_open_of_kind<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -221,7 +221,7 @@ pub async fn has_open_of_kind<'e, E: PgExecutor<'e>>(
 /// the compliance record.
 ///
 /// # Errors
-/// `Sqlx` only.
+/// `Sqlx` only; an empty queue is `Ok(vec![])`.
 pub async fn list_admin<'e, E: PgExecutor<'e>>(
     exec: E,
     only_open: bool,
@@ -380,7 +380,8 @@ async fn list_admin_by_id<'e, E: PgExecutor<'e>>(
 /// caller decides between 404 and 409.
 ///
 /// # Errors
-/// `Sqlx` only.
+/// `Sqlx` only; losing the race, an unknown id, and an already-claimed request are all `Ok(false)`,
+/// not [`DbError::Conflict`].
 pub async fn claim<'e, E: PgExecutor<'e>>(exec: E, id: Uuid, operator: UserId) -> DbResult<bool> {
     let result = sqlx::query!(
         "UPDATE gdpr_requests SET status = 'in_progress', claimed_by = $2, claimed_at = now() \
@@ -399,7 +400,7 @@ pub async fn claim<'e, E: PgExecutor<'e>>(exec: E, id: Uuid, operator: UserId) -
 /// call did **not** record the resolution the caller believes it made.
 ///
 /// # Errors
-/// `Sqlx` only.
+/// `Sqlx` only; an already-resolved request is `Ok(false)`.
 pub async fn resolve<'e, E: PgExecutor<'e>>(
     exec: E,
     id: Uuid,
@@ -427,7 +428,7 @@ pub async fn resolve<'e, E: PgExecutor<'e>>(
 /// returns `false`, the same as an unknown or resolved one, so ids cannot be enumerated.
 ///
 /// # Errors
-/// `Sqlx` only.
+/// `Sqlx` only; another user's request is `Ok(false)`, indistinguishable from unknown/resolved.
 pub async fn cancel_own<'e, E: PgExecutor<'e>>(
     exec: E,
     id: Uuid,
@@ -450,7 +451,8 @@ pub async fn cancel_own<'e, E: PgExecutor<'e>>(
 /// told a date, and for an unknown or resolved id.
 ///
 /// # Errors
-/// `Sqlx` only.
+/// `Sqlx` only; moving the deadline earlier, or an unknown/resolved id, is `Ok(false)` not an
+/// error.
 pub async fn extend_due<'e, E: PgExecutor<'e>>(
     exec: E,
     id: Uuid,
@@ -474,7 +476,7 @@ pub async fn extend_due<'e, E: PgExecutor<'e>>(
 /// tell" look the same.
 ///
 /// # Errors
-/// `Sqlx` only.
+/// `Sqlx` only; a clean queue is `Ok((0, 0))`.
 pub async fn open_counts<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<(i64, i64)> {
     #[derive(FromRow)]
     struct Row {

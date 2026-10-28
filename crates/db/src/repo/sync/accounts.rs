@@ -74,7 +74,7 @@ pub async fn upsert_account<'e, E: PgExecutor<'e>>(
 /// Never default a failure to `None`: the engine reads it as "skip this provider".
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; unlinked is `Ok(None)`, not [`crate::DbError::NotFound`].
 pub async fn get_account<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -124,7 +124,7 @@ pub async fn get_account<'e, E: PgExecutor<'e>>(
 /// An unlinked provider matches nothing silently, so callers confirm the account exists first.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an unlinked provider matches nothing and is silently `Ok(())`.
 pub async fn update_account_settings<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -154,7 +154,7 @@ pub async fn update_account_settings<'e, E: PgExecutor<'e>>(
 /// re-link (design v2 §B.1). Seeded, declined and no such account are the same outcome.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; seeded, declined and no such account are all `Ok(())`.
 pub async fn seed_account_policy<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -180,7 +180,8 @@ pub async fn seed_account_policy<'e, E: PgExecutor<'e>>(
 /// everyone.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; must propagate; an empty `Vec` from a failure would silently stop
+/// sync for everyone.
 pub async fn list_auto_sync_accounts<'e, E: PgExecutor<'e>>(
     exec: E,
 ) -> DbResult<Vec<(UserId, String)>> {
@@ -206,7 +207,8 @@ pub async fn list_auto_sync_accounts<'e, E: PgExecutor<'e>>(
 /// in the same statement. A `None` username leaves the stored one as-is.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an account unlinked since is `Ok(())`, not
+/// [`crate::DbError::NotFound`].
 pub async fn mark_synced<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -260,7 +262,7 @@ pub async fn record_sync_error<'e, E: PgExecutor<'e>>(
 /// leaves live tokens behind.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; not-linked is `Ok(false)`.
 pub async fn delete_account<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,

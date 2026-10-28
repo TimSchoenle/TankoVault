@@ -84,8 +84,8 @@ async fn a_preset_sync_never_touches_politeness_or_state() {
         .await
         .expect("sync from the preset");
 
-    // Bit-identical on purpose: this value is carried through, never recomputed, so anything but
-    // an exact match means a conversion crept into the path.
+    // Within `f64::EPSILON`, which at `0.5` admits one ulp at most: this value is carried through,
+    // never recomputed, so any larger drift means a conversion crept into the path.
     assert!(
         (synced.politeness.rps - careful.rps).abs() < f64::EPSILON,
         "rate limit survives: {} != {}",

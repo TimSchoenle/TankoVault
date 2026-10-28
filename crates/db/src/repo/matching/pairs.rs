@@ -310,10 +310,11 @@ pub async fn series_match_facts<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Returns the trigram similarity of each given pair, on the same rule [`find_candidates`] uses.
+/// Returns the trigram similarity of each given pair.
 ///
 /// Canonical against canonical, and each side's alternative titles against the other's canonical
-/// title, taking the best of the three.
+/// title, taking the best of the three. Source listing titles are not compared, so a pair
+/// [`find_candidates`] scored `1` on a compact-key listing-title match can score lower here.
 ///
 /// [`find_candidates`]: super::find_candidates
 ///

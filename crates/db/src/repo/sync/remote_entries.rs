@@ -36,7 +36,7 @@ pub struct FetchedRemoteEntry {
 /// twice, and an untrusted provider list can repeat an `external_id`.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an empty `entries` is `Ok(())` with no round trip.
 pub async fn upsert_remote_entries<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,

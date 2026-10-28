@@ -120,7 +120,7 @@ pub async fn create<'e, E: PgExecutor<'e>>(exec: E, new: NewProvider) -> DbResul
 /// Lists all providers, most recently updated first.
 ///
 /// # Errors
-/// `Sqlx` only.
+/// `Sqlx` only; an empty table is `Ok(vec![])`.
 pub async fn list<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<Provider>> {
     let rows = sqlx::query_as!(
         ProviderRow,
@@ -410,7 +410,7 @@ pub async fn list_public<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<PublicP
 /// Stamp the completion time of a full scan.
 ///
 /// # Errors
-/// `Sqlx` only.
+/// `Sqlx` only; a provider deleted mid-scan updates nothing and still returns `Ok(())`.
 pub async fn mark_full_scanned<'e, E: PgExecutor<'e>>(exec: E, id: ProviderId) -> DbResult<()> {
     sqlx::query!(
         "UPDATE providers SET last_full_scan_at = now(), updated_at = now() WHERE id = $1",

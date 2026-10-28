@@ -89,7 +89,7 @@ impl From<Row> for CredentialRecord {
 /// Returns every credential of one purpose registered to a user, newest first.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only.
+/// [`DbError::Sqlx`] only; none registered is an empty `Vec`, not [`DbError::NotFound`].
 pub async fn list_for_user<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -137,7 +137,7 @@ pub async fn has_security_key<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -
 /// second factor, or a single touch clears both legs.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only.
+/// [`DbError::Sqlx`] only; none registered is `Ok(vec![])`.
 pub async fn credential_ids_for_user<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -159,7 +159,7 @@ pub async fn credential_ids_for_user<'e, E: PgExecutor<'e>>(
 /// on its own. An unknown id, or one of the other purpose, is `None`.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only.
+/// [`DbError::Sqlx`] only; an unknown id, or one of the other purpose, is `Ok(None)`.
 pub async fn find_by_credential_id<'e, E: PgExecutor<'e>>(
     exec: E,
     credential_id: &[u8],
@@ -226,7 +226,7 @@ pub async fn insert<'e, E: PgExecutor<'e>>(
 /// the assertion already succeeded.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only.
+/// [`DbError::Sqlx`] only; a deleted credential id is `Ok(())`.
 pub async fn record_use<'e, E: PgExecutor<'e>>(
     exec: E,
     credential_id: &[u8],
@@ -247,7 +247,7 @@ pub async fn record_use<'e, E: PgExecutor<'e>>(
 /// another purpose, changes `0`, which prevents probing other users' key ids.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only.
+/// [`DbError::Sqlx`] only; a foreign id is `Ok(0)`, not [`DbError::NotFound`].
 pub async fn rename<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -274,7 +274,7 @@ pub async fn rename<'e, E: PgExecutor<'e>>(
 /// passkey" must not be able to remove the security key that gates passkey enrolment.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only.
+/// [`DbError::Sqlx`] only; see [`rename`] for why a foreign id is `Ok(0)`.
 pub async fn delete<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -377,7 +377,7 @@ pub async fn insert_ceremony<'e, E: PgExecutor<'e>>(
 /// would let a client probe ceremony ids.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only.
+/// [`DbError::Sqlx`] only; unknown, consumed, expired or wrong-`kind` all collapse to `Ok(None)`.
 pub async fn take_ceremony<'e, E: PgExecutor<'e>>(
     exec: E,
     id: Uuid,
@@ -408,7 +408,7 @@ pub async fn take_ceremony<'e, E: PgExecutor<'e>>(
 /// removed. Reclaims space only; [`take_ceremony`] already filters on expiry.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only.
+/// [`DbError::Sqlx`] only; nothing to delete is `Ok(0)`.
 pub async fn prune_expired_ceremonies<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<u64> {
     let result = sqlx::query!("DELETE FROM webauthn_ceremonies WHERE expires_at <= now()")
         .execute(exec)

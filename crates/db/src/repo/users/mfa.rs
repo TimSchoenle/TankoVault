@@ -32,7 +32,7 @@ pub struct TotpEnrolment {
 /// Reads the caller's TOTP enrolment, confirmed or not.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; no enrolment is `Ok(None)`.
 pub async fn get_totp<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -126,7 +126,7 @@ pub async fn advance_totp_step<'e, E: PgExecutor<'e>>(
 /// Removes the caller's TOTP enrolment. Returns rows removed.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; no enrolment is `Ok(0)`.
 pub async fn delete_totp<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<u64> {
     let result = sqlx::query!(
         "DELETE FROM user_totp WHERE user_id = $1",
@@ -205,7 +205,7 @@ pub async fn replace_recovery_codes(
 /// longer holds. Returns `true` when a code was consumed.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; a wrong or already-used code is `Ok(false)`.
 pub async fn consume_recovery_code<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -415,7 +415,8 @@ pub async fn insert_step_up<'e, E: PgExecutor<'e>>(
 /// Unknown, expired, revoked or past its absolute lifetime is `None`.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; unknown, expired, revoked or past its absolute lifetime is
+/// `Ok(None)`.
 pub async fn renew_step_up<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -460,7 +461,7 @@ pub async fn renew_step_up<'e, E: PgExecutor<'e>>(
 /// outliving the credential that earned it is an elevation the account's owner cannot end.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; nothing live is `Ok(0)`.
 pub async fn revoke_step_ups<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<u64> {
     let result = sqlx::query!(
         "UPDATE step_up_grants SET revoked_at = now() \

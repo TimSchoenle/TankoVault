@@ -82,8 +82,9 @@ impl From<ChapterRow> for Chapter {
 ///
 /// A chapter whose number is outside the storable range is **skipped**, not an error: the worker
 /// already drops those (`drop_unstorable`), and one reaching here must not fail the whole
-/// per-source transaction. An empty result means no input, a converged rescan, or every row
-/// skipped.
+/// per-source transaction. The result holds only newly inserted chapters, so it is empty whenever
+/// none was inserted: no input, a converged rescan, a batch that only updated existing chapters,
+/// or every row skipped.
 ///
 /// The `WHERE` on the `DO UPDATE` is required: without it a converged rescan, where every value
 /// is identical, still writes a new version of every row. On 1.2 M rows one no-op rescan grew
@@ -94,7 +95,7 @@ impl From<ChapterRow> for Chapter {
 /// One bad chapter fails the whole batch.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an empty `Vec` means no chapter was newly inserted.
 pub async fn upsert_chapters<'e, E: PgExecutor<'e>>(
     exec: E,
     source_id: SeriesSourceId,
@@ -177,7 +178,8 @@ pub async fn upsert_chapters<'e, E: PgExecutor<'e>>(
 /// chapter 0 existing.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; no chapters or unknown source is `Ok(None)`, never
+/// `Ok(Some(0.0))`.
 pub async fn max_chapter_number<'e, E: PgExecutor<'e>>(
     exec: E,
     source_id: SeriesSourceId,
@@ -199,7 +201,7 @@ pub async fn max_chapter_number<'e, E: PgExecutor<'e>>(
 /// is `0`, and the count saturates at `i32::MAX`.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; no chapters or unknown source is `Ok(0)`.
 pub async fn count_full_chapters<'e, E: PgExecutor<'e>>(
     exec: E,
     source_id: SeriesSourceId,
@@ -217,7 +219,7 @@ pub async fn count_full_chapters<'e, E: PgExecutor<'e>>(
 /// Lists chapters of a source, newest first (resolved to absolute links by the caller).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; unknown source or a not-yet-scanned stub is the same empty `Vec`.
 pub async fn list_chapters<'e, E: PgExecutor<'e>>(
     exec: E,
     source_id: SeriesSourceId,
@@ -244,7 +246,7 @@ pub async fn list_chapters<'e, E: PgExecutor<'e>>(
 /// as zero.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; a provider with no chapters has no row, not a row of `0`.
 pub async fn count_full_chapters_by_provider<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -316,7 +318,7 @@ pub async fn count_full_chapters_across<'e, E: PgExecutor<'e>>(
 /// missing date is not a date in the past.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; empty or unknown ids are the same empty `Vec`.
 pub async fn list_chapters_across<'e, E: PgExecutor<'e>>(
     exec: E,
     source_ids: &[SeriesSourceId],
@@ -361,7 +363,8 @@ pub struct SeriesChapterStats {
 /// whose sources hold no chapters is absent and a caller treats a missing key as zero.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; a series whose sources hold no chapters is absent from the map
+/// instead of present as zero.
 pub async fn chapter_stats_for_series<'e, E: PgExecutor<'e>>(
     exec: E,
     series_ids: &[SeriesId],

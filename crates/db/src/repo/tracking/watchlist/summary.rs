@@ -32,7 +32,8 @@ pub struct WatchlistSummary {
 /// sum rides along in the same scan.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; a user tracking nothing is a zeroed summary, not
+/// [`crate::DbError::NotFound`].
 pub async fn watchlist_summary<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,

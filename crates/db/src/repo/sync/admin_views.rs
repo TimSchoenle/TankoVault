@@ -42,13 +42,13 @@ pub struct AdminAccountRow {
     pub created_at: OffsetDateTime,
 }
 
-/// Returns all linked external accounts across every user, newest-error-first then most-recently
-/// synced.
+/// Returns all linked external accounts across every user: those with an error first, then by
+/// most recent sync.
 ///
 /// Erased users are inner-joined out, not shown blank.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; nothing linked is an empty `Vec`.
 pub async fn admin_list_accounts<'e, E: PgExecutor<'e>>(
     exec: E,
     limit: i64,
@@ -92,7 +92,7 @@ pub struct AdminMappingRow {
 /// `limit` is unvalidated; the caller owns the bound.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; nothing mapped is an empty `Vec`.
 pub async fn admin_list_mappings<'e, E: PgExecutor<'e>>(
     exec: E,
     limit: i64,
@@ -114,7 +114,7 @@ pub async fn admin_list_mappings<'e, E: PgExecutor<'e>>(
 /// Returns every external mapping recorded for one canonical series (one row per provider).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; unknown or unmapped series are both an empty `Vec`.
 pub async fn admin_list_mappings_for_series<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -151,7 +151,7 @@ pub struct UnmappedSeriesRow {
 /// The `len() > 2` guard is on the wrapped `%…%` pattern, so it rejects only an empty query.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; empty is the assign queue's goal state, not a failure.
 pub async fn admin_list_unmapped<'e, E: PgExecutor<'e>>(
     exec: E,
     provider: &str,
@@ -211,7 +211,7 @@ pub struct RemoteEntryRow {
 /// view of [`admin_list_unmapped`]. `query` behaves identically.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; nothing unmatched is an empty `Vec`.
 pub async fn admin_list_unmatched_remote<'e, E: PgExecutor<'e>>(
     exec: E,
     provider: &str,
@@ -259,7 +259,7 @@ pub struct RemoteEntrySnapshot {
 /// status and progress.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; no snapshot yet is `Ok(None)`.
 pub async fn get_remote_entry<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -299,14 +299,14 @@ pub struct SeriesCandidateRow {
     pub similarity: f32,
 }
 
-/// Returns the trigram-similar local series for a remote entry's `normalized` title, richest
-/// first.
+/// Returns the trigram-similar local series for a remote entry's `normalized` title, highest
+/// similarity first.
 ///
 /// Mirrors [`crate::repo::matching::find_candidates`], adding the display title and source count.
 /// With no matches, the console offers manual assignment.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; no matches is an empty `Vec`.
 pub async fn suggest_series_candidates<'e, E: PgExecutor<'e>>(
     exec: E,
     normalized: &str,
@@ -352,7 +352,8 @@ pub async fn suggest_series_candidates<'e, E: PgExecutor<'e>>(
 /// operator reaches this through the queue the entry populates.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an entry not loaded by any pull matches nothing and is silently
+/// `Ok(())`.
 pub async fn mark_remote_entry_matched<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,

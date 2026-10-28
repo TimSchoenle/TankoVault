@@ -14,7 +14,8 @@ use uuid::Uuid;
 /// An unregistered address is `None`, which avoids leaking account existence.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an unregistered address is `Ok(None)`, not
+/// [`crate::DbError::NotFound`].
 pub async fn find_by_email_with_verification<'e, E: PgExecutor<'e>>(
     exec: E,
     email: &str,
@@ -95,7 +96,7 @@ pub async fn insert_email_verification<'e, E: PgExecutor<'e>>(
 /// Expiry and use are record fields for the caller to check.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an unknown token is `Ok(None)`.
 pub async fn find_email_verification<'e, E: PgExecutor<'e>>(
     exec: E,
     token_hash: &str,
@@ -128,7 +129,7 @@ pub async fn find_email_verification<'e, E: PgExecutor<'e>>(
 /// `0` means another request won the race.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; losing the race is `Ok(0)`, not an error.
 pub async fn consume_email_verification<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) -> DbResult<u64> {
     let result = sqlx::query!(
         "UPDATE email_verification_tokens SET used_at = now() WHERE id = $1 AND used_at IS NULL",
@@ -143,7 +144,7 @@ pub async fn consume_email_verification<'e, E: PgExecutor<'e>>(exec: E, id: Uuid
 /// untouched so the "verified since" instant stays stable.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an unknown `user_id` updates nothing and is still `Ok(())`.
 pub async fn mark_email_verified<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<()> {
     sqlx::query!(
         "UPDATE users SET email_verified_at = COALESCE(email_verified_at, now()) WHERE id = $1",
@@ -160,7 +161,7 @@ pub async fn mark_email_verified<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId
 /// An unknown `user_id` is `false`, the safe default for a gate.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an unknown `user_id` is `Ok(false)` (safe default for a gate).
 pub async fn is_email_verified<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<bool> {
     let verified = sqlx::query_scalar!(
         "SELECT (email_verified_at IS NOT NULL) AS \"verified!\" FROM users WHERE id = $1",

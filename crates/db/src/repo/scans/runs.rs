@@ -42,8 +42,8 @@ impl From<RunRow> for ScanRun {
 /// A `provider_id` of `None` means all providers.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only, including the foreign-key violation of an unknown
-/// `provider_id`.
+/// [`crate::DbError::Sqlx`] only, including the foreign-key violation of an unknown `provider_id`
+/// (a 500, not [`crate::DbError::NotFound`]).
 pub async fn create_run<'e, E: PgExecutor<'e>>(
     exec: E,
     provider_id: Option<ProviderId>,
@@ -132,7 +132,8 @@ impl From<ListingRow> for RunListing {
 /// Lists recent runs, for the console overview and the live push.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; a deployment that has never scanned is an empty `Vec`, not
+/// [`crate::DbError::NotFound`].
 pub async fn list_recent_runs<'e, E: PgExecutor<'e>>(
     exec: E,
     limit: i64,
@@ -214,7 +215,7 @@ pub struct RunPage {
 /// `total` is read off the first row, so an offset past the end reports `0`.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; a filter matching nothing is an empty page with `total: 0`.
 pub async fn list_runs_filtered<'e, E: PgExecutor<'e>>(
     exec: E,
     filter: &RunFilter<'_>,
@@ -323,7 +324,8 @@ pub(super) const FAILURE_STREAK_WINDOW: i64 = 32;
 /// time a run was queued, which is every sweep.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; a provider with no history is a zero streak, not
+/// [`crate::DbError::NotFound`].
 pub async fn failure_streak<'e, E: PgExecutor<'e>>(
     exec: E,
     provider_id: ProviderId,
@@ -376,7 +378,8 @@ pub async fn failure_streak<'e, E: PgExecutor<'e>>(
 /// `None` is the caller's cue to plan.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; no in-flight run is `Ok(None)`, never
+/// [`crate::DbError::NotFound`].
 pub async fn in_flight_run<'e, E: PgExecutor<'e>>(
     exec: E,
     provider_id: ProviderId,
@@ -412,7 +415,8 @@ pub async fn in_flight_run<'e, E: PgExecutor<'e>>(
 /// plan cannot reset a run's duration.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an unknown `id` matches nothing and is still `Ok(())`, not
+/// [`crate::DbError::NotFound`].
 pub async fn start_run<'e, E: PgExecutor<'e>>(exec: E, id: ScanRunId) -> DbResult<()> {
     sqlx::query!(
         "UPDATE scan_runs SET state = 'running', started_at = COALESCE(started_at, now()) \
@@ -432,7 +436,7 @@ pub async fn start_run<'e, E: PgExecutor<'e>>(exec: E, id: ScanRunId) -> DbResul
 /// terminal event must be emitted. An unknown `id` writes nothing.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an unknown `id` is `Ok(())` with nothing written.
 pub async fn finish_run<'e, E: PgExecutor<'e>>(
     exec: E,
     id: ScanRunId,
@@ -463,7 +467,8 @@ pub async fn finish_run<'e, E: PgExecutor<'e>>(
 /// leaves a completed run in `running` forever with nothing to retry it.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; `Ok(None)` whenever this call did not perform the transition,
+/// never [`crate::DbError::NotFound`].
 pub async fn finalize_if_complete<'e, E: PgExecutor<'e>>(
     exec: E,
     id: ScanRunId,
@@ -496,7 +501,8 @@ pub async fn finalize_if_complete<'e, E: PgExecutor<'e>>(
 /// event.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an unknown `id` is `Ok(())` with nothing written, not
+/// [`crate::DbError::NotFound`].
 pub async fn add_total_tasks<'e, E: PgExecutor<'e>>(
     exec: E,
     id: ScanRunId,

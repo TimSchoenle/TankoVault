@@ -29,7 +29,7 @@ pub struct ReaderInteraction {
 /// from a mixture of two policies.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; a reader tracking nothing gets an empty `Vec`.
 pub async fn reader_interactions<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,

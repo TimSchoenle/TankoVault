@@ -19,7 +19,7 @@ pub struct SeriesListItem {
 /// Query the browse list with keyset pagination on `(created_at, id)`.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; no match is an empty `Vec`, not [`crate::DbError::NotFound`].
 pub async fn list_series<'e, E: PgExecutor<'e>>(
     exec: E,
     query: Option<&str>,
@@ -857,7 +857,7 @@ pub async fn verify_projection(
 /// when none are recorded.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; unknown id or no synonyms is the same empty `Vec`.
 pub async fn list_series_titles<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -874,7 +874,7 @@ pub async fn list_series_titles<'e, E: PgExecutor<'e>>(
 /// Author/artist credits attached to a series, alphabetically (mirrors [`list_series_tags`]).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; unknown id or no credits is the same empty `Vec`.
 pub async fn list_series_authors<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -906,7 +906,7 @@ pub async fn list_series_authors<'e, E: PgExecutor<'e>>(
 /// Tags attached to a series, alphabetically (`docs/ARCHITECTURE.md` §9.2 enrichment).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; unknown id or untagged is the same empty `Vec`.
 pub async fn list_series_tags<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -942,7 +942,8 @@ pub async fn list_series_tags<'e, E: PgExecutor<'e>>(
 /// does not link the facet. An untagged series is absent from the map.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an untagged series is absent from the map instead of present as
+/// an empty `Vec`.
 pub async fn tags_for_series<'e, E: PgExecutor<'e>>(
     exec: E,
     series_ids: &[SeriesId],
@@ -976,7 +977,7 @@ pub async fn tags_for_series<'e, E: PgExecutor<'e>>(
 /// A caller must not default an error to empty, which reads as "no tags".
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; must not be defaulted to empty.
 pub async fn list_tags<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<tankovault_domain::Tag>> {
     #[derive(FromRow)]
     struct Row {
@@ -1013,7 +1014,7 @@ pub struct TagFacet {
 /// error to empty, which reads as "no tags".
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; must not be defaulted to empty.
 pub async fn list_tag_facets<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<TagFacet>> {
     #[derive(FromRow)]
     struct Row {

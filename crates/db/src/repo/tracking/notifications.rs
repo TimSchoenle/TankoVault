@@ -41,7 +41,8 @@ pub struct NotificationContext {
 /// without the decoration".
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an unknown series or provider slug is `Ok(None)`, which a caller
+/// must treat as "write the notification without the decoration", not as a failure.
 pub async fn notification_context<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -161,7 +162,7 @@ pub struct NotificationPage {
 /// need.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an empty inbox is an empty `Vec` and two zeroes.
 pub async fn notifications_page(
     pool: &sqlx::PgPool,
     user_id: UserId,
@@ -250,7 +251,7 @@ async fn notifications_totals<'e, E: PgExecutor<'e>>(
 /// unread rows are absent, so callers treat a miss as `0`.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an empty `user_ids` is an empty map.
 pub async fn notifications_unread_counts<'e, E: PgExecutor<'e>>(
     exec: E,
     user_ids: &[UserId],
@@ -279,7 +280,7 @@ pub async fn notifications_unread_counts<'e, E: PgExecutor<'e>>(
 /// the page it loaded, so "mark all read" driven from ids silently leaves the rest unread.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an already-empty inbox is `0`.
 pub async fn notifications_mark_all_read<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -296,7 +297,7 @@ pub async fn notifications_mark_all_read<'e, E: PgExecutor<'e>>(
 /// Marks the given notifications read (scoped to the owning user).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; ids not owned, unknown, or already read all contribute `0`.
 pub async fn notifications_mark_read<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -337,7 +338,7 @@ pub struct Watcher {
 /// claiming the dedup slot.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; nobody watching is an empty `Vec`.
 pub async fn watchers_for_series<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -386,7 +387,8 @@ pub async fn watchers_for_series<'e, E: PgExecutor<'e>>(
 /// announce to no one.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; nobody opted in is an empty `Vec`, which is the common case and
+/// means "announce this to no one".
 pub async fn early_access_opted_in<'e, E: PgExecutor<'e>>(
     exec: E,
     user_ids: &[UserId],
@@ -417,7 +419,8 @@ pub async fn early_access_opted_in<'e, E: PgExecutor<'e>>(
 /// redelivery.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an already-claimed watcher is absent from the result (not
+/// [`crate::DbError::Conflict`]).
 pub async fn dedup_claim_many<'e, E: PgExecutor<'e>>(
     exec: E,
     user_ids: &[UserId],

@@ -14,7 +14,7 @@ use uuid::Uuid;
 /// were due.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; nothing due is `Ok(0)`.
 pub async fn sweep_unlocks(pool: &PgPool, limit: i64) -> DbResult<u64> {
     let due = sqlx::query!(
         "SELECT user_id, series_id FROM watchlist_unread \

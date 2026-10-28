@@ -48,6 +48,7 @@ impl From<TaskRow> for ScanTask {
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only, including the foreign-key violation of an unknown `run_id`.
+/// `Ok(None)` means "already present", never [`crate::DbError::Conflict`].
 pub async fn create_task<'e, E: PgExecutor<'e>>(
     exec: E,
     run_id: ScanRunId,
@@ -80,7 +81,8 @@ pub async fn create_task<'e, E: PgExecutor<'e>>(
 /// empty `targets` issues no statement.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only, including the foreign-key violation of an unknown `run_id`.
+/// [`crate::DbError::Sqlx`] only, including the foreign-key violation of an unknown `run_id`. An
+/// empty `targets` returns an empty `Vec` without issuing a statement.
 pub async fn create_tasks<'e, E: PgExecutor<'e>>(
     exec: E,
     run_id: ScanRunId,
@@ -128,7 +130,8 @@ pub async fn create_tasks<'e, E: PgExecutor<'e>>(
 /// stage a previous delivery left, so a redelivered task never shows its abandoned progress.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; `Ok(false)` collapses three situations the caller responds to
+/// identically by not doing the work.
 pub async fn claim_task<'e, E: PgExecutor<'e>>(
     exec: E,
     task_id: ScanTaskId,
@@ -159,7 +162,7 @@ pub async fn claim_task<'e, E: PgExecutor<'e>>(
 /// worker, or an unknown `run_id`. The caller polls and must not read `None` as a finished run.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; `Ok(None)` means the run has no claimable task *right now*.
 pub async fn claim_next_queued<'e, E: PgExecutor<'e>>(
     exec: E,
     run_id: ScanRunId,
@@ -193,7 +196,8 @@ pub async fn claim_next_queued<'e, E: PgExecutor<'e>>(
 /// and a caller must never fail a scan over it.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an unknown or already-settled task is `Ok(())` with nothing
+/// written.
 pub async fn set_task_stage<'e, E: PgExecutor<'e>>(
     exec: E,
     task_id: ScanTaskId,
@@ -253,7 +257,8 @@ impl TaskOutcome<'_> {
 /// and only a redelivery recovers it, which needs the worker to decline the ack.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an unknown task, and a task that has already settled, are both
+/// `Ok(())` with neither the row nor the counter touched.
 pub async fn complete_task<'e, E: PgExecutor<'e>>(
     exec: E,
     task_id: ScanTaskId,
@@ -355,7 +360,7 @@ pub struct FailedTaskView {
 /// with `provider_slug: None`.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; no failures is an empty `Vec`, which is the feed's goal state.
 pub async fn failed_tasks_filtered<'e, E: PgExecutor<'e>>(
     exec: E,
     provider: Option<&str>,
@@ -411,7 +416,7 @@ pub struct FailureGroup {
 /// is wrong", not "what happened most recently".
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; no failures is an empty `Vec`.
 pub async fn failure_groups<'e, E: PgExecutor<'e>>(
     exec: E,
     provider: Option<&str>,
@@ -502,7 +507,7 @@ pub struct FailureSelector<'a> {
 /// dismissing noise must not be able to erase the record of an outage.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; a selector matching nothing is `Ok(0)`.
 pub async fn clear_failures<'e, E: PgExecutor<'e>>(
     exec: E,
     selector: &FailureSelector<'_>,
@@ -537,7 +542,8 @@ pub async fn clear_failures<'e, E: PgExecutor<'e>>(
 /// re-scan can finalise its run. The notes on [`complete_task`] apply unchanged.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; the silent-no-op and stranded-run notes on [`complete_task`]
+/// apply unchanged.
 pub async fn skip_task<'e, E: PgExecutor<'e>>(exec: E, task_id: ScanTaskId) -> DbResult<()> {
     sqlx::query!(
         "WITH skipped AS ( \

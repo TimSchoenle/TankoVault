@@ -13,7 +13,7 @@ use uuid::Uuid;
 /// respond identically whether or not the address is registered.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only.
+/// [`DbError::Sqlx`] only; an unregistered address is `Ok(None)`, not [`DbError::NotFound`].
 pub async fn find_by_email<'e, E: PgExecutor<'e>>(exec: E, email: &str) -> DbResult<Option<User>> {
     let row = sqlx::query_as!(
         UserRow,
@@ -69,7 +69,7 @@ pub async fn insert_password_reset<'e, E: PgExecutor<'e>>(
 /// Expiry and use are record fields for the caller to check.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only.
+/// [`DbError::Sqlx`] only; an unknown token is `Ok(None)`.
 pub async fn find_password_reset<'e, E: PgExecutor<'e>>(
     exec: E,
     token_hash: &str,
@@ -97,16 +97,15 @@ pub async fn find_password_reset<'e, E: PgExecutor<'e>>(
     }))
 }
 
-/// Atomically mark a reset token consumed (single-use). `0` rows means already used or expired.
+/// Marks a reset token consumed, atomically, so it is single-use.
 ///
 /// The expiry is re-checked here, not only in the caller's lookup: the handler hashes the new
 /// password between the two, and a token must not be honoured past its expiry for as long as
 /// that hash waited.
 ///
-/// `0` means another request won the race.
-///
 /// # Errors
-/// [`DbError::Sqlx`] only.
+/// [`DbError::Sqlx`] only; an unknown, already used or expired token is `Ok(0)`, whether or not
+/// a concurrent request consumed it.
 pub async fn consume_password_reset<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) -> DbResult<u64> {
     let result = sqlx::query!(
         "UPDATE password_reset_tokens SET used_at = now() \

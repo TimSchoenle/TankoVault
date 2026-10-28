@@ -33,7 +33,8 @@ pub struct NewConflict<'a> {
 /// An already-queued conflict keeps the first detection's values.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an already-queued conflict is `Ok(())`, not
+/// [`crate::DbError::Conflict`].
 pub async fn insert_conflict<'e, E: PgExecutor<'e>>(
     exec: E,
     conflict: &NewConflict<'_>,
@@ -91,7 +92,8 @@ pub struct ConflictRow {
 /// Returns every pending (unresolved) conflict for a user, across all providers, newest first.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; nothing queued is an empty `Vec`, never
+/// [`crate::DbError::NotFound`].
 pub async fn list_pending_conflicts<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -131,7 +133,7 @@ pub struct ConflictDetail {
 /// client probe other users' conflict ids.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; unknown, not-yours and already-resolved are all `Ok(None)`.
 pub async fn get_pending_conflict<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -157,7 +159,7 @@ pub async fn get_pending_conflict<'e, E: PgExecutor<'e>>(
 /// an already-applied resolution is silently re-offered.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; `Ok(false)` covers the same cases as [`get_pending_conflict`].
 pub async fn resolve_conflict<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,

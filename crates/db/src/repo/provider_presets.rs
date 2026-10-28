@@ -101,7 +101,7 @@ pub async fn retire_missing<'e, E: PgExecutor<'e>>(
 /// Returns the whole catalogue, by slug.
 ///
 /// # Errors
-/// `Sqlx` only.
+/// `Sqlx` only; a deployment whose install job has not run since the upgrade is `Ok(vec![])`.
 pub async fn list<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<PresetDefinition>> {
     let rows = sqlx::query_as!(
         PresetRow,

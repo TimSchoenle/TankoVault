@@ -52,7 +52,8 @@ pub async fn insert_refresh<'e, E: PgExecutor<'e>>(
 /// Finds a refresh token by its hash, regardless of revocation, for reuse detection.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; unknown, revoked and expired all return the same `Ok`/`None`
+/// shape.
 pub async fn find_refresh<'e, E: PgExecutor<'e>>(
     exec: E,
     token_hash: &str,
@@ -89,7 +90,7 @@ pub async fn find_refresh<'e, E: PgExecutor<'e>>(
 /// transaction that inserts the successor, so the loser sees that successor once it unblocks.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; unknown/already-revoked is `Ok(false)`.
 pub async fn revoke_token<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) -> DbResult<bool> {
     let done = sqlx::query!(
         "UPDATE refresh_tokens SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL",

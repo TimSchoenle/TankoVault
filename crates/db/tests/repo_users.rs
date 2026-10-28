@@ -41,7 +41,7 @@ fn a_hash(name: &str) -> String {
     format!("$argon2id$placeholder${name}")
 }
 
-/// Issue a refresh token and return the row id, which `insert_refresh` does not hand back.
+/// Issues a refresh token and returns the row id, which `insert_refresh` does not hand back.
 async fn a_refresh(db: &TestDb, user: UserId, family: Uuid, token_hash: &str) -> Uuid {
     users::insert_refresh(
         &db.pool,
@@ -67,7 +67,7 @@ async fn revoked_at(db: &TestDb, token_hash: &str) -> Option<OffsetDateTime> {
         .revoked_at
 }
 
-/// Read `email_verified_at` directly: the repository only ever exposes it as a boolean, and
+/// Reads `email_verified_at` directly: the repository only ever exposes it as a boolean, and
 /// idempotence is a claim about the *instant*, not about the flag.
 async fn email_verified_at(db: &TestDb, user: UserId) -> Option<OffsetDateTime> {
     sqlx::query_scalar("SELECT email_verified_at FROM users WHERE id = $1")

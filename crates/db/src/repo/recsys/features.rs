@@ -28,7 +28,8 @@ pub struct SeriesFactsRow {
 /// An exhausted walk is empty, the caller's termination signal.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an exhausted walk is an empty `Vec`, which is the caller's
+/// termination signal and must not be conflated with a failure.
 pub async fn list_series_facts<'e, E: PgExecutor<'e>>(
     exec: E,
     after: Option<SeriesId>,

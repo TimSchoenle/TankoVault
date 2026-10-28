@@ -154,7 +154,7 @@ fn resolve_all<'a>(
 /// scan looks the series up by. A `series_id` erased mid-transaction is a no-op.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; a `series_id` erased mid-transaction is a no-op `Ok(())`.
 pub async fn merge_metadata(
     conn: &mut sqlx::PgConnection,
     series_id: SeriesId,

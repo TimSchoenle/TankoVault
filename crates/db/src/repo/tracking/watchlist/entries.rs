@@ -14,7 +14,8 @@ use uuid::Uuid;
 /// which is safe only because callers resolve the series first.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; re-adding a tracked series is an update, not
+/// [`crate::DbError::Conflict`].
 pub async fn watchlist_upsert<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -135,7 +136,8 @@ pub async fn watchlist_set_pinned_source(
 /// there.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; removing something the user was not tracking is `Ok(())`, not
+/// [`crate::DbError::NotFound`].
 pub async fn watchlist_remove<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -169,7 +171,8 @@ pub const BULK_ID_LIMIT: usize = 200;
 /// normalise their statuses.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an empty `series_ids`, and a set of ids the user tracks none of,
+/// are both an empty `Vec` instead of [`crate::DbError::NotFound`].
 pub async fn watchlist_bulk_update<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -200,7 +203,8 @@ pub async fn watchlist_bulk_update<'e, E: PgExecutor<'e>>(
 /// are gone, two were not yours" instead of claiming a success it did not have.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; ids the user was not tracking are absent from the result instead
+/// of [`crate::DbError::NotFound`].
 pub async fn watchlist_bulk_remove<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -221,7 +225,7 @@ pub async fn watchlist_bulk_remove<'e, E: PgExecutor<'e>>(
 /// Lists a user's watchlist entries.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an empty watchlist is an empty `Vec`.
 pub async fn watchlist_list<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -263,7 +267,8 @@ pub async fn watchlist_list<'e, E: PgExecutor<'e>>(
 /// An existing entry is updated, so a pull can run repeatedly.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an existing entry is updated, not raised as
+/// [`crate::DbError::Conflict`], so a pull can run repeatedly.
 pub async fn watchlist_set_status<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -291,7 +296,8 @@ pub async fn watchlist_set_status<'e, E: PgExecutor<'e>>(
 /// The targeted push reads `None` as nothing local to send.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an untracked series is `Ok(None)`, which the targeted push reads
+/// as "nothing local to send" instead of as a failure.
 pub async fn watchlist_status_get<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -313,7 +319,9 @@ pub async fn watchlist_status_get<'e, E: PgExecutor<'e>>(
 /// Untracked series are **absent**, so a miss means "not tracked", never "status unknown".
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; untracked series are **absent** from the map instead of present
+/// with a default, so a lookup miss must mean "not tracked" to the caller and never "status
+/// unknown".
 pub async fn watchlist_statuses_for_user<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,

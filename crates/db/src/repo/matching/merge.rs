@@ -14,9 +14,11 @@ use uuid::Uuid;
 /// child-table move is `ON CONFLICT`, so a retry of a partially applied merge is safe, and read
 /// progress keeps whichever side had read further.
 ///
-/// Returns the [`MergeUndo`] journal, the exact inverse of everything this transaction did. The
-/// caller persists it with [`record_merge_decisions`](super::record_merge_decisions); a merge
-/// whose journal is dropped cannot be reverted.
+/// Returns the [`MergeUndo`] journal, the inverse of every row this transaction moved. The
+/// recommender's derived tables are not in it: a revert queues them for recomputation instead of
+/// restoring them. The caller persists it with
+/// [`record_merge_decisions`](super::record_merge_decisions); a merge whose journal is dropped
+/// cannot be reverted.
 ///
 /// # The read-progress merge
 ///
@@ -482,7 +484,7 @@ fn rows_to_json(rows: Vec<Option<serde_json::Value>>) -> serde_json::Value {
 /// lookup, never a walk, since [`merge_series`] path-compresses on write.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an unknown id is `Ok(None)`, not [`crate::DbError::NotFound`].
 pub async fn resolve_merged_series<'e, E: PgExecutor<'e>>(
     exec: E,
     merged_id: SeriesId,

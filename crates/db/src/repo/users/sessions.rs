@@ -27,7 +27,8 @@ pub struct SessionInfo {
 /// Lists a user's active sessions (live refresh tokens), newest first.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; no live session is an empty `Vec`, not
+/// [`crate::DbError::NotFound`].
 pub async fn list_sessions<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -63,7 +64,8 @@ pub async fn list_sessions<'e, E: PgExecutor<'e>>(
 /// revoked. A foreign `session_id` revokes `0`, which prevents probing other users' session ids.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; a foreign `session_id` is `Ok(0)`, not
+/// [`crate::DbError::NotFound`].
 pub async fn revoke_session<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -86,7 +88,7 @@ pub async fn revoke_session<'e, E: PgExecutor<'e>>(
 /// [`revoke_all_for_user`] only in that it reports the count, for an operator-forced sign-out.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; nothing live is `Ok(0)`.
 pub async fn revoke_all_sessions<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<u64> {
     let result = sqlx::query!(
         "UPDATE refresh_tokens SET revoked_at = now() \

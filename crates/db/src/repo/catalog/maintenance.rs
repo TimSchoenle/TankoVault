@@ -11,9 +11,9 @@
 //! no foreign key reaches them from `series`, both are small, and the next scan reuses their
 //! slugs.
 //!
-//! A series' chapter count is `series_sources.chapter_count` throughout, never a count of
-//! `chapters` rows, so a maintenance filter agrees with the number the browse filters and the
-//! series page show.
+//! A series' chapter count here is the sum of `series_sources.chapter_count` over its sources,
+//! never a count of `chapters` rows. The browse filters use the largest single source's count
+//! and the series page counts distinct whole chapters, so the three figures can differ.
 
 use crate::error::DbResult;
 use sqlx::{Connection as _, FromRow, PgConnection, PgExecutor, PgPool};
@@ -140,7 +140,7 @@ impl std::ops::AddAssign for DeletionReport {
 /// a bound sort key would put a `CASE` in the `ORDER BY` that no index can serve.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; a filter matching nothing is `{items: [], total: 0}`.
 pub async fn list_for_maintenance(
     pool: &PgPool,
     filter: &MaintenanceFilter,
@@ -245,7 +245,8 @@ pub async fn list_for_maintenance(
 /// one join. Every column is a scalar subquery, so an empty catalogue yields zeros.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; every column is a scalar subquery, so an empty catalogue yields
+/// zeros instead of [`crate::DbError::NotFound`].
 pub async fn totals<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<CatalogueTotals> {
     let totals = sqlx::query_as!(
         CatalogueTotals,

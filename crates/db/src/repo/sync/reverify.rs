@@ -196,7 +196,7 @@ pub async fn reverify_state<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Reverify
 /// Returns one page of `provider`'s mappings in series-id order, after `after`.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; the end of the list is an empty `Vec`.
 pub async fn list_mappings_after<'e, E: PgExecutor<'e>>(
     exec: E,
     provider: &str,

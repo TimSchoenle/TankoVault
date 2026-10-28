@@ -46,7 +46,7 @@ pub struct Principal {
 /// permissions.
 ///
 /// # Errors
-/// `Sqlx` only.
+/// `Sqlx` only; `Ok(None)` means the account is gone.
 pub async fn resolve<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -113,7 +113,7 @@ pub struct GrantRow {
 /// Lists a user's grants with provenance, newest first.
 ///
 /// # Errors
-/// `Sqlx` only.
+/// `Sqlx` only; unknown user or no grants is `Ok(vec![])`.
 pub async fn list_for_user<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -244,7 +244,7 @@ impl GrantDiff {
 /// Re-granting succeeds, so seeding is safe to re-run.
 ///
 /// # Errors
-/// `Sqlx` only.
+/// `Sqlx` only; re-granting is `Ok(())` (`ON CONFLICT DO NOTHING`), so seeding is safe to re-run.
 pub async fn grant<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -275,7 +275,7 @@ pub async fn grant<'e, E: PgExecutor<'e>>(
 /// guards against.
 ///
 /// # Errors
-/// `Sqlx` only.
+/// `Sqlx` only; `count(*)` always returns a row, so `Ok(0)` means nobody else holds it.
 pub async fn other_active_holders<'e, E: PgExecutor<'e>>(
     exec: E,
     permission: Permission,
@@ -306,7 +306,8 @@ pub async fn other_active_holders<'e, E: PgExecutor<'e>>(
 /// re-running an install job.
 ///
 /// # Errors
-/// `Sqlx` only.
+/// `Sqlx` only; `Ok(false)` means the conditions did not hold and nothing was written, which is the
+/// normal outcome of re-running an install job.
 pub async fn claim_super_user<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<bool> {
     let result = sqlx::query!(
         "INSERT INTO user_permissions (user_id, permission) \
@@ -406,7 +407,7 @@ pub async fn grant_all_to_super_user<'e, E: PgExecutor<'e>>(exec: E) -> DbResult
 /// A user with no grants is absent from the result, so a caller defaults a missing id to `0`.
 ///
 /// # Errors
-/// `Sqlx` only.
+/// `Sqlx` only; users with no grants are absent from the result, not `0`.
 pub async fn counts_for<'e, E: PgExecutor<'e>>(
     exec: E,
     user_ids: &[Uuid],

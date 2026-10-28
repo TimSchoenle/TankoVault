@@ -99,7 +99,7 @@ pub struct Resolution {
 /// Always yields a series id, creating one if nothing matches.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; never [`crate::DbError::NotFound`].
 pub async fn resolve_canonical_series(
     conn: &mut sqlx::PgConnection,
     meta: &SeriesUpsert,
@@ -250,7 +250,7 @@ pub async fn get_series_visible<'e, E: PgExecutor<'e>>(
 /// gate and must not be used as one.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an empty `ids` is an empty set.
 pub async fn adult_gated_many<'e, E: PgExecutor<'e>>(
     exec: E,
     ids: &[SeriesId],
@@ -280,7 +280,7 @@ pub struct SeriesDisplay {
 /// series by id is named in one query. Ids that match no row are absent from the map.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an empty `ids` is an empty map.
 pub async fn series_display_many<'e, E: PgExecutor<'e>>(
     exec: E,
     ids: &[SeriesId],

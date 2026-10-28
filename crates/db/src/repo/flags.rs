@@ -30,7 +30,7 @@ pub struct OverrideRow {
 /// Raw rows, not a resolved map: pairing them with the compiled registry is the caller's job.
 ///
 /// # Errors
-/// `Sqlx` only.
+/// `Sqlx` only; an empty table is `Ok(vec![])`.
 pub async fn list_overrides<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<OverrideRow>> {
     #[derive(FromRow)]
     struct Row {
@@ -99,7 +99,8 @@ pub async fn effective_overrides<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec
 /// A repeat write overwrites; an erased `updated_by` is a foreign-key violation (500).
 ///
 /// # Errors
-/// `Sqlx` only.
+/// `Sqlx` only; a repeat write is not [`crate::DbError::Conflict`], an erased `updated_by` is a
+/// foreign-key violation (500).
 pub async fn set_override<'e, E: PgExecutor<'e>>(
     exec: E,
     feature_key: &str,
@@ -133,7 +134,8 @@ pub async fn set_override<'e, E: PgExecutor<'e>>(
 /// "Nothing to clear" is `false`, deliberately indistinguishable from an unknown `feature_key`.
 ///
 /// # Errors
-/// `Sqlx` only.
+/// `Sqlx` only; "nothing to clear" is `Ok(false)`, deliberately indistinguishable from an unknown
+/// `feature_key`.
 pub async fn clear_override<'e, E: PgExecutor<'e>>(exec: E, feature_key: &str) -> DbResult<bool> {
     let result = sqlx::query!(
         "DELETE FROM feature_flag_overrides WHERE feature_key = $1",

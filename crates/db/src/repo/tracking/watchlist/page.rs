@@ -104,9 +104,10 @@ impl From<CardRow> for WatchlistCard {
 /// disagrees with the feed linking to the same chapters. `repo_tracking`'s differential test
 /// holds them together.
 ///
-/// A series with no progress row has `last_read_number: None` and its full chapter count as
-/// `unread`; one with no chapters has `total_chapters: 0` and `latest_chapter_at: None`, and
-/// bands as [`ReleaseBucket::Earlier`](super::ReleaseBucket::Earlier).
+/// A series with no progress row has `last_read_number: None` and is read from the zero frontier,
+/// so `unread` counts its accessible chapters above chapter 0; one with no chapters has
+/// `total_chapters: 0` and `latest_chapter_at: None`, and bands as
+/// [`ReleaseBucket::Earlier`](super::ReleaseBucket::Earlier).
 ///
 /// # Why three statements
 ///
@@ -121,7 +122,8 @@ impl From<CardRow> for WatchlistCard {
 /// disagree by racing it.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; a user tracking nothing, and a filter matching nothing, are both
+/// an empty page with zeroed counts instead of [`crate::DbError::NotFound`].
 pub async fn watchlist_page(
     pool: &PgPool,
     user_id: UserId,
@@ -374,7 +376,7 @@ async fn fetch_page(
 /// picked by the ranking key, so it is the row `preferred_source_name` names.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; a series with no sources is simply absent from the map.
 async fn fetch_sources(
     pool: &PgPool,
     series_ids: &[Uuid],
@@ -436,7 +438,8 @@ async fn fetch_sources(
 /// miss entries past the first page and render "not tracked" for a tracked series.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an untracked series is `Ok(None)` instead of
+/// [`crate::DbError::NotFound`].
 pub async fn watchlist_card(
     pool: &PgPool,
     user_id: UserId,

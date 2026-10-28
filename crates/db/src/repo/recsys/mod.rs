@@ -1,8 +1,9 @@
 //! Persistence for the recommendation model (`docs/RECOMMENDATIONS.md` §5.2, §6).
 //!
-//! Everything here is *derived*: a rebuild reproduces it from `series` and its link tables. That
-//! makes `generation` enough for a near-atomic swap, and keeps it out of the GDPR export, since it
-//! holds no personal data.
+//! The catalogue model (features, embeddings, priors, build state) is *derived*: a rebuild
+//! reproduces it from `series` and its link tables, and it holds no personal data. The reader
+//! records (affinity, taste profiles, feedback, shelves) are per user and are part of the GDPR
+//! export, through [`crate::repo::privacy::export_user_data`].
 //!
 //! `series_features.weights` holds **term weights**, not the final TF-IDF vector: extraction runs
 //! before the vocabulary is counted, and folding idf in would rewrite every row for a number one

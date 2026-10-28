@@ -105,7 +105,7 @@ pub struct FeedItem {
 /// a higher `chapter_count` would win and link to a paywall.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; empty is never evidence the account is gone.
 pub async fn feed<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -216,7 +216,7 @@ pub struct ContinueCard {
 /// predicate above; "freshest activity" is the newest sighting of a chapter the reader can open.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; nothing left is an empty `Vec`.
 pub async fn continue_reading<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -289,7 +289,7 @@ pub struct MeStats {
 /// `(user_id, series_id)`: one row per series, so no series is counted twice.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; tracking nothing gets zeros, not [`crate::DbError::NotFound`].
 pub async fn me_stats<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<MeStats> {
     let stats = sqlx::query_as!(
         MeStats,

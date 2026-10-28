@@ -25,7 +25,7 @@ pub struct SyncSnapshot {
 /// Fetches the stored three-way-merge snapshot for a mapped series, if any.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; unmapped is `Ok(None)`, never [`crate::DbError::NotFound`].
 pub async fn get_snapshot<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -53,7 +53,7 @@ pub async fn get_snapshot<'e, E: PgExecutor<'e>>(
 /// remote; a never-synced member's empty snapshot is the absence of an ancestor.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an unmapped external id is `Ok(None)`.
 pub async fn get_group_snapshot<'e, E: PgExecutor<'e>>(
     exec: E,
     provider: &str,
@@ -99,7 +99,8 @@ pub struct AgreedSnapshot<'a> {
 /// A missing row matches nothing silently, so reconciliation keeps re-deciding from no ancestor.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; a missing row matches nothing and is silently `Ok(())`, so
+/// reconciliation keeps re-deciding from no ancestor.
 pub async fn record_snapshot<'e, E: PgExecutor<'e>>(
     exec: E,
     agreed: &AgreedSnapshot<'_>,

@@ -50,8 +50,8 @@ fn is_whole(number: f64) -> bool {
 /// Progress on an untracked series is inserted, not refused.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only, including the foreign-key violation of an unknown
-/// `series_id`.
+/// [`crate::DbError::Sqlx`] only, including the foreign-key violation of an unknown `series_id`;
+/// progress on an untracked series is inserted, not [`crate::DbError::NotFound`].
 pub async fn progress_set<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -109,7 +109,9 @@ async fn progress_write<'e, E: PgExecutor<'e>>(
 /// `None` means nothing read yet, which callers read as [`ReadProgress::default`](Default).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; a series with no progress row is `Ok(None)`, which callers read
+/// as "nothing read yet" via [`ReadProgress::default`](Default) instead of as
+/// [`crate::DbError::NotFound`].
 pub async fn progress_get_full<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -144,7 +146,8 @@ pub async fn progress_get_full<'e, E: PgExecutor<'e>>(
 /// fabricated timestamp would let a never-read series outrank the remote.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; no progress row is `Ok(None)`, and the merge must keep that
+/// distinct from progress of `0` with a timestamp.
 pub async fn progress_state<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -175,12 +178,14 @@ pub async fn progress_state<'e, E: PgExecutor<'e>>(
 /// half is "the part cannot corrupt whole-chapter progress"; the second half is what keeps the
 /// frontier self-consistent, and it is what external sync sees (§B.5 pushes the whole frontier).
 ///
-/// Marking a chapter the frontier already covers is a no-op, so success does not mean anything
-/// changed. The read and the write are two statements without a transaction: two concurrent
-/// marks can interleave, and the loser's advance is lost unreported.
+/// Marking a chapter the frontier already covers leaves both frontiers unchanged but still rewrites
+/// the row and its `updated_at`, which [`progress_state`] reads for `NewestWins`. The read and the
+/// write are two statements without a transaction: two concurrent marks can interleave, and the
+/// loser's advance is lost unreported.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; marking a chapter already covered is `Ok(())` with the
+/// frontiers unchanged.
 pub async fn progress_mark_read(
     pool: &sqlx::PgPool,
     user_id: UserId,
@@ -231,8 +236,10 @@ pub async fn progress_mark_read(
 /// Retreating the whole frontier also clears any part frontier: everything after `number` is
 /// unread.
 ///
-/// Un-reading a chapter that was never read is a no-op, and the read-then-write interleaving of
-/// [`progress_mark_read`] applies.
+/// Un-reading a whole chapter sets the whole frontier to the chapter before it whatever the
+/// frontier was, so un-reading an unread chapter can move progress *forward*: at chapter 1 with
+/// chapters 1 to 3 in the catalogue, un-reading 3 sets the frontier to 2. Every call rewrites the
+/// row, and the read-then-write interleaving of [`progress_mark_read`] applies.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -311,7 +318,8 @@ pub async fn progress_mark_unread(
 /// `GREATEST` is evaluated inside the `ON CONFLICT` update against the row it locks.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; ids the user does not track are absent from the result instead of
+/// [`crate::DbError::NotFound`].
 pub async fn progress_bulk_mark_all_read<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -421,7 +429,7 @@ async fn prev_part_below(
 /// sync must not be told the opt-out was saved when nothing was written.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; the precondition above is not enforced *here*.
 pub async fn set_sync_excluded<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -447,7 +455,8 @@ pub async fn set_sync_excluded<'e, E: PgExecutor<'e>>(
 /// series is on the watchlist.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; re-setting an existing override updates it instead of raising
+/// [`crate::DbError::Conflict`].
 pub async fn set_sync_override<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -471,16 +480,16 @@ pub async fn set_sync_override<'e, E: PgExecutor<'e>>(
 
 /// Returns the single choke point every sync path calls before touching a series (design v2 §A.5).
 ///
-/// Precedence: a per-provider override wins outright, then the blanket `sync_excluded` flag,
-/// then included. A series not on the watchlist at all counts as included, since there is
-/// nothing to exclude yet.
+/// Precedence: a per-provider override wins outright, even for a series not on the watchlist,
+/// then the blanket `sync_excluded` flag, then included.
 ///
 /// Callers **must** propagate the error, never default it to `false`: this choke point honours a
 /// user's opt-out, and treating an unavailable database as "included" syncs data they asked to
 /// keep out of a third-party service.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; the `COALESCE` chain always yields a row, so every "not
+/// configured" case is `Ok(false)`.
 pub async fn is_sync_excluded<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -507,13 +516,14 @@ pub async fn is_sync_excluded<'e, E: PgExecutor<'e>>(
 ///
 /// The batched form of [`is_sync_excluded`] for a whole-account reconciliation, with the same
 /// precedence: a per-provider override, then the blanket `watchlist_entries.sync_excluded` flag,
-/// then included. A series absent from the set is included, as is one not on the watchlist.
+/// then included. A series absent from the set is included; an untracked series is in the set
+/// only when its override excludes it.
 ///
 /// Propagate the error: an empty set means nothing is excluded, so a swallowed error pushes every
 /// series the user excluded.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; the same caution as [`is_sync_excluded`] applies with more force.
 pub async fn sync_excluded_series<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -551,7 +561,8 @@ pub async fn sync_excluded_series<'e, E: PgExecutor<'e>>(
 /// [`progress_state`].
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; series with no progress row are **absent** from the map, which
+/// the merge must keep distinct from progress of `0` for the reason given on [`progress_state`].
 pub async fn progress_states_for_user<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,

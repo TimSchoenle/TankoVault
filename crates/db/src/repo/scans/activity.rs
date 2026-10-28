@@ -32,8 +32,8 @@ pub struct ScanSummary {
     pub tasks_done: i64,
     /// Of those, settled as failures.
     pub tasks_failed: i64,
-    /// Failures still in the triage feed, which an operator has left to look at. `tasks_failed`
-    /// counts everything that failed in the window.
+    /// Failures still in the triage feed, which an operator has left to look at, by task
+    /// completion time. `tasks_failed` counts the failures of runs created in the window.
     pub failures_open: i64,
     /// Summed run wall-clock in seconds. A run still in flight counts up to `now()`, which is
     /// what makes throughput derived from this move while a scan is running.
@@ -50,7 +50,8 @@ pub struct ScanSummary {
 /// which matches the failure feed's window. A window matching nothing is a zeroed summary.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; a window matching nothing is a zeroed summary, never
+/// [`crate::DbError::NotFound`].
 pub async fn scan_summary<'e, E: PgExecutor<'e>>(
     exec: E,
     provider: Option<&str>,
@@ -132,7 +133,7 @@ pub struct ProviderScanHealth {
 /// failure history.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; a quiet window is an empty `Vec`.
 pub async fn provider_scan_health<'e, E: PgExecutor<'e>>(
     exec: E,
     since: Option<OffsetDateTime>,
@@ -227,7 +228,7 @@ pub struct RunActivity {
 /// Per-run task activity for every run that has not reached a terminal state.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an idle deployment is an empty `Vec`.
 pub async fn active_run_activity<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<RunActivity>> {
     let rows = sqlx::query_as!(
         RunActivity,
@@ -289,7 +290,7 @@ pub struct TaskEvent {
 /// would need an index on a column written once per task per scan.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an idle deployment is an empty `Vec`.
 pub async fn recent_task_activity<'e, E: PgExecutor<'e>>(
     exec: E,
     limit: i64,

@@ -59,7 +59,7 @@ impl From<EnrichmentRow> for SeriesEnrichmentRow {
 /// to empty.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an exhausted sweep is an empty `Vec`.
 pub async fn list_series_for_enrichment<'e, E: PgExecutor<'e>>(
     exec: E,
     limit: i64,
@@ -117,7 +117,7 @@ pub struct SeriesIdentityTitles {
 /// What an upstream record has to match before it is trusted as this series.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an erased series is `Ok(None)`.
 pub async fn series_identity_titles<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -147,7 +147,7 @@ pub async fn series_identity_titles<'e, E: PgExecutor<'e>>(
 /// erased `series_id` matches nothing.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an erased `series_id` matches nothing and is still `Ok(())`.
 pub async fn mark_metadata_checked<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -307,7 +307,7 @@ pub async fn finish_sweep<'e, E: PgExecutor<'e>>(
 /// `updated_at` alone under at-least-once delivery. An erased `series_id` is a no-op.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an erased `series_id` is a no-op `Ok(())`.
 pub async fn mark_adult_inferred<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -350,13 +350,15 @@ pub struct MetadataEnrichment<'a> {
 ///
 /// The prioritised fields go through [`merge_metadata`], the upstream-only signals are recorded
 /// as given, and titles, tags and authors are added, never replaced. Idempotent, so a retried
-/// batch writes nothing new; an erased `series_id` is a no-op.
+/// batch writes nothing new. An erased `series_id` is a no-op only for a batch with no titles,
+/// tags or authors; adding any of them fails its foreign key.
 ///
 /// Also stamps `metadata_checked_at`, so a successful enrichment leaves the sweep's work list
 /// the way a fruitless lookup does (see [`list_series_for_enrichment`]).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only, including the foreign-key violation of an erased `series_id`
+/// with titles, tags or authors to add.
 pub async fn apply_enrichment(
     pool: &sqlx::PgPool,
     series_id: SeriesId,
@@ -452,7 +454,7 @@ impl From<MetadataSource> for TitleOrigin {
 /// An unknown `series_id` is a foreign-key violation.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; no title left to store is a silent `Ok(())`.
 pub async fn add_series_titles(
     conn: &mut sqlx::PgConnection,
     series_id: SeriesId,
@@ -584,7 +586,7 @@ impl<'a> TagLink<'a> {
 /// An unknown `series_id` is a foreign-key violation.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; all-empty names is `Ok(())`.
 pub async fn add_series_tags(
     conn: &mut sqlx::PgConnection,
     series_id: SeriesId,

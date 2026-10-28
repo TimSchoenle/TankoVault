@@ -51,7 +51,7 @@ use crate::error::DbResult;
 /// What disentangling one reverted pair changed.
 ///
 /// Reported, not only logged: the survivor loses titles and sources without review, so the
-/// operator gets the counts and the merge journal keeps them beside the decision.
+/// revert returns the counts to the operator.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Disentangled {
     /// Alternative titles removed from the survivor because the restored series answers to them

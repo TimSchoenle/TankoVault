@@ -239,7 +239,7 @@ pub struct MergeCandidateView {
 /// [`merge_series`](super::merge_series).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an empty queue is an empty `Vec`.
 pub async fn list_open_merge_candidates<'e, E: PgExecutor<'e>>(
     exec: E,
     limit: i64,
@@ -329,7 +329,8 @@ pub async fn list_open_merge_candidates<'e, E: PgExecutor<'e>>(
 /// both return `false`, so a double-click reports no failure.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an unknown id and an already-resolved one are both `Ok(false)`,
+/// not [`crate::DbError::NotFound`].
 pub async fn dismiss_merge_candidate<'e, E: PgExecutor<'e>>(
     exec: E,
     id: Uuid,

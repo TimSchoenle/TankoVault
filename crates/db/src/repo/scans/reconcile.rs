@@ -50,7 +50,7 @@ pub struct StrandedTask {
 /// Grouping `scan_tasks` would read a table that grows by a row per series per scan.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; no open lanes is an empty `Vec`, which is the steady state.
 pub async fn open_task_lanes<'e, E: PgExecutor<'e>>(
     exec: E,
     aged_after: std::time::Duration,
@@ -223,7 +223,7 @@ impl HistoryPrune {
 /// also keeps every provider's latest run, which the provider table reports.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; nothing to prune is an empty [`HistoryPrune`].
 ///
 /// [`failure_streak`]: super::failure_streak
 pub async fn prune_scan_history(

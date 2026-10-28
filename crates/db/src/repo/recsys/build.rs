@@ -271,7 +271,8 @@ pub async fn write_basis<'e, E: PgExecutor<'e>>(
 /// no space to project into yet.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; a deployment that has never run a full build gets `None`, which
+/// is the signal an incremental build must not proceed.
 pub async fn read_basis<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Option<(Vec<u8>, i32, i32)>> {
     #[derive(FromRow)]
     struct Row {
@@ -292,9 +293,9 @@ pub async fn read_basis<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Option<(Vec<
 
 /// Drops model rows left behind by an earlier generation.
 ///
-/// The generation counter makes a full rebuild nearly atomic without a table swap: rows are
-/// upserted under the new one while readers query the old, and this sweep removes whatever the
-/// new build did not touch, most often series deleted since.
+/// A full build upserts each series' rows in place by `series_id`, stamped with the new
+/// generation, so readers see each row as it is rewritten. This sweep then removes the rows the
+/// build did not touch, which still carry an older generation, most often series deleted since.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.

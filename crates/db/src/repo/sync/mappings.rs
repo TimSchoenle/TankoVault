@@ -9,7 +9,7 @@ use uuid::Uuid;
 /// Idempotent on `(series_id, provider)`.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; a first mapping and a re-point are indistinguishably `Ok(())`.
 pub async fn upsert_mapping<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -39,7 +39,7 @@ pub async fn upsert_mapping<'e, E: PgExecutor<'e>>(
 /// title matching.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; unmapped is `Ok(None)`, sending the caller to title-matching.
 pub async fn mapping_series_for_external<'e, E: PgExecutor<'e>>(
     exec: E,
     provider: &str,
@@ -67,7 +67,7 @@ pub async fn mapping_series_for_external<'e, E: PgExecutor<'e>>(
 /// Ordered so a run's choice of member is reproducible.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an unmapped external id is an empty `Vec`.
 pub async fn mapping_linked_series<'e, E: PgExecutor<'e>>(
     exec: E,
     provider: &str,
@@ -88,7 +88,7 @@ pub async fn mapping_linked_series<'e, E: PgExecutor<'e>>(
 /// the correct remote entry.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; unmapped is `Ok(None)`.
 pub async fn mapping_external_for_series<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -107,7 +107,7 @@ pub async fn mapping_external_for_series<'e, E: PgExecutor<'e>>(
 /// Lists the provider slugs a user has linked an account for.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; no accounts is an empty `Vec`.
 pub async fn list_linked_providers<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -125,7 +125,8 @@ pub async fn list_linked_providers<'e, E: PgExecutor<'e>>(
 /// next pull or push re-resolves the series from scratch, by title match or search.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; nothing to remove is `Ok(false)`, not
+/// [`crate::DbError::NotFound`].
 pub async fn delete_mapping<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -150,7 +151,7 @@ pub async fn delete_mapping<'e, E: PgExecutor<'e>>(
 /// One unknown `series_id` fails the whole batch; an empty `pairs` issues no statement.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an empty `pairs` is `Ok(())` with no round trip.
 pub async fn upsert_mappings<'e, E: PgExecutor<'e>>(
     exec: E,
     provider: &str,

@@ -19,7 +19,8 @@ use uuid::Uuid;
 /// duplicate.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; no candidate clearing the trigram threshold is an empty `Vec`, so
+/// a caller must not fold an `Err` into that path.
 pub async fn find_candidates<'e, E: PgExecutor<'e>>(
     exec: E,
     normalized: &str,
@@ -135,7 +136,9 @@ pub async fn find_candidates<'e, E: PgExecutor<'e>>(
 /// about reading an error as no match applies here too.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an empty `normalized` returns `Ok(empty)` with no round trip, and
+/// a title with no candidates is **absent** from the result instead of present with an empty
+/// bucket.
 pub async fn find_candidates_multi<'e, E: PgExecutor<'e>>(
     exec: E,
     normalized: &[String],

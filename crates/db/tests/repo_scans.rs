@@ -878,7 +878,7 @@ async fn a_finished_run_does_not_suppress_the_next_one() {
     }
 }
 
-/// Finish a run for `provider` in `state`, created `minutes_ago`.
+/// Finishes a run for `provider` in `state`, created `minutes_ago`.
 async fn a_finished_run(
     db: &TestDb,
     provider: ProviderId,
@@ -983,7 +983,7 @@ async fn only_this_providers_finished_runs_of_this_mode_count_toward_its_streak(
 // Cancellation, and the stage telemetry that explains a slow run
 // ---------------------------------------------------------------------------
 
-/// Read one column off a task row.
+/// Reads one column off a task row.
 async fn task_stage_at(db: &TestDb, task: ScanTaskId) -> time::OffsetDateTime {
     sqlx::query_scalar("SELECT stage_at FROM scan_tasks WHERE id = $1")
         .bind(task.as_uuid())
@@ -1492,7 +1492,7 @@ async fn a_run_that_never_planned_a_task_is_failed_but_only_once_it_is_old() {
 
 const DAY: i64 = 24 * 60;
 
-/// Prune until a pass finds nothing, counting the passes.
+/// Prunes until a pass finds nothing, counting the passes.
 async fn prune_all(db: &TestDb, task_batch: i64) -> (scans::HistoryPrune, usize) {
     let mut total = scans::HistoryPrune::default();
     for pass in 1..=100 {

@@ -62,7 +62,7 @@ pub struct HistoryRow {
 /// provider.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; no match is an empty `Vec`, never [`crate::DbError::NotFound`].
 pub async fn list_history<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,

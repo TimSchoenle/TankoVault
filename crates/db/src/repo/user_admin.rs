@@ -73,7 +73,8 @@ pub struct DirectoryPage {
 /// the first row, so a search matching nobody reports `0`.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only.
+/// [`DbError::Sqlx`] only; a search matching nobody is an empty page with `total: 0`, not
+/// [`DbError::NotFound`].
 pub async fn directory<'e, E: PgExecutor<'e>>(
     exec: E,
     search: &str,
@@ -272,7 +273,8 @@ pub async fn update_identity<'e, E: PgExecutor<'e>>(
 /// `suspended_at`.
 ///
 /// # Errors
-/// [`DbError::NotFound`] (404) when `id` matches no row; otherwise [`DbError::Sqlx`].
+/// [`DbError::NotFound`] (404) when `id` matches no row; otherwise [`DbError::Sqlx`]. Setting the
+/// status an account already has is not [`DbError::Conflict`].
 pub async fn set_status<'e, E: PgExecutor<'e>>(
     exec: E,
     id: UserId,
@@ -306,7 +308,9 @@ pub async fn set_status<'e, E: PgExecutor<'e>>(
 /// error here, so an operator is told the call did nothing.
 ///
 /// # Errors
-/// [`DbError::NotFound`] (404) when `id` matches no row; otherwise [`DbError::Sqlx`].
+/// [`DbError::NotFound`] (404) when `id` matches no row; otherwise [`DbError::Sqlx`]. Unlike
+/// [`crate::repo::users::mark_email_verified`], which returns `Ok(())` for a missing user, this one
+/// reports it.
 pub async fn force_verify_email<'e, E: PgExecutor<'e>>(exec: E, id: UserId) -> DbResult<()> {
     let result = sqlx::query!(
         "UPDATE users SET email_verified_at = COALESCE(email_verified_at, now()) WHERE id = $1",

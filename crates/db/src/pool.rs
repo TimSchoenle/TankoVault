@@ -147,10 +147,11 @@ pub async fn begin(pool: &PgPool) -> DbResult<sqlx::Transaction<'static, sqlx::P
     Ok(pool.begin().await?)
 }
 
-/// Commits `tx`, which is rolled back on failure.
+/// Commits `tx`.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only. An error does not prove a rollback: the connection can fail
+/// after the server committed, so the outcome of a failed commit is unknown.
 pub async fn commit(tx: sqlx::Transaction<'static, sqlx::Postgres>) -> DbResult<()> {
     Ok(tx.commit().await?)
 }

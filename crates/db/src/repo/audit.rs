@@ -33,7 +33,7 @@ pub struct AuditRecord<'a> {
 /// A bad `outcome` fails the check constraint, a 500.
 ///
 /// # Errors
-/// `Sqlx` only.
+/// `Sqlx` only; a bad `outcome` fails the check constraint (500), not [`crate::DbError::Conflict`].
 pub async fn record<'e, E: PgExecutor<'e>>(exec: E, entry: &AuditRecord<'_>) -> DbResult<()> {
     sqlx::query!(
         "INSERT INTO audit_log (id, actor_id, action, target, detail, outcome, actor_ip, user_agent) \
@@ -58,7 +58,7 @@ pub async fn record<'e, E: PgExecutor<'e>>(exec: E, entry: &AuditRecord<'_>) -> 
 /// long-neglected table can't hold a lock long enough to stall concurrent writers.
 ///
 /// # Errors
-/// `Sqlx` only.
+/// `Sqlx` only; deleting nothing returns `Ok(0)`.
 pub async fn prune_older_than<'e, E: PgExecutor<'e>>(
     exec: E,
     retention_days: u32,
@@ -130,7 +130,8 @@ pub struct AuditPage {
 /// a filter matching nothing and an offset past the end both report `0`.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; a filter matching nothing is an empty page with `total: 0`, not
+/// [`crate::DbError::NotFound`].
 pub async fn list_filtered<'e, E: PgExecutor<'e>>(
     exec: E,
     filter: &AuditFilter<'_>,
@@ -209,7 +210,7 @@ pub async fn distinct_actions<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<St
 /// Returns the most recent privileged actions, newest first, for the operator console.
 ///
 /// # Errors
-/// `Sqlx` only.
+/// `Sqlx` only; an empty log is `Ok(vec![])`, not [`crate::DbError::NotFound`].
 pub async fn list_recent<'e, E: PgExecutor<'e>>(exec: E, limit: i64) -> DbResult<Vec<AuditView>> {
     let rows: Vec<AuditView> = sqlx::query_as!(
         AuditView,

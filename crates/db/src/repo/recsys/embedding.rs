@@ -35,7 +35,9 @@ fn to_literal(values: &[f32]) -> String {
 /// mismatch means the basis and the schema disagree.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; a vector of the wrong width fails here instead of being silently
+/// padded; the column is `halfvec(128)` and a mismatch means the basis and the schema disagree,
+/// which no row should survive.
 pub async fn write_embeddings<'e, E: PgExecutor<'e>>(
     exec: E,
     series_ids: &[SeriesId],
@@ -136,7 +138,7 @@ pub struct Neighbour {
 /// `None` for a series whose embedding has not been built yet.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; a series with no embedding is `Ok(None)`.
 pub async fn embedding_of<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -273,7 +275,8 @@ pub async fn nearest_excluding<'e, E: PgExecutor<'e>>(
 /// profile-vector retrieval has nothing to search with.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; a set with no embedded members is `Ok(None)`, which is the signal
+/// that profile-vector retrieval has nothing to search with yet.
 pub async fn mean_embedding<'e, E: PgExecutor<'e>>(
     exec: E,
     series_ids: &[SeriesId],

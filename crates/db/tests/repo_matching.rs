@@ -1423,7 +1423,7 @@ async fn the_duplicate_sweep_blocks_on_alternative_titles_too() {
     );
 }
 
-/// Attach an alternative title to a series that already exists.
+/// Attaches an alternative title to a series that already exists.
 async fn add_alt_title(db: &TestDb, series_id: SeriesId, title: &str) {
     sqlx::query("INSERT INTO series_titles (series_id, title, normalized) VALUES ($1, $2, $3)")
         .bind(series_id.as_uuid())
@@ -3477,7 +3477,7 @@ async fn the_merge_journal_filters_searches_pages_and_resolves_by_id_in_the_stat
     ));
 }
 
-/// Set an `AniList` mapping on a series directly.
+/// Sets an `AniList` mapping on a series directly.
 async fn map_anilist(db: &TestDb, series_id: SeriesId, external_id: &str) {
     sqlx::query(
         "INSERT INTO sync_mappings (series_id, provider, external_id) VALUES ($1, 'anilist', $2)",

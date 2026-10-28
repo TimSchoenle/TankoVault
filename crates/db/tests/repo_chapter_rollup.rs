@@ -112,7 +112,7 @@ async fn a_series(db: &TestDb, provider: ProviderId, title: &str, chapters: &[f6
         .await
 }
 
-/// Insert chapters discovered at a fixed instant in the past, as a restore or a backfill would.
+/// Inserts chapters discovered at a fixed instant in the past, as a restore or a backfill would.
 async fn insert_discovered_at(db: &TestDb, source: SeriesSourceId, numbers: &[i32], days_ago: i64) {
     sqlx::query(
         "INSERT INTO chapters (series_source_id, number_milli, path, discovered_at) \
@@ -151,7 +151,7 @@ async fn move_chapters(db: &TestDb, from: SeriesSourceId, to: SeriesSourceId) {
     assert_figures_match_a_live_count(db, "chapter moved between sources").await;
 }
 
-/// Run `statements` on one connection with every trigger off, as a restore would.
+/// Runs `statements` on one connection with every trigger off, as a restore would.
 async fn without_triggers(db: &TestDb, statements: &[&str]) {
     let mut conn = db.pool.acquire().await.expect("connection");
     sqlx::query("SET session_replication_role = replica")

@@ -76,7 +76,7 @@ impl TaskSort {
 /// Returns one run's tasks, ordered so the ones that explain its duration come first.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; a run with no tasks yet is an empty `Vec`.
 pub async fn run_tasks<'e, E: PgExecutor<'e>>(
     exec: E,
     run_id: ScanRunId,
@@ -107,11 +107,11 @@ pub async fn run_tasks<'e, E: PgExecutor<'e>>(
     Ok(rows)
 }
 
-/// One run's time, summed across every task that recorded a breakdown.
+/// One run's time and request totals.
 #[derive(Debug, Clone, Default)]
 pub struct RunTelemetry {
-    /// Settled tasks carrying a breakdown. Everything below sums over exactly these, so a run
-    /// whose tasks recorded none reports zero, not a wrong total.
+    /// Settled tasks carrying a telemetry breakdown. `busy_ms` and `wait_ms` sum over every task
+    /// of the run, measured or not; the fields after them sum over the breakdowns only.
     pub tasks_measured: i64,
     /// Summed execution time: work performed, not time elapsed, so it exceeds the run's wall
     /// clock whenever tasks ran concurrently.
@@ -147,11 +147,11 @@ pub struct StageTotal {
 /// Returns the run's rollup and its per-stage split, as two statements.
 ///
 /// Split because the second unnests a `jsonb` object per task, which leaves the rollup the
-/// drawer shows first a plain aggregate. A run whose tasks recorded nothing is a zeroed
-/// [`RunTelemetry`] and an empty stage list, which the drawer renders.
+/// drawer shows first a plain aggregate.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; a run whose tasks recorded no breakdown yields zeroed breakdown
+/// fields and an empty stage list, never [`crate::DbError::NotFound`].
 pub async fn run_telemetry<'e, E: PgExecutor<'e> + Copy>(
     exec: E,
     run_id: ScanRunId,

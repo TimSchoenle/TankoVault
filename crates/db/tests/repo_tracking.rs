@@ -538,7 +538,7 @@ async fn a_provider_carrying_a_series_twice_is_one_source() {
     assert!(!card.sources[1].preferred, "and only that one");
 }
 
-/// Attach an extra source row to an existing series, as a second scan of the same provider does.
+/// Attaches an extra source row to an existing series, as a second scan of the same provider does.
 async fn add_source(
     db: &TestDb,
     series: SeriesId,

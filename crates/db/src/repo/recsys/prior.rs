@@ -75,7 +75,7 @@ pub struct PriorInputs {
 /// catalogue. Split, the planner aggregates over a bounded id set. An exhausted walk is empty.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an exhausted walk is an empty `Vec`.
 pub async fn page_series_ids<'e, E: PgExecutor<'e>>(
     exec: E,
     after: Option<SeriesId>,
@@ -227,7 +227,8 @@ pub async fn top_by_prior<'e, E: PgExecutor<'e>>(
 /// series is absent, so ids from a stale model are safe.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an id with no live series is absent from the result instead of an
+/// error, which is what makes this safe to call with ids from a stale model.
 pub async fn summaries_in_order<'e, E: PgExecutor<'e>>(
     exec: E,
     order: &[SeriesId],

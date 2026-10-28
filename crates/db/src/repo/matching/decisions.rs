@@ -431,7 +431,7 @@ impl From<Row> for MergeDecisionRow {
 /// Returns a page of the journal, newest first.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only.
+/// [`DbError::Sqlx`] only; no match is an empty `Vec`.
 pub async fn list_merge_decisions<'e, E: PgExecutor<'e>>(
     exec: E,
     filter: &MergeDecisionFilter,
@@ -666,8 +666,9 @@ pub async fn revert_merge_decision(
 ///
 /// Independent of the revert: a correct merge can be worth undoing as a precaution and a wrong
 /// one not worth the disruption, and the flag is tuning evidence either way. The suppression is
-/// unconditional, because a pair judged wrong must not be re-merged whether or not the merge was
-/// taken back.
+/// attempted either way, but [`suppress_pair`](super::suppress_pair) writes a row only when both
+/// series exist: for a merge still in force the absorbed series is gone and nothing is written,
+/// and [`revert_merge_decision`] writes the suppression once it restores the series.
 ///
 /// Returns whether this call was the one that flagged it.
 ///

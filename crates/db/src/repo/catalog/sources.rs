@@ -110,7 +110,7 @@ pub async fn upsert_source<'e, E: PgExecutor<'e>>(
 /// does not say which happened; [`register_source_stubs`] counts.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an already-registered source is `Ok(())` with nothing written.
 pub async fn register_source_stub(
     pool: &sqlx::PgPool,
     provider_id: ProviderId,
@@ -284,13 +284,16 @@ async fn discard_unsourced(conn: &mut sqlx::PgConnection, created: &[Uuid]) -> D
 /// that scan filed it under, since `upsert_sources` never re-points, and the series this chunk
 /// created for it is deleted before commit (`discard_unsourced`).
 ///
-/// Returns the number of sources newly registered. A failed chunk is retried entry by entry,
-/// and an entry that fails again is logged at `warn` and left out of the count, so losing one
-/// series does not lose the page (`docs/ARCHITECTURE.md` §12). The count is therefore the only
-/// failure signal: `0` on a page of new entries is a failure report.
+/// Returns the number of entries registered as new, not of source rows created: an entry that
+/// repeats a path within the page counts again, and so does one a concurrent scan registered first.
+/// A failed chunk is retried entry by entry, and an entry that fails again is logged at `warn` and
+/// left out of the count, so losing one series does not lose the page (`docs/ARCHITECTURE.md` §12).
+/// The count is therefore the only failure signal: `0` on a page of new entries is a failure
+/// report.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only, from the batch existence check.
+/// [`crate::DbError::Sqlx`] only, from the batch existence check. An empty `entries` short-circuits
+/// to `Ok(0)` without touching the database.
 pub async fn register_source_stubs(
     pool: &sqlx::PgPool,
     provider_id: ProviderId,
@@ -351,7 +354,8 @@ pub async fn register_source_stubs(
 /// that created the source; elsewhere a no-op would only make the next scan redo work.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; a `source_id` that no longer exists matches nothing and is still
+/// `Ok(())`, not [`crate::DbError::NotFound`].
 pub async fn update_source_scan<'e, E: PgExecutor<'e>>(
     exec: E,
     source_id: SeriesSourceId,
@@ -375,7 +379,7 @@ pub async fn update_source_scan<'e, E: PgExecutor<'e>>(
 /// No such source and a source never scanned are both `None`: there is no hash, so scan.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; two different situations collapse into one `Ok(None)`.
 pub async fn source_content_hash<'e, E: PgExecutor<'e>>(
     exec: E,
     provider_id: ProviderId,
@@ -397,7 +401,8 @@ pub async fn source_content_hash<'e, E: PgExecutor<'e>>(
 /// page establishes that the series exists, and this only decides whether the strip renders.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; an unknown `series_id` and a series no provider carries are the
+/// same empty `Vec`, not [`crate::DbError::NotFound`].
 pub async fn list_sources_for_series<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -420,8 +425,8 @@ pub async fn list_sources_for_series<'e, E: PgExecutor<'e>>(
 /// link it has committed to rendering and there is no partial answer.
 ///
 /// # Errors
-/// [`crate::DbError::NotFound`] when `source_id` names no source or its provider is gone;
-/// otherwise [`crate::DbError::Sqlx`].
+/// [`crate::DbError::NotFound`] when `source_id` names no source or its provider is gone; otherwise
+/// [`crate::DbError::Sqlx`]. The absent case is an error instead of `Ok(None)` here.
 pub async fn source_provider_base_url<'e, E: PgExecutor<'e>>(
     exec: E,
     source_id: SeriesSourceId,

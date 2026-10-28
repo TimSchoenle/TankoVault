@@ -32,7 +32,7 @@ pub struct TunableOverrideRow {
 /// Raw rows, not a resolved map: pairing them with the compiled registry is the caller's job.
 ///
 /// # Errors
-/// `Sqlx` only.
+/// `Sqlx` only; an empty table is `Ok(vec![])`.
 pub async fn list_overrides<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<TunableOverrideRow>> {
     #[derive(FromRow)]
     struct Row {
@@ -96,7 +96,8 @@ pub async fn effective_overrides<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec
 /// A repeat write overwrites; an erased `updated_by` is a foreign-key violation (500).
 ///
 /// # Errors
-/// `Sqlx` only.
+/// `Sqlx` only; a repeat write is not [`crate::DbError::Conflict`], an erased `updated_by` is a
+/// foreign-key violation (500).
 pub async fn set_override<'e, E: PgExecutor<'e>>(
     exec: E,
     key: &str,
@@ -130,7 +131,8 @@ pub async fn set_override<'e, E: PgExecutor<'e>>(
 /// "Nothing to clear" is `false`, deliberately indistinguishable from an unknown `key`.
 ///
 /// # Errors
-/// `Sqlx` only.
+/// `Sqlx` only; "nothing to clear" is `Ok(false)`, deliberately indistinguishable from an unknown
+/// `key`.
 pub async fn clear_override<'e, E: PgExecutor<'e>>(exec: E, key: &str) -> DbResult<bool> {
     let result = sqlx::query!("DELETE FROM tunable_overrides WHERE key = $1", key)
         .execute(exec)

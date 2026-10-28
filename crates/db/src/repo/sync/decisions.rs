@@ -92,7 +92,7 @@ impl NewSyncDecision {
 /// a round trip each would cost more than the reconciliation. An empty slice is a no-op.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only.
+/// [`DbError::Sqlx`] only; an empty slice is a no-op, not an error.
 pub async fn record_sync_decisions<'e, E: PgExecutor<'e>>(
     exec: E,
     run_id: Uuid,
@@ -349,7 +349,7 @@ impl From<Row> for SyncDecisionRow {
 /// Returns a page of the journal, newest first.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only.
+/// [`DbError::Sqlx`] only; no match is an empty `Vec`.
 pub async fn list_sync_decisions<'e, E: PgExecutor<'e>>(
     exec: E,
     filter: &SyncDecisionFilter,
@@ -434,7 +434,7 @@ pub async fn get_sync_decision<'e, E: PgExecutor<'e>>(
 /// Stamp a decision reverted. Returns whether this call was the one that did it.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only.
+/// [`DbError::Sqlx`] only; an unknown or already-reverted id is `Ok(false)`.
 pub async fn mark_sync_decision_reverted<'e, E: PgExecutor<'e>>(
     exec: E,
     id: Uuid,
@@ -457,7 +457,7 @@ pub async fn mark_sync_decision_reverted<'e, E: PgExecutor<'e>>(
 /// Stamp a decision wrong. Returns whether this call was the one that did it.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only.
+/// [`DbError::Sqlx`] only; an unknown or already-flagged id is `Ok(false)`.
 pub async fn flag_sync_decision<'e, E: PgExecutor<'e>>(
     exec: E,
     id: Uuid,

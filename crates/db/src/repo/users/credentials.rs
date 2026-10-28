@@ -88,7 +88,7 @@ pub async fn create<'e, E: PgExecutor<'e>>(
 /// password".
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only.
+/// [`DbError::Sqlx`] only; an unknown login is `Ok(None)`, not [`DbError::NotFound`].
 pub async fn find_credentials<'e, E: PgExecutor<'e>>(
     exec: E,
     login: &str,
@@ -160,7 +160,7 @@ pub async fn get<'e, E: PgExecutor<'e>>(exec: E, id: UserId) -> DbResult<User> {
 /// failure must not fail the sign-in that already succeeded, so callers log it.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only.
+/// [`DbError::Sqlx`] only; an `id` matching no row updates nothing and still returns `Ok(())`.
 pub async fn touch_last_login<'e, E: PgExecutor<'e>>(exec: E, id: UserId) -> DbResult<()> {
     sqlx::query!(
         "UPDATE users SET last_login_at = now() WHERE id = $1",
@@ -184,7 +184,7 @@ pub struct AccountState {
 /// Callers must treat `None`, a deleted account, as deny.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only.
+/// [`DbError::Sqlx`] only; a deleted account is `Ok(None)`, which callers must treat as deny.
 pub async fn account_state<'e, E: PgExecutor<'e>>(
     exec: E,
     id: UserId,

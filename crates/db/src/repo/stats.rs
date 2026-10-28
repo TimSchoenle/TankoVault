@@ -101,7 +101,8 @@ pub struct ProviderStat {
 /// database yields zeros.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only.
+/// [`crate::DbError::Sqlx`] only; every column is a `count(*)` scalar subquery, so the row always
+/// exists and an empty database yields zeros instead of [`crate::DbError::NotFound`].
 pub async fn system_overview<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<SystemStats> {
     let stats = sqlx::query_as!(
         SystemStats,

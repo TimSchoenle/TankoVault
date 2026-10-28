@@ -1,10 +1,10 @@
-//! "Because you read" — the recommendation shelf as a screen of its own.
+//! Owns "Because you read": the recommendation shelf as a screen of its own.
 //!
-//! Split off the home dashboard rather than grown there. On Home it was the last section under a
-//! stat row, a continue rail and a day-grouped feed, so it got what was left: a short shelf a
-//! reader had to scroll past three other sections to reach, with each suggestion's reason
-//! compressed into a grey line. The reason is the point of this surface — a recommendation
-//! nobody understands is one nobody acts on — so it gets the room here, at full size and with
+//! A screen of its own, not a section of the home dashboard: under a stat row, a continue rail
+//! and a day-grouped feed it would get what was left, a short shelf a reader has to scroll past
+//! three other sections to reach, with each suggestion's reason compressed into a grey line. The
+//! reason is the point of this surface (a recommendation
+//! nobody understands is one nobody acts on), so it gets the room here, at full size and with
 //! what the two titles share spelled out.
 
 use crate::api;
@@ -26,7 +26,7 @@ pub(crate) fn Recommendations() -> Element {
     let api = api::use_api();
     let caps = use_capabilities();
     // Dismissing a suggestion has to refetch this screen and nothing else, so the shelf owns its
-    // own handle rather than sharing one with whatever else a route happens to load.
+    // own handle instead of sharing one with whatever else a route happens to load.
     let reload = use_reload();
 
     let offered = caps.has_feature(Feature::CatalogueRecommendations);
@@ -34,7 +34,7 @@ pub(crate) fn Recommendations() -> Element {
         reload.track();
         let client = api.client();
         // Gated here as well as server-side: with the feature off the endpoint answers 404, and
-        // an error box under this heading reads as a fault rather than a deployment that does
+        // an error box under this heading reads as a fault instead of a deployment that does
         // not offer recommendations.
         let fetch = session.is_authenticated() && offered;
         async move {

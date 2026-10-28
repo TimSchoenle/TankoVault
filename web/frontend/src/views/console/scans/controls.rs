@@ -1,4 +1,4 @@
-//! The scan queue's controls: trigger a run, drain the queue, and narrow the panel.
+//! Owns the scan queue's controls: trigger a run, drain the queue, and narrow the panel.
 
 use crate::api;
 use crate::components::{use_step_up_gate, StepUpGuard};

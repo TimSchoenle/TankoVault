@@ -1,4 +1,5 @@
-//! Appearance preferences (`docs/DESIGN_SYSTEM.md` §8) and the operator console's persisted knobs.
+//! Owns the appearance preferences (`docs/DESIGN_SYSTEM.md` §8) and the operator console's
+//! persisted knobs.
 //!
 //! Each appearance knob is a `data-*` attribute on the document root, mirrored into a `tv-*`
 //! settings key so it survives a restart. On the web build the *initial* application runs from
@@ -19,7 +20,7 @@ use std::str::FromStr as _;
 /// the individual constants are what the appearance screen binds its controls to.
 const KNOBS: [Knob; 4] = [THEME, ACCENT, DENSITY, COVER];
 
-/// Apply each stored appearance choice to the document root.
+/// Applies each stored appearance choice to the document root.
 ///
 /// Runs once at the app root. On web this re-asserts what the boot script already wrote, which
 /// is why it is cheap and not a source of flash; on desktop it is the only thing that applies
@@ -79,7 +80,7 @@ pub(crate) const COVER: Knob = Knob {
 };
 
 impl Knob {
-    /// Read the knob's persisted value into `signal` (`localStorage`, else the attribute the
+    /// Reads the knob's persisted value into `signal` (`localStorage`, else the attribute the
     /// boot script already applied, else the default).
     pub(crate) fn load(self, mut signal: Signal<String>) {
         let stored = crate::platform::store_get(self.key)
@@ -88,7 +89,7 @@ impl Knob {
         signal.set(stored);
     }
 
-    /// Apply and persist a choice. A non-default value sets the attribute and stores the key;
+    /// Applies and persists a choice. A non-default value sets the attribute and stores the key;
     /// selecting the default clears both, so the `:root` rules take over again (except for
     /// [`Knob::explicit_default`] knobs, which always write).
     pub(crate) fn apply(self, mut signal: Signal<String>, value: &str) {
@@ -117,12 +118,12 @@ pub(crate) fn console_entity() -> Option<ConsoleEntity> {
     crate::platform::store_get(CONSOLE_ENTITY).and_then(|slug| ConsoleEntity::from_str(&slug).ok())
 }
 
-/// Remember the console entity as the one to reopen.
+/// Remembers the console entity as the one to reopen.
 pub(crate) fn set_console_entity(entity: ConsoleEntity) {
     crate::platform::store_set(CONSOLE_ENTITY, entity.slug());
 }
 
-/// Whether the console's live push should run. Defaults to on — a console that opens detached
+/// Whether the console's live push should run. Defaults to on: a console that opens detached
 /// shows stale numbers with no sign that they are stale.
 pub(crate) fn console_live() -> bool {
     crate::platform::store_get(CONSOLE_LIVE).is_none_or(|stored| stored != "0")
@@ -136,8 +137,7 @@ pub(crate) fn set_console_live(live: bool) {
     }
 }
 
-/// Whether the console's tables are drawn compact. Defaults to on, matching what the class
-/// strings hardcoded before this was a choice.
+/// Whether the console's tables are drawn compact. Defaults to on.
 pub(crate) fn console_compact() -> bool {
     crate::platform::store_get(CONSOLE_COMPACT).is_none_or(|stored| stored != "0")
 }

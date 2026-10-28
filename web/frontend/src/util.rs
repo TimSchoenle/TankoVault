@@ -1,14 +1,14 @@
-//! Small formatting helpers shared across screens.
+//! Owns the small formatting helpers shared across screens.
 //!
 //! Deliberately dependency-free: dates are read through [`crate::platform`], which on the web
-//! build is the browser's own `Date` — pulling a date crate into the wasm bundle to render
+//! build is the browser's own `Date`; pulling a date crate into the wasm bundle to render
 //! "3d ago" would cost more bytes than the whole module. Anything with words in it resolves
-//! through [`crate::i18n`] rather than baking English into the formatter.
+//! through [`crate::i18n`] instead of baking English into the formatter.
 
 use crate::i18n::Translator;
 use std::fmt::Write as _;
 
-/// Render a chapter number without a trailing `.0`, so whole chapters read `#152` and part
+/// Renders a chapter number without a trailing `.0`, so whole chapters read `#152` and part
 /// releases keep their fraction (`#152.6`).
 pub(crate) fn chapter_number(n: f64) -> String {
     if n.fract() == 0.0 {
@@ -22,7 +22,7 @@ pub(crate) fn chapter_number(n: f64) -> String {
     format!("{n}")
 }
 
-/// Group a large count for the console's KPI tiles and stat tables (`1,284,903`).
+/// Groups a large count for the console's KPI tiles and stat tables (`1,284,903`).
 pub(crate) fn thousands(n: i64) -> String {
     // `unsigned_abs`, not `abs`: `i64::MIN.abs()` overflows and would panic.
     let digits = n.unsigned_abs().to_string();
@@ -42,22 +42,22 @@ pub(crate) fn thousands(n: i64) -> String {
 /// A count narrowed to fit a badge: `999`, `1.2k`, `12k`, `1.4M`, `99M+`.
 ///
 /// The bell's badge is a circle sized for three glyphs sitting on the icon's corner. A literal
-/// count overflows it the moment an inbox passes 999 — the pill grows, pushes past the icon and
-/// takes the bar's alignment with it — so the *string* is bounded rather than the layout being
+/// count overflows it the moment an inbox passes 999 (the pill grows, pushes past the icon and
+/// takes the bar's alignment with it), so the *string* is bounded instead of the layout being
 /// asked to cope with an unbounded one.
 ///
 /// One decimal below ten of each unit and none above: `1.2k` carries information a reader uses,
 /// `12.4k` does not, and dropping it is what keeps the string within four glyphs.
 ///
 /// Integer arithmetic throughout. The fractional digit is a division, not a rounded float, so
-/// `999_600` prints `999k` rather than the `1.0k` a rounded one would put beside a bell that has
+/// `999_600` prints `999k` instead of the `1.0k` a rounded one would put beside a bell that has
 /// not reached a million.
 #[must_use]
 pub(crate) fn compact_count(n: i64) -> String {
-    /// Past this the badge gives up on precision rather than on its width.
+    /// Past this the badge gives up on precision instead of on its width.
     const CEILING: i64 = 99_999_999;
 
-    // Negative is not a state any counter this formats can reach; clamped rather than handled,
+    // Negative is not a state any counter this formats can reach; clamped, not handled,
     // so a corrupted value renders as nothing alarming.
     let n = n.max(0);
     if n > CEILING {
@@ -82,14 +82,14 @@ pub(crate) fn compact_count(n: i64) -> String {
 
 /// The date component of an RFC-3339 timestamp (`2026-07-25`), or an empty string.
 ///
-/// Slices rather than parses: the API always emits RFC-3339, whose first ten bytes are the
+/// Slices, not parses: the API always emits RFC-3339, whose first ten bytes are the
 /// date, and a slice cannot fail on a value the browser's parser would reject.
 pub(crate) fn iso_date(ts: Option<&str>) -> &str {
     ts.and_then(|s| s.get(0..10)).unwrap_or("")
 }
 
-/// Format an RFC-3339 timestamp as a coarse "time ago" label. `None`/empty renders as an
-/// em dash; a value the browser can't parse falls back to the raw string rather than lying.
+/// Formats an RFC-3339 timestamp as a coarse "time ago" label. `None`/empty renders as an
+/// em dash; a value the browser can't parse falls back to the raw string instead of lying.
 pub(crate) fn rel_time(i18n: Translator, ts: Option<&str>) -> String {
     let Some(s) = ts.filter(|s| !s.is_empty()) else {
         return i18n.t("time.unknown");
@@ -102,7 +102,7 @@ pub(crate) fn rel_time(i18n: Translator, ts: Option<&str>) -> String {
     i18n.args(age.key(), &[("count", &age.count().to_string())])
 }
 
-/// How recent a timestamp has to be to count as "hours fresh" — the chapter list tints a
+/// How recent a timestamp has to be to count as "hours fresh": the chapter list tints a
 /// release jade below this and leaves it faint above.
 const FRESH_MS: f64 = 48.0 * 3_600_000.0;
 
@@ -120,7 +120,7 @@ pub(crate) fn is_fresh(ts: Option<&str>) -> bool {
 }
 
 /// The freshness rule itself, split out from the clock so the boundary is testable on the host
-/// target — reading the browser clock needs a wasm runtime, deciding what the number means
+/// target: reading the browser clock needs a wasm runtime, deciding what the number means
 /// does not. A negative age means a clock skew, which is not evidence of freshness.
 fn fresh_age(age_ms: f64) -> bool {
     (0.0..FRESH_MS).contains(&age_ms)
@@ -129,7 +129,7 @@ fn fresh_age(age_ms: f64) -> bool {
 /// A millisecond age reduced to the unit it should be read in.
 ///
 /// Kept separate from the wording so the bucket boundaries stay unit-testable on the host
-/// target — the phrasing needs a Dioxus runtime, the arithmetic does not — and so a
+/// target (the phrasing needs a Dioxus runtime, the arithmetic does not), and so a
 /// translation can put the number wherever its language wants it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Age {
@@ -228,7 +228,7 @@ pub(crate) fn greeting_key() -> &'static str {
     }
 }
 
-/// Percent-encode everything the query grammar reserves.
+/// Percent-encodes everything the query grammar reserves.
 ///
 /// The router's own encoding leaves `&` and `=` alone, so a filter like `fate/stay & night`
 /// would otherwise re-parse as two parameters.
@@ -249,8 +249,8 @@ pub(crate) fn encode_component(value: &str) -> String {
     out
 }
 
-/// The inverse of [`encode_component`]. A malformed escape is kept verbatim rather than
-/// dropped — a hand-typed `100%` in the filter box should search for `100%`, not `100`.
+/// The inverse of [`encode_component`]. A malformed escape is kept verbatim, not
+/// dropped: a hand-typed `100%` in the filter box should search for `100%`, not `100`.
 pub(crate) fn decode_component(value: &str) -> String {
     let bytes = value.as_bytes();
     let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
@@ -292,10 +292,10 @@ mod tests {
 
     /// Pins the badge string's length, which is the whole point of the function.
     ///
-    /// The bell's badge is a fixed circle on the icon's corner. It used to print the raw count,
-    /// so an account with four-figure unread notifications rendered a pill wider than the icon
-    /// it sat on and shoved the top bar's actions out of alignment. The boundaries below are the
-    /// ones that regressed: 999 → 1k is where a third glyph would have become a fourth, and the
+    /// The bell's badge is a fixed circle on the icon's corner. The raw count would make an
+    /// account with four-figure unread notifications render a pill wider than the icon it sits
+    /// on and shove the top bar's actions out of alignment. The boundaries below are the ones
+    /// that matter: 999 → 1k is where a third glyph would have become a fourth, and the
     /// truncation is what stops 999 600 claiming to be a million.
     #[test]
     fn a_badge_count_never_exceeds_four_glyphs() {

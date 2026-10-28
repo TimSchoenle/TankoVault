@@ -1,9 +1,7 @@
-//! Notification preferences (§9.4) — what to be told about, for which series, and where.
+//! Owns the notification preferences (§9.4): what to be told about, for which series, and where.
 //!
-//! Every switch here reaches the notifier. The panel used to write three keys into a free-form
-//! JSON document that nothing on the server ever read, so turning "new chapters" off changed
-//! nothing at all; the document is a typed, validated contract now, and the fan-out consults it
-//! before it writes a row.
+//! Every switch here reaches the notifier: the document is a typed, validated contract, and the
+//! fan-out consults it before it writes a row.
 
 use crate::api;
 use crate::components::{OutcomeLine, PanelCard, Section, SkeletonBlock};
@@ -16,7 +14,7 @@ use inkstone_ui::ToggleButton;
 
 /// One switch: its catalogue key, how to read it, and how to flip it.
 ///
-/// A table rather than a `match` per row so the sections below are declarations — adding a switch
+/// A table instead of a `match` per row so the sections below are declarations: adding a switch
 /// is one line, and no section can silently render a control that writes to the wrong field.
 struct Switch {
     label_key: &'static str,
@@ -134,7 +132,7 @@ pub(crate) fn NotificationsPanel() -> Element {
         spawn(async move {
             match client.notification_prefs().send().await {
                 Ok(response) => prefs.set(Some(response.into_inner())),
-                // Don't silently present the defaults as saved state on a failed load — that
+                // Don't silently present the defaults as saved state on a failed load: that
                 // invites toggling against a phantom baseline.
                 Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
             }

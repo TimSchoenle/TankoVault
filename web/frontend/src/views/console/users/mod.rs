@@ -1,9 +1,9 @@
-//! Console · Users — the account directory and a full inspector per account.
+//! Owns Console · Users: the account directory and a full inspector per account.
 //!
 //! Off the shared auto-refresh tick: a background refetch mid-edit would discard whatever the
 //! operator is typing. Reloads only after its own writes, or a manual reload.
 //!
-//! Per-device session rows and per-account export are absent — no endpoint exists for either.
+//! Per-device session rows and per-account export are absent: no endpoint exists for either.
 //! TODO(api): `GET /v1/admin/users/:id/sessions`, `GET /v1/admin/users/:id/export`.
 
 mod activity;
@@ -80,7 +80,7 @@ impl Tab {
         }
     }
 
-    /// An unrecognised token opens the default tab rather than refusing the link.
+    /// An unrecognised token opens the default tab instead of refusing the link.
     fn parse(token: &str) -> Self {
         <Self as TabKind>::all()
             .iter()
@@ -116,7 +116,7 @@ impl StatusFilter {
         }
     }
 
-    /// An unrecognised token shows every account rather than silently hiding most of the
+    /// An unrecognised token shows every account, not silently hiding most of the
     /// directory behind a filter the operator did not choose.
     fn parse(token: &str) -> Self {
         match token {
@@ -145,8 +145,8 @@ impl StatusFilter {
 
 /// The permissions in `grants` this build recognises, as a set.
 ///
-/// Unknown tokens are surfaced separately as "unknown grant" rather than dropped, but must stay
-/// out of this set — including one would re-submit an inert token as current on save.
+/// Unknown tokens are surfaced separately as "unknown grant", not dropped, but must stay
+/// out of this set: including one would re-submit an inert token as current on save.
 fn known_permissions(grants: &[GrantRow]) -> BTreeSet<Permission> {
     grants
         .iter()
@@ -157,10 +157,10 @@ fn known_permissions(grants: &[GrantRow]) -> BTreeSet<Permission> {
 
 /// Whether these grants are the deployment owner's.
 ///
-/// Asked of the grant list rather than of a count, because the super user holds exactly one
+/// Asked of the grant list, not of a count, because the super user holds exactly one
 /// grant: counting says "an operator with one capability", which is the opposite of the truth.
 /// The token is also absent from the permission catalogue by design, so the checklist below
-/// renders it nowhere — hence the explicit notice this drives.
+/// renders it nowhere: hence the explicit notice this drives.
 fn is_super_user(grants: &[GrantRow]) -> bool {
     known_permissions(grants).contains(&Permission::SystemSuperuser)
 }
@@ -202,7 +202,7 @@ pub(super) fn UsersEntity() -> Element {
     //
     // Three separate counts, deliberately: `rows` is what shows after the status/staff
     // filters, `page_len` is what the server returned for this window, `total` is the whole
-    // directory. Pagination arithmetic must use `page_len`, not `rows.len()` — `rows.len()`
+    // directory. Pagination arithmetic must use `page_len`, not `rows.len()`: `rows.len()`
     // made `has_next` go false while later pages still existed, and the "1-N of TOTAL" line
     // compared a client-side count to a server-side total.
     let page_state = use_memo(use_reactive!(|(status, staff_only)| {
@@ -226,17 +226,17 @@ pub(super) fn UsersEntity() -> Element {
     }));
     let (rows, page_len, total) = page_state.read().clone();
     // A `sel` naming an account the current filters exclude falls back to the first row, so a
-    // stale link opens a lit row rather than an inspector with nothing selected beside it.
+    // stale link opens a lit row instead of an inspector with nothing selected beside it.
     let current = view
         .sel
         .clone()
         .filter(|id| rows.iter().any(|row| &row.id == id))
         .or_else(|| rows.first().map(|r| r.id.clone()));
 
-    // …and the fallback goes into the URL, so the address names the account on screen rather
-    // than whichever one this page of the directory happens to start with. It replaces rather
-    // than pushes — the operator did not choose this row and must not have to back out of it —
-    // and the next query is built out here rather than inside the effect, because reading
+    // …and the fallback goes into the URL, so the address names the account on screen,
+    // not whichever one this page of the directory happens to start with. It replaces,
+    // not pushes (the operator did not choose this row and must not have to back out of it),
+    // and the next query is built out here, not inside the effect, because reading
     // `nav.query()` in there would subscribe the effect to the memo the write changes.
     let landing = landing_selection(view.sel.as_deref(), current.clone())
         .map(|sel| view.with_selection(Some(sel)));
@@ -571,7 +571,7 @@ mod tests {
     }
 
     /// `known: true` is the server's claim, not this build's. A token it cannot parse is
-    /// dropped rather than panicking, so a server ahead of this frontend degrades quietly.
+    /// dropped instead of panicking, so a server ahead of this frontend degrades quietly.
     #[test]
     fn a_token_this_build_cannot_parse_is_dropped_even_when_flagged_known() {
         let known = known_permissions(&[grant("not.a.permission", true)]);

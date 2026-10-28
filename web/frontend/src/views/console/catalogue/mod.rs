@@ -1,4 +1,4 @@
-//! Console · Catalogue — what is in the catalogue, and the two ways to take things out of it:
+//! Owns Console · Catalogue: what is in the catalogue, and the two ways to take things out of it:
 //! a ticked selection deleted from the bulk-action menu, and the purge in the danger zone.
 //!
 //! Off the shared auto-refresh tick like the other work surfaces: a background refetch that
@@ -31,9 +31,9 @@ const PAGE_SIZE: i64 = 50;
 
 /// The health filter, as the `?status=` token the URL carries.
 ///
-/// A local mirror of the wire enum rather than the enum itself: the URL vocabulary is this
-/// panel's own, and an unrecognised token has to widen to "everything" rather than refuse the
-/// link — behaviour a generated `FromStr` cannot provide.
+/// A local mirror of the wire enum instead of the enum itself: the URL vocabulary is this
+/// panel's own, and an unrecognised token has to widen to "everything", not refuse the
+/// link; behaviour a generated `FromStr` cannot provide.
 fn health_from_token(token: &str) -> HealthFilter {
     match token {
         "orphaned" => HealthFilter::Orphaned,
@@ -104,11 +104,11 @@ pub(super) fn CatalogueEntity() -> Element {
         }
     }));
 
-    // The ticked rows, by id rather than by index: the page under a selection can be refetched,
+    // The ticked rows, by id instead of by index: the page under a selection can be refetched,
     // and an index-keyed selection would then point at whatever moved into that slot.
     let mut picked = use_signal(HashSet::<SeriesId>::new);
     // A filter change clears it. Ticking rows, narrowing the filter, then deleting is otherwise
-    // a delete aimed at rows the operator can no longer see — the one way this surface could
+    // a delete aimed at rows the operator can no longer see: the one way this surface could
     // destroy something nobody looked at. Paging does *not* clear it, so a selection can span
     // pages, which is the whole point of the count in the bar.
     let filter_key = format!(
@@ -315,7 +315,7 @@ pub(super) fn CatalogueEntity() -> Element {
 
 /// The selection bar: how many rows are armed, and the menu that acts on them.
 ///
-/// A `<select>` rather than a row of buttons because the list of bulk actions is expected to
+/// A `<select>` instead of a row of buttons because the list of bulk actions is expected to
 /// grow, and because a destructive action reached by picking it from a closed menu cannot be
 /// hit by a mis-aimed click the way a permanently visible Delete button can.
 #[component]
@@ -385,7 +385,7 @@ fn BulkBar(picked: Signal<HashSet<SeriesId>>, reload: crate::hooks::Reload) -> E
                 disabled: busy.is_busy(),
                 // Controlled back to the placeholder every render: the menu is a command
                 // launcher, not a setting, and a `<select>` left showing "Delete selected"
-                // reads as a state the rows are now in.
+                // reads as a state the rows are in.
                 value: "",
                 onchange: move |event: FormEvent| {
                     if event.value() == "delete" {
@@ -427,8 +427,8 @@ mod tests {
     use super::{health_from_token, health_token};
     use crate::wire::types::HealthFilter;
 
-    /// The URL is user-editable, so an unrecognised token must widen the list rather than
-    /// refuse the link — the same rule the rest of `ConsoleQuery` follows.
+    /// The URL is user-editable, so an unrecognised token must widen the list, not
+    /// refuse the link: the same rule the rest of `ConsoleQuery` follows.
     #[test]
     fn an_unknown_health_token_shows_everything() {
         assert_eq!(health_from_token("nonsense"), HealthFilter::Any);

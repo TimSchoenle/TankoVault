@@ -1,4 +1,4 @@
-//! The left rail: brand lockup, grouped destinations and the user footer.
+//! Owns the left rail: brand lockup, grouped destinations and the user footer.
 
 use crate::components::{UnreadBadge, Wordmark};
 use crate::i18n::{use_i18n, Translator};
@@ -14,7 +14,7 @@ use dioxus::prelude::*;
 use inkstone_ui::{button_class, Size, Tone};
 /// The line under the rail's lockup: the operator's own tagline, or the catalogue's.
 ///
-/// Same rule as the footer's — see `components::footer` — and the same one string, because two
+/// Same rule as the footer's (see `components::footer`), and the same one string, because two
 /// taglines for one deployment is a difference nobody chose.
 fn rail_tagline(i18n: Translator) -> String {
     use_branding()
@@ -98,7 +98,7 @@ pub(crate) fn Rail() -> Element {
     }
 }
 
-/// Whether the reader-scoped destinations — watchlist, notifications, recommendations, account —
+/// Whether the reader-scoped destinations (watchlist, notifications, recommendations, account)
 /// belong in the chrome at all.
 ///
 /// Every one of them is an auth wall without a session, so offering them signed out advertises
@@ -112,13 +112,13 @@ pub(crate) const fn reader_destinations_visible(authenticated: bool, settled: bo
 
 /// One routed destination in the bottom tab bar.
 ///
-/// The set lives beside the rail it mirrors rather than in the bar's own module: these are the
+/// The set lives beside the rail it mirrors instead of in the bar's own module: these are the
 /// same navigation seen at two widths, and a destination added to one chrome and forgotten in
 /// the other is unreachable for half the readers.
 pub(crate) struct Destination {
     pub(crate) route: Route,
     /// The bar's label. German's `Benachrichtigungen` does not fit a fifth of a 390px viewport,
-    /// so the bar takes a shorter key rather than an ellipsis.
+    /// so the bar takes a shorter key instead of an ellipsis.
     pub(crate) short: String,
     pub(crate) icon: Icon,
     /// The unread count to badge, or zero.
@@ -129,7 +129,7 @@ pub(crate) struct Destination {
 ///
 /// Feature-gated, not permission-gated: the deployment-level switches are the same for every
 /// reader of a given instance, so the bar never reflows *per reader*. Everything that does vary
-/// by who is holding it — the console above all — lives in the **More** sheet instead.
+/// by who is holding it (the console above all) lives in the **More** sheet instead.
 ///
 /// Signing in or out is the one exception, and deliberately so: `personal` drops the two
 /// reader-scoped tabs for a reader we know has no session, because a tab bar whose middle two
@@ -180,11 +180,10 @@ pub(crate) fn tab_destinations(
     out
 }
 
-// The rail's own notices link retired with the footer, which carries it in its Open source
-// column on every screen and in the More sheet below 820px. The reason it was in the rail at
-// all — a signed-out reader has received the same bundle and is owed the same notices — is
-// unchanged and still met: the footer renders signed out. The literals that used to live here
-// moved with the link, to `views/licenses.rs`, which is the only thing that reaches for them now.
+// The rail carries no notices link: the footer carries it in its Open source column on every
+// screen and in the More sheet below 820px. A signed-out reader has received the same bundle and
+// is owed the same notices, and the footer renders signed out. The literals live in
+// `views/licenses.rs`, the only thing that reaches for them.
 
 /// A kicker heading that groups rail destinations.
 #[component]
@@ -219,7 +218,7 @@ fn NavLink(
             Ic { icon, size: 18 }
             span { class: "label", "{label}" }
             if badge > 0 {
-                // Compacted, not raw: the badge is a fixed pill and a four-figure inbox used to
+                // Compacted, not raw: the badge is a fixed pill and a four-figure inbox would
                 // widen it past the label it sits beside. `title` keeps the exact number
                 // reachable for anyone who wants it.
                 span { class: "ik-nav-badge", title: "{badge}", {crate::util::compact_count(badge)} }
@@ -248,7 +247,7 @@ fn same_screen(a: &Route, b: &Route) -> bool {
     discriminant(&normalise(a)) == discriminant(&normalise(b))
 }
 
-/// Avatar + identity + settings gear when signed in; a "Sign in" button once we know there is
+/// The avatar, identity and settings gear when signed in; a "Sign in" button once we know there is
 /// no session. Sign-out lives on the Account screen.
 #[component]
 fn UserFooter() -> Element {
@@ -299,7 +298,7 @@ mod tests {
     ///
     /// Without the `settled` term the rail and the tab bar are stripped for the length of the
     /// boot-time silent refresh on every reload, and put back once it lands. Without the rule at
-    /// all — the behaviour this replaced — a signed-out reader is offered four destinations that
+    /// all a signed-out reader is offered four destinations that
     /// can only answer "sign in".
     #[test]
     fn reader_destinations_survive_boot_and_go_on_a_settled_sign_out() {
@@ -318,9 +317,9 @@ mod tests {
     /// An addressable sub-route keeps its parent rail entry lit.
     ///
     /// `same_screen` compares `std::mem::discriminant`s, and `/console` replaces itself with
-    /// `/console/:entity` on arrival — so the Console entry went dark the instant the operator
-    /// landed on the console, and the rail claimed they were nowhere. `/account/:panel` arrived
-    /// later with the same shape and would have repeated it.
+    /// `/console/:entity` on arrival, so the Console entry would go dark the instant the operator
+    /// landed on the console, and the rail would claim they were nowhere. `/account/:panel` has
+    /// the same shape.
     #[test]
     fn an_addressable_sub_route_keeps_its_parent_entry_lit() {
         let console = Route::ConsoleSection {

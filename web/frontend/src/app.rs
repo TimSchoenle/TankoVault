@@ -1,4 +1,4 @@
-//! The app root: the route table, the contexts every screen depends on, and the bundled
+//! Owns the app root: the route table, the contexts every screen depends on, and the bundled
 //! font faces.
 
 #[cfg(feature = "desktop")]
@@ -19,8 +19,8 @@ use crate::views::{
 };
 use dioxus::prelude::*;
 
-/// The type-safe route table (`docs/ARCHITECTURE.md` §17.4). Every screen lives under the persistent [`Shell`]
-/// layout (left rail + top command bar).
+/// The type-safe route table (`docs/ARCHITECTURE.md` §17.4). Every screen lives under the
+/// persistent [`Shell`] layout (left rail and top command bar).
 #[derive(Routable, Clone, PartialEq)]
 #[rustfmt::skip]
 pub(crate) enum Route {
@@ -31,7 +31,7 @@ pub(crate) enum Route {
         // shared link opens on the same covers; see `views::discover::query`.
         #[route("/discover?:..query")]
         Discover { query: DiscoverQuery },
-        // Its own screen rather than a shelf on Home: the reasons are the surface, and a rail
+        // Its own screen instead of a shelf on Home: the reasons are the surface, and a rail
         // under three other sections had room for neither the list nor the explanations.
         #[route("/for-you")]
         Recommendations {},
@@ -58,7 +58,7 @@ pub(crate) enum Route {
         AnilistCallback { code: String, state: String },
         #[route("/account/:panel")]
         AccountSection { panel: AccountPanel },
-        // A panel slug this build has dropped lands on the settings rather than on a 404 — the
+        // A panel slug this build has dropped lands on the settings instead of on a 404: the
         // strip is capability-filtered anyway, so "no such panel" and "not for you" already
         // resolve the same way.
         #[redirect("/account/:_panel", |_panel: String| Route::Account {})]
@@ -82,12 +82,12 @@ pub(crate) enum Route {
         Console {},
         #[route("/console/:entity?:..query")]
         ConsoleSection { entity: ConsoleEntity, query: ConsoleQuery },
-        // An entity slug this build has dropped lands in the console rather than on a 404 — the
+        // An entity slug this build has dropped lands in the console instead of on a 404: the
         // rail is capability-filtered anyway, so "no such entity" and "not for you" already
         // resolve the same way.
         #[redirect("/console/:_entity", |_entity: String| Route::Console {})]
-        // Operator-published documents. The slug set is configuration, not code — an
-        // operator can publish one this build has never heard of — so the segment is a
+        // Operator-published documents. The slug set is configuration, not code (an
+        // operator can publish one this build has never heard of), so the segment is a
         // free string and an unconfigured one is the API's 404, not a routing miss.
         #[route("/legal/:slug")]
         Legal { slug: String },
@@ -117,14 +117,14 @@ pub(crate) fn App() -> Element {
     use_context_provider(SourceOrder::new);
     // The shipped identity until `Shell` fetches this deployment's. Provided here, above
     // `I18nRoot`, because the translator substitutes the product name into every message that
-    // names it — so it has to be in scope wherever a message is rendered.
+    // names it, so it has to be in scope wherever a message is rendered.
     use_context_provider(BrandingState::new);
     // Empty until a screen publishes a name only it knows; the route's own name covers the rest.
     use_context_provider(PageTitle::new);
     // Registered on mount by the two fields, read by the shortcut that focuses them.
     use_context_provider(FocusTargets::new);
     // The short-lived elevation the sensitive screens present. In memory only, like the access
-    // token, and for the same reason — see `state::step_up`.
+    // token, and for the same reason: see `state::step_up`.
     crate::state::step_up::provide_step_up();
     crate::api::provide_api();
 
@@ -148,7 +148,7 @@ pub(crate) fn App() -> Element {
 /// The router, once there is a server to point it at.
 ///
 /// Desktop starts with no origin at all, and every screen behind the router issues requests, so
-/// the choice has to be made before any of them mounts — not inside a route they could navigate
+/// the choice has to be made before any of them mounts: not inside a route they could navigate
 /// away from.
 #[cfg(feature = "desktop")]
 #[component]
@@ -179,14 +179,14 @@ fn Connected() -> Element {
 /// on web.
 ///
 /// Web writes `data-theme` and friends onto `<html>`, which Rust can reach there and cannot
-/// reach in a wry webview — see `crate::platform::desktop`. The stylesheet's rules are bare
+/// reach in a wry webview: see `crate::platform::desktop`. The stylesheet's rules are bare
 /// attribute selectors (`[data-theme="light"]`, not `:root[data-theme="light"]`), so they apply
 /// from here just as well.
 ///
 /// It also carries the page fill; `.ik-desktop-root` in `input.css` says why, and why the
-/// formatting context it establishes is load-bearing rather than tidying.
+/// formatting context it establishes is load-bearing, not tidying.
 ///
-/// A named class rather than the inline `style:` this codebase usually reaches for: the Tailwind
+/// A named class instead of the inline `style:` this codebase usually reaches for: the Tailwind
 /// CLI scans these sources for class names, and `display:flow-root` in a style string is enough
 /// for it to mint a phantom `.flow-root` utility nothing renders.
 #[cfg(feature = "desktop")]
@@ -195,36 +195,36 @@ fn AppRoot(children: Element) -> Element {
     let attributes = crate::platform::ROOT_ATTRIBUTES.read().clone();
     let mut settings_open = use_signal(|| false);
 
-    // Provided here rather than in `App` because it is desktop-only, and read by two things that
+    // Provided here instead of in `App` because it is desktop-only, and read by two things that
     // both live at this level: the title bar's dot and the settings sheet. The loop it feeds waits
-    // out first paint on its own and then checks every six hours — see `crate::update`.
+    // out first paint on its own and then checks every six hours: see `crate::update`.
     let update = use_context_provider(crate::update::UpdateState::new);
     let i18n = crate::i18n::use_i18n();
-    // Before the loop, so a client that has just replaced itself says so rather than reporting
+    // Before the loop, so a client that has just replaced itself says so instead of reporting
     // "no check has run yet" about a version it acquired thirty seconds ago.
     use_hook(|| crate::update::adopt_applied(update, i18n));
-    // The `Api` handle rather than a fetched channel: a check asks the connected server which
+    // The `Api` handle instead of a fetched channel: a check asks the connected server which
     // releases it supports at the moment it runs, so a deployment upgraded mid-session unblocks
     // its readers without any of them restarting.
     let api = crate::api::use_api();
     use_future(move || crate::update::run(update, api, i18n));
 
     // Whether the close button ends the app or hides it. Provided here because two things read
-    // it — the sheet that sets it and the `TrayHost` that makes it true — and neither owns the
+    // it (the sheet that sets it and the `TrayHost` that makes it true), and neither owns the
     // other.
     use_context_provider(CloseToTray::new);
 
-    // Once, on the first render: size the window to the display the builder could not know about
-    // — a laptop at 1366×768 would otherwise keep the 1280×860 placeholder, taller than its own
+    // Once, on the first render: size the window to the display the builder could not know about;
+    // a laptop at 1366×768 would otherwise keep the 1280×860 placeholder, taller than its own
     // screen, with the footer and the sign-in button below the bottom edge.
     //
-    // The UI is held back until it resolves, and that gate is the fix for a real defect rather
-    // than caution. The window opens at `STARTUP_INNER_SIZE` and is resized a moment later, so a
-    // screen that mounted in between measured a geometry the reader never sees — and Discover
-    // turns its measurement into a page size (`components::use_grid_fit`), so it fetched a
-    // 1280px window's worth of covers and then laid them into the fitted window's wider grid,
+    // The UI is held back until it resolves, and that gate prevents a real defect; it is
+    // not caution. The window opens at `STARTUP_INNER_SIZE` and is resized a moment later, so a
+    // screen that mounted in between would measure a geometry the reader never sees, and Discover
+    // turns its measurement into a page size (`components::use_grid_fit`), so it would fetch a
+    // 1280px window's worth of covers and then lay them into the fitted window's wider grid,
     // one short row per page. The browser has no equivalent: its viewport is final before first
-    // paint, which is why this only ever went wrong in the native client.
+    // paint, which is why this only goes wrong in the native client.
     let mut fitted = use_signal(|| false);
     let desktop = crate::platform::window();
     use_future(move || {
@@ -235,8 +235,8 @@ fn AppRoot(children: Element) -> Element {
         }
     });
 
-    // The OS caption is off, so the window's light/dark chrome — its shadow, its resize borders,
-    // and the caption itself if decorations are ever turned back on — has to be told which theme
+    // The OS caption is off, so the window's light/dark chrome (its shadow, its resize borders,
+    // and the caption itself if decorations are ever turned back on) has to be told which theme
     // the *app* is in. Left alone it follows the system's, which is how a dark border ended up
     // around the Warm Paper theme.
     let theme = attributes.get("data-theme");
@@ -284,10 +284,10 @@ fn AppRoot(children: Element) -> Element {
     rsx! { {children} }
 }
 
-/// Self-hosted font subsets (`docs/DESIGN_SYSTEM.md` §3), wired through the Dioxus asset system so the
-/// `.woff2` files are bundled and content-hashed in the release build.
+/// Self-hosted font subsets (`docs/DESIGN_SYSTEM.md` §3), wired through the Dioxus asset system so
+/// the `.woff2` files are bundled and content-hashed in the release build.
 ///
-/// Emitted from Rust rather than `input.css`: manganis doesn't rewrite `url()` inside the
+/// Emitted from Rust instead of `input.css`: manganis doesn't rewrite `url()` inside the
 /// Tailwind-built stylesheet, so a plain `url(fonts/…)` there 404s in the hashed release build.
 #[component]
 fn FontFaces() -> Element {

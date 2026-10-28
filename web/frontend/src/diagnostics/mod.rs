@@ -1,13 +1,13 @@
-//! What the desktop client leaves behind when it goes wrong.
+//! Owns what the desktop client leaves behind when it goes wrong.
 //!
 //! A `panic = "abort"` GUI process dies with no console, no dialog and no trace: the reader sees
 //! the window vanish and has nothing to send anyone, which is the report this module exists to
 //! answer. Three things come out of it, and they cover three different failures:
 //!
 //! * a **rolling log** in [`crate::platform::log_dir`], carrying this app's own events and those
-//!   of the libraries under it (`wry`, `tao`, `reqwest`) — what the app was doing;
-//! * a **crash report** per panic, written by [`crash`] — what went wrong, when Rust knows;
-//! * a **session marker**, held by [`session`] — that something went wrong, when Rust does not.
+//!   of the libraries under it (`wry`, `tao`, `reqwest`): what the app was doing;
+//! * a **crash report** per panic, written by [`crash`]: what went wrong, when Rust knows;
+//! * a **session marker**, held by [`session`]: that something went wrong, when Rust does not.
 //!   A `WebView2` host dying under the renderer runs no Rust code at all, and the marker is the
 //!   only evidence such a session leaves.
 //!
@@ -28,28 +28,28 @@ use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 
-/// Raises or narrows the level, in `RUST_LOG` syntax — `TANKOVAULT_LOG=debug,wry=trace`.
+/// Raises or narrows the level, in `RUST_LOG` syntax: `TANKOVAULT_LOG=debug,wry=trace`.
 ///
-/// Its own name rather than `RUST_LOG`, so that turning this app up does not also turn up every
+/// Its own name instead of `RUST_LOG`, so that turning this app up does not also turn up every
 /// other Rust program in the shell that launched it.
 const LEVEL_ENV: &str = "TANKOVAULT_LOG";
 
 /// The live log file. Rolled generations sit beside it as `.1`, `.2`, `.3`.
 const LOG_FILE_NAME: &str = "tankovault.log";
 
-/// Start logging and arm the crash reporter. **Call this first in `main`**, before anything that
-/// can fail — a crash during startup is exactly the one this app could not previously explain.
+/// Starts logging and arms the crash reporter. **Call this first in `main`**, before anything that
+/// can fail: a crash during startup is exactly the one nothing else would explain.
 ///
-/// Safe to call more than once: the subscriber is installed with `try_init`, which declines
-/// rather than aborts when one is already set.
+/// Safe to call more than once: the subscriber is installed with `try_init`, which declines,
+/// not aborts when one is already set.
 pub(crate) fn install() {
     let dir = crate::platform::log_dir();
     let file = dir
         .as_ref()
         .map(|dir| sink::Rolling::open(dir.join(LOG_FILE_NAME)));
 
-    // Set here rather than left to `dioxus::launch`, which installs its own default only when no
-    // dispatcher exists yet — so this one wins and the libraries below still report into it.
+    // Set here, not left to `dioxus::launch`, which installs its own default only when no
+    // dispatcher exists yet, so this one wins and the libraries below still report into it.
     let _ = tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::builder()
@@ -74,13 +74,13 @@ pub(crate) fn install() {
     );
 }
 
-/// Record that this process is the running instance. Call once the instance lock is held; see
+/// Records that this process is the running instance. Call once the instance lock is held; see
 /// [`session::start`] for why not before.
 pub(crate) fn begin_session() {
     session::start();
 }
 
-/// Record that this process is ending on purpose, so the next start does not report it as a kill.
+/// Records that this process is ending on purpose, so the next start does not report it as a kill.
 pub(crate) fn end_session() {
     tracing::info!("shutting down");
     session::end();

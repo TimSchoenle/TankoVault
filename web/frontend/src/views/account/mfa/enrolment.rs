@@ -1,4 +1,4 @@
-//! The two-factor card's state and the requests it sends: enrol and confirm an authenticator
+//! Owns the two-factor card's state and the requests it sends: enrol and confirm an authenticator
 //! app, register a security key, regenerate recovery codes, and remove the authenticator.
 
 use dioxus::prelude::*;
@@ -22,7 +22,7 @@ pub(super) struct Mfa {
     pub(super) reload: Reload,
     pub(super) busy: Busy,
     /// Both: the gate drives the prompt, and removing a factor has to drop the grant that factor
-    /// earned — the server revokes it, so keeping it here would only mean retrying with a dead
+    /// earned; the server revokes it, so keeping it here would only mean retrying with a dead
     /// token.
     pub(super) step_up: StepUp,
     pub(super) gate: StepUpGate,
@@ -55,14 +55,14 @@ impl Mfa {
         }
     }
 
-    /// Report a refused write: open the elevation prompt for a 403, or show the message.
+    /// Reports a refused write: opens the elevation prompt for a 403, or shows the message.
     ///
     /// Every write funnels through this, so the "a 403 means prompt, not fail" rule is written
     /// once. A handler that reported the raw problem instead would show the reader "insufficient
     /// privileges" for an action they are perfectly entitled to take.
     ///
-    /// Takes the *classified* refusal and the message rather than the error itself: every
-    /// generated operation has its own error type, so one function cannot accept them all — and
+    /// Takes the *classified* refusal and the message instead of the error itself: every
+    /// generated operation has its own error type, so one function cannot accept them all, and
     /// one function is the point.
     pub(super) fn handle_refusal(self, (refused, message): (api::Refusal, String)) {
         let Self {
@@ -75,7 +75,7 @@ impl Mfa {
         }
     }
 
-    /// Start enrolling an authenticator app: the one response that carries its secret.
+    /// Starts enrolling an authenticator app: the one response that carries its secret.
     pub(super) fn start_app_enrolment(self) {
         let Self {
             i18n,
@@ -105,7 +105,7 @@ impl Mfa {
         });
     }
 
-    /// Confirm the authenticator app with its first code, which issues the recovery codes.
+    /// Confirms the authenticator app with its first code, which issues the recovery codes.
     pub(super) fn finish_app_enrolment(self) {
         let Self {
             i18n,
@@ -148,7 +148,8 @@ impl Mfa {
         });
     }
 
-    /// Register a security key: start the ceremony, run it on the authenticator, and finish it.
+    /// Registers a security key: starts the ceremony, runs it on the authenticator, and finishes
+    /// it.
     pub(super) fn register_key(self) {
         let Self {
             i18n,
@@ -187,7 +188,7 @@ impl Mfa {
                 }
             };
 
-            // The authenticator. Everything from here can end in a shrug — a reader who walked
+            // The authenticator. Everything from here can end in a shrug: a reader who walked
             // away from the prompt has changed nothing, and the card must look like it.
             let challenge: CreationChallengeResponse =
                 match webauthn::parse_challenge(started.options) {
@@ -236,7 +237,7 @@ impl Mfa {
         });
     }
 
-    /// Replace the recovery codes with a fresh set.
+    /// Replaces the recovery codes with a fresh set.
     pub(super) fn regenerate(self) {
         let Self {
             i18n,
@@ -265,7 +266,7 @@ impl Mfa {
         });
     }
 
-    /// Remove the authenticator app.
+    /// Removes the authenticator app.
     pub(super) fn remove_totp(self) {
         let Self {
             i18n,
@@ -306,9 +307,9 @@ pub(super) fn refusal(
     (api::Refusal::of(&err), api::friendly_error(i18n, err))
 }
 
-/// Report a ceremony outcome and release the busy latch.
+/// Reports a ceremony outcome and releases the busy latch.
 ///
-/// [`CeremonyError::Cancelled`] clears the error line rather than writing to it, for the reason
+/// [`CeremonyError::Cancelled`] clears the error line instead of writing to it, for the reason
 /// the passkey card gives: a ceremony the reader chose to stop is not a broken feature.
 fn ceremony_failed(
     outcome: &CeremonyError,

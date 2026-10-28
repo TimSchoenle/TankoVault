@@ -1,4 +1,4 @@
-//! This account's linked external trackers, and the two admin-side actions the API supports.
+//! Owns this account's linked external trackers, and the two admin-side actions the API supports.
 
 use crate::api;
 use crate::components::{async_view, ErrorLine, InlineConfirm, Section, SkeletonBlock, StepUpGate};
@@ -16,7 +16,7 @@ pub(super) fn ExternalSync(
     user_id: String,
     username: String,
     editable: bool,
-    /// The editor's gate — both actions below are elevated, and the prompt is mounted there.
+    /// The editor's gate: both actions below are elevated, and the prompt is mounted there.
     gate: StepUpGate,
 ) -> Element {
     let api = api::use_api();
@@ -81,7 +81,7 @@ pub(super) fn ExternalSync(
 }
 
 /// One linked tracker: force a pull, or unlink it behind an inline confirmation. Unlinking is
-/// reversible — the reader can relink themselves — so it asks once rather than demanding typing.
+/// reversible (the reader can relink themselves), so it asks once instead of demanding typing.
 #[component]
 pub(super) fn SyncLinkRow(
     account: AdminSyncAccount,

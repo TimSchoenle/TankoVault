@@ -1,4 +1,4 @@
-//! Localisation of every reader-facing string (`i18nrs`, Dioxus binding).
+//! Owns the localisation of every reader-facing string (`i18nrs`, Dioxus binding).
 //!
 //! Catalogues live in `locales/<code>.json`, baked in via `include_str!` so a missing or
 //! malformed one is a build failure, not a blank UI. This module adds placeholder substitution,
@@ -29,7 +29,7 @@ const BRAND_PLACEHOLDER: &str = "{brand}";
 pub(crate) struct Locale {
     /// BCP-47 primary subtag (`"en"`), also the `localStorage` value and `<html lang>`.
     pub(crate) code: &'static str,
-    /// The language's name *in that language*, for the picker — a reader looking for their own
+    /// The language's name *in that language*, for the picker: a reader looking for their own
     /// language recognises "Deutsch", not "German".
     pub(crate) endonym: &'static str,
     /// The raw catalogue JSON, parsed once by the provider.
@@ -58,7 +58,7 @@ fn translations() -> HashMap<&'static str, &'static str> {
         .collect()
 }
 
-/// Provide the translation context to the whole app.
+/// Provides the translation context to the whole app.
 ///
 /// Mount this above the router: every screen consumes the context, and a language change has
 /// to re-render all of them.
@@ -81,8 +81,8 @@ pub(crate) fn I18nRoot(children: Element) -> Element {
 /// The language to start in when nothing has been stored yet: the system's own preference if
 /// we ship it, else [`DEFAULT_LANGUAGE`].
 ///
-/// Only the primary subtag is matched — a reader whose system reports `de-AT` gets `de`
-/// rather than being bounced to English over a regional suffix we do not distinguish.
+/// Only the primary subtag is matched: a reader whose system reports `de-AT` gets `de`
+/// instead of being bounced to English over a regional suffix we do not distinguish.
 fn preferred_language() -> String {
     crate::platform::preferred_language()
         .and_then(|tag| {
@@ -108,7 +108,7 @@ fn HtmlLang() -> Element {
     let i18n = use_i18n();
     use_effect(move || {
         // Written through the typed platform binding, so the tag is a value
-        // rather than a fragment of a script — there is no string literal to break out of,
+        // instead of a fragment of a script: there is no string literal to break out of,
         // and nothing for the served CSP to have to permit.
         crate::platform::set_document_language(&i18n.language());
     });
@@ -117,8 +117,8 @@ fn HtmlLang() -> Element {
 
 /// A `Copy` translation handle: `let i18n = use_i18n();` then `i18n.t("nav.home")`.
 ///
-/// `Copy` so it can be captured by event handlers and spawned futures — which is where API
-/// failures are turned into sentences — without cloning at every call site.
+/// `Copy` so it can be captured by event handlers and spawned futures (which is where API
+/// failures are turned into sentences) without cloning at every call site.
 #[derive(Clone, Copy)]
 pub(crate) struct Translator {
     i18n: Signal<I18n>,
@@ -130,11 +130,11 @@ impl Translator {
     /// deployment calls itself.
     ///
     /// Reading the signal subscribes the calling scope, so switching language re-renders
-    /// everything that displayed a message — and reading the branding signal does the same, so a
+    /// everything that displayed a message, and reading the branding signal does the same, so a
     /// message naming the product corrects itself the moment `/v1/branding` lands.
     ///
-    /// The catalogue never spells the product name out. Roughly forty messages name it — the
-    /// desktop app's whole vocabulary does — and every one of them would otherwise be a literal
+    /// The catalogue never spells the product name out. Roughly forty messages name it (the
+    /// desktop app's whole vocabulary does), and every one of them would otherwise be a literal
     /// no configuration could reach.
     pub(crate) fn t(self, key: &str) -> String {
         let message = self.i18n.read().t(key);
@@ -154,10 +154,10 @@ impl Translator {
 
     /// [`Translator::t`], but `None` when the catalogue has no message at `key`.
     ///
-    /// For the few panels that word a vocabulary owned by the *server* — audit actions, merge
-    /// signals, decision reasons — where the honest fallback is the raw token. The binding
+    /// For the few panels that word a vocabulary owned by the *server* (audit actions, merge
+    /// signals, decision reasons) where the honest fallback is the raw token. The binding
     /// renders a miss as the sentence `Key '…' not found for language '…'`, which is worse on
-    /// screen than the token, so the miss has to be detected before the lookup rather than
+    /// screen than the token, so the miss has to be detected before the lookup, not
     /// recognised in its result.
     pub(crate) fn t_opt(self, key: &str) -> Option<String> {
         has_key(key).then(|| self.t(key))
@@ -166,7 +166,7 @@ impl Translator {
     /// A count-sensitive message: `key.one` for exactly one, `key.other` for anything else,
     /// with `{count}` and `args` substituted into whichever form is picked.
     ///
-    /// Deliberately a two-form rule, not full CLDR plural categories — every shipped language
+    /// Deliberately a two-form rule, not full CLDR plural categories: every shipped language
     /// uses one/other, and CLDR's tables would cost more bundle bytes than the entire
     /// catalogue. The assertion below forces revisiting this before adding a language with a
     /// dual/few/many form.
@@ -195,7 +195,7 @@ impl Translator {
         self.i18n.read().get_current_language().to_owned()
     }
 
-    /// Switch language. The provider persists the choice and re-renders every consumer.
+    /// Switches language. The provider persists the choice and re-renders every consumer.
     pub(crate) fn set_language(self, code: &str) {
         self.set_language.call(code.to_owned());
     }
@@ -203,7 +203,7 @@ impl Translator {
 
 /// The translation handle for any component under [`I18nRoot`].
 ///
-/// Not a hook — it is a context lookup — so it may be called after an early return, and more
+/// Not a hook (it is a context lookup), so it may be called after an early return, and more
 /// than once in the same component, without disturbing hook order.
 pub(crate) fn use_i18n() -> Translator {
     let context = use_i18n_context();
@@ -213,9 +213,9 @@ pub(crate) fn use_i18n() -> Translator {
     }
 }
 
-/// Replace each `{name}` in `template` with its value from `args`.
+/// Replaces each `{name}` in `template` with its value from `args`.
 ///
-/// An unknown placeholder is emitted verbatim rather than dropped: a visible `{count}` in the
+/// An unknown placeholder is emitted verbatim, not dropped: a visible `{count}` in the
 /// UI points straight at the call site that forgot an argument, whereas a silent gap reads as
 /// a plausible sentence and ships.
 fn interpolate(template: &str, args: &[(&str, &str)]) -> String {
@@ -247,20 +247,20 @@ fn interpolate(template: &str, args: &[(&str, &str)]) -> String {
 /// **without** the Dioxus context.
 ///
 /// For the one caller that has none: `update::install`'s hand-off runs from `main`, before the
-/// app is launched, and it is the moment the reader most needs telling — the window they just
+/// app is launched, and it is the moment the reader most needs telling; the window they just
 /// opened is about to vanish for a minute while an installer runs. A [`Translator`] is a context
 /// lookup, so there is nothing to ask.
 ///
 /// `{brand}` therefore comes from the branding this client last saw from this server
-/// ([`crate::state::branding::remembered_name`]) rather than from a signal. Without it the two
-/// messages here — the only ones in the app rendered outside a component tree — kept the
+/// ([`crate::state::branding::remembered_name`]) instead of from a signal. Without it the two
+/// messages here (the only ones in the app rendered outside a component tree) kept the
 /// placeholder verbatim, so the notification that takes over a rebranded deployment's reader for
 /// a minute read `{brand} is updating`.
 ///
-/// It resolves the language the way [`I18nRoot`] would for a first run — the system's, if it is
-/// shipped — rather than the one the reader last chose, which the desktop build does not persist.
+/// It resolves the language the way [`I18nRoot`] would for a first run (the system's, if it is
+/// shipped) instead of the one the reader last chose, which the desktop build does not persist.
 /// Falls back through the default catalogue and finally to the key itself, so a missing message
-/// is a visible key rather than an empty notification.
+/// is a visible key instead of an empty notification.
 #[cfg(feature = "desktop")]
 pub(crate) fn translate_offline(key: &str, args: &[(&str, &str)]) -> String {
     let preferred = preferred_language();
@@ -306,7 +306,7 @@ static REFERENCE_CATALOGUE: OnceLock<serde_json::Value> = OnceLock::new();
 /// Whether the catalogue defines `key`, addressed as a dot path.
 ///
 /// The membership test behind [`Translator::t_opt`], and what lets a module mapping a closed
-/// set of values to catalogue keys assert in test that every value it can produce is worded —
+/// set of values to catalogue keys assert in test that every value it can produce is worded:
 /// coverage `locales_define_the_same_keys` does not provide, since that only proves the
 /// catalogues agree with each other.
 pub(crate) fn has_key(key: &str) -> bool {
@@ -347,7 +347,7 @@ mod tests {
 
     /// The miss detection behind [`Translator::t_opt`].
     ///
-    /// The bug this pins: the panels wording a server-owned vocabulary used to detect a miss by
+    /// The bug this pins: the panels wording a server-owned vocabulary detected a miss by
     /// comparing the translation against the key, but the binding answers a miss with the
     /// sentence `Key '…' not found for language 'en'` and never with the key. The fallback to
     /// the raw token therefore never fired, and every audit row rendered that sentence in place
@@ -384,12 +384,12 @@ mod tests {
     ///
     /// The bug this pins: [`translate_offline`] interpolated only the caller's arguments, so
     /// `{brand}` survived into the text verbatim. Its two callers are the notifications either
-    /// side of an unattended update — the one raised as the app hands itself to an installer, and
-    /// the one the build that comes back raises — which is to say the only moment the app takes
+    /// side of an unattended update (the one raised as the app hands itself to an installer, and
+    /// the one the build that comes back raises), which is to say the only moment the app takes
     /// over the reader's machine announced itself as `{brand} is updating`. Neither has a
     /// [`Translator`] to ask, so nothing in the rest of the app could have caught it.
     ///
-    /// Asserted as "no placeholder survives" rather than against a name, so it holds whatever
+    /// Asserted as "no placeholder survives", not against a name, so it holds whatever
     /// the cached branding resolves to on the machine running the test.
     #[cfg(feature = "desktop")]
     #[test]
@@ -421,7 +421,7 @@ mod tests {
     }
 
     /// `i18nrs` falls back to an arbitrary catalogue for a missing key, so a key that exists in
-    /// only some locales renders unpredictably — including as the literal string
+    /// only some locales renders unpredictably: including as the literal string
     /// `Key '…' not found`. Structural equality across catalogues rules that out.
     #[test]
     fn locales_define_the_same_keys() {
@@ -447,11 +447,11 @@ mod tests {
     /// Messages that are deliberately the same text in every catalogue, grouped by the reason.
     ///
     /// The grouping is the invariant, not the membership. A flat list of keys is
-    /// indistinguishable from a list of forgotten translations — which is the state
-    /// [`identically_worded_messages_are_deliberate`] exists to keep out — so an entry earns its
+    /// indistinguishable from a list of forgotten translations (which is the state
+    /// [`identically_worded_messages_are_deliberate`] exists to keep out), so an entry earns its
     /// place by belonging to one of these three reasons. A message that fits none of them wants
-    /// translating rather than admitting here, and a fourth reason wants arguing for in review
-    /// rather than quietly widening one of these.
+    /// translating instead of admitting here, and a fourth reason wants arguing for in review,
+    /// not quietly widening one of these.
     const SHARED_MESSAGES: &[(&str, &[&str])] = &[
         (
             "a name — of a format, a product or a kind of comic — and names do not translate",
@@ -506,7 +506,7 @@ mod tests {
     /// Every message that reads the same in all catalogues reads that way on purpose.
     ///
     /// The bug this pins: an English value copied into de.json under a German key satisfies
-    /// `locales_define_the_same_keys` perfectly — it is a well-formed string at a key that
+    /// `locales_define_the_same_keys` perfectly; it is a well-formed string at a key that
     /// exists, and nothing else in the build reads what it says. `console.flags.group.tracking`
     /// shipped as "Tracking" beside seven translated siblings that way, while de.json words the
     /// same concept "Verfolgung" everywhere else. Key parity cannot see this class of gap;
@@ -576,13 +576,13 @@ mod tests {
     /// The bug this pins: a `t("…")` in the Rust and the catalogue entry behind it have no
     /// compile-time relationship, so a key no catalogue defines builds clean, passes every gate,
     /// and ships the binding's `Key '…' not found for language 'en'` sentence where the message
-    /// should be — into an `aria-label` as readily as into a paragraph.
+    /// should be; into an `aria-label` as readily as into a paragraph.
     /// `locales_define_the_same_keys` only proves the catalogues agree with each other; until
     /// this test, nothing looked at what the code asks them for, and `common.loading` was being
     /// asked for by a console panel that no catalogue answered.
     ///
-    /// Reach, deliberately limited: a literal argument only. A key assembled at runtime — the
-    /// server-owned vocabularies mapped through a `label_key()` — is out of a source scan's
+    /// Reach, deliberately limited: a literal argument only. A key assembled at runtime (the
+    /// server-owned vocabularies mapped through a `label_key()`) is out of a source scan's
     /// reach and is covered instead by its own module asserting [`has_key`] over the values it
     /// can produce. `t_opt` is skipped because a miss is its documented answer.
     #[test]
@@ -635,7 +635,7 @@ mod tests {
 
     /// The catalogue keys `text` names as literals, each flagged as a plural key or not.
     ///
-    /// A call whose argument is not a string literal is skipped rather than guessed at: the
+    /// A call whose argument is not a string literal is skipped, not guessed at: the
     /// alternative is a scan that reports its own parsing gaps as missing translations.
     fn literal_keys(text: &str) -> Vec<(String, bool)> {
         let mut found = Vec::new();
@@ -692,7 +692,7 @@ mod tests {
     }
 
     /// Every dot path that resolves to a leaf, so a key demoted to an object in one locale is
-    /// reported as a difference rather than silently matching.
+    /// reported as a difference, not silently matching.
     fn key_paths(value: &Value) -> BTreeSet<String> {
         leaf_messages(value).into_keys().collect()
     }

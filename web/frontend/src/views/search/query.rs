@@ -1,6 +1,6 @@
-//! Search's view state, encoded as a query string — the same contract Discover and the Watchlist
-//! keep, for the same reason: a search worth sending to someone is a search with its options on
-//! it, and the back button has to mean something after changing one.
+//! Owns Search's view state, encoded as a query string: the same contract Discover and the
+//! Watchlist keep, for the same reason: a search worth sending to someone is a search with its
+//! options on it, and the back button has to mean something after changing one.
 //!
 //! The options are the browse endpoint's own parameters. Search is that endpoint with a `query`,
 //! so anything it can narrow by, this can offer without the screen inventing a vocabulary.
@@ -13,7 +13,7 @@ use std::fmt;
 /// Everything the search screen asks for.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct SearchQuery {
-    /// The term. Empty is the landing state, not a search for nothing — see
+    /// The term. Empty is the landing state, not a search for nothing: see
     /// [`Self::is_empty`].
     pub(crate) q: String,
     /// One type, not a set: the endpoint takes one, and a multi-select whose extra choices are
@@ -32,7 +32,7 @@ impl SearchQuery {
         Self { q, ..self.clone() }
     }
 
-    /// Whether this is the landing state rather than a search.
+    /// Whether this is the landing state instead of a search.
     pub(crate) fn is_empty(&self) -> bool {
         self.q.trim().is_empty()
     }
@@ -46,7 +46,7 @@ impl SearchQuery {
     }
 }
 
-/// Parse the query string. An unparseable value falls back to that field's default: a URL is
+/// Parses the query string. An unparseable value falls back to that field's default: a URL is
 /// user-editable, and half-understanding one beats a blank screen.
 impl From<&str> for SearchQuery {
     fn from(query: &str) -> Self {
@@ -79,7 +79,7 @@ impl From<&str> for SearchQuery {
     }
 }
 
-/// Write only what differs from the default, so the rail's link stays `/search?` and a shared
+/// Writes only what differs from the default, so the rail's link stays `/search?` and a shared
 /// URL names exactly what its sender chose.
 impl fmt::Display for SearchQuery {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -144,7 +144,7 @@ mod tests {
         assert!(!SearchQuery::default().has_options());
     }
 
-    /// An unrecognised token is dropped rather than defaulted: substituting `manga` for a type
+    /// An unrecognised token is dropped, not defaulted: substituting `manga` for a type
     /// this build does not know would answer a filter nobody set while looking like it worked.
     #[test]
     fn unknown_tokens_are_dropped_not_defaulted() {
@@ -154,7 +154,7 @@ mod tests {
         assert_eq!(parsed.status, None);
     }
 
-    /// The absent ordering is the server's relevance ranking, and it has to stay absent — an
+    /// The absent ordering is the server's relevance ranking, and it has to stay absent: an
     /// unset control that sends `sort=updated` would rank an exact title match by whenever its
     /// last scan happened to be.
     #[test]

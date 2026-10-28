@@ -1,6 +1,6 @@
-//! Sync & integrations — one card per registered external tracker.
+//! Owns Sync & integrations: one card per registered external tracker.
 //!
-//! Data-driven from `GET /v1/me/sync/providers` rather than a hardcoded `AniList` block, so a
+//! Data-driven from `GET /v1/me/sync/providers` instead of a hardcoded `AniList` block, so a
 //! second provider needs no frontend change. Every claim on this screen comes from
 //! `GET /v1/me/sync/{provider}/status`: nothing is reported as connected while it is not.
 
@@ -389,7 +389,7 @@ fn ConflictInbox(provider: String, show: Signal<bool>, parent_reload: Reload) ->
     }
 }
 
-/// One conflict: the disagreeing values plus the two resolutions.
+/// One conflict: the disagreeing values and the two resolutions.
 #[component]
 fn ConflictRowView(conflict: ConflictRow, reload: Reload, parent_reload: Reload) -> Element {
     let api = api::use_api();

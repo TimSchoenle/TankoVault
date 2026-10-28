@@ -1,7 +1,8 @@
-//! Discover's view state, encoded as a URL query string so a filtered grid is shareable and the
-//! back button is meaningful — the same contract the Watchlist keeps in `views::watchlist::query`.
+//! Owns Discover's view state, encoded as a URL query string so a filtered grid is shareable and
+//! the back button is meaningful: the same contract the Watchlist keeps in
+//! `views::watchlist::query`.
 //!
-//! The split between [`DiscoverFilters`] and [`DiscoverQuery::at`] is load-bearing rather than
+//! The split between [`DiscoverFilters`] and [`DiscoverQuery::at`] is load-bearing, not
 //! cosmetic: everything that changes *which* series match lives in the filters, and the anchor is
 //! only *where in that result set* the reader was. The grid rebuilds its window when the filters
 //! change and holds it when the anchor moves, so anything added to the wrong half either fails to
@@ -24,7 +25,7 @@ pub(crate) enum Sort {
     #[default]
     Updated,
     /// Best match for the query. Only reachable from Search, which is the same endpoint with a
-    /// `query` — the Discover grid has nothing to rank, so this is not in [`Sort::ALL`].
+    /// `query`: the Discover grid has nothing to rank, so this is not in [`Sort::ALL`].
     Relevance,
     Title,
     Chapters,
@@ -37,7 +38,7 @@ impl Sort {
     ///
     /// "Most sources" is deliberately absent. It ranks by how many providers this deployment
     /// happens to have crawled a title on, which is an operational fact about the crawler and
-    /// not a property of the series — the same reasoning that took the source count off the
+    /// not a property of the series: the same reasoning that took the source count off the
     /// cards. The token is still accepted by the API for any client that sends it.
     pub(crate) const ALL: [Sort; 5] = [
         Self::Updated,
@@ -84,9 +85,9 @@ impl Sort {
 
 /// Where the reader's own watchlist sits in the results.
 ///
-/// A filter rather than a sort: "what haven't I started yet" and "what am I already on" are two
-/// different browses, and both were unreachable from a grid that mixed them. Resolved server-side
-/// against the caller's own token — nothing here names an account.
+/// A filter instead of a sort: "what haven't I started yet" and "what am I already on" are two
+/// different browses, and a grid that mixes them reaches neither. Resolved server-side
+/// against the caller's own token: nothing here names an account.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum Tracking {
     #[default]
@@ -100,7 +101,7 @@ pub(crate) enum Tracking {
 impl Tracking {
     pub(crate) const ALL: [Tracking; 3] = [Self::Any, Self::Tracked, Self::Untracked];
 
-    /// The `tracking` parameter this sends, or `None` for "any" — which is the *absence* of the
+    /// The `tracking` parameter this sends, or `None` for "any", which is the *absence* of the
     /// parameter, not a value: the endpoint answers `401` to it without a session.
     pub(crate) fn param(self) -> Option<&'static str> {
         match self {
@@ -123,7 +124,7 @@ impl Tracking {
         }
     }
 
-    /// Parse a `?tracking=` token. An unrecognised one widens to "everything" rather than
+    /// Parses a `?tracking=` token. An unrecognised one widens to "everything" instead of
     /// refusing the link.
     pub(crate) fn parse_token(token: &str) -> Self {
         Self::ALL
@@ -182,7 +183,7 @@ impl DiscoverFilters {
             + usize::from(self.tracking != Tracking::Any)
     }
 
-    /// Toggle one value in a list filter, which is what every chip in the panel does.
+    /// Toggles one value in a list filter, which is what every chip in the panel does.
     fn toggle<T: PartialEq>(list: &mut Vec<T>, value: T) {
         if let Some(index) = list.iter().position(|existing| *existing == value) {
             list.remove(index);
@@ -199,7 +200,7 @@ impl DiscoverFilters {
         Self::toggle(&mut self.statuses, value);
     }
 
-    /// Advance one tag through the chip's three states: neutral → include → exclude → neutral.
+    /// Advances one tag through the chip's three states: neutral → include → exclude → neutral.
     pub(crate) fn cycle_tag(&mut self, slug: &str) {
         if let Some(index) = self.inc.iter().position(|s| s == slug) {
             self.inc.remove(index);
@@ -223,7 +224,7 @@ pub(crate) struct DiscoverQuery {
     pub(crate) filters: DiscoverFilters,
     /// 0-based index, within the filtered result set, of the first card the reader had in view.
     ///
-    /// The grid pages on a scroll sentinel, so this — not a page number — is what makes a
+    /// The grid pages on a scroll sentinel, so this (not a page number) is what makes a
     /// position shareable: the page size is derived from the window's width, so the same page
     /// number is a different series on a phone than on a desktop.
     pub(crate) at: usize,
@@ -237,7 +238,7 @@ impl DiscoverQuery {
     }
 }
 
-/// Parse the query string. Unknown keys and unparseable values fall back to the default for
+/// Parses the query string. Unknown keys and unparseable values fall back to the default for
 /// that field: a URL is user-editable, and half-understanding one is better than a blank page.
 impl From<&str> for DiscoverQuery {
     fn from(query: &str) -> Self {
@@ -279,7 +280,7 @@ impl From<&str> for DiscoverQuery {
             }
         }
         // A window whose bounds are crossed matches nothing at all, which reads as a broken
-        // screen rather than as the typo in the URL that it is.
+        // screen instead of as the typo in the URL that it is.
         if out.filters.year_min > out.filters.year_max {
             std::mem::swap(&mut out.filters.year_min, &mut out.filters.year_max);
         }
@@ -287,7 +288,7 @@ impl From<&str> for DiscoverQuery {
     }
 }
 
-/// Write only what differs from the default, so the rail's link stays `/discover?` and a shared
+/// Writes only what differs from the default, so the rail's link stays `/discover?` and a shared
 /// URL names exactly what its sender changed.
 impl fmt::Display for DiscoverQuery {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -337,7 +338,7 @@ impl fmt::Display for DiscoverQuery {
     }
 }
 
-/// A comma-separated token list, with unrecognised entries dropped rather than defaulted — an
+/// A comma-separated token list, with unrecognised entries dropped, not defaulted: an
 /// unknown content type is a filter this build cannot honour, and silently substituting `manga`
 /// would answer a question nobody asked.
 fn parse_list<T: Copy + PartialEq>(
@@ -360,8 +361,8 @@ fn join_tokens<T>(values: &[T], token: impl Fn(&T) -> &'static str) -> String {
     values.iter().map(token).collect::<Vec<_>>().join(",")
 }
 
-/// Tag slugs are `[a-z0-9-]` by construction, but they arrive from the API rather than from this
-/// build, so they are encoded like any other value — a slug carrying a `&` would otherwise take
+/// Tag slugs are `[a-z0-9-]` by construction, but they arrive from the API instead of from this
+/// build, so they are encoded like any other value: a slug carrying a `&` would otherwise take
 /// every parameter after it with it.
 fn join_slugs(slugs: &[String]) -> String {
     slugs
@@ -393,7 +394,7 @@ mod tests {
     use super::*;
 
     /// Every field must round-trip: one that doesn't is a filter that silently resets on reload,
-    /// or — for `at` — a shared link that lands somewhere its sender never was.
+    /// or (for `at`) a shared link that lands somewhere its sender never was.
     #[test]
     fn every_field_round_trips_through_the_query_string() {
         let cases = [
@@ -432,8 +433,8 @@ mod tests {
         assert_eq!(DiscoverQuery::from(""), DiscoverQuery::default());
     }
 
-    /// A tag slug is the one value here that comes from the catalogue rather than from this
-    /// build, so it has to survive the separators the grammar reserves — including the comma
+    /// A tag slug is the one value here that comes from the catalogue instead of from this
+    /// build, so it has to survive the separators the grammar reserves: including the comma
     /// this parameter itself is split on.
     ///
     /// The bug this pins: the parser decoded the whole parameter before splitting it, so a slug
@@ -469,7 +470,7 @@ mod tests {
         assert_eq!(parsed.filters.year_max, 2020);
     }
 
-    /// Out-of-range numbers are clamped rather than refused: the sliders cannot express them,
+    /// Out-of-range numbers are clamped, not refused: the sliders cannot express them,
     /// so honouring one would strand the panel showing a value it can't get back to.
     #[test]
     fn out_of_range_numbers_are_clamped_to_the_controls() {

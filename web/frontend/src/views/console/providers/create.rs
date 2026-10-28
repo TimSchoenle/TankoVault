@@ -1,4 +1,4 @@
-//! Registering a new provider.
+//! Owns registering a new provider.
 
 use crate::api;
 use crate::components::{use_step_up_gate, OutcomeLine, StepUpGuard};
@@ -27,7 +27,7 @@ impl Rejected {
     }
 }
 
-/// Assemble the registration body from the form's raw fields.
+/// Assembles the registration body from the form's raw fields.
 ///
 /// # Errors
 ///
@@ -47,9 +47,9 @@ fn registration(
         return Err(Rejected::Message("console.providers.missingFields"));
     }
     // The generated `FromStr`, not a local `match` with a `_ => Custom` arm: the token can only
-    // have come from the picker below, so an unparseable one is a bug in this file rather than
-    // a user's mistake — and defaulting to `Custom` is how that bug used to reach the database
-    // as a silently mis-registered provider (FRONTEND F10).
+    // have come from the picker below, so an unparseable one is a bug in this file instead of
+    // a user's mistake, and defaulting to `Custom` would let that bug reach the database as a
+    // silently mis-registered provider.
     let adapter = adapter
         .parse::<AdapterKind>()
         .map_err(|_| Rejected::Message("console.providers.missingFields"))?;
@@ -66,8 +66,8 @@ fn registration(
 /// The fields a clone starts from: everything the form can carry, taken off the source
 /// provider.
 ///
-/// Politeness is deliberately not among them. A clone exists to point at a *different* site —
-/// that is what the operator changes the base URL to — and a crawl budget tuned for one host is
+/// Politeness is deliberately not among them. A clone exists to point at a *different* site
+/// (that is what the operator changes the base URL to), and a crawl budget tuned for one host is
 /// a guess about the new one. The server's polite defaults apply, and the inspector tunes them.
 #[derive(Clone, PartialEq)]
 pub(super) struct CloneSeed {
@@ -78,11 +78,11 @@ pub(super) struct CloneSeed {
     pub config: String,
 }
 
-/// Register a provider. Politeness is left at the polite server defaults and tuned afterwards
+/// Registers a provider. Politeness is left at the polite server defaults and tuned afterwards
 /// from the provider's own inspector.
 ///
 /// With a `seed`, this is the console's "clone": the same registration, opened with another
-/// provider's fields filled in. A clone is therefore never preset-managed — it goes through the
+/// provider's fields filled in. A clone is therefore never preset-managed: it goes through the
 /// same create endpoint as any hand-registered provider.
 #[component]
 pub(super) fn CreateProviderForm(
@@ -265,8 +265,8 @@ mod tests {
 
     /// An adapter token the picker cannot have produced must refuse the form.
     ///
-    /// The defect this closes (FRONTEND F10): the token was parsed with a `_ =>
-    /// AdapterKind::Custom` arm, so one wrong character registered the provider as `Custom` —
+    /// The defect this closes: the token was parsed with a `_ =>
+    /// AdapterKind::Custom` arm, so one wrong character registered the provider as `Custom`;
     /// a form that looked like it worked, producing a provider that scans nothing.
     #[test]
     fn an_unknown_adapter_token_is_refused_rather_than_registered_as_custom() {

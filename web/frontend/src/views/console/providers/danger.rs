@@ -1,5 +1,5 @@
-//! The Danger tab: irreversible and near-irreversible operations, each stating its blast
-//! radius with real counts rather than asking "are you sure".
+//! Owns the Danger tab: irreversible and near-irreversible operations, each stating its blast
+//! radius with real counts instead of asking "are you sure".
 
 use crate::api;
 use crate::components::{

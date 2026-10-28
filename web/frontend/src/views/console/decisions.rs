@@ -1,8 +1,8 @@
-//! The decision journals: what the automatic merge and the automatic sync did, and why.
+//! Owns the decision journals: what the automatic merge and the automatic sync did, and why.
 //!
 //! Both halves render the same shape because the operator's question is the same one: a headline
 //! naming what happened, the rule that decided it, and an expander holding the itemised evidence.
-//! The evidence is the point — a score and a bag of signal names say *that* two things matched,
+//! The evidence is the point: a score and a bag of signal names say *that* two things matched,
 //! and only the terms say which title matched and what each rule contributed.
 //!
 //! The **merge** half is a read surface only. Its rows include every verdict the sweep reached,
@@ -29,8 +29,8 @@ const PAGE_SIZE: u32 = 50;
 
 /// Rows per page while a search is running.
 ///
-/// The endpoint has no text predicate — a decision is matched on titles, an account name and a
-/// provider slug, none of which it indexes — so the search runs over what is loaded. It is
+/// The endpoint has no text predicate (a decision is matched on titles, an account name and a
+/// provider slug, none of which it indexes), so the search runs over what is loaded. It is
 /// therefore worth loading more of the journal while one is being typed: this is the server's own
 /// ceiling, so nothing here is asking for a page it will not answer.
 const SEARCH_PAGE_SIZE: u32 = 200;
@@ -52,7 +52,7 @@ enum Journal {
 
 /// The whole surface: a journal switch, then whichever journal is selected.
 ///
-/// The two are separate fetches behind one switch rather than one merged feed, because they are
+/// The two are separate fetches behind one switch instead of one merged feed, because they are
 /// not comparable: a merge decision is about the catalogue and a sync decision is about one
 /// reader's shelf, and interleaving them by timestamp produces a list that answers neither
 /// question.
@@ -125,7 +125,7 @@ fn MergeJournal(tick: RefreshTick) -> Element {
     let filter_outcome = outcome.read().clone();
     let only_blocked = *blocked_only.read();
     // In the URL like every other console filter, so an operator can send "the journal, around
-    // this title" rather than describing where to scroll to.
+    // this title" instead of describing where to scroll to.
     let search = nav.query().q;
     let searching = !search.trim().is_empty();
     let rows = use_resource(use_reactive!(|(
@@ -279,7 +279,7 @@ fn search_hits(i18n: Translator, shown: usize, loaded: usize, searching: bool) -
 fn MergeDecisionRow(
     decision: Signal<MergeDecision>,
     /// Whether this reader may take a merge back. Decides only whether the row offers the way
-    /// through to Console · Merges — the action itself lives there.
+    /// through to Console · Merges: the action itself lives there.
     can_revert: bool,
 ) -> Element {
     let i18n = use_i18n();
@@ -351,7 +351,7 @@ fn MergeDecisionRow(
                 // The journal is a read surface: it lists every verdict, including the many
                 // that merged nothing. Reverting is a decision about a merge, so it lives on
                 // the screen whose rows *are* merges, with the inventory of what a revert
-                // would put back beside the button — which is what this row cannot show.
+                // would put back beside the button, which is what this row cannot show.
                 if can_revert && d.outcome == "merged" {
                     Link {
                         to: crate::Route::ConsoleSection {
@@ -788,7 +788,7 @@ fn SyncDecisionRow(
 }
 
 /// One label/value pair, rendered only when there is a value. An empty row in a fact list reads
-/// as missing data rather than as "not applicable to this decision".
+/// as missing data instead of as "not applicable to this decision".
 #[component]
 fn DecisionFact(label: String, value: Option<String>) -> Element {
     let Some(value) = value else {

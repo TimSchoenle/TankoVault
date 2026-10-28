@@ -1,4 +1,4 @@
-//! The removable "active filter" chip bar above Discover's results.
+//! Owns the removable "active filter" chip bar above Discover's results.
 
 use super::query::{DiscoverFilters, Tracking};
 use crate::i18n::use_i18n;
@@ -101,7 +101,7 @@ pub(super) fn ActiveFilters(
     }
 }
 
-/// One removable chip. The button carries the filter it would leave behind rather than a
+/// One removable chip. The button carries the filter it would leave behind, not a
 /// description of what to remove, so the bar has no second copy of the removal rules.
 #[component]
 fn Chip(label: String, on_remove: EventHandler<()>) -> Element {

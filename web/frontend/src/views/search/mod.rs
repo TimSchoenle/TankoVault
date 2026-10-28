@@ -1,12 +1,12 @@
-//! Search — the trigram-backed catalogue query as a screen of its own (§7.6).
+//! Owns Search: the trigram-backed catalogue query as a screen of its own (§7.6).
 //!
-//! Two states, not one. Opened from the rail there is no term yet, and the screen used to answer
-//! that with `Results for ""` over an empty grid: a heading about a search nobody had made, and
-//! no field to make one in — the only way in was the top bar's box, which is not where a reader
-//! who just clicked "Search" is looking. The landing state is now a form.
+//! Two states, not one. Opened from the rail there is no term yet, and `Results for ""` over an
+//! empty grid would be a heading about a search nobody made, with no field to make one in; the
+//! top bar's box is not where a reader who just clicked "Search" is looking. So the landing state
+//! is a form.
 //!
 //! Its options are the browse endpoint's own parameters, because this *is* that endpoint with a
-//! `query`. Anything Discover can narrow by, this can offer without inventing a vocabulary — and
+//! `query`. Anything Discover can narrow by, this can offer without inventing a vocabulary, and
 //! all of it rides in the URL, so a search worth sending to someone carries what it was narrowed
 //! to.
 
@@ -29,7 +29,7 @@ use dioxus::prelude::*;
 use inkstone_ui::{Button, Size, Tone};
 use progenitor_client::ResponseValue;
 
-/// Search screen — trigram-backed query passed straight to the API (§7.6).
+/// Search screen: trigram-backed query passed straight to the API (§7.6).
 #[component]
 pub(crate) fn Search(query: SearchQuery) -> Element {
     let i18n = use_i18n();
@@ -47,7 +47,7 @@ pub(crate) fn Search(query: SearchQuery) -> Element {
     }
 
     // This screen has no pager, so the result set *is* one page: as many whole rows of covers as
-    // the ceiling allows, rather than a fixed 60 that ends in a ragged row at most widths.
+    // the ceiling allows, instead of a fixed 60 that ends in a ragged row at most widths.
     let fit = use_grid_fill();
     let resource = use_resource(move || {
         let search = state.read().clone();
@@ -102,7 +102,7 @@ pub(crate) fn Search(query: SearchQuery) -> Element {
         };
     }
 
-    // The count line reports what actually loaded, so it stays hidden rather than claiming
+    // The count line reports what actually loaded, so it stays hidden instead of claiming
     // "0 results" while the request is still in flight or after it failed.
     let count = match &*resource.read_unchecked() {
         Some(Ok(items)) => Some(items.len()),
@@ -185,7 +185,7 @@ fn SearchField(
 ) -> Element {
     let i18n = use_i18n();
     let mut draft = use_signal(|| term.clone());
-    // Adopt the route's term when the *route* changes under it — the back button is a term
+    // Adopt the route's term when the *route* changes under it: the back button is a term
     // change. As a bare `if` in the render body this ran on every render instead, and the
     // landing page (where `term` is empty) then cleared the field on every keystroke: the
     // keystroke re-rendered, the condition saw a non-empty draft under an empty term, and set
@@ -225,7 +225,7 @@ fn SearchField(
     }
 }
 
-/// Type, status, watchlist and ordering — the four the browse endpoint takes that a reader
+/// Type, status, watchlist and ordering: the four the browse endpoint takes that a reader
 /// searching a catalogue this size actually reaches for.
 #[component]
 fn SearchOptions(
@@ -252,7 +252,7 @@ fn SearchOptions(
                             });
                     }
                 },
-                // The absent parameter *is* relevance, so this is not a separate ordering — it is
+                // The absent parameter *is* relevance, so this is not a separate ordering: it is
                 // the one the server applies when nobody overrides it.
                 option { value: "", {i18n.t("discover.sort.relevance")} }
                 for option in Sort::ALL {

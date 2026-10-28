@@ -1,4 +1,4 @@
-//! Challenge & solver, plus the standalone adapter-test tab.
+//! Owns Challenge & solver, and the standalone adapter-test tab.
 
 use crate::api;
 use crate::components::{async_block_list, use_step_up_gate, HealthPill, StepUpGate, StepUpGuard};
@@ -19,7 +19,7 @@ pub(super) fn SolverPanel(tick: RefreshTick) -> Element {
     let i18n = use_i18n();
     let reload = tick.reload();
     // One gate for the panel: every row's actions are the same capability, so an operator
-    // confirms once and the prompt appears above the list rather than inside a row.
+    // confirms once and the prompt appears above the list, not inside a row.
     let gate = use_step_up_gate();
     let res = use_resource(move || {
         tick.track();
@@ -98,9 +98,9 @@ pub(super) fn SolverRow(
                     if session.token_value().is_some() {
                         match client.resolve_provider().id(id).send().await {
                             Ok(_) => reload.bump(),
-                            // The row has no error line, so every other failure stays silent as it
-                            // always did — but an elevation demand has to reach the panel's prompt,
-                            // or the button does nothing for the rest of the session.
+                            // The row has no error line, so every other failure stays silent, but
+                            // an elevation demand has to reach the panel's prompt, or the button
+                            // does nothing for the rest of the session.
                             Err(e) => {
                                 let _refused = gate.refused(api::Refusal::of(&e));
                             }

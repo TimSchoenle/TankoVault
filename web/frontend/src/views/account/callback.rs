@@ -1,8 +1,8 @@
-//! The OAuth landing page for an external tracker's consent redirect.
+//! Owns the OAuth landing page for an external tracker's consent redirect.
 //!
 //! The full-page round trip wipes the SPA's in-memory session, so this waits for the boot-time
 //! silent refresh in [`crate::components::Shell`] to restore a token before calling the
-//! bearer-authenticated link endpoint — otherwise the exchange always 401s on a cold return.
+//! bearer-authenticated link endpoint: otherwise the exchange always 401s on a cold return.
 
 use super::AccountPanel;
 use crate::api;

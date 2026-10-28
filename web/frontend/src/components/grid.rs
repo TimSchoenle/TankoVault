@@ -1,18 +1,18 @@
-//! Sizing a cover grid's page to the window it is shown in.
+//! Owns sizing a cover grid's page to the window it is shown in.
 //!
 //! A fixed page leaves a ragged last row at every width but the one it was picked for: 24 covers
 //! across seven columns is three full rows and three lonely cards beside four empty cells. The
-//! size is therefore derived from the grid's own geometry — whole rows only, and bounded, so a
+//! size is therefore derived from the grid's own geometry: whole rows only, and bounded, so a
 //! wide window cannot turn one screen of covers into an unbounded query.
 //!
-//! The geometry is measured rather than assumed. `--card` and `--gap` decide how many columns
+//! The geometry is measured, not assumed. `--card` and `--gap` decide how many columns
 //! `auto-fill` produces, and both move with the density preference and the narrow-viewport media
 //! queries; Rust cannot read a custom property, because `getComputedStyle` exists only in the
 //! browser build and `eval` is banned (see `crate::platform`). [`GridFitProbe`] therefore renders
 //! the two values as the widths of two hidden boxes and reads them back through the same
 //! `ResizeObserver` that reports the grid's own width, which keeps the stylesheet the only place
 //! they are written. The one rule this cannot see is a media query that *replaces* the track list
-//! rather than retuning the tokens — there is one, under 400 px, and the test named after it says
+//! instead of retuning the tokens: there is one, under 400 px, and the test named after it says
 //! what keeps it harmless.
 
 use crate::platform;
@@ -34,8 +34,8 @@ const MAX_ITEMS: usize = 60;
 /// Covers a skeleton draws before the first measurement lands.
 const FALLBACK_ITEMS: usize = 12;
 
-/// Ceiling on the derived column count. Far past any real window — 64 covers across is some
-/// 10 000 px at the narrowest card — so it only ever catches a nonsense measurement.
+/// Ceiling on the derived column count. Far past any real window (64 covers across is some
+/// 10 000 px at the narrowest card), so it only ever catches a nonsense measurement.
 const MAX_COLUMNS: f64 = 64.0;
 
 /// How long the column count must hold still before a fetch is resized to it. Dragging a window
@@ -52,7 +52,7 @@ pub(crate) struct GridFit {
     rows: usize,
     /// The raw measurements, as they arrive.
     metrics: Signal<Metrics>,
-    /// The column count fetches are currently sized for — [`Metrics::columns`] after settling.
+    /// The column count fetches are currently sized for: [`Metrics::columns`] after settling.
     /// `None` until the first measurement, which is what [`GridFit::page_size`] reports as
     /// "do not fetch yet".
     columns: Signal<Option<usize>>,
@@ -100,19 +100,19 @@ impl Metrics {
 impl GridFit {
     /// Covers the next fetch should ask for, or `None` while the grid has not been measured.
     ///
-    /// A screen must not fetch on `None` — [`unmeasured`] is what to await instead.
+    /// A screen must not fetch on `None`: [`unmeasured`] is what to await instead.
     pub(crate) fn page_size(self) -> Option<usize> {
         Some(fitted_page_size((*self.columns.read())?, self.rows))
     }
 
     /// [`GridFit::page_size`] with the pre-measurement fallback applied, for the parts of a
-    /// render that need a number rather than a decision: the skeleton's cover count, and the
+    /// render that need a number instead of a decision: the skeleton's cover count, and the
     /// page arithmetic under the grid.
     pub(crate) fn page_size_or_default(self) -> usize {
         self.page_size().unwrap_or(FALLBACK_ITEMS)
     }
 
-    /// Record one probe box's width.
+    /// Records one probe box's width.
     fn observe(mut self, metric: Metric, event: &Event<ResizeData>) {
         let Ok(size) = event.get_content_box_size() else {
             return;
@@ -127,7 +127,7 @@ impl GridFit {
         self.settle();
     }
 
-    /// Adopt the measured column count once it stops moving.
+    /// Adopts the measured column count once it stops moving.
     fn settle(mut self) {
         let Some(columns) = self.metrics.peek().columns() else {
             return;
@@ -136,8 +136,8 @@ impl GridFit {
             return;
         }
         if self.columns.peek().is_none() {
-            // Nothing has been fetched yet — screens park their first request on this — so the
-            // first measurement is adopted at once rather than costing the reader a settling
+            // Nothing has been fetched yet (screens park their first request on this), so the
+            // first measurement is adopted at once instead of costing the reader a settling
             // delay before anything loads at all.
             self.columns.set(Some(columns));
             return;
@@ -171,7 +171,7 @@ pub(crate) fn use_grid_fill() -> GridFit {
     use_grid_fit(usize::MAX)
 }
 
-/// Park a fetch until the grid has been measured.
+/// Parks a fetch until the grid has been measured.
 ///
 /// The resource stays in the loading state the reader is already looking at, and re-runs the
 /// moment [`GridFitProbe`]'s first measurement lands. Guessing a size instead would double the
@@ -185,16 +185,16 @@ pub(crate) async fn unmeasured<T>() -> T {
 /// two carrying `--card` and `--gap`.
 ///
 /// Render it as a sibling of the grid, inside the same column, and **keep it mounted while the
-/// grid is still a skeleton** — the first measurement is what releases the fetch, so a probe that
+/// grid is still a skeleton**: the first measurement is what releases the fetch, so a probe that
 /// only appears alongside results would deadlock the screen it belongs to.
 ///
 /// **The three observed boxes are siblings, and nesting any of them inside another silently
-/// breaks the measurement.** A resize event *bubbles* in the desktop build — dioxus-desktop
-/// dispatches it to the target's ancestors as well — so a child's box was delivered to the
-/// parent's handler too. The width therefore ended up holding whichever child reported last: the
-/// probe measured 1438 px, then 190 (`--card`), then 18 (`--gap`), and Discover fetched a
-/// one-column page into a seven-column grid. It only showed on a *fresh* mount, because at
-/// startup the window's own resize fired the width box again afterwards and papered over it.
+/// breaks the measurement.** A resize event *bubbles* in the desktop build (dioxus-desktop
+/// dispatches it to the target's ancestors as well), so a child's box is delivered to the
+/// parent's handler too. The width then holds whichever child reported last: the probe measures
+/// 1438 px, then 190 (`--card`), then 18 (`--gap`), and Discover fetches a one-column page into
+/// a seven-column grid. It only shows on a *fresh* mount, because at startup the window's own
+/// resize fires the width box again afterwards and papers over it.
 /// `xtask repo-lint`'s `resize-probes-are-siblings` holds them at one nesting depth.
 ///
 /// `tiles` selects the watchlist's smaller cover tile (`--tile`) over the catalogue card.
@@ -220,7 +220,7 @@ pub(crate) fn GridFitProbe(fit: GridFit, #[props(default = false)] tiles: bool) 
 /// [`MAX_ITEMS`].
 ///
 /// The bounds are applied by adding or dropping whole rows, never by truncating the count to the
-/// bound — a truncated count is exactly the ragged last row this exists to remove.
+/// bound: a truncated count is exactly the ragged last row this exists to remove.
 fn fitted_page_size(columns: usize, rows: usize) -> usize {
     let columns = columns.max(1);
     let rows = rows
@@ -264,7 +264,7 @@ mod tests {
         }
     }
 
-    /// Under 400 px the stylesheet pins the catalogue grid to two columns outright rather than
+    /// Under 400 px the stylesheet pins the catalogue grid to two columns outright instead of
     /// retuning `--card`, and a replaced track list is the one thing the probe cannot report: the
     /// measured width yields one column where the grid renders two. What phones get is therefore
     /// the floor, and the floor has to divide by two or that override brings the ragged row back.
@@ -274,8 +274,8 @@ mod tests {
         assert_eq!(fitted_page_size(1, usize::MAX) % 2, 0);
     }
 
-    /// A grid with no pager asks for as much as the ceiling allows rather than a fixed number of
-    /// rows — dropping to one screenful on a narrow window would silently hide results a reader
+    /// A grid with no pager asks for as much as the ceiling allows instead of a fixed number of
+    /// rows: dropping to one screenful on a narrow window would silently hide results a reader
     /// has no other way to reach.
     #[test]
     fn a_filling_grid_uses_the_ceiling() {
@@ -285,7 +285,7 @@ mod tests {
 
     /// The column count must be the layout engine's, not an approximation of it: 1512 px of
     /// results column at the default 190 px card and 18 px gutter is seven columns, and the
-    /// gutter is what decides it — dropping it from the arithmetic yields eight.
+    /// gutter is what decides it; dropping it from the arithmetic yields eight.
     #[test]
     fn columns_follow_auto_fill() {
         let metrics = Metrics {

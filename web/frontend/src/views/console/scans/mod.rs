@@ -1,14 +1,13 @@
-//! The scan queue: trigger runs, read the window's health, watch what is in flight right now,
-//! browse the history, and triage — or clear — the failures.
+//! Owns the scan queue: trigger runs, read the window's health, watch what is in flight right now,
+//! browse the history, and triage (or clear) the failures.
 //!
 //! # The filter is the panel
 //!
 //! Every control here writes to the URL (see [`super::query`]) and every fetch reads it back, so
-//! the same filter narrows the health figures, the history and the failure feed at once. That
-//! was the defect this module was rebuilt around: the panel *had* filters, but the live stream
-//! pushed an unfiltered top-twenty over the top of the filtered fetch, so a narrowed filter
-//! changed nothing an operator could see. [`merge_runs`] is where the two are reconciled now,
-//! and it is the one place that decides which source wins.
+//! the same filter narrows the health figures, the history and the failure feed at once. The
+//! live stream pushes an unfiltered top-twenty, and drawn over the filtered fetch it would make a
+//! narrowed filter change nothing an operator can see. [`merge_runs`] is where the two are
+//! reconciled, and it is the one place that decides which source wins.
 
 mod activity;
 mod controls;
@@ -31,8 +30,8 @@ use dioxus::prelude::*;
 use progenitor_client::ResponseValue;
 /// The run states the filter offers, paired with the `?status=` token each sends.
 ///
-/// Hand-listed rather than derived: the wire vocabulary is generated, but which states are
-/// worth *filtering by* is a product decision — `queued` and `running` are the two an operator
+/// Hand-listed, not derived: the wire vocabulary is generated, but which states are
+/// worth *filtering by* is a product decision; `queued` and `running` are the two an operator
 /// watches, `failed` is the one they hunt.
 const STATE_FILTERS: [(&str, WireRunState); 5] = [
     ("queued", WireRunState::Queued),
@@ -58,7 +57,7 @@ pub(super) fn run_state_ring(state: RunState) -> &'static str {
     }
 }
 
-/// Parse a `?status=` token into the run state it names.
+/// Parses a `?status=` token into the run state it names.
 fn parse_state(token: &str) -> Option<WireRunState> {
     STATE_FILTERS
         .iter()
@@ -72,7 +71,7 @@ fn parse_state(token: &str) -> Option<WireRunState> {
 /// leaves unsaid is one the pager cannot compute an offset from.
 const PAGE_SIZE: i64 = 30;
 
-/// The filter as every fetch on this panel reads it — resolved once from the URL rather than
+/// The filter as every fetch on this panel reads it: resolved once from the URL, not
 /// re-parsed per resource, so the history, the health figures and the failure feed cannot end up
 /// answering three slightly different questions.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -84,7 +83,7 @@ struct ScanFilter {
     cleared: bool,
     since: TimeWindow,
     /// Zero-based page of the run history. Part of the filter because the fetch is keyed on it,
-    /// and only the *first* page may take runs the live stream has pushed since — see
+    /// and only the *first* page may take runs the live stream has pushed since: see
     /// [`merge_runs`].
     page: u32,
 }
@@ -119,7 +118,7 @@ impl ScanFilter {
     ///
     /// Only at the top of an unnarrowed, newest-first list: that is the one view whose first row
     /// is by definition the newest run, so a run created since the fetch belongs at its head.
-    /// Anywhere else — under a filter, on a different ordering, or on page two — a pushed run is
+    /// Anywhere else (under a filter, on a different ordering, or on page two) a pushed run is
     /// a row from *somewhere* in the list, and putting it here would be a lie about where.
     fn takes_live_head(&self) -> bool {
         !self.narrows_runs() && self.page == 0
@@ -137,8 +136,8 @@ impl ScanFilter {
         RunSortExt::parse(&self.sort)
     }
 
-    /// Whether anything narrows the run list. Decides whether the live push may be shown whole
-    /// — see [`merge_runs`].
+    /// Whether anything narrows the run list. Decides whether the live push may be shown whole:
+    /// see [`merge_runs`].
     fn narrows_runs(&self) -> bool {
         self.provider.is_some()
             || self.run_state().is_some()
@@ -148,22 +147,22 @@ impl ScanFilter {
     }
 }
 
-/// Reconcile the fetched page with the live push.
+/// Reconciles the fetched page with the live push.
 ///
 /// **The fetch decides membership and order. Always.** The stream carries an unfiltered top
 /// twenty by creation; it is used to refresh the counters of rows the fetch returned, so a run's
-/// progress moves live, and — at the head of an unnarrowed newest-first list only — to add runs
+/// progress moves live, and (at the head of an unnarrowed newest-first list only) to add runs
 /// created since the fetch, trimmed back to the page size.
 ///
-/// Two bugs live here, and the second is why the first's fix was not enough:
+/// Two failures follow from letting the push decide instead:
 ///
-/// 1. The push used to be rendered *instead of* the fetch whenever nothing narrowed the list, so
-///    a filter changed nothing an operator could see.
-/// 2. The fix made that conditional on a filter — which left the unfiltered case still replacing
-///    a thirty-row page with a twenty-row push. "Any mode, any state" showed ten fewer runs than
-///    the same panel under a filter, and the count beside it said `20 of 743` while the server
-///    had answered with thirty. Paging past the first page was impossible for the same reason:
-///    page two's rows were dropped in favour of page one's push.
+/// 1. Rendered *instead of* the fetch, the push makes a filter change nothing an operator can
+///    see.
+/// 2. Rendered instead of the fetch only when no filter is set, it still replaces a thirty-row
+///    page with a twenty-row push: "Any mode, any state" shows ten fewer runs than the same panel
+///    under a filter, the count beside it says `20 of 743` while the server answered with thirty,
+///    and paging past the first page is impossible, because page two's rows are dropped in favour
+///    of page one's push.
 fn merge_runs(
     fetched: &[ScanRun],
     pushed: Option<&Vec<ScanRun>>,
@@ -264,7 +263,7 @@ pub(in crate::views::console) fn ScanQueue(tick: RefreshTick) -> Element {
     }));
 
     // Seeds the live panel: the stream's first `activity` event is three seconds out, and a tail
-    // that starts empty reads as an idle deployment rather than as one that has not answered yet.
+    // that starts empty reads as an idle deployment instead of as one that has not answered yet.
     let activity_seed = use_resource(move || {
         tick.track();
         let client = api.client();
@@ -325,7 +324,7 @@ pub(in crate::views::console) fn ScanQueue(tick: RefreshTick) -> Element {
         section { class: "ik-tile", style: "margin-bottom:18px;",
             controls::QueueControls { filter: filter.clone(), tick }
 
-            // A failed summary must surface as an error rather than as zeroes: "nothing failed"
+            // A failed summary must surface as an error instead of as zeroes: "nothing failed"
             // and "we could not ask" are the opposite conclusions on this screen.
             {
                 async_block(
@@ -342,7 +341,7 @@ pub(in crate::views::console) fn ScanQueue(tick: RefreshTick) -> Element {
             }
 
             // One fetch drives both the live panel and the history table: a failed `list_scans`
-            // must surface as an error, not render as "no runs" — indistinguishable from a quiet
+            // must surface as an error, not render as "no runs"; indistinguishable from a quiet
             // system, the exact wrong conclusion here.
             {
                 async_block(
@@ -416,7 +415,7 @@ fn parse_ms(stamp: &str) -> Option<f64> {
     ms.is_finite().then_some(ms)
 }
 
-/// A duration in seconds, worded — `41s`, `7m`, `2h 15m`.
+/// A duration in seconds, worded: `41s`, `7m`, `2h 15m`.
 fn duration_label(i18n: crate::i18n::Translator, seconds: f64) -> String {
     const SECONDS_PER_MINUTE: f64 = 60.0;
     const SECONDS_PER_HOUR: f64 = 3_600.0;
@@ -483,8 +482,8 @@ mod tests {
         }
     }
 
-    /// The defect this panel was rebuilt around: with a filter applied, the live push used to be
-    /// rendered *instead of* the filtered fetch, so choosing "failed" or a provider changed
+    /// The bug this pins: with a filter applied, the live push was rendered *instead of* the
+    /// filtered fetch, so choosing "failed" or a provider changed
     /// nothing on screen. The push may only refresh rows the fetch returned.
     #[test]
     fn a_filtered_list_never_shows_a_run_the_filter_excluded() {
@@ -501,8 +500,8 @@ mod tests {
         );
     }
 
-    /// The second half of the same defect. With nothing narrowing the list the push used to be
-    /// shown *whole* — a twenty-row stream replacing a thirty-row page, so "any state, any mode"
+    /// The second half of the same bug: with nothing narrowing the list the push was shown
+    /// *whole*: a twenty-row stream replacing a thirty-row page, so "any state, any mode"
     /// showed ten fewer runs than the same panel under a filter and said `20 of 743` about it.
     /// The fetch is the page; the push may only add what is newer than all of it.
     #[test]
@@ -612,8 +611,8 @@ mod tests {
         }
     }
 
-    /// A `?sort=` or `?mode=` an older link carries, or a hand-typed one, must open the panel
-    /// rather than break it.
+    /// A `?sort=` or `?mode=` an older link carries, or a hand-typed one, must open the panel,
+    /// not break it.
     #[test]
     fn an_unknown_filter_token_falls_back_instead_of_failing() {
         let query = ConsoleQuery {
@@ -642,7 +641,7 @@ mod tests {
     }
 
     /// Every ordering and every mode the picker offers must be one the API accepts, read out of
-    /// the committed document rather than trusted — `web/frontend` is a separate workspace, so
+    /// the committed document, not trusted: `web/frontend` is a separate workspace, so
     /// no compiler relates these lists to the handler's enums.
     #[test]
     fn the_sort_picker_offers_every_published_ordering() {
@@ -667,7 +666,7 @@ mod tests {
     }
 
     /// Wording is a separate axis from membership, and a missing catalogue key renders as the
-    /// key itself rather than as an error — so an unworded option ships `console.scan.sort.…`
+    /// key itself instead of as an error, so an unworded option ships `console.scan.sort.…`
     /// to the operator.
     #[test]
     fn every_offered_ordering_and_mode_is_worded() {

@@ -1,15 +1,14 @@
-//! Console · Merges — the merges that were actually performed, and the one screen that takes one
-//! back.
+//! Owns Console · Merges: the merges that were actually performed, and the one screen that takes
+//! one back.
 //!
 //! A merge is the row here, not a line in a journal of everything the sweep considered. That
-//! distinction is the whole point of the section: reverting used to be a button on a row in
-//! [`super::decisions`], which lists every verdict including the thousands that merged nothing,
-//! so the operator asking "what did we absorb into this title, and can I undo it" had to find it
-//! by typing a title into a search box that matched on loaded rows only.
+//! distinction is the whole point of the section: [`super::decisions`] lists every verdict,
+//! including the thousands that merged nothing, so an operator asking "what did we absorb into
+//! this title, and can I undo it" would have to search it on loaded rows only.
 //!
-//! The journal itself is unchanged — this is a different read over it, plus the two writes that
-//! were already live (`revert`, `flag`). [`super::decisions`] keeps the read side for every other
-//! outcome and for the sync journal; it no longer carries the actions.
+//! This is a different read over the same journal, with its two writes (`revert`, `flag`).
+//! [`super::decisions`] keeps the read side for every other outcome and for the sync journal; it
+//! carries no actions.
 
 mod batch;
 mod inspect;
@@ -66,7 +65,7 @@ impl Lens {
         }
     }
 
-    /// An unrecognised token opens the unfiltered list rather than refusing the link.
+    /// An unrecognised token opens the unfiltered list instead of refusing the link.
     fn parse(token: &str) -> Self {
         Self::ALL
             .into_iter()
@@ -86,9 +85,9 @@ enum Pick {
     Nothing,
 }
 
-/// Resolve `sel` against the loaded page.
+/// Resolves `sel` against the loaded page.
 ///
-/// A `sel` that is a decision id but not on this page is fetched rather than replaced by the
+/// A `sel` that is a decision id but not on this page is fetched, not replaced by the
 /// first row: a link from a series page or the journal names one merge, and opening another in
 /// its place is the bug this section had while it only read the newest two hundred. A `sel`
 /// that is not an id at all falls back to the first row.
@@ -115,7 +114,7 @@ pub(super) fn MergesEntity(tick: RefreshTick) -> Element {
     let nav = use_console_nav();
     let reload = use_reload();
     // One gate for the section: revert and flag are both elevated, and both report through the
-    // inspector, so the prompt belongs at the top of the pane rather than once per row.
+    // inspector, so the prompt belongs at the top of the pane, not once per row.
     let gate = use_step_up_gate();
     let view = nav.query();
     let lens = Lens::parse(view.status_token());
@@ -198,10 +197,10 @@ pub(super) fn MergesEntity(tick: RefreshTick) -> Element {
     let selected = chosen.as_ref().and_then(|c| c.as_ref().map(|d| d.id));
     let outside_page = selected.is_some_and(|id| shown.iter().all(|d| d.id != id));
 
-    // …and the fallback goes into the URL, so the address names the merge on screen rather than
-    // whichever one is newest under the filter that happens to be applied. It replaces rather
-    // than pushes — the operator did not choose this row and must not have to back out of it —
-    // and the next query is built out here rather than inside the effect, because reading
+    // …and the fallback goes into the URL, so the address names the merge on screen instead of
+    // whichever one is newest under the filter that happens to be applied. It replaces,
+    // not pushes (the operator did not choose this row and must not have to back out of it),
+    // and the next query is built out here, not inside the effect, because reading
     // `nav.query()` in there would subscribe the effect to the memo the write changes.
     let landing = landing_selection(view.sel.as_deref(), selected.map(|id| id.to_string()))
         .map(|sel| view.with_selection(Some(sel)));

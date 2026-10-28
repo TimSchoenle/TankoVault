@@ -1,8 +1,8 @@
-//! Security (§9.4) — two independent cards under one tab.
+//! Owns Security (§9.4): two independent cards under one tab.
 //!
 //! - **Passkeys** ([`super::passkeys::PasskeysCard`]): register, rename and revoke `WebAuthn`
 //!   credentials.
-//! - **Sessions** (here): list the caller's active login sessions and revoke any one — its
+//! - **Sessions** (here): list the caller's active login sessions and revoke any one; its
 //!   whole rotation family, not the token on screen, which would sign them out for exactly one
 //!   request cycle.
 //!
@@ -68,7 +68,7 @@ pub(crate) fn SecurityPanel() -> Element {
                 {i18n.t("account.security.intro")}
             }
             // Revoking a session is behind a step-up, so a refusal on any row opens this one
-            // prompt. Without it the button simply did nothing, which reads as a broken control.
+            // prompt. Without it the button would do nothing, which reads as a broken control.
             StepUpGuard { gate }
             {
                 async_list(
@@ -100,7 +100,7 @@ pub(crate) fn SecurityPanel() -> Element {
 
 /// One active session, with the revoke that ends its whole rotation family.
 ///
-/// `gate` belongs to the card: a refusal has to open the one prompt it renders rather than a
+/// `gate` belongs to the card: a refusal has to open the one prompt it renders, not a
 /// prompt per row.
 #[component]
 fn SessionRow(
@@ -128,7 +128,7 @@ fn SessionRow(
                 match client.delete_session().id(id).send().await {
                     Ok(_) => reload.bump(),
                     // The row has no error line of its own; a `403` opens the card's prompt, and
-                    // anything else leaves the list as it was, as it did before the gate existed.
+                    // anything else leaves the list as it was.
                     Err(e) => {
                         let _refused = gate.refused(api::Refusal::of(&e));
                     }

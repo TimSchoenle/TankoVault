@@ -1,4 +1,4 @@
-//! The sign-in form's state and the four requests it sends: password sign-in or registration,
+//! Owns the sign-in form's state and the four requests it sends: password sign-in or registration,
 //! the second factor, a passkey, and a resent confirmation link.
 
 use dioxus::prelude::*;
@@ -35,11 +35,11 @@ pub(super) struct SignIn {
     /// Set when refused for an unconfirmed address, to surface "resend confirmation".
     pub(super) needs_verification: Signal<bool>,
     /// The handle a half-finished sign-in is resumed by: the password verified and a second
-    /// factor is owed. Holding it is safe — it authorises nothing but the attempt to finish, and
+    /// factor is owed. Holding it is safe: it authorises nothing but the attempt to finish, and
     /// **no session was issued** alongside it.
     pub(super) pending_mfa: Signal<Option<String>>,
     pub(super) second_factor: Signal<String>,
-    /// Whether the reader is presenting a recovery code rather than an authenticator code.
+    /// Whether the reader is presenting a recovery code instead of an authenticator code.
     pub(super) using_recovery: Signal<bool>,
 }
 
@@ -66,7 +66,7 @@ impl SignIn {
         }
     }
 
-    /// Sign in with the typed login and password, or register with the typed fields.
+    /// Signs in with the typed login and password, or registers with the typed fields.
     pub(super) fn submit(self) {
         let Self {
             i18n,
@@ -99,7 +99,7 @@ impl SignIn {
         let client = api.client();
         spawn(async move {
             // register and login return different bodies (RegisterResponse vs TokenResponse),
-            // so each branch is handled inline rather than through a shared result.
+            // so each branch is handled inline instead of through a shared result.
             if is_register {
                 match client
                     .register()
@@ -152,7 +152,7 @@ impl SignIn {
                                     query: DiscoverQuery::default(),
                                 });
                             }
-                            // A second factor is owed. **No session was issued** — the handle
+                            // A second factor is owed. **No session was issued**: the handle
                             // below authorises nothing except the attempt to finish, so holding
                             // it while the reader finds their phone is safe.
                             None => match body.mfa {
@@ -161,7 +161,7 @@ impl SignIn {
                                     password.set(String::new());
                                 }
                                 // Neither branch present: a server that answered something this
-                                // build does not understand. Say so rather than silently doing
+                                // build does not understand. Say so, not silently doing
                                 // nothing, which reads as a dead button.
                                 None => error.set(Some(i18n.t("error.unexpected"))),
                             },
@@ -180,8 +180,8 @@ impl SignIn {
         });
     }
 
-    /// The second leg: trade the pending sign-in plus one factor for the session the first leg
-    /// withheld. A wrong code is `401` and simply says so — the challenge survives, up to its
+    /// The second leg: trade the pending sign-in and one factor for the session the first leg
+    /// withheld. A wrong code is `401` and simply says so: the challenge survives, up to its
     /// own attempt cap, which the server enforces and this screen does not duplicate.
     pub(super) fn finish_mfa(self) {
         let Self {
@@ -237,7 +237,7 @@ impl SignIn {
         });
     }
 
-    /// Sign in with a passkey: the account is resolved from the credential, not anything typed —
+    /// Signs in with a passkey: the account is resolved from the credential, not anything typed;
     /// see `services/api/src/auth/passkey.rs`.
     pub(super) fn passkey_sign_in(self) {
         let Self {
@@ -298,7 +298,7 @@ impl SignIn {
                     });
                 }
                 // The same two statuses a password sign-in distinguishes, for the same reasons.
-                // A `401` here is not "wrong password" though — nothing was typed — so it gets
+                // A `401` here is not "wrong password" though (nothing was typed), so it gets
                 // its own sentence naming what actually failed.
                 Err(e) => match api::error_status(&e) {
                     Some(401) => error.set(Some(i18n.t("passkey.error.notRecognised"))),
@@ -313,7 +313,7 @@ impl SignIn {
         });
     }
 
-    /// Resend the confirmation link to the address entered in the sign-in field. Always
+    /// Resends the confirmation link to the address entered in the sign-in field. Always
     /// reports success (the endpoint is deliberately silent about whether the account exists).
     pub(super) fn resend(self) {
         let Self {
@@ -347,7 +347,7 @@ impl SignIn {
 
 /// How a failed sign-in should be worded, and whether to offer "resend confirmation".
 ///
-/// Returns the catalogue key plus the resend flag, or `None` when [`api::friendly_error`]'s
+/// Returns the catalogue key and the resend flag, or `None` when [`api::friendly_error`]'s
 /// generic wording is right. Split out from the submit callback so the mapping is testable
 /// without a Dioxus runtime.
 ///
@@ -362,11 +362,11 @@ fn sign_in_failure(status: Option<u16>) -> Option<(&'static str, bool)> {
     }
 }
 
-/// Word a failed passkey ceremony, or say nothing when the reader simply cancelled.
+/// Words a failed passkey ceremony, or says nothing when the reader simply cancelled.
 ///
 /// Not shared with `views::account::passkeys`: same rule, different signals, and threading
 /// them through one function costs more indirection than it saves.
-/// [`CeremonyError::Cancelled`] clears the error line instead of writing to it — a ceremony the
+/// [`CeremonyError::Cancelled`] clears the error line instead of writing to it: a ceremony the
 /// reader chose to stop isn't a broken feature.
 fn report(
     outcome: &CeremonyError,
@@ -388,14 +388,13 @@ mod tests {
 
     /// A rejected sign-in must not be worded "You need to sign in to do that."
     ///
-    /// That is the shared catalogue's sentence for *any* 401, and for a while it was what the
-    /// sign-in form showed when the password was wrong — the one screen where it is
-    /// meaningless, because the reader is already signing in and the sentence names nothing
-    /// to correct. It cost a live debugging session: the message reads like a session or
-    /// routing fault, so it sent the search towards the auth middleware and the proxy, when
-    /// the API had in fact answered correctly and audited the attempt as `bad_password`.
+    /// The bug: that is the shared catalogue's sentence for *any* 401, and the sign-in form
+    /// showed it when the password was wrong: the one screen where it is meaningless, because
+    /// the reader is already signing in and the sentence names nothing to correct. It reads like
+    /// a session or routing fault, so it sends a search towards the auth middleware and the
+    /// proxy, when the API has answered correctly and audited the attempt as `bad_password`.
     ///
-    /// The generic wording stays right everywhere else, so the fix is per-screen and this
+    /// The generic wording stays right everywhere else, so the wording is per-screen and this
     /// test pins the screen, not the catalogue.
     #[test]
     fn a_rejected_sign_in_is_worded_as_bad_credentials() {

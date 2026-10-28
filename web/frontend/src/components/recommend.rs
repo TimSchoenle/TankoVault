@@ -1,8 +1,8 @@
-//! The recommendation card: a cover card that says *why* a series is on the shelf, and lets the
-//! reader refuse it.
+//! Owns the recommendation card: a cover card that says *why* a series is on the shelf, and lets
+//! the reader refuse it.
 //!
-//! Split from [`CoverCard`](super::CoverCard) rather than growing it: this card carries an
-//! interactive control, so its root cannot be the `Link` a plain cover card is — a `<button>`
+//! Split from [`CoverCard`](super::CoverCard) instead of growing it: this card carries an
+//! interactive control, so its root cannot be the `Link` a plain cover card is; a `<button>`
 //! inside an `<a>` is not focusable in the order it appears, and clicking it navigates.
 
 use crate::api;
@@ -16,7 +16,7 @@ use dioxus::prelude::*;
 use inkstone_ui::Button;
 /// The verdicts `POST /v1/me/recommendations/{id}/feedback` accepts.
 ///
-/// Wire tokens rather than an enum, because the endpoint publishes a free-form string and
+/// Wire tokens instead of an enum, because the endpoint publishes a free-form string and
 /// validates it itself; the two are named here so a typo is one grep, not a silent 400.
 const NOT_INTERESTED: &str = "not_interested";
 const HIDE_FOREVER: &str = "hide_forever";
@@ -32,7 +32,7 @@ pub(crate) fn RecCard(item: Recommendation, reload: Reload, detailed: bool) -> E
 
     let seed = item.because_series_id;
     // The score is deliberately not shown. It is a blended, rank-normalised number whose scale
-    // is only meaningful against the other candidates in the same request — a reader comparing
+    // is only meaningful against the other candidates in the same request: a reader comparing
     // two shelves would be comparing nothing.
     rsx! {
         div { class: "ik-card", style: "position:relative;",
@@ -75,7 +75,7 @@ pub(crate) fn RecCard(item: Recommendation, reload: Reload, detailed: bool) -> E
 
 /// Why this series is on the shelf: the seed that produced it, and what the two have in common.
 ///
-/// Renders nothing at all when the server sent no seed — the profile, exact-feature and
+/// Renders nothing at all when the server sent no seed: the profile, exact-feature and
 /// popularity paths genuinely have no single title to name, and inventing one ("picked for you")
 /// would dress a different kind of answer up as this one.
 ///
@@ -93,8 +93,8 @@ fn Because(
     let Some(title) = title else {
         return rsx! {};
     };
-    // One interpolated sentence rather than a prefix concatenated with a linked title: German
-    // puts the title in the middle of the clause, and a prefix + `{title}` layout would build
+    // One interpolated sentence instead of a prefix concatenated with a linked title: German
+    // puts the title in the middle of the clause, and a prefix-then-`{title}` layout would build
     // that sentence in English word order whatever the catalogue says.
     let line = i18n.args("home.recommendations.because", &[("title", &title)]);
     let line_style = if detailed {
@@ -168,7 +168,7 @@ fn Verdicts(series_id: SeriesId, reload: Reload, on_close: EventHandler<()>) -> 
             busy.release();
             match result {
                 // The server marks the profile stale, so the refetch returns a shelf this
-                // series is genuinely absent from rather than one that merely hides it here.
+                // series is genuinely absent from instead of one that merely hides it here.
                 Ok(_) => reload.bump(),
                 // Said, not swallowed: closing the prompt on a failed write would leave the
                 // reader believing they had refused a series that is still being suggested.

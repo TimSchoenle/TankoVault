@@ -1,10 +1,10 @@
-//! First run on the desktop build: which `TankoVault` server is this copy for?
+//! Owns the first run on the desktop build: which `TankoVault` server is this copy for?
 //!
 //! The web SPA is served *by* the API it talks to, so `location.origin` answers this and the
 //! question never comes up. A desktop binary is shipped by nobody in particular and has to be
-//! told, once — that is all this screen is.
+//! told, once: that is all this screen is.
 //!
-//! It runs *instead of* the router rather than as a route, because every screen behind the
+//! It runs *instead of* the router instead of as a route, because every screen behind the
 //! router issues requests, and there is nowhere to send them until this is answered.
 
 use super::auth::AuthBrand;
@@ -13,7 +13,7 @@ use crate::i18n::use_i18n;
 use dioxus::prelude::*;
 use inkstone_ui::{Button, Tone};
 use tankovault_api_client::Client;
-/// Ask for a server, prove it answers, and store it.
+/// Asks for a server, proves it answers, and stores it.
 ///
 /// `on_connected` is called with the accepted origin; the caller re-renders into the app.
 #[component]
@@ -94,12 +94,12 @@ pub(crate) fn ConnectServer(on_connected: EventHandler<String>) -> Element {
     }
 }
 
-/// Accept what a person would actually type and reject what cannot carry a bearer token safely.
+/// Accepts what a person would actually type and rejects what cannot carry a bearer token safely.
 ///
 /// A bare host gets `https://`, never `http://`: the access token rides an `Authorization`
 /// header on every request, and defaulting to plaintext would put it on the wire because
-/// somebody left a scheme off. Plain HTTP stays *reachable* — a self-hoster developing against
-/// their own box needs it — but only when typed in full and only for a loopback host, which is
+/// somebody left a scheme off. Plain HTTP stays *reachable* (a self-hoster developing against
+/// their own box needs it), but only when typed in full and only for a loopback host, which is
 /// the same line the browser draws for a secure context.
 ///
 /// # Errors
@@ -119,7 +119,7 @@ pub(crate) fn normalise(entered: &str) -> Result<String, &'static str> {
     };
     // Trailing slashes come off *after* the split, not before: stripping them from the whole
     // string first eats the `//` of the separator, and `https://` then round-trips into
-    // `https://https:` — a value that would be sent as a base URL. See the test.
+    // `https://https:`; a value that would be sent as a base URL. See the test.
     let rest = rest.trim_end_matches('/');
     if rest.is_empty() {
         return Err("connect.error.malformed");
@@ -135,7 +135,7 @@ pub(crate) fn normalise(entered: &str) -> Result<String, &'static str> {
 
 /// Whether the authority names this machine, so plain HTTP never leaves it.
 ///
-/// The host is taken up to the first `:`, `/` or `?`, and matched whole — `localhost.example.com`
+/// The host is taken up to the first `:`, `/` or `?`, and matched whole: `localhost.example.com`
 /// is somebody else's server and must not be treated as loopback.
 fn is_loopback(rest: &str) -> bool {
     let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
@@ -150,8 +150,8 @@ fn is_loopback(rest: &str) -> bool {
     matches!(host.as_str(), "localhost" | "127.0.0.1" | "[::1]")
 }
 
-/// Ask the candidate for its public legal index — the cheapest unauthenticated call this build
-/// makes — and accept the server only if the answer is the shape this build expects.
+/// Asks the candidate for its public legal index (the cheapest unauthenticated call this build
+/// makes), and accept the server only if the answer is the shape this build expects.
 ///
 /// Through the generated client on purpose: a URL that answers but is not a `TankoVault` of a
 /// compatible version fails *here*, named, instead of turning into a screen full of empty lists
@@ -184,7 +184,7 @@ mod tests {
     ///
     /// The bug this pins would be a silent one: the access token is sent as an `Authorization`
     /// header on every request, so a server accepted over plain HTTP puts it on the wire in
-    /// clear text for the lifetime of the session — and nothing in the UI would say so.
+    /// clear text for the lifetime of the session, and nothing in the UI would say so.
     #[test]
     fn a_server_is_only_accepted_over_https_or_on_this_machine() {
         assert_eq!(

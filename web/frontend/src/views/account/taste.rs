@@ -1,8 +1,8 @@
-//! The reader's own taste profile (`GET /v1/me/taste`) — what the recommender believes about
+//! Owns the reader's own taste profile (`GET /v1/me/taste`): what the recommender believes about
 //! them, in their own words.
 //!
 //! Exists so the profile is inspectable by the person it describes, and so a bad shelf can be
-//! diagnosed without anyone reading a watchlist. That is why it lives in Account rather than
+//! diagnosed without anyone reading a watchlist. That is why it lives in Account, not
 //! beside the shelf on Home: it is a record about the reader, not a browsing surface.
 
 use crate::api;
@@ -16,7 +16,7 @@ use dioxus::prelude::*;
 use progenitor_client::ResponseValue;
 
 /// Features shown per column. The profile keeps 64 positive and 32 negative; the tail of that
-/// is noise at weights the reader cannot act on, and a wall of chips reads as data rather than
+/// is noise at weights the reader cannot act on, and a wall of chips reads as data instead of
 /// as an answer.
 const SHOWN: usize = 12;
 
@@ -80,7 +80,7 @@ fn Profile(profile: TasteView) -> Element {
 /// One weighted list, strongest first, as a bar per feature.
 ///
 /// Bars are relative to the strongest feature in the list, not absolute: the weights are
-/// L2-normalised, so their absolute size says how many features share the profile rather than
+/// L2-normalised, so their absolute size says how many features share the profile, not
 /// how strongly the reader feels about any one of them.
 #[component]
 fn FeatureList(label: String, features: Vec<TasteFeature>) -> Element {

@@ -1,4 +1,4 @@
-//! What the series page knows about a chapter, assembled from every source that carries it.
+//! Owns what the series page knows about a chapter, assembled from every source that carries it.
 //!
 //! # Why the merge happens here
 //!
@@ -23,7 +23,7 @@ const KEY_CEILING: f64 = 1e15;
 /// The fixed-point identity of a chapter number.
 pub(super) fn chapter_key(number: f64) -> ChapterKey {
     // Chapter numbers are small positive decimals. Anything outside that range did not come
-    // from a chapter, so it collapses to zero rather than wrapping the cast.
+    // from a chapter, so it collapses to zero instead of wrapping the cast.
     let scaled = (number * 1000.0).round();
     if (0.0..=KEY_CEILING).contains(&scaled) {
         #[expect(
@@ -69,14 +69,14 @@ impl MergedChapter {
     }
 }
 
-/// Rank the series' sources into the order the open control resolves through.
+/// Ranks the series' sources into the order the open control resolves through.
 ///
 /// Three tiers, most specific first: a per-series pin wins outright, then the reader's global
 /// provider order, then the API's own `is_primary` flag (the richest source) and chapter count
 /// for everything they have no opinion about. Ties break on name so the order is stable across
-/// reloads rather than following whatever order the API happened to return.
+/// reloads instead of following whatever order the API happened to return.
 ///
-/// An unranked provider is *not* ranked last on purpose — it sorts behind every ranked one but
+/// An unranked provider is *not* ranked last on purpose: it sorts behind every ranked one but
 /// keeps its objective standing among the rest, so adding one favourite does not scramble the
 /// order of the sources the reader never mentioned.
 pub(super) fn rank_sources(
@@ -105,7 +105,7 @@ pub(super) fn rank_sources(
     ranked
 }
 
-/// Union every source's chapter list into one newest-first list of [`MergedChapter`].
+/// Unions every source's chapter list into one newest-first list of [`MergedChapter`].
 ///
 /// `per_source` must be in the ranked order produced by [`rank_sources`]: the first source that
 /// carries a chapter becomes that chapter's resolved target, and contributes its title.
@@ -126,7 +126,7 @@ pub(super) fn merge_chapters(per_source: &[(SourceDto, Vec<ChapterDto>)]) -> Vec
                 let row = &mut merged[at];
                 row.carriers.push(carrier);
                 // Read state is a property of the reader, not the source, but a source list
-                // fetched anonymously carries `None` — take the first definite answer.
+                // fetched anonymously carries `None`: take the first definite answer.
                 row.read = row.read.or(chapter.read);
                 row.title = row
                     .title
@@ -152,7 +152,7 @@ pub(super) fn merge_chapters(per_source: &[(SourceDto, Vec<ChapterDto>)]) -> Vec
 /// The chapter to read next: the lowest-numbered unread one.
 ///
 /// Read state is monotone server-side (`number <= progress`), so "lowest unread" and "first
-/// one you have not got to" are the same chapter — no contiguity assumption needed. `None` for
+/// one you have not got to" are the same chapter: no contiguity assumption needed. `None` for
 /// an anonymous reader (nothing is tracked) and for a series that is fully read.
 pub(super) fn next_unread(chapters: &[MergedChapter]) -> Option<&MergedChapter> {
     chapters
@@ -180,7 +180,7 @@ pub(super) fn source_ceiling(chapters: &[ChapterDto]) -> Option<f64> {
 /// The newest publication date a source carries, for the series-level source picker.
 ///
 /// Compared as strings because the API dates are RFC 3339 in UTC, where lexical and
-/// chronological order agree — parsing here would buy nothing and add a failure mode.
+/// chronological order agree: parsing here would buy nothing and add a failure mode.
 pub(super) fn source_freshest(chapters: &[ChapterDto]) -> Option<String> {
     chapters.iter().filter_map(|c| c.published_at.clone()).max()
 }
@@ -190,7 +190,7 @@ fn non_empty(title: Option<String>) -> Option<String> {
     title.filter(|t| !t.trim().is_empty())
 }
 
-/// One visual row-group, keyed by whole chapter number: the full chapter plus any part
+/// One visual row-group, keyed by whole chapter number: the full chapter and any part
 /// releases sharing its integer part.
 ///
 /// Parts render directly until the full chapter appears (they're the reading frontier until
@@ -203,14 +203,14 @@ pub(super) struct ChapterGroup {
 }
 
 impl ChapterGroup {
-    /// The row that represents this group when it is collapsed — the full chapter if there is
+    /// The row that represents this group when it is collapsed: the full chapter if there is
     /// one, otherwise its newest part.
     pub(super) fn lead(&self) -> Option<&MergedChapter> {
         self.full.as_ref().or_else(|| self.parts.first())
     }
 }
 
-/// Group a newest-first merged list by `floor(number)`.
+/// Groups a newest-first merged list by `floor(number)`.
 ///
 /// Relies on the descending sort, which puts every part release directly above its whole
 /// chapter (`152.6` > `152.1` > `152`), so a group's rows are always contiguous.
@@ -296,7 +296,7 @@ mod tests {
     }
 
     /// The global order has to beat `is_primary`, or a reader who ranked their favourite
-    /// provider still opens on whichever source happens to carry the most chapters — which is
+    /// provider still opens on whichever source happens to carry the most chapters, which is
     /// the state this preference exists to replace.
     #[test]
     fn the_global_order_outranks_the_primary_source() {

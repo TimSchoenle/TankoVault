@@ -1,12 +1,11 @@
-//! One tuning row, shared by the two surfaces that publish one: the recommender's registry and
+//! Owns one tuning row, shared by the two surfaces that publish one: the recommender's registry and
 //! the duplicate sweep's automatic-merge policy.
 //!
-//! Shared because the *row* is the same thing on both — a compiled description, a range, an
+//! Shared because the *row* is the same thing on both: a compiled description, a range, an
 //! effective value, who last moved it, and the two controls that record or withdraw a decision.
 //! What differs is which endpoint the buttons call, which is [`Surface`], and how the value is
-//! rendered, which is the kind. Two copies of this drifted the moment either page was touched;
-//! the visible symptom was a page that still looked right and no longer said the same thing as
-//! the server.
+//! rendered, which is the kind. Two copies of this would drift the moment either page was touched,
+//! leaving a page that still looks right and no longer says the same thing as the server.
 //!
 //! Deliberately not on the shared auto-refresh tick, for the reason `flags` is not: a background
 //! refetch landing between an operator typing a value and pressing Save would discard it.
@@ -25,7 +24,7 @@ use inkstone_ui::{Button, Pill, ToggleButton, Tone};
 
 /// Which surface a row belongs to, and therefore which endpoints its controls call.
 ///
-/// The two are separately permissioned — `recsys.write` against `merge.write` — and the server
+/// The two are separately permissioned (`recsys.write` against `merge.write`), and the server
 /// refuses a key belonging to the other, so this is the client half of a boundary that is
 /// enforced whatever this enum says.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,13 +43,13 @@ pub(super) struct Knob {
     pub(super) kind: TunableKind,
     pub(super) applies: Applies,
     pub(super) value: f64,
-    /// What this deployment falls back to — the compiled default for the recommender, the
+    /// What this deployment falls back to: the compiled default for the recommender, the
     /// configured `matching` value for the sweep. Either way it is what resetting returns to.
     pub(super) default_value: f64,
     pub(super) min: f64,
     pub(super) max: f64,
     pub(super) overridden: bool,
-    /// Whether `min` is a privacy threshold rather than a tuning decision.
+    /// Whether `min` is a privacy threshold instead of a tuning decision.
     pub(super) privacy_floor: bool,
     pub(super) note: Option<String>,
     pub(super) updated_by: Option<String>,
@@ -82,7 +81,7 @@ impl Knob {
     /// A merge-policy knob, whose kind and `applies` travel as tokens.
     ///
     /// A token this build does not know falls back to the shapes that render *something* honest
-    /// — a plain number, and the badge that promises the least — rather than dropping the row.
+    /// (a plain number, and the badge that promises the least) instead of dropping the row.
     /// A knob missing from the page cannot be reset, and this page is the only thing that can
     /// withdraw an override.
     pub(super) fn matching(row: &MergePolicyKnob) -> Self {
@@ -105,7 +104,7 @@ impl Knob {
         }
     }
 
-    /// Whether this knob is on, for the kinds that are a switch rather than a number.
+    /// Whether this knob is on, for the kinds that are a switch instead of a number.
     fn is_on(&self) -> bool {
         self.value >= 0.5
     }
@@ -148,7 +147,7 @@ pub(super) fn KnobRow(row: Knob, can_write: bool, reload: Reload, gate: StepUpGa
     let mut draft = use_signal(|| format_value(value, kind));
     let mut note = use_signal(String::new);
 
-    // Re-seed when the server's value moves under the editor — a reset, or another operator's
+    // Re-seed when the server's value moves under the editor: a reset, or another operator's
     // write. Without this a reset leaves the field showing the number that was just withdrawn.
     use_effect(use_reactive!(|(value, kind)| {
         draft.set(format_value(value, kind));
@@ -327,7 +326,7 @@ fn AppliesPill(applies: Applies) -> Element {
     }
 }
 
-/// Record an explicit decision for one value.
+/// Records an explicit decision for one value.
 #[component]
 fn SaveButton(
     surface: Surface,
@@ -372,10 +371,10 @@ fn SaveButton(
     }
 }
 
-/// Drop the stored override so the value follows what the deployment falls back to.
+/// Drops the stored override so the value follows what the deployment falls back to.
 ///
 /// Distinct from writing that same number, which records a decision that would survive a future
-/// change of that fallback — so this is its own control rather than a "type the default" hint.
+/// change of that fallback, so this is its own control instead of a "type the default" hint.
 #[component]
 fn ResetButton(
     surface: Surface,
@@ -416,7 +415,7 @@ fn ResetButton(
 
 /// One write, with everything the three controls that make one have in common.
 ///
-/// `api` and `i18n` are carried rather than resolved inside [`write`](fn@write): both are hooks,
+/// `api` and `i18n` are carried, not resolved inside [`write`](fn@write): both are hooks,
 /// and a hook called from an event handler runs outside the render that establishes hook order.
 struct WriteRequest {
     api: api::Api,
@@ -432,9 +431,9 @@ struct WriteRequest {
     gate: StepUpGate,
 }
 
-/// Send one write behind the panel's step-up gate, then reload the list it came from.
+/// Sends one write behind the panel's step-up gate, then reloads the list it came from.
 ///
-/// The whole list is refetched rather than the row patched from the response: a page that
+/// The whole list is refetched instead of the row patched from the response: a page that
 /// believed its own request can show a value the server refused to store, and both endpoints
 /// answer with the whole registry precisely so it does not have to.
 fn write(req: WriteRequest) {
@@ -520,7 +519,7 @@ const fn bounds_key(surface: Surface) -> &'static str {
     }
 }
 
-/// A switch's state, as a word rather than a number.
+/// A switch's state, as a word instead of a number.
 fn on_off(i18n: crate::i18n::Translator, on: bool) -> String {
     i18n.t(if on {
         "console.recsys.toggle.on"
@@ -529,10 +528,10 @@ fn on_off(i18n: crate::i18n::Translator, on: bool) -> String {
     })
 }
 
-/// Render a tuning value the way its kind means it.
+/// Renders a tuning value the way its kind means it.
 ///
-/// Whole numbers for the kinds the pipeline rounds anyway, two decimals for the fractional ones
-/// — a shelf size shown as `12.00` invites an operator to wonder what the fraction does.
+/// Whole numbers for the kinds the pipeline rounds anyway, two decimals for the fractional ones:
+/// a shelf size shown as `12.00` invites an operator to wonder what the fraction does.
 pub(super) fn format_value(value: f64, kind: TunableKind) -> String {
     match kind {
         TunableKind::Count | TunableKind::Days | TunableKind::Seconds | TunableKind::Toggle => {

@@ -1,7 +1,7 @@
-//! The Tracking card's shelf row: which shelf this series is on, and the picker that moves it.
+//! Owns the Tracking card's shelf row: which shelf this series is on, and the picker that moves it.
 //!
 //! The picker carries the reader's whole-library count beside each shelf because the choice is
-//! comparative — how much is already on hold is what makes *paused* the right answer — and that
+//! comparative (how much is already on hold is what makes *paused* the right answer), and that
 //! count comes from the summary endpoint, which carries no filter state, so it cannot disagree
 //! with the watchlist's own tabs.
 

@@ -1,4 +1,4 @@
-//! The account inspector's state and its writes: the edit fields, saving them, signing the
+//! Owns the account inspector's state and its writes: the edit fields, saving them, signing the
 //! account out everywhere and erasing it.
 
 use std::collections::BTreeSet;
@@ -144,7 +144,7 @@ impl Editor {
         }
     }
 
-    /// Save `changes` to `user` in up to three calls, in order, stopping at the first failure,
+    /// Saves `changes` to `user` in up to three calls, in order, stopping at the first failure,
     /// so a rejected rename never applies a grant change beside it.
     pub(super) fn save(self, user: &UserDetail, changes: Changes) {
         let Self {
@@ -220,7 +220,7 @@ impl Editor {
         });
     }
 
-    /// Sign the account `user_id` out of every device.
+    /// Signs the account `user_id` out of every device.
     pub(super) fn revoke_sessions(self, user_id: String) {
         let Self {
             api,
@@ -252,7 +252,7 @@ impl Editor {
         });
     }
 
-    /// Erase the account `user_id`, recording `reason`, then call `on_erased`.
+    /// Erases the account `user_id`, recording `reason`, then calls `on_erased`.
     pub(super) fn erase(
         self,
         user_id: String,

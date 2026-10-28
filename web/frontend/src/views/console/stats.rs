@@ -1,7 +1,7 @@
-//! Per-provider statistics: catalogue footprint, content freshness and last-scan health.
+//! Owns the per-provider statistics: catalogue footprint, content freshness and last-scan health.
 //!
-//! Ten columns at ~12 px is a wall, so which of them are drawn — and how tightly — is the
-//! operator's choice, persisted to `localStorage` rather than the URL: it belongs to the
+//! Ten columns at ~12 px is a wall, so which of them are drawn (and how tightly) is the
+//! operator's choice, persisted to `localStorage` instead of the URL: it belongs to the
 //! reader, not to the link they were sent.
 
 use crate::api;
@@ -298,8 +298,8 @@ mod tests {
     use super::Column;
 
     /// A column the operator hides is remembered by its token, so a token that is not unique
-    /// would hide two columns with one checkbox — and a missing catalogue key renders as the
-    /// key itself rather than as an error, so an unworded column ships as `console.stats.col.…`.
+    /// would hide two columns with one checkbox, and a missing catalogue key renders as the
+    /// key itself instead of as an error, so an unworded column ships as `console.stats.col.…`.
     #[test]
     fn every_column_has_a_unique_token_and_a_worded_heading() {
         let mut tokens: Vec<&str> = Column::ALL.iter().map(|c| c.token()).collect();

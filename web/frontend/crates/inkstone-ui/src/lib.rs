@@ -1,17 +1,17 @@
-//! Inkstone — a Dioxus component kit with no application in it.
+//! Owns Inkstone: a Dioxus component kit with no application in it.
 //!
 //! Every component here renders the `ik-*` class contract defined by `styles/inkstone.css` and
 //! nothing else: no i18n runtime, no icon set, no HTTP client, no router. Anything an app has an
-//! opinion about arrives as a prop — text as `String`, glyphs as `Element`, actions as
+//! opinion about arrives as a prop: text as `String`, glyphs as `Element`, actions as
 //! `EventHandler`. That is what makes the directory liftable into another Dioxus project
 //! alongside `styles/inkstone.css`.
 //!
-//! # Why typed variants rather than class strings
+//! # Why typed variants instead of class strings
 //!
 //! The kit exists because `class: "ik-btn danger"` compiles, renders, and is wrong: no such rule
-//! was ever written, so the destructive button looked exactly like the neutral one beside it.
-//! Four modifiers were dead this way when the kit was extracted. [`Tone`] and [`Size`] can only
-//! name classes the stylesheet defines, so that failure mode is gone rather than documented.
+//! exists, so the destructive button looks exactly like the neutral one beside it. [`Tone`] and
+//! [`Size`] can only name classes the stylesheet defines, so that failure mode is impossible,
+//! not documented.
 
 mod button;
 mod feedback;

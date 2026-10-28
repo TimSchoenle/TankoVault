@@ -1,4 +1,4 @@
-//! Small read-only data displays: the KPI tile and the provider health pill.
+//! Owns the small read-only data displays: the KPI tile and the provider health pill.
 
 use crate::i18n::use_i18n;
 use crate::models::ProviderState;
@@ -54,7 +54,7 @@ mod tests {
     use std::str::FromStr;
 
     /// `HealthPill` derives its catalogue key from `Display`, and `stats.rs` recovers the enum
-    /// from the wire string with `FromStr`. Both are generated, so this pins that they agree —
+    /// from the wire string with `FromStr`. Both are generated, so this pins that they agree:
     /// a mismatch would render `Key 'console.providerState.…' not found` to an operator.
     #[test]
     fn provider_state_tokens_round_trip() {

@@ -1,8 +1,8 @@
-//! The page footer (layout handoff §5).
+//! Owns the page footer (layout handoff §5).
 //!
 //! Rendered by [`Shell`](super::Shell) after `.ik-content` and inside `.ik-main`, so it sits
-//! under every route rather than being repeated per view, and shares the same `.ik-measure` row
-//! as the top bar and the page body — the wordmark lines up with the page title and the link
+//! under every route instead of being repeated per view, and shares the same `.ik-measure` row
+//! as the top bar and the page body: the wordmark lines up with the page title and the link
 //! groups with the page's right-hand actions.
 //!
 //! Deliberately light. Cookies & storage folds into the Data Policy; notification settings,
@@ -61,8 +61,8 @@ pub(crate) fn Footer(#[props(default = false)] compact: bool) -> Element {
 
 /// The Legal column, **generated from `GET /v1/legal`**.
 ///
-/// An operator who configures no Imprint gets no Imprint link rather than a dead one, and an
-/// operator who adds `dmca` gets it for free. A failed call renders nothing at all — silent,
+/// An operator who configures no Imprint gets no Imprint link instead of a dead one, and an
+/// operator who adds `dmca` gets it for free. A failed call renders nothing at all: silent,
 /// like Discover's facet degradation: a footer column that says "could not load" is worse than
 /// a footer without the column.
 #[component]
@@ -99,7 +99,7 @@ fn copyright(i18n: Translator, branding: &crate::state::branding::Branding) -> S
 
 /// The line under the wordmark: the operator's own, or the catalogue's translated one.
 ///
-/// An operator who sets a tagline gets it in every language. That is the trade they asked for —
+/// An operator who sets a tagline gets it in every language. That is the trade they asked for:
 /// a deployment whose product is not the one the catalogue describes is better served by one
 /// untranslated true sentence than by a translated false one.
 fn tagline(i18n: Translator, branding: &crate::state::branding::Branding) -> String {
@@ -112,7 +112,7 @@ fn tagline(i18n: Translator, branding: &crate::state::branding::Branding) -> Str
 /// One link per configured document, in the shape the index described it.
 ///
 /// Shared with the compact footer and the register form's acceptance line, so an externally
-/// hosted document is a plain `<a>` in all three rather than a route that would 404.
+/// hosted document is a plain `<a>` in all three instead of a route that would 404.
 pub(crate) fn legal_links(i18n: Translator) -> Element {
     rsx! {
         for entry in legal::documents() {
@@ -140,13 +140,12 @@ pub(crate) fn legal_links(i18n: Translator) -> Element {
 
 /// Licences and where the code is.
 ///
-/// The notices are an in-app `Link` now that `/licenses` renders them. It used to be a plain
-/// `<a>` at the absolute `/third-party-notices`, for two reasons that both went away with the
-/// screen: the target was server-rendered, so the client-side router would have resolved it to
-/// the app shell; and the desktop build runs off a local webview origin, where a relative href
-/// resolves against `file:///`. A route has neither problem, and the screen it opens links the
-/// plain-text document itself — including on desktop before a server is chosen, where it now
-/// says there is nothing to show rather than being withheld with no explanation.
+/// The notices are an in-app `Link`, because `/licenses` renders them. A plain `<a>` at the
+/// server-rendered `/third-party-notices` would resolve to the app shell under the client-side
+/// router, and on desktop, which runs off a local webview origin, a relative href resolves
+/// against `file:///`. A route has neither problem, and the screen it opens links the plain-text
+/// document itself: including on desktop before a server is chosen, where it says there is
+/// nothing to show instead of being withheld with no explanation.
 #[component]
 fn OpenSourceColumn() -> Element {
     let i18n = use_i18n();
@@ -195,12 +194,11 @@ fn OpenSourceColumn() -> Element {
     }
 }
 
-/// The reader's own data. Every entry links the Account panel that owns it — the footer never
+/// The reader's own data. Every entry links the Account panel that owns it: the footer never
 /// repeats a destructive action, so "Delete account" here is a route, not a button.
 ///
-/// All three land on Privacy because that panel owns all three controls; before the panel was a
-/// route segment they landed on Profile instead, which is three labels promising three
-/// destinations and delivering a fourth.
+/// All three land on Privacy because that panel owns all three controls; landing anywhere else
+/// would be three labels promising three destinations and delivering a fourth.
 #[component]
 fn YourDataColumn() -> Element {
     let i18n = use_i18n();
@@ -223,13 +221,13 @@ fn YourDataColumn() -> Element {
 
 /// The deployment's copyright notice left, `v0.9.4 · 7f3c1ab · api healthy` right.
 ///
-/// The health pill is best-effort and **omitted** rather than shown red on failure: a footer
+/// The health pill is best-effort and **omitted**, not shown red on failure: a footer
 /// that reports the API as down on the very page the API just rendered is either wrong or
 /// telling the reader something they can already see.
 ///
-/// The notice is omitted the same way while it is unknown — until `/v1/branding` lands there is
+/// The notice is omitted the same way while it is unknown: until `/v1/branding` lands there is
 /// no holder to name, and naming this project's under someone else's deployment would be a
-/// false claim rather than a placeholder.
+/// false claim instead of a placeholder.
 #[component]
 fn MetaLine() -> Element {
     let i18n = use_i18n();

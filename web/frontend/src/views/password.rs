@@ -1,5 +1,5 @@
-//! Password-reset flow (§17.4): request a reset email (`/forgot-password`) and choose a new
-//! password from the emailed link (`/reset-password?token=…`). Both screens reuse the sign-in
+//! Owns the password-reset flow (§17.4): request a reset email (`/forgot-password`) and choose a
+//! new password from the emailed link (`/reset-password?token=…`). Both screens reuse the sign-in
 //! card styling and the shared [`AuthBrand`] lockup.
 
 use super::auth::AuthBrand;
@@ -11,9 +11,9 @@ use crate::models::*;
 use crate::Route;
 use dioxus::prelude::*;
 use inkstone_ui::{button_class, Button, Size, Tone};
-/// Request a password-reset email. The API always answers `202 Accepted` whether or not the
+/// Requests a password-reset email. The API always answers `202 Accepted` whether or not the
 /// address is registered (so it can't be used to probe accounts), so the UI shows the same
-/// reassuring confirmation regardless — the only failure surfaced is a transport error.
+/// reassuring confirmation regardless: the only failure surfaced is a transport error.
 #[component]
 pub(crate) fn ForgotPassword() -> Element {
     let i18n = use_i18n();
@@ -103,7 +103,7 @@ pub(crate) fn ForgotPassword() -> Element {
     }
 }
 
-/// Choose a new password using the one-time token from the reset email
+/// Chooses a new password using the one-time token from the reset email
 /// (`/reset-password?token=…`). Enforces the same minimum length as registration and confirms
 /// the two entries match before calling the API, which additionally revokes existing sessions.
 #[component]
@@ -145,7 +145,7 @@ pub(crate) fn ResetPassword(token: String) -> Element {
             {
                 Ok(_) => done.set(true),
                 // A 400 here means the token itself is bad (invalid, expired, or already
-                // used) rather than the new password, so name that specifically.
+                // used) instead of the new password, so name that specifically.
                 Err(e) if api::error_status(&e) == Some(400) => {
                     error.set(Some(i18n.t("password.reset.badToken")));
                 }

@@ -1,8 +1,8 @@
-//! Finding a release, and proving it is ours before a single installer byte is read.
+//! Owns finding a release, and proving it is ours before a single installer byte is read.
 //!
 //! **The signature is the gate, and it is checked before anything else is trusted.** The release
-//! workflow writes `desktop-manifest.json` — the version, and one entry per platform naming the
-//! installer with its SHA-256 — and signs it with minisign. Nothing here believes a file name, a
+//! workflow writes `desktop-manifest.json` (the version, and one entry per platform naming the
+//! installer with its SHA-256), and signs it with minisign. Nothing here believes a file name, a
 //! length or a digest that did not arrive inside a manifest which verified against a key compiled
 //! into this binary. That is what reduces "download and run an executable off the internet" to
 //! "run what the holder of the release key published": the transport is TLS to GitHub, but TLS
@@ -15,7 +15,7 @@
 //! checked to be `owner/name`, since it goes into a `api.github.com` path.
 //!
 //! The keys are a **list** on purpose. Rotating a signing key otherwise means every installed
-//! client stops updating the moment the signer changes — the new signature verifies against a key
+//! client stops updating the moment the signer changes: the new signature verifies against a key
 //! they do not have, and the only way out is a manual download. With a list it is a two-release
 //! move: publish a client trusting `[old, new]`, then switch the signer on the release after.
 //! `docs/RELEASING.md` carries the procedure.
@@ -31,14 +31,14 @@ use std::collections::BTreeMap;
 ///
 /// A **list**, never a single entry to be replaced in place: shipped clients only ever trust what
 /// they were compiled with, so switching the signer in one step strands every installed reader on
-/// the version they have. Rotation is therefore two releases — publish a client trusting
+/// the version they have. Rotation is therefore two releases: publish a client trusting
 /// `[old, new]`, then switch `MINISIGN_SECRET_KEY` on the release after. `docs/RELEASING.md` has
 /// the procedure and the order.
 ///
 /// Empty would switch the updater off entirely ([`super::is_configured`] answers `false` and no
 /// request is made to GitHub), which is how this shipped before a key existed.
 ///
-/// The *key* line only — the `RW…` base64, not the `untrusted comment:` line above it in the
+/// The *key* line only: the `RW…` base64, not the `untrusted comment:` line above it in the
 /// `.pub` file. A malformed entry is not a compile error and not a runtime error either: it simply
 /// never verifies anything, so the updater would refuse every release as untrusted. The test below
 /// is what stops that reaching a release.
@@ -56,7 +56,7 @@ const SIGNATURE_ASSET: &str = "desktop-manifest.json.minisig";
 /// may take, small enough to stay one page.
 const RELEASE_PAGE_SIZE: u32 = 30;
 
-/// A day, in milliseconds — the unit the hold-back window is expressed in.
+/// A day, in milliseconds: the unit the hold-back window is expressed in.
 const DAY_MS: f64 = 86_400_000.0;
 
 /// Ceiling on the two metadata requests. The installer download has none: it is on the order of a
@@ -68,7 +68,7 @@ const METADATA_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30)
 pub(crate) struct Release {
     tag_name: String,
     html_url: String,
-    /// When the release stopped being a draft — which for this repository is when its installers
+    /// When the release stopped being a draft, which for this repository is when its installers
     /// became reachable, since `desktop-release` publishes the draft only after attaching them.
     /// That makes it the right clock for the hold-back window.
     published_at: Option<String>,
@@ -98,10 +98,10 @@ pub(crate) struct Candidate {
     /// Where a reader is sent when this app cannot install the release itself.
     pub(crate) page: String,
     /// The manifest and its signature, or `None` for a release published before the desktop
-    /// manifest existed. Such a release is announced and never installed — see
+    /// manifest existed. Such a release is announced and never installed: see
     /// [`Candidate::is_installable`].
     signed: Option<Signed>,
-    /// What the release says about itself. Carried from the release list rather than fetched,
+    /// What the release says about itself. Carried from the release list, not fetched,
     /// so offering the reader the notes costs no request of its own.
     notes: Option<String>,
     assets: Vec<Asset>,
@@ -117,7 +117,7 @@ struct Signed {
 /// Ceiling on how much of a release body is kept.
 ///
 /// The notes are rendered as `rsx!` nodes, one per inline run, so length is paid for in DOM
-/// nodes rather than in a string. A `release-please` changelog section is a few kilobytes; this
+/// nodes instead of in a string. A `release-please` changelog section is a few kilobytes; this
 /// is the bound that stops a release with a pathological body from being a way to make the
 /// panel unusable.
 const MAX_NOTES_BYTES: usize = 16 * 1024;
@@ -150,7 +150,7 @@ impl Candidate {
     /// The download URL of the asset named `file`, if the release actually carries it.
     ///
     /// A manifest entry is a claim about the release; this is the check that the claim matches the
-    /// asset list, so a manifest naming a file nobody attached fails here rather than at a 404
+    /// asset list, so a manifest naming a file nobody attached fails here instead of at a 404
     /// halfway through a download.
     pub(crate) fn asset_url(&self, file: &str) -> Option<&str> {
         self.assets
@@ -181,10 +181,10 @@ pub(crate) fn is_configured() -> bool {
     !TRUSTED_KEYS.is_empty()
 }
 
-/// Fetch the recent releases from `repo`.
+/// Fetches the recent releases from `repo`.
 ///
 /// `repo` is `owner/name` and is interpolated into the request path, so it must already have
-/// passed [`super::channel`]'s shape check — this is the point where a value carrying a `/` or a
+/// passed [`super::channel`]'s shape check: this is the point where a value carrying a `/` or a
 /// `?` would stop naming a repository and start naming a different endpoint.
 ///
 /// # Errors
@@ -229,18 +229,18 @@ pub(crate) enum Offer {
 ///
 /// Four conditions, all of which have to hold:
 ///
-/// * it parses as a semver release — no draft, no prerelease, no `-rc` in the tag;
+/// * it parses as a semver release (no draft, no prerelease, no `-rc` in the tag;
 /// * it is **newer than `current`**;
 /// * it is **at least `min_age_days` old**;
-/// * it is a version the connected server **supports** — see [`Range`].
+/// * it is a version the connected server **supports**) see [`Range`].
 ///
 /// The middle two together are why this is not `releases.first()`. With a seven-day hold-back, a
-/// 2.1.0 published yesterday is not offered while a 2.0.5 published a month ago still is — the
+/// 2.1.0 published yesterday is not offered while a 2.0.5 published a month ago still is: the
 /// point of the window is that a release pulled within days of publication is never installed, and
 /// that only works if the *next best* release is still reachable. The range behaves the same way:
 /// a ceiling at 2.1.0 still offers 2.0.5.
 ///
-/// A release whose `published_at` cannot be read is skipped rather than treated as old enough. The
+/// A release whose `published_at` cannot be read is skipped, not treated as old enough. The
 /// window is the reader's protection and an unreadable timestamp cannot honour it; refusing to
 /// offer a release is recoverable, installing one that should have been held back is not.
 pub(crate) fn eligible(
@@ -283,7 +283,7 @@ pub(crate) fn eligible(
     }
     // Only reported when nothing was offered, and only for the ceiling: with a 2.1.0 ceiling, a
     // reader on 2.0.0 takes 2.0.5 and is told nothing about the 2.2.0 they may not have. It is
-    // the *silence* that needed a name — a client that says "up to date" for a year because its
+    // the *silence* that needed a name: a client that says "up to date" for a year because its
     // server is old is indistinguishable from one whose updater is broken.
     let beyond = refused
         .into_iter()
@@ -296,7 +296,7 @@ pub(crate) fn eligible(
 
 /// What the release *at* `version` says about itself.
 ///
-/// A lookup by exact version rather than by [`eligible`], because the one caller asks about the
+/// A lookup by exact version instead of by [`eligible`], because the one caller asks about the
 /// version it is already running: the release that produced this build is never a candidate to
 /// move to, so nothing in the offer path can answer it.
 pub(crate) fn notes_for(releases: &[Release], version: &semver::Version) -> Option<ReleaseNotes> {
@@ -312,8 +312,8 @@ pub(crate) fn notes_for(releases: &[Release], version: &semver::Version) -> Opti
 
 /// A release body worth rendering: present, not blank, and no longer than [`MAX_NOTES_BYTES`].
 ///
-/// Truncation is on a character boundary, so a body cut mid-glyph is impossible rather than
-/// merely unlikely — `String::truncate` panics on anything else.
+/// Truncation is on a character boundary, so a body cut mid-glyph is impossible, not
+/// merely unlikely: `String::truncate` panics on anything else.
 fn body_of(release: &Release) -> Option<String> {
     let body = release.body.as_deref()?.trim();
     if body.is_empty() {
@@ -331,8 +331,8 @@ fn body_of(release: &Release) -> Option<String> {
 
 /// A release's version, or `None` if the tag is not a plain `vX.Y.Z`.
 ///
-/// Prerelease and build metadata are rejected rather than compared. `release-please` cuts plain
-/// semver on this repository, so anything else is a hand-made tag — and a hand-made tag is not
+/// Prerelease and build metadata are rejected, not compared. `release-please` cuts plain
+/// semver on this repository, so anything else is a hand-made tag, and a hand-made tag is not
 /// something to push at every installed client.
 fn version_of(release: &Release) -> Option<semver::Version> {
     let text = release
@@ -358,12 +358,12 @@ fn signed_urls(release: &Release) -> Option<Signed> {
     })
 }
 
-/// Download `candidate`'s manifest, verify its signature, and return it with the bytes that were
+/// Downloads `candidate`'s manifest, verifies its signature, and returns it with the bytes that were
 /// signed.
 ///
 /// The bytes come back alongside the parsed document because they are what a later start has to
 /// re-verify: [`super::install`] stores them next to the staged installer and checks the signature
-/// again before executing anything, rather than trusting that what it wrote is what it reads.
+/// again before executing anything, instead of trusting that what it wrote is what it reads.
 ///
 /// # Errors
 /// `…network` if either file cannot be fetched, `…unconfigured` with no trusted key,
@@ -384,7 +384,7 @@ pub(crate) async fn manifest(
     verify(&bytes, &signature, TRUSTED_KEYS)?;
     let manifest = parse(&bytes)?;
     // A verified manifest still has to be *this* release's. Both are published by the same job so
-    // a mismatch means a mixed-up upload, not an attack — but the failure it would otherwise
+    // a mismatch means a mixed-up upload, not an attack, but the failure it would otherwise
     // produce is a download that mysteriously never matches its digest.
     if semver::Version::parse(&manifest.version).ok().as_ref() != Some(&candidate.version) {
         return Err("settings.update.error.manifest");
@@ -392,14 +392,14 @@ pub(crate) async fn manifest(
     Ok((manifest, bytes, signature))
 }
 
-/// Verify `signature` over `bytes` against any of `keys`.
+/// Verifies `signature` over `bytes` against any of `keys`.
 ///
-/// `allow_legacy: false` — the release signs with prehashing (`minisign -S -H`), and a legacy
+/// `allow_legacy: false`: the release signs with prehashing (`minisign -S -H`), and a legacy
 /// signature is one made by a much older minisign than the workflow installs. Accepting both would
 /// widen what verifies for no reason anyone here needs.
 ///
 /// # Errors
-/// `…unconfigured` when `keys` is empty, `…untrusted` when no key verifies — including a
+/// `…unconfigured` when `keys` is empty, `…untrusted` when no key verifies: including a
 /// malformed signature or key, which are not worth telling apart for a reader.
 fn verify(bytes: &[u8], signature: &str, keys: &[&str]) -> Result<(), &'static str> {
     if keys.is_empty() {
@@ -418,7 +418,7 @@ fn verify(bytes: &[u8], signature: &str, keys: &[&str]) -> Result<(), &'static s
     }
 }
 
-/// Verify a manifest against the keys this build trusts. See [`verify`].
+/// Verifies a manifest against the keys this build trusts. See [`verify`].
 ///
 /// # Errors
 /// As [`verify`].
@@ -426,7 +426,7 @@ pub(crate) fn verify_trusted(bytes: &[u8], signature: &str) -> Result<(), &'stat
     verify(bytes, signature, TRUSTED_KEYS)
 }
 
-/// Parse a manifest whose signature has already been checked.
+/// Parses a manifest whose signature has already been checked.
 ///
 /// # Errors
 /// `…manifest` for anything that is not the document the release workflow writes.
@@ -436,8 +436,8 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<Manifest, &'static str> {
 
 /// The manifest key for the platform this build is running on.
 ///
-/// Composed from the host triple's own words rather than a `cfg` ladder, so a build for an
-/// architecture no release publishes — an `aarch64` Windows client, say — asks for a key the
+/// Composed from the host triple's own words instead of a `cfg` ladder, so a build for an
+/// architecture no release publishes (an `aarch64` Windows client, say) asks for a key the
 /// manifest does not have, and reports that instead of installing an x86 build.
 pub(crate) fn target_key(kind: &str) -> String {
     format!(
@@ -470,7 +470,7 @@ async fn fetch_bytes(client: &reqwest::Client, url: &str) -> Result<Vec<u8>, &'s
 mod tests {
     use super::*;
 
-    /// A published minisign test vector — the key pair is `rust-minisign-verify`'s own, and the
+    /// A published minisign test vector: the key pair is `rust-minisign-verify`'s own, and the
     /// payload it signs is the four bytes `test`. Used here because verification is the only half
     /// of minisign this crate carries: there is no signer to generate a fixture with, and a
     /// hand-written signature would only ever prove that verification fails.
@@ -530,9 +530,9 @@ y/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+b
 
     /// The hold-back window has to reach *past* the newest release, not merely delay it.
     ///
-    /// The first version of this returned the latest release and then refused it when it was too
-    /// young, which made a non-zero hold-back mean "never update until the next release lands"
-    /// rather than "stay one release behind". A reader on 2.0.0 with a 7-day window and a 2.1.0
+    /// The bug this pins: returning the latest release and then refusing it when it is too young
+    /// makes a non-zero hold-back mean "never update until the next release lands", not "stay one
+    /// release behind". A reader on 2.0.0 with a 7-day window and a 2.1.0
     /// published yesterday must still be offered 2.0.5.
     #[test]
     fn the_window_falls_back_to_the_newest_release_old_enough() {
@@ -561,8 +561,8 @@ y/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+b
 
     /// Drafts, prereleases and hand-made tags are all invisible to the updater.
     ///
-    /// `release-please` cuts plain `vX.Y.Z` on this repository, so anything else was made by hand
-    /// — and a hand-made tag is not something to push at every installed client.
+    /// `release-please` cuts plain `vX.Y.Z` on this repository, so anything else was made by hand,
+    /// and a hand-made tag is not something to push at every installed client.
     #[test]
     fn only_plain_published_semver_releases_are_candidates() {
         let mut draft = signed("v3.0.0", 30.0);
@@ -588,7 +588,7 @@ y/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+b
     }
 
     /// A timestamp that cannot be read means the window cannot be honoured, so the release is
-    /// skipped rather than assumed old enough — refusing an update is recoverable, installing one
+    /// skipped, not assumed old enough: refusing an update is recoverable, installing one
     /// that should have been held back is not.
     #[test]
     fn an_unreadable_publication_date_is_not_treated_as_old() {
@@ -717,7 +717,7 @@ y/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+b
     }
 
     /// One changed byte must fail. This is the whole security property of the module: everything
-    /// downstream — the file to fetch, its length, its digest — is read out of these bytes.
+    /// downstream (the file to fetch, its length, its digest) is read out of these bytes.
     #[test]
     fn a_tampered_payload_fails_verification() {
         assert_eq!(
@@ -727,7 +727,7 @@ y/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+b
     }
 
     /// A signature made by a key this build does not carry is refused, which is what makes the
-    /// trusted list a list of *permitted* signers rather than a hint.
+    /// trusted list a list of *permitted* signers instead of a hint.
     #[test]
     fn an_untrusted_key_is_refused() {
         const OTHER: &str = "RWSmKaOrf6m3xrbLIL9EqiKMTiOoV1AGXjKGdcexNbcqNRQNe3TAkI3P";
@@ -738,7 +738,7 @@ y/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+b
     }
 
     /// With no key compiled in there is nothing that could establish provenance, so verification
-    /// fails closed rather than open. This is what made shipping an empty `TRUSTED_KEYS` safe.
+    /// fails closed, not open. This is what made shipping an empty `TRUSTED_KEYS` safe.
     #[test]
     fn an_empty_key_list_verifies_nothing() {
         assert_eq!(
@@ -751,7 +751,7 @@ y/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+b
     ///
     /// A malformed one fails **silently**: [`verify`] tries each key with `is_ok_and`, so an entry
     /// that cannot be decoded simply never matches, and the updater reports every release as
-    /// untrusted — a broken update channel that no compiler, and no other test here, would notice.
+    /// untrusted; a broken update channel that no compiler, and no other test here, would notice.
     /// A truncated paste or an accidentally included `untrusted comment:` line is exactly the way
     /// that happens.
     #[test]
@@ -787,7 +787,7 @@ y/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+b
     }
 
     /// The notes are looked up by the *exact* version, because the caller asks about the release
-    /// it is already running — which `eligible` can never return, since it only ever offers
+    /// it is already running, which `eligible` can never return, since it only ever offers
     /// something newer than the running build.
     #[test]
     fn the_notes_of_the_running_release_are_found_by_exact_version() {
@@ -801,7 +801,7 @@ y/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+b
     /// A body is cut on a character boundary, never through one.
     ///
     /// `str` slicing panics mid-glyph, so a release whose notes run past the cap with a
-    /// multi-byte character straddling it would abort the app rather than truncate.
+    /// multi-byte character straddling it would abort the app, not truncate.
     #[test]
     fn an_oversized_body_is_cut_on_a_character_boundary() {
         let mut release = release("v9.0.0", Some("2020-01-01T00:00:00Z"), &[]);
@@ -812,8 +812,8 @@ y/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+b
         assert!(body.ends_with('\u{2014}'));
     }
 
-    /// A release published with an empty or whitespace-only body has no notes to show, rather
-    /// than notes that are a blank panel.
+    /// A release published with an empty or whitespace-only body has no notes to show,
+    /// not notes that are a blank panel.
     #[test]
     fn a_blank_body_is_no_notes_at_all() {
         let mut release = release("v9.0.0", Some("2020-01-01T00:00:00Z"), &[]);

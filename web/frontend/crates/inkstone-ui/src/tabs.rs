@@ -1,4 +1,4 @@
-//! A tab strip with real tablist semantics: roving tabindex and arrow-key navigation.
+//! Owns a tab strip with real tablist semantics: roving tabindex and arrow-key navigation.
 
 use crate::skin::{use_skin, Flag, Part, Variant};
 use dioxus::prelude::*;
@@ -29,14 +29,14 @@ impl<T> TabItem<T> {
         }
     }
 
-    /// A count beside the label, already formatted — the kit has no locale.
+    /// A count beside the label, already formatted: the kit has no locale.
     #[must_use]
     pub fn count(mut self, count: impl Into<String>) -> Self {
         self.count = Some(count.into());
         self
     }
 
-    /// Push it to the trailing edge, set off from the tabs before it.
+    /// Pushes it to the trailing edge, set off from the tabs before it.
     #[must_use]
     pub fn apart(mut self) -> Self {
         self.apart = true;
@@ -48,7 +48,7 @@ impl<T> TabItem<T> {
 ///
 /// Controlled: the caller owns the selection, because it is usually a URL parameter, and a
 /// signal here would hold a second copy of it. Generic over the selection type so the caller
-/// keeps its enum rather than matching on strings.
+/// keeps its enum instead of matching on strings.
 #[component]
 pub fn TabBar<T: Clone + PartialEq + 'static>(
     items: Vec<TabItem<T>>,
@@ -57,10 +57,10 @@ pub fn TabBar<T: Clone + PartialEq + 'static>(
     /// Names the strip for a screen reader, which otherwise announces an unlabelled tablist.
     #[props(default)]
     label: Option<String>,
-    /// Flush against an inspector's edge rather than a page's.
+    /// Flush against an inspector's edge instead of a page's.
     #[props(default = false)]
     flush: bool,
-    /// Keep the strip on one row that scrolls sideways, with a fade at the trailing edge, for
+    /// Keeps the strip on one row that scrolls sideways, with a fade at the trailing edge, for
     /// a set too long to wrap gracefully.
     #[props(default = false)]
     scroll: bool,
@@ -89,8 +89,8 @@ pub fn TabBar<T: Clone + PartialEq + 'static>(
                 event.prevent_default();
                 on_select.call(keyed[next].value.clone());
             },
-            // Deliberately unkeyed. The strip is positional — a caller varies its *length*
-            // (Account drops the panels a reader has no capability for), never its order — so
+            // Deliberately unkeyed. The strip is positional (a caller varies its *length*
+            // (Account drops the panels a reader has no capability for), never its order), so
             // positional diffing is already correct. This keyed on `item.label` until a duplicate
             // key elsewhere in the app aborted the desktop build inside `dioxus-core`'s keyed
             // diff: a human-readable label is not an identity, and `T` carries no bound that
@@ -132,7 +132,7 @@ pub fn TabBar<T: Clone + PartialEq + 'static>(
 mod tests {
     /// The kit's tabs grew a count and a scrolling shell so the watchlist's `.ik-wl-tabcount`
     /// and Account's `.ik-subnav` could stop being a second and third tab idiom. A modifier the
-    /// stylesheet never defines is the failure this kit exists to prevent — it compiles,
+    /// stylesheet never defines is the failure this kit exists to prevent: it compiles,
     /// renders, and draws the count as a bare number in the label's own type.
     #[test]
     fn the_tab_extras_are_drawn() {

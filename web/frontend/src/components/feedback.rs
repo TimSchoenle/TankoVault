@@ -1,5 +1,5 @@
-//! Loading, empty and error states (§17.3: never a bare spinner; name what failed and how to
-//! retry), plus the [`async_view`] helper that renders all three from one `Resource`.
+//! Owns the loading, empty and error states (§17.3: never a bare spinner; name what failed and how
+//! to retry), and the [`async_view`] helper that renders all three from one `Resource`.
 //!
 //! The shapes themselves live in `inkstone-ui`. What stays here is the part that needs this
 //! app: the message catalogue, the session, and the [`Reload`] handle a retry bumps.
@@ -30,8 +30,8 @@ pub(crate) fn ErrorBox(message: String, on_retry: EventHandler<()>) -> Element {
 /// A "please sign in" gate rendered by protected views when there is no session.
 ///
 /// While the boot-time silent refresh is still in flight it is a skeleton instead: the token is
-/// re-adopted from the refresh cookie by a network round trip, so every reload of a protected
-/// screen used to flash "Sign in to see this" at a reader who was signed in the whole time.
+/// re-adopted from the refresh cookie by a network round trip, so without it every reload of a
+/// protected screen would flash "Sign in to see this" at a reader signed in the whole time.
 #[component]
 pub(crate) fn SignInGate() -> Element {
     let i18n = use_i18n();
@@ -53,7 +53,7 @@ pub(crate) fn SignInGate() -> Element {
     }
 }
 
-/// The whole "you must be signed in" screen: the page title plus [`SignInGate`].
+/// The whole "you must be signed in" screen: the page title and [`SignInGate`].
 ///
 /// Deliberately a guard callers early-return, not a wrapper taking `children`: views compute
 /// derived state after the check, and a wrapper would have to build that state before deciding
@@ -66,11 +66,11 @@ pub(crate) fn AuthRequired(title: String) -> Element {
     }
 }
 
-/// Render a fetched `Resource` through the standard three states: `loading` while it is in
+/// Renders a fetched `Resource` through the standard three states: `loading` while it is in
 /// flight, an [`ErrorBox`] wired to `reload` when it failed, and `content` once it resolved.
 ///
 /// Not the kit's own `async_view`: this one renders the [`ErrorBox`] above, which reaches the
-/// message catalogue from inside a component rather than asking every caller for a retry label.
+/// message catalogue from inside a component instead of asking every caller for a retry label.
 pub(crate) fn async_view<T: 'static>(
     resource: &Resource<Result<T, String>>,
     reload: Reload,
@@ -89,7 +89,7 @@ pub(crate) fn async_view<T: 'static>(
     }
 }
 
-/// [`async_view`] with a fixed-height [`SkeletonBlock`](fn@SkeletonBlock) as its loading state —
+/// [`async_view`] with a fixed-height [`SkeletonBlock`](fn@SkeletonBlock) as its loading state:
 /// the shape every console panel and sidebar card wants.
 pub(crate) fn async_block<T: 'static>(
     resource: &Resource<Result<T, String>>,

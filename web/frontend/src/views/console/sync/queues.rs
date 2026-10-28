@@ -1,4 +1,4 @@
-//! The two matching backlogs: local series with no mapping, and remote entries that
+//! Owns the two matching backlogs: local series with no mapping, and remote entries that
 //! matched nothing locally.
 
 use crate::api;
@@ -17,7 +17,7 @@ use progenitor_client::ResponseValue;
 /// The provider `<select>`'s options.
 ///
 /// Not routed through `async_block_list`: both queues fall back to a hardcoded `anilist`
-/// option until this lands, rather than showing a full-width error box over the queue itself.
+/// option until this lands, instead of showing a full-width error box over the queue itself.
 fn provider_options(resource: &Resource<Result<Vec<ProviderInfo>, String>>) -> Vec<ProviderInfo> {
     match &*resource.read() {
         Some(Ok(list)) => list.clone(),
@@ -113,7 +113,7 @@ pub(super) fn AssignQueue(reload: Reload) -> Element {
     }
 }
 
-/// One assign-queue row: title + source count, an external-id input to Assign, and Inspect
+/// One assign-queue row: title and source count, an external-id input to Assign, and Inspect
 /// to open the full editor.
 #[component]
 pub(super) fn AssignRow(
@@ -401,7 +401,7 @@ pub(super) fn UnmatchedRemoteRow(entry: Signal<UnmatchedRemoteEntry>, reload: Re
     });
 
     // Not an `async_block_list`: stays empty below 3 characters typed, and an empty-state box
-    // under an untouched field would read as a failure rather than a prompt.
+    // under an untouched field would read as a failure instead of a prompt.
     let manual: Vec<SeriesSummary> = match &*results.read() {
         Some(Ok(l)) => l.clone(),
         _ => Vec::new(),
@@ -470,7 +470,7 @@ pub(super) fn UnmatchedRemoteRow(entry: Signal<UnmatchedRemoteEntry>, reload: Re
 
 /// A short one-line descriptor for a suggested series (type · year · sources).
 ///
-/// The content type is the matcher's raw token, passed through as-is rather than a typed enum.
+/// The content type is the matcher's raw token, passed through as-is instead of a typed enum.
 pub(super) fn suggestion_meta(i18n: Translator, s: &SuggestedMatch) -> String {
     let mut parts = Vec::new();
     if !s.content_type.is_empty() && s.content_type != "unknown" {

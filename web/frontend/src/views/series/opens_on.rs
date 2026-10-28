@@ -1,10 +1,10 @@
-//! The Tracking card's *Opens on* row: which source this series resolves to, and the picker that
-//! pins another one.
+//! Owns the Tracking card's *Opens on* row: which source this series resolves to, and the picker
+//! that pins another one.
 //!
 //! This is the series-level counterpart to the per-chapter menu in [`super::chapters`]. The two
 //! answer different questions and must not be folded together: the chapter menu is "open *this
 //! chapter* somewhere", and is offered even to a reader who tracks nothing, while this one writes
-//! the pin that decides where every button on the screen points from now on — which is a column
+//! the pin that decides where every button on the screen points from now on, which is a column
 //! on the watchlist entry, so an untracked series has nowhere to keep it.
 
 use super::model::RankedSource;
@@ -23,7 +23,7 @@ const FALLBACK_SHOWN: usize = 2;
 /// The current source, the fallback chain behind it, and the picker that changes both.
 #[component]
 pub(super) fn OpensOnSection(
-    /// Every source in resolution order — the pin, then the reader's order, then the API's.
+    /// Every source in resolution order: the pin, then the reader's order, then the API's.
     sources: Vec<RankedSource>,
     pinned: Pinned,
     /// This series' watchlist entry, for the per-provider health the catalogue call omits.

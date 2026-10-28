@@ -1,4 +1,4 @@
-//! Cover artwork and the cover card used by every grid.
+//! Owns the cover artwork and the cover card used by every grid.
 
 use crate::i18n::use_i18n;
 use crate::models::{ContentTypeExt, SeriesStatusExt, SeriesSummary};
@@ -9,8 +9,8 @@ use dioxus::prelude::*;
 /// A cover image with a typographic fallback when there is no artwork to show.
 ///
 /// The fallback covers two cases, not one: a series with no stored `cover_url`, and a stored URL
-/// that does not load. The second is why this is a component with state rather than a `match` on
-/// the option — a broken `<img>` is replaced by the browser with an inline alt-text box that
+/// that does not load. The second is why this is a component with state instead of a `match` on
+/// the option: a broken `<img>` is replaced by the browser with an inline alt-text box that
 /// ignores `aspect-ratio`, so it collapses to the height of one line of text and drags every
 /// neighbour in the row up with it. That is what made a single unreachable cover host visibly
 /// break the "More like this" rail's spacing. Swapping the element out keeps the box the layout
@@ -47,7 +47,7 @@ pub(crate) fn Cover(url: Option<String>, title: String) -> Element {
 /// Says four things about a series, not two. Type and status alone answered almost nothing a
 /// reader chooses on: whether a title has enough of a backlog to be worth starting, when it is
 /// from, and what it is about are the questions a grid of covers has to answer before one gets
-/// clicked. Chapter count is deliberately the *de-duplicated* one — the number of sources a
+/// clicked. Chapter count is deliberately the *de-duplicated* one: the number of sources a
 /// series happens to be carried by is an operational fact about this deployment's crawlers, and
 /// showing it where a reader expects a length taught them to read it as one.
 #[component]
@@ -111,10 +111,10 @@ pub(crate) fn CardMeta(
                 {i18n.plural("series.chapterTally", chapter_count, &[])}
             }
         }
-        // What the series is about, where "up to 412" used to be. That number was the same fact
-        // as the tally beside it in every ordinary case — a series numbered from one with nothing
-        // skipped — so the card spent a line restating itself, and a reader deciding whether to
-        // open something learned nothing from either.
+        // What the series is about, not "up to 412": that number is the same fact as the tally
+        // beside it in every ordinary case (a series numbered from one with nothing skipped), so
+        // the card would spend a line restating itself, and a reader deciding whether to open
+        // something would learn nothing from either.
         if let Some(blurb) = blurb {
             p { class: "ik-card-blurb", "{blurb}" }
         }

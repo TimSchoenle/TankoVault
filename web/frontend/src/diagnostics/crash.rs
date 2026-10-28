@@ -1,8 +1,8 @@
-//! The report a panic leaves behind.
+//! Owns the report a panic leaves behind.
 //!
 //! **This crate builds with `panic = "abort"`, so the hook below is the only code that runs
 //! between a panic and the process disappearing.** It therefore has to be complete in one pass,
-//! and it must not panic itself — a panic inside a panic hook aborts immediately, with the report
+//! and it must not panic itself: a panic inside a panic hook aborts immediately, with the report
 //! half-written and nothing said.
 //!
 //! The panic is recorded three ways, because the three answer different questions. The rolling
@@ -13,8 +13,8 @@
 //! is the complaint this module was written for.
 //!
 //! Frames in the backtrace may be bare addresses. The shipped profile carries no debug info and
-//! strips symbols, so the *location* line — which comes from `Location` and is compiled in
-//! regardless — is the field to read first.
+//! strips symbols, so the *location* line (which comes from `Location` and is compiled in
+//! regardless) is the field to read first.
 
 use std::panic::PanicHookInfo;
 use std::path::{Path, PathBuf};
@@ -30,8 +30,8 @@ const KEEP_REPORTS: usize = 10;
 const REPORT_PREFIX: &str = "crash-";
 const REPORT_EXTENSION: &str = "log";
 
-/// Install the panic hook. `dir` is where reports go, or `None` when the platform exposes no
-/// directory to write them in — the panic is still logged and still announced.
+/// Installs the panic hook. `dir` is where reports go, or `None` when the platform exposes no
+/// directory to write them in: the panic is still logged and still announced.
 pub(super) fn install(dir: Option<PathBuf>) {
     let inherited = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -52,7 +52,7 @@ pub(super) fn install(dir: Option<PathBuf>) {
         );
         let written = dir.as_deref().and_then(|dir| write(dir, &report));
         // The panic explains this session ending and is already recorded, so the marker must go
-        // with it — otherwise the next start reports an unexplained kill as well.
+        // with it: otherwise the next start reports an unexplained kill as well.
         super::session::end();
         announce(written.as_deref());
         inherited(info);
@@ -122,7 +122,7 @@ impl Report {
     }
 }
 
-/// Write the report and return where it landed, or `None` if it could not be written at all.
+/// Writes the report and returns where it landed, or `None` if it could not be written at all.
 fn write(dir: &Path, report: &Report) -> Option<PathBuf> {
     std::fs::create_dir_all(dir).ok()?;
     let path = dir.join(format!(
@@ -135,7 +135,7 @@ fn write(dir: &Path, report: &Report) -> Option<PathBuf> {
     Some(path)
 }
 
-/// Keep the newest [`KEEP_REPORTS`] and remove the rest.
+/// Keeps the newest [`KEEP_REPORTS`] and removes the rest.
 ///
 /// Sorted by file name, which is chronological because the stamp in it is fixed-width and
 /// big-endian. Nothing here consults the filesystem's own timestamps: a profile restored from a
@@ -164,10 +164,10 @@ fn prune(dir: &Path) {
     }
 }
 
-/// Tell the reader, because the window is about to vanish and this is the only warning they get.
+/// Tells the reader, because the window is about to vanish and this is the only warning they get.
 ///
 /// Windows only, and deliberately. `rfd`'s Linux backend goes through GTK or the XDG portal, and
-/// reaching either from a thread that is already dying — or from the GTK main thread itself —
+/// reaching either from a thread that is already dying (or from the GTK main thread itself)
 /// risks hanging the process instead of ending it, which is a worse failure than the silent exit
 /// it was meant to replace. A Linux user has a terminal and the stderr this also writes to.
 #[cfg(windows)]
@@ -208,7 +208,7 @@ mod tests {
     }
 
     /// Reports accumulate in a user's profile forever otherwise, and the pruner has to drop the
-    /// *oldest* — a pruner that kept the wrong end would delete the report the reader just made
+    /// *oldest*: a pruner that kept the wrong end would delete the report the reader just made
     /// while asking for help.
     #[test]
     fn pruning_keeps_the_newest_reports_and_nothing_else() {

@@ -1,8 +1,8 @@
-//! The rolling log file, and the one rule it may never break: writing a log line must not fail
+//! Owns the rolling log file, and the one rule it may never break: writing a log line must not fail
 //! the thing being logged.
 //!
-//! Every error here — no directory, no permission, a full disk, a rename another process is
-//! holding open — is swallowed and the write reported as accepted. This writer is called from
+//! Every error here (no directory, no permission, a full disk, a rename another process is
+//! holding open) is swallowed and the write reported as accepted. This writer is called from
 //! inside the panic hook, and a logger that turned its own failure into a second panic would take
 //! the crash report down with it.
 
@@ -25,7 +25,7 @@ const GENERATIONS: usize = 3;
 pub(super) struct Rolling(Arc<Mutex<State>>);
 
 impl Rolling {
-    /// Open — or create — the log at `path`.
+    /// Opens (or creates) the log at `path`.
     ///
     /// A path that cannot be opened yields a sink that discards, and it does not try again: the
     /// only reasons this fails are structural (no profile directory, a policy-locked path), and
@@ -53,7 +53,7 @@ impl<'a> MakeWriter<'a> for Rolling {
     }
 }
 
-/// One locked write, held for the duration of a single event — which is what keeps two threads'
+/// One locked write, held for the duration of a single event, which is what keeps two threads'
 /// lines from interleaving mid-line.
 pub(super) struct Handle<'a>(MutexGuard<'a, State>);
 
@@ -78,8 +78,8 @@ struct State {
     written: u64,
     /// The size at which the next roll is attempted.
     ///
-    /// Not simply [`MAX_BYTES`]: a roll fails when another process — the update relauncher, which
-    /// is this same binary — holds the file open, because Windows refuses to rename across that.
+    /// Not simply [`MAX_BYTES`]: a roll fails when another process (the update relauncher, which
+    /// is this same binary) holds the file open, because Windows refuses to rename across that.
     /// Raising the ceiling on a failed roll is what stops every subsequent write retrying the
     /// same rename.
     ceiling: u64,
@@ -112,7 +112,7 @@ impl State {
         self.ceiling = self.written.saturating_add(MAX_BYTES);
     }
 
-    /// Reopen the live file in append mode, adopting whatever is already in it.
+    /// Reopens the live file in append mode, adopting whatever is already in it.
     fn reopen(&mut self) {
         if let Some(dir) = self.path.parent() {
             if std::fs::create_dir_all(dir).is_err() {
@@ -130,7 +130,7 @@ impl State {
         self.file = Some(file);
     }
 
-    /// `tankovault.log` → `tankovault.log.1`. A suffix rather than a replaced extension, so the
+    /// `tankovault.log` → `tankovault.log.1`. A suffix instead of a replaced extension, so the
     /// generations sort next to the live file and keep their `.log` association.
     fn generation(&self, index: usize) -> PathBuf {
         let mut name = self.path.clone().into_os_string();

@@ -1,11 +1,11 @@
-//! The small-viewport navigation: a fixed five-tab bar and the **More** sheet behind its last
+//! Owns the small-viewport navigation: a fixed five-tab bar and the **More** sheet behind its last
 //! tab (layout handoff §4.1).
 //!
-//! Below 820px the rail used to become a wrapping strip of eleven capability-gated links, the
-//! brand lockup and the user box — roughly a third of a 390px viewport before any content. The
-//! bar replaces it with up to five 44px targets; everything they cannot carry moves into the
+//! Below 820px the rail would become a wrapping strip of eleven capability-gated links, the
+//! brand lockup and the user box: roughly a third of a 390px viewport before any content. The
+//! bar takes its place with up to five 44px targets; everything they cannot carry moves into the
 //! sheet, which is where the per-reader gating lives so the bar does not reflow around a
-//! permission. Signing out is the one thing that does shorten it — see `nav::tab_destinations`.
+//! permission. Signing out is the one thing that does shorten it: see `nav::tab_destinations`.
 
 use crate::components::nav::{reader_destinations_visible, tab_destinations, Destination};
 use crate::components::UnreadBadge;
@@ -28,15 +28,15 @@ pub(crate) fn BottomTabs() -> Element {
     let route: Route = use_route();
     let unread = *use_context::<UnreadBadge>().0.read();
     let mut sheet = use_signal(|| false);
-    // The sheet is a modal, so dismissing it has to put the keyboard back where it came from —
-    // and the element it came from is this button. A mounted handle rather than a DOM id
+    // The sheet is a modal, so dismissing it has to put the keyboard back where it came from,
+    // and the element it came from is this button. A mounted handle instead of a DOM id
     // because the desktop build has no `web-sys`; see `components::focus`.
     let mut more_tab = use_signal(|| Option::<Rc<MountedData>>::None);
 
     // A route change has to close the sheet: every row in it navigates, and a sheet left open
     // over the screen it just opened covers the thing the reader asked for.
     use_effect(use_reactive!(|route| {
-        // The route is the dependency, not an input — any change to it closes the sheet.
+        // The route is the dependency, not an input: any change to it closes the sheet.
         drop(route);
         if *sheet.peek() {
             sheet.set(false);
@@ -69,7 +69,7 @@ pub(crate) fn BottomTabs() -> Element {
                 on_close: move |()| {
                     sheet.set(false);
                     // The sheet held the focus, and it is about to stop existing. Only the
-                    // dismissals come through here — a row that navigates closes the sheet
+                    // dismissals come through here: a row that navigates closes the sheet
                     // through the route effect above instead, and that reader wants the screen
                     // they asked for, not this button.
                     if let Some(element) = more_tab.peek().clone() {
@@ -83,7 +83,7 @@ pub(crate) fn BottomTabs() -> Element {
     }
 }
 
-/// One routed tab. Active by exact route rather than by [`crate::components::nav`]'s
+/// One routed tab. Active by exact route instead of by [`crate::components::nav`]'s
 /// `same_screen`, because the bar has no Discover-parents-Series relationship to express: a
 /// series page is reached from any tab.
 fn tab_link(tab: &Destination, current: &Route) -> Element {
@@ -127,8 +127,8 @@ fn MoreSheet(on_close: EventHandler<()>) -> Element {
             "aria-modal": "true",
             "aria-label": i18n.t("nav.more"),
             // Focusable so `Escape` reaches the sheet with nothing else focused, and so the
-            // first `Tab` lands on the first row rather than back in the page behind — the
-            // step-up dialog's treatment, which this claimed with `aria-modal` and never had.
+            // first `Tab` lands on the first row, not back in the page behind: the
+            // step-up dialog's treatment, which `aria-modal` promises.
             tabindex: "-1",
             onmounted: move |event| {
                 let element = event.data();
@@ -146,8 +146,8 @@ fn MoreSheet(on_close: EventHandler<()>) -> Element {
             if caps.has_feature(Feature::CatalogueSearch) {
                 {sheet_link(Route::Search { query: crate::views::SearchQuery::default() }, Icon::Search, &i18n.t("nav.search"))}
             }
-            // In the sheet rather than the bar, which is fixed at five: this is per-reader
-            // gating, which is what the sheet is for. Without the row `/for-you` had no
+            // In the sheet instead of the bar, which is fixed at five: this is per-reader
+            // gating, which is what the sheet is for. Without the row `/for-you` would have no
             // small-viewport entry point but the CTA below two lists at the foot of Home.
             if personal && caps.has_feature(Feature::CatalogueRecommendations) {
                 {sheet_link(Route::Recommendations {}, Icon::AutoAwesome, &i18n.t("nav.recommendations"))}
@@ -181,12 +181,12 @@ fn MoreSheet(on_close: EventHandler<()>) -> Element {
             }
 
             // The footer cannot share the bottom edge with a fixed tab bar, so its Legal column
-            // lives here at this width — same source, same "configured or absent" behaviour.
+            // lives here at this width: same source, same "configured or absent" behaviour.
             {legal_block(i18n)}
 
             div { class: "ik-sheet-head", {i18n.t("footer.openSource")} }
             // An in-app route now, so no origin to resolve it against and nothing to withhold
-            // on the desktop build before a server is chosen — see `footer::OpenSourceColumn`.
+            // on the desktop build before a server is chosen: see `footer::OpenSourceColumn`.
             {sheet_link(Route::Licenses {}, Icon::Code, &i18n.t("nav.notices"))}
         }
     }
@@ -194,7 +194,7 @@ fn MoreSheet(on_close: EventHandler<()>) -> Element {
 
 /// The documents this deployment publishes, as sheet rows.
 ///
-/// Renders nothing at all when there are none — which is also what a failed index fetch looks
+/// Renders nothing at all when there are none, which is also what a failed index fetch looks
 /// like, and is the correct degradation either way: a heading over an empty list is worse than
 /// no heading.
 fn legal_block(i18n: Translator) -> Element {

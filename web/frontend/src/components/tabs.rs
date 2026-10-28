@@ -1,5 +1,5 @@
-//! The app's tab strip: the kit's tablist, keyed by a screen's own tab enum and worded from the
-//! message catalogue.
+//! Owns the app's tab strip: the kit's tablist, keyed by a screen's own tab enum and worded from
+//! the message catalogue.
 
 use crate::i18n::use_i18n;
 use dioxus::prelude::*;
@@ -18,7 +18,7 @@ pub(crate) trait TabKind: Copy + PartialEq + 'static {
 
 /// A tab strip with real tab semantics.
 ///
-/// `visible` restricts the strip to a subset — Account hides panels a reader has no capability
+/// `visible` restricts the strip to a subset: Account hides panels a reader has no capability
 /// for, and rendering a tab that opens nothing is worse than omitting it.
 ///
 /// Controlled: the caller owns the selection, because in the console it is a URL parameter, and

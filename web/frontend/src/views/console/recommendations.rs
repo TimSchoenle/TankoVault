@@ -1,11 +1,11 @@
-//! The recommender's control plane: model health, the rebuild that makes a stored-model change
+//! Owns the recommender's control plane: model health, the rebuild that makes a stored-model change
 //! take effect, and the tuning registry (`docs/RECOMMENDATIONS.md` §8, §10).
 //!
 //! Deliberately not on the shared auto-refresh tick, for the reason `flags` is not: a background
 //! refetch landing between an operator typing a value and pressing Save would discard it.
 //!
-//! Every row's wording — its title, its description, its bounds — comes from the server's
-//! compiled registry rather than the catalogue here. A knob's meaning is defined where the
+//! Every row's wording (its title, its description, its bounds) comes from the server's
+//! compiled registry instead of the catalogue here. A knob's meaning is defined where the
 //! pipeline reads it, and a second copy in a locale file would drift the moment either moved.
 
 use crate::api;
@@ -30,11 +30,11 @@ use progenitor_client::ResponseValue;
 /// the build is doing. Only ticks while `building`; see [`ModelHealth`].
 const BUILD_POLL_MS: u32 = 3_000;
 
-/// The build stages a full run passes through, in order, so the console can say "4 of 6" rather
-/// than printing a bare token whose position in the sequence only the builder knows.
+/// The build stages a full run passes through, in order, so the console can say "4 of 6",
+/// not printing a bare token whose position in the sequence only the builder knows.
 ///
 /// Hand-listed against `services/control-plane/src/recsys.rs`; a stage this does not know is
-/// shown by name with no ordinal, which is the honest degradation — a wrong ordinal would claim
+/// shown by name with no ordinal, which is the honest degradation: a wrong ordinal would claim
 /// a run is further along than it is.
 const FULL_STAGES: [&str; 6] = [
     "full:features",
@@ -126,7 +126,7 @@ pub(super) fn RecommendationsPanel() -> Element {
 
 /// What the model is, how much of the catalogue it covers, and the two rebuilds.
 ///
-/// This one panel *is* on a refresh tick, unlike the tuning rows below it — and for the same
+/// This one panel *is* on a refresh tick, unlike the tuning rows below it, and for the same
 /// reason they are not. A background refetch is destructive over a half-typed value; over a
 /// read-only progress figure it is the entire point. A build takes minutes and the operator who
 /// pressed the button has no other way to tell a run that is working from one that has hung,
@@ -180,7 +180,7 @@ fn HealthBody(view: ModelHealthView, can_write: bool, reload: Reload, gate: Step
     let i18n = use_i18n();
 
     // The gap between what has an embedding and what may be recommended is the figure that
-    // explains a thin shelf, so it is stated rather than left to be subtracted by eye.
+    // explains a thin shelf, so it is stated, not left to be subtracted by eye.
     let excluded = view.series_with_embedding - view.series_recommendable;
     let repairing = view.repair_queue_depth > 0;
     let coverage_accent = if excluded > 0 { "warn" } else { "" }.to_owned();
@@ -242,7 +242,7 @@ fn HealthBody(view: ModelHealthView, can_write: bool, reload: Reload, gate: Step
         }
 
         // A failed run releases its claim, so this is the only place the failure is visible at
-        // all — an unbuilt model and a broken one look identical in the coverage figures.
+        // all: an unbuilt model and a broken one look identical in the coverage figures.
         if let Some(error) = view.error.clone() {
             p { style: "font-size:12.5px;color:var(--acc);margin:0 0 12px;max-width:74ch;",
                 {i18n.args("console.recsys.lastError", &[("message", &error)])}
@@ -297,13 +297,13 @@ fn HealthBody(view: ModelHealthView, can_write: bool, reload: Reload, gate: Step
 
 /// How far a running build has got.
 ///
-/// Shown only while one holds the claim. Before this the panel said `full:embedding` and nothing
-/// else, so the difference between a build ten seconds in and one wedged for an hour was
-/// invisible — an operator's only recourse was to watch the coverage counts and guess. Three
+/// Shown only while one holds the claim. A bare `full:embedding` would make the difference
+/// between a build ten seconds in and one wedged for an hour invisible, leaving an operator to
+/// watch the coverage counts and guess. Three
 /// facts answer it: which stage of how many, how far through that stage, and how long the run
 /// has been going.
 ///
-/// The bar is omitted rather than faked when the stage published no total: `full:vocabulary`,
+/// The bar is omitted, not faked, when the stage published no total: `full:vocabulary`,
 /// `full:basis` and `full:index` are single database operations with no per-series progress to
 /// report, and a bar that sat at zero through them would read as a stall.
 #[component]
@@ -371,15 +371,15 @@ fn BuildProgress(stage: String, done: i32, total: i32, started_at: Option<String
                     span { style: "width:{percent}%;" }
                 }
             } else {
-                // Indeterminate: the stage is doing work this panel cannot measure. Striped
-                // rather than empty, so it does not read as a bar stuck at zero.
+                // Indeterminate: the stage is doing work this panel cannot measure. Striped,
+                // not empty, so it does not read as a bar stuck at zero.
                 div { class: "ik-progress indeterminate", span {} }
             }
         }
     }
 }
 
-/// Run a build now. Disabled while one holds the claim — a second request would be refused by
+/// Runs a build now. Disabled while one holds the claim: a second request would be refused by
 /// the control plane, and offering it invites the operator to think the first one failed.
 #[component]
 fn RebuildButton(
@@ -405,12 +405,13 @@ fn RebuildButton(
                     .send()
                     .await
                 {
-                    // The refetch below reports every other failure — health is what says whether
+                    // The refetch below reports every other failure: health is what says whether
                     // the run happened. A step-up demand leaves health unchanged and so has no
                     // tell of its own.
                     let _refused = gate.refused(api::Refusal::of(&e));
                 }
-                // Refetch either way: health is what says whether the run happened and how it ended.
+                // Refetch either way: health is what says whether the run happened and how it
+                // ended.
                 reload.bump();
                 busy.release();
             });

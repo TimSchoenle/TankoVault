@@ -1,7 +1,7 @@
-//! The cover-grid alternate (design turn 4, option `4b`).
+//! Owns the cover-grid alternate (design turn 4, option `4b`).
 //!
-//! Same data, same filters, same bands as the list — this is a density choice, not a different
-//! screen, which is why it takes the already-fetched rows rather than fetching its own. What a
+//! Same data, same filters, same bands as the list: this is a density choice, not a different
+//! screen, which is why it takes the already-fetched rows instead of fetching its own. What a
 //! cover card can carry is a strict subset of what a 54px row carries, so the row menu and the
 //! per-row actions stay on the list; the grid is for recognising a title by its art.
 

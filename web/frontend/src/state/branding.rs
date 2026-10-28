@@ -1,19 +1,19 @@
-//! What this deployment calls itself, fetched once per session from `GET /v1/branding`.
+//! Owns what this deployment calls itself, fetched once per session from `GET /v1/branding`.
 //!
-//! Four surfaces read it — the rail's lockup, the footer's lockup, licence and copyright line,
-//! the document title, and every catalogue message carrying `{brand}` — so it is fetched once by
+//! Four surfaces read it (the rail's lockup, the footer's lockup, licence and copyright line,
+//! the document title, and every catalogue message carrying `{brand}`), so it is fetched once by
 //! [`use_branding_sync`] in the shell and read from context everywhere else.
 //!
 //! It starts at the **last identity this client saw from this server**, and falls back to the
 //! shipped one: the rail and the footer render before any response lands, and a wordmark that
-//! flashes empty is worse than one that is briefly this project's — but one that flashes *this
+//! flashes empty is worse than one that is briefly this project's, but one that flashes *this
 //! project's* on a rebranded deployment is worse than either. The desktop build depends on it
 //! more heavily still, because two of its surfaces run with no server to ask and no component
 //! tree to read from: the notification raised as an update hands off to an installer, and the
 //! one raised by the build that comes back. Both are [`remembered_name`]'s callers.
 //!
 //! The cache is keyed by the origin it came from, so a desktop client repointed at another
-//! server shows the shipped identity for one fetch rather than the previous deployment's.
+//! server shows the shipped identity for one fetch instead of the previous deployment's.
 
 use crate::api;
 use crate::models::BrandingView;
@@ -25,7 +25,7 @@ const CACHE_KEY: &str = "tv-branding";
 
 /// The deployment's identity, resolved.
 ///
-/// A local struct rather than the wire type: the wire type's `copyright` is three fields that
+/// A local struct instead of the wire type: the wire type's `copyright` is three fields that
 /// every call site would have to recombine, and the compiled-in fallback needs a `Default` the
 /// generated type does not have.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -38,7 +38,7 @@ pub(crate) struct Branding {
     pub(crate) wordmark_accent: Option<String>,
     /// An operator's own tagline, which replaces the translated one.
     pub(crate) tagline: Option<String>,
-    /// Who holds the copyright, and for which year — kept apart rather than pre-composed, so the
+    /// Who holds the copyright, and for which year: kept apart, not pre-composed, so the
     /// catalogue decides the order and the symbol.
     pub(crate) copyright_holder: String,
     /// See [`Self::copyright_holder`].
@@ -63,8 +63,8 @@ impl Default for Branding {
             wordmark_lead: crate::build_info::WORDMARK_LEAD.to_owned(),
             wordmark_accent: Some(crate::build_info::WORDMARK_ACCENT.to_owned()),
             tagline: None,
-            // Left empty rather than guessed: the holder and the year are the server's to
-            // resolve — the year is the *current* one, which nothing here knows — and a footer
+            // Left empty, not guessed: the holder and the year are the server's to
+            // resolve (the year is the *current* one, which nothing here knows), and a footer
             // briefly claiming the wrong holder is worse than one whose meta line is briefly a
             // line shorter. `MetaLine` omits the notice while the holder is empty.
             copyright_holder: String::new(),
@@ -122,15 +122,15 @@ pub(crate) fn remembered() -> Branding {
 ///
 /// Those are the two update notifications: one is raised from `main` before the window exists,
 /// the other on the first render of the build an installer produced, both far too early for
-/// `/v1/branding` to have answered. Before this they resolved `{brand}` to nothing at all and to
-/// the shipped name respectively, so a rebranded deployment's reader was told that this project
-/// was updating — the one moment the app takes over their machine, announced over a name they
+/// `/v1/branding` to have answered. Without this they resolve `{brand}` to nothing at all and to
+/// the shipped name respectively, so a rebranded deployment's reader is told that this project
+/// is updating: the one moment the app takes over their machine, announced over a name they
 /// have never seen.
 pub(crate) fn remembered_name() -> String {
     remembered().name
 }
 
-/// Keep `branding` for the next start.
+/// Keeps `branding` for the next start.
 fn remember(branding: &Branding) {
     let cached = Cached {
         origin: crate::platform::origin(),
@@ -151,7 +151,7 @@ impl BrandingState {
     }
 }
 
-/// Fetch the branding into context. Mount once, in the shell.
+/// Fetches the branding into context. Mount once, in the shell.
 ///
 /// Best-effort and silent on failure, like the legal index: a deployment that cannot answer this
 /// keeps the shipped identity, which is exactly what an unconfigured `[branding]` section would
@@ -160,7 +160,7 @@ pub(crate) fn use_branding_sync() {
     let api = api::use_api();
     let mut branding = use_context::<BrandingState>();
 
-    // Bound and unread: it writes into context rather than being read back, and `let _ =`
+    // Bound and unread: it writes into context instead of being read back, and `let _ =`
     // would drop the future.
     let _fetch = use_resource(move || {
         let client = api.client();

@@ -1,4 +1,4 @@
-//! Offset pagination: the arithmetic, and the two chromes built on it.
+//! Owns the offset pagination: the arithmetic, and the two chromes built on it.
 //!
 //! [`Window`] is the shared arithmetic; its failure mode is invisible until someone notices a
 //! page they cannot reach.
@@ -159,7 +159,7 @@ pub(crate) fn Pagination(page: Signal<usize>, pages: usize, has_next: bool) -> E
     }
 }
 
-/// The console list footer's pager: a range sentence plus prev/next, sized for a 328px column.
+/// The console list footer's pager: a range sentence and prev/next, sized for a 328px column.
 ///
 /// `page` is a 0-based page index; `window` describes what the server returned for it.
 #[component]
@@ -202,7 +202,7 @@ pub(crate) fn CompactPager(
     }
 }
 
-/// [`CompactPager`] for an endpoint that reports no total: the caller's sentence plus prev/next,
+/// [`CompactPager`] for an endpoint that reports no total: the caller's sentence and prev/next,
 /// with `has_next` from whatever probe the caller made.
 #[component]
 pub(crate) fn SeekPager(
@@ -254,7 +254,7 @@ mod tests {
         );
     }
 
-    /// A one-page gap costs the same width as an ellipsis, so it renders as the page itself —
+    /// A one-page gap costs the same width as an ellipsis, so it renders as the page itself:
     /// an ellipsis hiding a single reachable page is strictly worse than the page.
     #[test]
     fn single_page_gaps_render_as_the_page() {
@@ -269,9 +269,9 @@ mod tests {
         assert_eq!(page_window(0, 0), Vec::<Option<usize>>::new());
     }
 
-    /// The bug this arithmetic used to have: the console directory passed the *filtered* row
+    /// The bug this pins: the console directory passed the *filtered* row
     /// count as `page_len`, so switching on a chip that hid rows shrank the left-hand side and
-    /// left Next enabled on the last page — and the range sentence reported a client-side count
+    /// left Next enabled on the last page, and the range sentence reported a client-side count
     /// against a server-side total.
     #[test]
     fn next_follows_the_server_page_length_not_the_visible_rows() {

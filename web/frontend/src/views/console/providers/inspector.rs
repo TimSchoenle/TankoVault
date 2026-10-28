@@ -1,4 +1,4 @@
-//! The provider inspector's state and its writes: the edit fields, the dry run, saving, the
+//! Owns the provider inspector's state and its writes: the edit fields, the dry run, saving, the
 //! state and preset-lock toggles, and a manual scan.
 
 use dioxus::prelude::*;
@@ -32,7 +32,7 @@ pub(super) struct Rights {
     pub(super) scan: bool,
     /// Dry-run its adapter config.
     pub(super) test: bool,
-    /// Delete it.
+    /// Deletes it.
     pub(super) delete: bool,
     /// Edit the preset-owned fields: name, base URL and config. Everything preset-owned is
     /// read-only while the preset link is locked; politeness never is.
@@ -116,7 +116,7 @@ impl Inspector {
         }
     }
 
-    /// Save every field to provider `id`. A base URL that differs from `original_base` is a
+    /// Saves every field to provider `id`. A base URL that differs from `original_base` is a
     /// migration, and the outcome says so.
     pub(super) fn save(self, id: ProviderId, original_base: &str) {
         let Self {
@@ -195,7 +195,7 @@ impl Inspector {
         });
     }
 
-    /// Move provider `id` to `target`.
+    /// Moves provider `id` to `target`.
     pub(super) fn set_state(self, id: ProviderId, target: ProviderState) {
         let Self {
             api,
@@ -230,7 +230,7 @@ impl Inspector {
         });
     }
 
-    /// Queue a scan of provider `id` in the chosen mode.
+    /// Queues a scan of provider `id` in the chosen mode.
     pub(super) fn scan(self, id: ProviderId) {
         let Self {
             api,
@@ -258,7 +258,7 @@ impl Inspector {
         });
     }
 
-    /// Lock or unlock provider `id`'s preset link. Re-locking discards the local edits to the
+    /// Locks or unlocks provider `id`'s preset link. Re-locking discards the local edits to the
     /// preset-owned fields, so the caller puts it behind a confirmation.
     pub(super) fn set_lock(self, id: ProviderId, lock: bool) {
         let Self {
@@ -331,7 +331,7 @@ impl Inspector {
         });
     }
 
-    /// Reformat the config text, when it parses.
+    /// Reformats the config text, when it parses.
     pub(super) fn format_config(self) {
         let mut config = self.config;
         // Read the text out before writing back: `peek` holds a borrow for the whole `if let`.
@@ -341,7 +341,7 @@ impl Inspector {
         }
     }
 
-    /// Set the request budget to `preset`'s.
+    /// Sets the request budget to `preset`'s.
     pub(super) fn adopt_budget(self, preset: &PresetDefinition) {
         let Self {
             mut rps,

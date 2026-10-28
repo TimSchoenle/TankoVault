@@ -1,12 +1,12 @@
-//! What the catalogue-wide metadata enrichment sweep did, and is doing.
+//! Owns what the catalogue-wide metadata enrichment sweep did, and is doing.
 //!
-//! The sync service does two unrelated things with `AniList`, and until this panel only one of
-//! them was visible anywhere: reconciling a *user's* list (the account rows above) and walking
-//! the *catalogue* asking for cover art, descriptions, tags and release years for series no
-//! account is involved in. The second reported itself into the container's log and nowhere else,
-//! so "is enrichment working?" had no answer an operator could reach — and its two ways of doing
-//! nothing (a sweep that ran and resolved nothing, versus one that never ran because no provider
-//! offers public metadata) leave the catalogue looking identical.
+//! The sync service does two unrelated things with `AniList`: reconciling a *user's* list (the
+//! account rows above) and walking the *catalogue* asking for cover art, descriptions, tags and
+//! release years for series no account is involved in. Without this panel the second reports itself
+//! into the container's log and nowhere else, so "is enrichment working?" has no answer an operator
+//! can reach, and its two ways of doing nothing (a sweep that ran and resolved nothing, versus one
+//! that never ran because no provider offers public metadata) leave the catalogue looking
+//! identical.
 
 use crate::api;
 use crate::components::{async_view, ErrorLine, Kpi, SkeletonBlock};

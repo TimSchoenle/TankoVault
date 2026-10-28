@@ -1,4 +1,4 @@
-//! The politeness editor's emulation vocabulary, and the body its Save submits.
+//! Owns the politeness editor's emulation vocabulary, and the body its Save submits.
 
 use crate::models::PolitenessInput;
 // Not re-exported by `crate::models`: only this picker names the profiles.
@@ -8,7 +8,7 @@ use crate::wire::types::BrowserEmulation;
 ///
 /// Hand-listed because the generated client carries no way to enumerate a schema enum, and kept
 /// in step with the API by `the_picker_offers_every_emulation_profile`. The labels are browser
-/// product names rather than catalogue keys — they are the same in every locale.
+/// product names, not catalogue keys: they are the same in every locale.
 pub(super) const EMULATION_CHOICES: [(BrowserEmulation, &str); 5] = [
     (BrowserEmulation::Chrome, "Chrome"),
     (BrowserEmulation::Firefox, "Firefox"),
@@ -22,7 +22,7 @@ pub(super) fn emulation_token(stored: Option<&BrowserEmulation>) -> String {
     stored.map(ToString::to_string).unwrap_or_default()
 }
 
-/// Build the politeness body from the editor's fields, or the catalogue key of the field that
+/// Builds the politeness body from the editor's fields, or the catalogue key of the field that
 /// would not parse.
 ///
 /// `emulation` is the wire token of a browser profile, or empty for "no emulation".
@@ -40,7 +40,7 @@ pub(super) fn politeness_body(
 ) -> Result<PolitenessInput, &'static str> {
     let rps: f64 = rps.trim().parse().map_err(|_| "console.providers.badRps")?;
     // Parsed unsigned and then narrowed, so a negative or oversized figure is refused here
-    // rather than reaching the server as a value it would clamp into something else.
+    // instead of reaching the server as a value it would clamp into something else.
     let concurrency = concurrency
         .trim()
         .parse::<u32>()
@@ -65,7 +65,7 @@ pub(super) fn politeness_body(
 /// The `emulation` field: a profile, or `None` for "no emulation".
 ///
 /// `None` leaves the key out of the request, and `PolitenessInput` is the schema that makes that
-/// mean what it says — the stored `Politeness` reads an absent `emulation` as Chrome, which is
+/// mean what it says: the stored `Politeness` reads an absent `emulation` as Chrome, which is
 /// the right answer for a provider row written before the field existed and the wrong one for a
 /// request. Sending the two shapes at the same schema is what made this silently unfixable.
 ///
@@ -94,20 +94,13 @@ mod tests {
         serde_json::to_value(politeness).expect("the body serialises")
     }
 
-    /// Choosing "no emulation" and saving used to leave the provider on Chrome.
+    /// The bug this pins: choosing "no emulation" and saving left the provider on Chrome.
     ///
-    /// Twice, for the same reason wearing two shapes. The editor first built the payload as a
-    /// `serde_json::Value` carrying an explicit `"emulation": null` and round-tripped it through
-    /// the generated struct, whose `skip_serializing_if = "Option::is_none"` dropped the key from
-    /// the request entirely. The workaround that replaced it — holding `Value::Null` in the
-    /// raw-JSON arm of the generated untagged nullable `$ref` — worked only because that arm
-    /// swallowed every such field, which was itself the bug it stood on.
-    ///
-    /// Both are gone because the server no longer reads an absent key as Chrome on this path:
+    /// An explicit `"emulation": null` round-tripped through the generated struct is dropped by
+    /// its `skip_serializing_if = "Option::is_none"`, and a server that reads the absent key as
+    /// Chrome puts the provider back to impersonating Chrome while the save reports success.
     /// `PolitenessInput` is a request-only schema whose absent `emulation` means no emulation, so
-    /// the key the generated client omits is the key the server wants omitted. Either way the
-    /// symptom was the same — the provider went back to impersonating Chrome, the save reported
-    /// success, and the picker still read "no emulation" until the next fetch.
+    /// the key the generated client omits is the key the server wants omitted.
     #[test]
     fn choosing_no_emulation_omits_the_key() {
         assert!(
@@ -174,7 +167,7 @@ mod tests {
 
     /// The emulation picker must offer every profile the API accepts.
     ///
-    /// The list is hand-maintained — the generated client cannot enumerate a schema enum — and a
+    /// The list is hand-maintained (the generated client cannot enumerate a schema enum), and a
     /// missing profile is unreachable from the console with nothing reporting it. Read out of
     /// the committed `openapi.json`, the only artefact connecting this workspace to the API's.
     #[test]

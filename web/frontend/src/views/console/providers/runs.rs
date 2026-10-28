@@ -1,4 +1,4 @@
-//! The Runs tab: this provider's recent scan runs, filtered out of the global run list.
+//! Owns the Runs tab: this provider's recent scan runs, filtered out of the global run list.
 
 use crate::api;
 use crate::components::{async_view, EmptyBox, SkeletonBlock};

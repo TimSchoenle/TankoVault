@@ -1,10 +1,10 @@
-//! The native client, advertised from the browser it would replace.
+//! Owns the native client, advertised from the browser it would replace.
 //!
-//! **Web only** — `AccountPanel::is_visible` gates it — because the one reader who does not
+//! **Web only** (`AccountPanel::is_visible` gates it) because the one reader who does not
 //! need this panel is the one already reading it in the desktop app.
 //!
-//! Every link here goes to the releases page rather than to a versioned asset, and that is a
-//! constraint rather than a shortcut: nothing in the browser build knows which release is
+//! Every link here goes to the releases page, not to a versioned asset, and that is a
+//! constraint instead of a shortcut: nothing in the browser build knows which release is
 //! current, and the only way to find out would be a request to github.com. The served
 //! Content-Security-Policy does not reach it and **must not be widened to**, since that policy is
 //! the ceiling on where an injected script could send the access token this page holds in memory.

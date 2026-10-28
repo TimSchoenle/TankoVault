@@ -1,4 +1,4 @@
-//! The desktop client's own settings, reached from the window header.
+//! Owns the desktop client's own settings, reached from the window header.
 //!
 //! Everything here is a property of *this installation*, not of the account: which server it
 //! talks to, how its window behaves, whether pushes raise an OS notification, and how it keeps
@@ -7,16 +7,16 @@
 //! the other pinned.
 //!
 //! **It is deliberately outside the router, and outside the sign-in gate.** The server address
-//! is the one setting a reader needs precisely when nothing else works — a typo, a moved host, a
-//! server that is down — and every routed screen needs a working server to render. Putting it
-//! behind `AuthRequired`, as an earlier revision did, meant a wrong address could only be
-//! corrected by deleting the settings file by hand. It is also why [`Category::Server`] is the
+//! is the one setting a reader needs precisely when nothing else works (a typo, a moved host, a
+//! server that is down), and every routed screen needs a working server to render. Putting it
+//! behind `AuthRequired` would mean a wrong address could only be corrected by deleting the
+//! settings file by hand. It is also why [`Category::Server`] is the
 //! one the sheet opens on.
 //!
 //! The categories are a real division and not a longer sheet folded up: each one answers a
 //! different question ("what does it talk to", "what does the window do", "what may interrupt
-//! me", "what version am I on"), and the sheet used to answer all four in one scrolling column
-//! where the last of them was below the fold.
+//! me", "what version am I on"), and one scrolling column answering all four would put the
+//! last of them below the fold.
 
 use crate::components::{CloseToTray, Field, SegControl, SliderRow, TabBar, TabKind};
 use crate::i18n::use_i18n;
@@ -24,7 +24,7 @@ use crate::icons::{Ic, Icon};
 use crate::update::{self, Notes, Policy, Status, UpdateState};
 use dioxus::prelude::*;
 use inkstone_ui::{Button, Tone};
-/// One group of settings. See the module note on why this is a division rather than a fold.
+/// One group of settings. See the module note on why this is a division instead of a fold.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Category {
     Server,
@@ -64,7 +64,7 @@ pub(crate) fn SettingsSheet(on_close: EventHandler<()>) -> Element {
     let update = use_context::<UpdateState>();
 
     // Every way out of the sheet goes through here, so the "updated to …" receipt is retired
-    // exactly once and by the reader having seen it — see `update::acknowledge_applied`.
+    // exactly once and by the reader having seen it: see `update::acknowledge_applied`.
     let close = move |()| {
         update::acknowledge_applied(update);
         on_close.call(());
@@ -74,7 +74,7 @@ pub(crate) fn SettingsSheet(on_close: EventHandler<()>) -> Element {
         div {
             class: "ik-prefs-scrim",
             // Click-outside to dismiss, and `Escape` on the sheet itself below. The scrim is a
-            // presentational element, so it carries no role — the dismiss it offers is a
+            // presentational element, so it carries no role: the dismiss it offers is a
             // convenience duplicated by a real button.
             onclick: move |_| close(()),
             div {
@@ -208,7 +208,7 @@ fn ServerSection() -> Element {
 /// What the window does at either end of a session: whether the app is started with the reader's,
 /// and whether closing it ends the app.
 ///
-/// Both switches are absent where the platform has nothing behind them rather than shown and
+/// Both switches are absent where the platform has nothing behind them, not shown and
 /// inert, so what is on this tab is what this machine can actually do.
 #[component]
 fn WindowSection() -> Element {
@@ -236,7 +236,7 @@ fn WindowSection() -> Element {
 /// The one switch on this sheet whose state is *not* stored by the app: it reads and writes the
 /// OS list directly (`HKCU\…\Run`, or a freedesktop `autostart` entry), because the Windows
 /// installer offers the same choice as a checkbox and both have to mean the same thing. That is
-/// also why a refusal is shown rather than swallowed — the reader can see the box move, so a
+/// also why a refusal is shown, not swallowed: the reader can see the box move, so a
 /// change that did not take has to say so.
 #[component]
 fn StartupSection() -> Element {
@@ -255,7 +255,7 @@ fn StartupSection() -> Element {
                         let on = event.checked();
                         let applied = crate::platform::set_autostart(on);
                         // On refusal the OS list is unchanged, so the switch goes back to what it
-                        // actually reflects rather than to what was asked for.
+                        // actually reflects, not to what was asked for.
                         enabled.set(if applied { on } else { !on });
                         refused.set(!applied);
                     },
@@ -281,8 +281,8 @@ fn StartupSection() -> Element {
 ///
 /// The switch writes the setting *and* the shared signal, and the second one is what actually
 /// changes anything: `components::tray::TrayHost` watches it, puts the icon in the tray and
-/// tells the window to hide rather than close. Writing only the setting would take effect at the
-/// next start — which is exactly the shape of bug that gets reported as "the option does
+/// tells the window to hide, not close. Writing only the setting would take effect at the
+/// next start, which is exactly the shape of bug that gets reported as "the option does
 /// nothing".
 ///
 /// Only rendered where [`crate::platform::tray_supported`] is true, so there is never a window
@@ -318,7 +318,7 @@ fn CloseToTraySection() -> Element {
 ///
 /// The test button is not padding. A chapter landing is the *only* thing that raises a
 /// notification here, which can be days apart, so without it "did I set this up correctly" is a
-/// question the reader cannot answer — and there are now two switches that have to agree: this
+/// question the reader cannot answer, and there are two switches that have to agree: this
 /// one and the operating system's own per-app control (see `platform::desktop`'s `identify`).
 /// One press exercises the whole path either would break.
 #[component]
@@ -365,12 +365,12 @@ fn NotificationSection() -> Element {
 
 /// How this installation keeps itself current (`crate::update`).
 ///
-/// Three states this section has to render honestly rather than hide, because each one means the
+/// Three states this section has to render honestly instead of hiding, because each one means the
 /// reader will not be updated and would otherwise be left guessing:
 ///
 /// * **this build carries no signing key**, so nothing could be verified and no check is made;
-/// * **this copy is not ours to replace** — installed from the `.deb`, or run from the portable
-///   archive — so a release is announced and never applied;
+/// * **this copy is not ours to replace** (installed from the `.deb`, or run from the portable
+///   archive), so a release is announced and never applied;
 /// * **the release on offer has no signed manifest**, which is every release cut before this
 ///   feature existed.
 #[component]
@@ -384,7 +384,7 @@ fn UpdateSection() -> Element {
     let status = state.status();
     let busy = matches!(status, Status::Checking | Status::Downloading { .. });
     // "No check has run yet" is only ever true of *this session*, and the recorded time outlives
-    // it. Where there is one it therefore replaces that line rather than sitting under it saying
+    // it. Where there is one it therefore replaces that line instead of sitting under it saying
     // the opposite; everywhere else it sits under, answering "as of when".
     let (state_line, recorded_line) = match (&status, last_check_text(i18n)) {
         (Status::Idle, Some(recorded)) => (recorded, None),
@@ -597,9 +597,9 @@ fn state_text(status: &Status, i18n: crate::i18n::Translator) -> String {
 
 /// What this copy is: its version, and where it keeps what the reader has told it.
 ///
-/// The settings path is here rather than under [`Category::Server`] where it used to sit,
-/// because it is the answer to "what would I delete to start over" — a question about the
-/// installation, not about the server it happens to point at.
+/// The settings path is here instead of under [`Category::Server`], because it is the answer to
+/// "what would I delete to start over": a question about the installation, not about the server it
+/// happens to point at.
 #[component]
 fn AboutSection() -> Element {
     let i18n = use_i18n();

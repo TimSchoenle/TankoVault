@@ -1,19 +1,19 @@
-//! The class vocabulary, behind a trait.
+//! Owns the class vocabulary, behind a trait.
 //!
 //! No component in this crate contains a class name. Each one names a [`Part`] and the
 //! [`Variant`]s that apply to it, and a [`Skin`] decides what that renders as. [`Inkstone`] is
 //! the default and produces the `ik-*` classes `styles/inkstone.css` defines; a consumer that
 //! installs its own reaches an entirely different design system without forking a component.
 //!
-//! # Why a trait rather than a prefix
+//! # Why a trait instead of a prefix
 //!
 //! A prefix only reaches vocabularies shaped like this one. The interesting targets are not:
-//! Bootstrap repeats the base in every modifier, and a utility framework has no base at all —
+//! Bootstrap repeats the base in every modifier, and a utility framework has no base at all;
 //! its "button" is a dozen atoms and its tone is two more. Both fall out of [`Skin::part`] +
 //! [`Skin::modifier`] + [`Skin::join`] without either being a special case.
 //!
 //! Do not write literal utility class names in these comments as examples. Tailwind's scanner
-//! reads this file — it is under an `@source` glob, which is what keeps the `ik-*` names alive —
+//! reads this file (it is under an `@source` glob, which is what keeps the `ik-*` names alive),
 //! and it cannot tell a comment from markup, so an illustrative `bg-…` emits a real rule into
 //! the shipped stylesheet.
 
@@ -21,11 +21,11 @@ use crate::tone::{Align, Gap, Justify, Size, Tone};
 use dioxus::prelude::*;
 use std::sync::Arc;
 
-/// An element the kit renders, named by what it is rather than by what it is called.
+/// An element the kit renders, named by what it is instead of by what it is called.
 ///
 /// The set is closed on purpose: it is the kit's whole surface, so a [`Skin`] that handles every
 /// variant is provably complete. Adding a component here means adding a `Part`, which makes
-/// every existing skin fail to compile until it has an answer — that is the point.
+/// every existing skin fail to compile until it has an answer: that is the point.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 #[non_exhaustive]
 pub enum Part {
@@ -171,13 +171,13 @@ pub enum Flag {
     Grow,
     /// The lit one of a set.
     Active,
-    /// The chosen one of a set — [`Part::SegItem`]'s form of [`Flag::Active`].
+    /// The chosen one of a set: [`Part::SegItem`]'s form of [`Flag::Active`].
     Selected,
-    /// Against an inspector's edge rather than a page's.
+    /// Against an inspector's edge instead of a page's.
     Flush,
     /// Denser than the default.
     Compact,
-    /// Bounded rather than growing, and scrolled in place.
+    /// Bounded, not growing, and scrolled in place.
     Scroll,
     /// At the trailing edge, set off from the rest.
     Apart,
@@ -187,7 +187,7 @@ pub enum Flag {
     Mono,
     /// Wider than the default.
     Wide,
-    /// Cautionary rather than neutral.
+    /// Cautionary, not neutral.
     Warn,
     /// Reports success.
     Ok,
@@ -239,11 +239,11 @@ pub trait Skin: Send + Sync + 'static {
     /// The base class for a part. `""` for a part this skin draws with nothing of its own.
     fn part(&self, part: &Part) -> &str;
 
-    /// The class a variant adds to a part. `""` when the variant needs none — a default size,
+    /// The class a variant adds to a part. `""` when the variant needs none: a default size,
     /// or a tone the base class already expresses.
     fn modifier(&self, part: &Part, variant: &Variant) -> &str;
 
-    /// Assemble a base and its modifiers. Space-separated, empties dropped, base first.
+    /// Assembles a base and its modifiers. Space-separated, empties dropped, base first.
     fn join(&self, base: &str, modifiers: &[&str]) -> String {
         let width = base.len() + modifiers.iter().map(|m| m.len() + 1).sum::<usize>();
         let mut out = String::with_capacity(width);
@@ -416,7 +416,7 @@ impl Inkstone {
             (Part::Row, Flag::Wrap) => "ik-wrap",
             (Part::Row | Part::Stack, Flag::Grow) => "ik-grow",
             // The range input grows inside its slider row, which is a different rule from the
-            // layout primitives' — `.ik-range.grow` sets `width: auto` as well as `flex: 1`.
+            // layout primitives': `.ik-range.grow` sets `width: auto` as well as `flex: 1`.
             (Part::Range, Flag::Grow) => "grow",
             (Part::Chip | Part::Tab, Flag::Active) => "active",
             (Part::Chip, Flag::Warn) => "warn",
@@ -442,7 +442,7 @@ impl Inkstone {
 pub struct SkinHandle(Arc<dyn Skin>);
 
 impl SkinHandle {
-    /// Wrap a skin for [`SkinProvider`].
+    /// Wraps a skin for [`SkinProvider`].
     #[must_use]
     pub fn new(skin: impl Skin) -> Self {
         Self(Arc::new(skin))
@@ -454,7 +454,7 @@ impl SkinHandle {
         self.class_with(part, variants, "")
     }
 
-    /// [`SkinHandle::class`] plus a caller's own classes, appended last so they can override.
+    /// [`SkinHandle::class`] and a caller's own classes, appended last so they can override.
     #[must_use]
     pub fn class_with(&self, part: Part, variants: &[Variant], extra: &str) -> String {
         let skin = self.0.as_ref();
@@ -490,7 +490,7 @@ impl std::fmt::Debug for SkinHandle {
 
 /// The skin in force for this subtree, or [`Inkstone`] if none was installed.
 ///
-/// Deliberately not a hook — it reads context on every render rather than caching in a slot, so
+/// Deliberately not a hook: it reads context on every render instead of caching in a slot, so
 /// it is safe to call inside a branch. A skin swap therefore takes effect wherever the subtree
 /// re-renders; nothing here subscribes to it, because a skin is a build-time choice. Runtime
 /// restyling is the `--ik-*` custom properties, which need no re-render at all.
@@ -499,7 +499,7 @@ pub fn use_skin() -> SkinHandle {
     try_consume_context::<SkinHandle>().unwrap_or_default()
 }
 
-/// Install a skin for everything below it.
+/// Installs a skin for everything below it.
 #[component]
 pub fn SkinProvider(skin: SkinHandle, children: Element) -> Element {
     use_context_provider(|| skin);
@@ -620,7 +620,7 @@ mod tests {
         );
     }
 
-    /// A skin with a different shape entirely — the case a prefix parameter could not have
+    /// A skin with a different shape entirely: the case a prefix parameter could not have
     /// served. Bootstrap repeats the base in every modifier and would otherwise need each
     /// component rewritten.
     #[test]

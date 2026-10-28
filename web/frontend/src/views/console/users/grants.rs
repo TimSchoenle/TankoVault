@@ -1,4 +1,4 @@
-//! The permission checklist: groups, provenance, presets and the tick that changes a grant.
+//! Owns the permission checklist: groups, provenance, presets and the tick that changes a grant.
 
 use crate::api;
 use crate::components::{ErrorLine, Section, SkeletonBlock};
@@ -16,14 +16,14 @@ use std::collections::BTreeSet;
 /// points.
 ///
 /// The whole set is submitted at once on Save; the server replaces it wholesale, so concurrent
-/// edits by two administrators produce one intent rather than an interleaving of both.
+/// edits by two administrators produce one intent instead of an interleaving of both.
 #[component]
 pub(super) fn PermissionGrants(
     grants: Vec<GrantRow>,
     chosen: Signal<BTreeSet<Permission>>,
     editable: bool,
-    /// Whether this account holds the super-user grant. The checklist cannot show it — the
-    /// catalogue deliberately omits it — so an unannotated checklist would render the deployment
+    /// Whether this account holds the super-user grant. The checklist cannot show it (the
+    /// catalogue deliberately omits it), so an unannotated checklist would render the deployment
     /// owner as holding nothing at all.
     owner: bool,
 ) -> Element {
@@ -101,7 +101,7 @@ pub(super) fn PermissionGrants(
 
 /// The preset bundles, applied as a starting point the operator then edits.
 ///
-/// Applying one replaces the current selection rather than adding to it; presets are never
+/// Applying one replaces the current selection instead of adding to it; presets are never
 /// stored, since what gets saved is whatever is ticked afterwards.
 #[component]
 pub(super) fn PresetPicker(

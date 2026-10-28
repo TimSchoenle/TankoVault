@@ -1,4 +1,4 @@
-//! The Coverage tab: catalogue footprint and freshness for one provider.
+//! Owns the Coverage tab: catalogue footprint and freshness for one provider.
 
 use crate::components::{EmptyBox, Kpi};
 use crate::i18n::use_i18n;

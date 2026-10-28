@@ -1,4 +1,4 @@
-//! Watchlist — one filtered, sorted, virtualized list (design turn 4, option `4a`; the cover
+//! Owns Watchlist: one filtered, sorted, virtualized list (design turn 4, option `4a`; the cover
 //! grid is `4b`, in [`grid`]). Filtering, sorting, grouping and paging are server-side
 //! (`GET /v1/me/watchlist`, §4.2), so this module holds no comparator over the rows.
 
@@ -45,8 +45,8 @@ const PAGE_ROWS: usize = 8;
 ///
 /// Past it the window *slides*: the page furthest above the viewport is released and a spacer
 /// holds the height it had open, so scrolling on costs one request per page and the DOM stays
-/// bounded. It used to be where the list simply stopped — the sentinel had nothing left to ask
-/// for, so every row past the 200th of a longer watchlist was unreachable.
+/// bounded. Stopping there instead would leave the sentinel nothing to ask for, and every row
+/// past the 200th of a longer watchlist unreachable.
 const MAX_ROWS: i64 = 200;
 
 /// The largest selection a bulk call accepts, mirroring the API's own cap. Enforced here so
@@ -58,7 +58,7 @@ const SYNC_PROVIDER: &str = "anilist";
 
 /// Which release-recency band a row renders under.
 ///
-/// Must match the server's `ReleaseBucket` rolling windows — "Today" is the last 24 hours, not
+/// Must match the server's `ReleaseBucket` rolling windows: "Today" is the last 24 hours, not
 /// the calendar day, since the server doesn't know this browser's timezone and the group
 /// header aggregates come from the server too.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -88,10 +88,10 @@ impl Bucket {
     }
 }
 
-/// Band a release timestamp, given its age in milliseconds.
+/// Bands a release timestamp, given its age in milliseconds.
 ///
 /// Split from the clock for host-target testability. A negative age (clock behind the
-/// server's) bands as `Today` rather than `Earlier`, so a skewed clock can't bury a fresh release.
+/// server's) bands as `Today` instead of `Earlier`, so a skewed clock can't bury a fresh release.
 fn bucket_of_age(age_ms: f64) -> Bucket {
     const DAY: f64 = 24.0 * 3_600_000.0;
     if age_ms < DAY {
@@ -103,8 +103,8 @@ fn bucket_of_age(age_ms: f64) -> Bucket {
     }
 }
 
-/// Band a row by its newest chapter. A row with no chapters has no release instant and bands as
-/// `Earlier` — the same arm the server's `ELSE` uses, so the counts still add up.
+/// Bands a row by its newest chapter. A row with no chapters has no release instant and bands as
+/// `Earlier`: the same arm the server's `ELSE` uses, so the counts still add up.
 fn bucket_of(ts: Option<&str>) -> Bucket {
     let Some(s) = ts.filter(|s| !s.is_empty()) else {
         return Bucket::Earlier;
@@ -118,14 +118,14 @@ fn bucket_of(ts: Option<&str>) -> Bucket {
 
 /// What the list renders, in order: band headings interleaved with the rows under them.
 ///
-/// Precomputed rather than decided in the `for` loop — `rsx!` has nowhere to keep "what band
+/// Precomputed, not decided in the `for` loop: `rsx!` has nowhere to keep "what band
 /// was the last row in" state between iterations.
 enum Entry {
     Band(Bucket),
     Row(usize),
 }
 
-/// Interleave band headings into the row order.
+/// Interleaves band headings into the row order.
 ///
 /// Relies on rows arriving already grouped (the server sorts by release instant); under any
 /// other sort the bands are meaningless, so [`Sort::groups_by_release`] disables them.
@@ -148,7 +148,7 @@ fn layout(items: &[WatchlistItem], grouped: bool) -> Vec<Entry> {
 /// One fetch's worth of state: the view the URL describes, and which slice of it the window holds.
 ///
 /// Kept in one signal so a filter change and its page-depth reset can't land as two separate
-/// invalidations — split, the resource would fire once against the stale depth first.
+/// invalidations: split, the resource would fire once against the stale depth first.
 #[derive(Clone, PartialEq)]
 struct Request {
     query: WatchlistQuery,
@@ -159,14 +159,14 @@ struct Request {
 }
 
 impl Request {
-    /// Rows to ask for: the whole window, refetched as one slice rather than appended — this
+    /// Rows to ask for: the whole window, refetched as one slice, not appended; this
     /// avoids the accumulate-and-dedupe bugs an append-only cache has (a filter change racing an
     /// in-flight page, a `reload` appending a duplicate).
     fn limit(&self, bite: i64) -> i64 {
         bite.saturating_mul(self.pages).min(MAX_ROWS)
     }
 
-    /// Rows the window has released above it — what the request skips and what the spacer holds
+    /// Rows the window has released above it: what the request skips and what the spacer holds
     /// open.
     fn skipped(&self, bite: i64) -> i64 {
         bite.saturating_mul(self.start)
@@ -180,7 +180,7 @@ impl Request {
         (MAX_ROWS / bite.max(1)).max(2)
     }
 
-    /// Take in one more page, sliding the window forward once it is full.
+    /// Takes in one more page, sliding the window forward once it is full.
     fn advance(&mut self, bite: i64) {
         if self.pages < Self::capacity(bite) {
             self.pages += 1;
@@ -189,15 +189,16 @@ impl Request {
         }
     }
 
-    /// Take back the page above the window. Nothing happens at the top of the list — `saturating_sub`
-    /// would not do here, since it saturates at `i64::MIN` and a negative offset is a 400.
+    /// Takes back the page above the window. Nothing happens at the top of the list:
+    /// `saturating_sub` would not do here, since it saturates at `i64::MIN` and a negative offset
+    /// is a 400.
     fn retreat(&mut self) {
         self.start = (self.start - 1).max(0);
     }
 }
 
 /// Rows one bite of the list holds: whole rows of tiles in the cover grid, a fixed page in the
-/// list, and `None` until the grid has been measured — which is what parks the first request.
+/// list, and `None` until the grid has been measured, which is what parks the first request.
 fn bite_size(view: View, fit: GridFit) -> Option<i64> {
     match view {
         View::Grid => fit.page_size().and_then(|size| i64::try_from(size).ok()),
@@ -224,7 +225,7 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
     let syncing = use_busy();
     let outcome = use_outcome();
     let nav = navigator();
-    // Context, not six threaded props — every handle in `RowCtx` is `Copy`, so this is a
+    // Context, not six threaded props: every handle in `RowCtx` is `Copy`, so this is a
     // lookup, not a clone.
     let ctx = use_context_provider(|| RowCtx {
         api,
@@ -251,7 +252,7 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
     let menu_for = use_signal(|| Option::<SeriesId>::None);
     let mut help = use_signal(|| false);
     // The list element itself, so closing the shortcut reference hands the keyboard back to the
-    // thing that answers it. A mounted handle rather than a DOM id — see `components::focus`.
+    // thing that answers it. A mounted handle instead of a DOM id: see `components::focus`.
     let mut list_element = use_signal(|| Option::<Rc<MountedData>>::None);
     let focus_targets = crate::components::use_focus_targets();
     // Only the cover grid has columns to fill; the list view is one row per title at any width.
@@ -297,7 +298,7 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
     let go = move |next: WatchlistQuery| {
         nav.push(Route::Watchlist { query: next });
     };
-    // Replace, not push — the filter box debounces at 200ms, so push would spam one history
+    // Replace, not push: the filter box debounces at 200ms, so push would spam one history
     // entry per keystroke.
     let go_replace = move |next: WatchlistQuery| {
         nav.replace(Route::Watchlist { query: next });
@@ -312,14 +313,14 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
     let bite = bite_size(query.view, fit).unwrap_or(PAGE_SIZE);
     let skipped = request.read().skipped(bite);
     let has_more = skipped + loaded_rows < snapshot.total;
-    // A failure leaves this true, which is deliberate: paging stops at a refused slice rather than
+    // A failure leaves this true, which is deliberate: paging stops at a refused slice instead of
     // asking the same server the same question every time a sentinel crosses the viewport.
     let in_flight = applied.read().as_ref() != Some(&*request.read());
     let lift = released_height(*window_px.read(), loaded_rows, skipped);
     let grouped = query.sort.groups_by_release();
     let entries = layout(&snapshot.items, grouped);
 
-    // The only two ways the window moves, and both are refused while a slice is on the wire — an
+    // The only two ways the window moves, and both are refused while a slice is on the wire: an
     // ungated sentinel asks for the same page once per frame.
     let mut slide = move |forward: bool| {
         if in_flight || (!forward && request.peek().start == 0) {
@@ -400,14 +401,14 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
                 "aria-label": i18n.t("nav.watchlist"),
                 onmounted: move |event| list_element.set(Some(event.data())),
                 // What the spacer above is derived from. Safe on this element because nothing
-                // inside it observes its own size — a resize event bubbles in the desktop build,
+                // inside it observes its own size: a resize event bubbles in the desktop build,
                 // so a nested observer would report its box as this one's (see `GridFitProbe`).
                 onresize: move |event| {
                     if let Ok(size) = event.get_border_box_size() {
                         window_px.set(size.height);
                     }
                 },
-                // Names the focused row for a screen reader — without it the keyboard contract
+                // Names the focused row for a screen reader: without it the keyboard contract
                 // is silent to anyone not looking at the highlight.
                 "aria-activedescendant": snapshot
                     .items
@@ -457,7 +458,7 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
         if *settled.read() && !snapshot.items.is_empty() {
             // Sentinel div: `onvisible` (`IntersectionObserver`) takes in the next page with no
             // scroll handler or polling. It unmounts while a slice is on the wire, so it fires
-            // again on remount if it is still in view — which is what keeps a viewport taller
+            // again on remount if it is still in view, which is what keeps a viewport taller
             // than one page loading without a click.
             if has_more && !in_flight {
                 div {
@@ -563,8 +564,8 @@ fn page_head(
 /// The list view's column headers, with the sortable release column.
 ///
 /// The header carries the row's cell classes so both are hidden by the same rule:
-/// the responsive block used to address the header by `nth-child`, which every
-/// column added between them silently shifted.
+/// addressing the header by `nth-child` would break silently with every column added between
+/// them.
 fn list_head(
     i18n: Translator,
     query: &WatchlistQuery,
@@ -584,7 +585,7 @@ fn list_head(
     }
 }
 
-/// The unread total across the whole filtered list, not just the loaded page — the group
+/// The unread total across the whole filtered list, not just the loaded page: the group
 /// aggregates carry it, so the headline stays right as the reader scrolls.
 fn unread_total(board: &Board) -> i64 {
     board.groups.iter().map(|g| g.chapter_count).sum()
@@ -592,9 +593,9 @@ fn unread_total(board: &Board) -> i64 {
 
 /// Where a band sits in the filtered list: rows above it, and rows in it.
 ///
-/// The bands are contiguous runs — grouping only applies under `Released`, which is the same
-/// instant they band by — so a band is addressable by offset, and the group aggregates say how
-/// long each one is. That is what lets `Mark group read` act on the whole band rather than on
+/// The bands are contiguous runs (grouping only applies under `Released`, which is the same
+/// instant they band by), so a band is addressable by offset, and the group aggregates say how
+/// long each one is. That is what lets `Mark group read` act on the whole band, not on
 /// whichever part of it the window happens to hold.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 struct BandSpan {
@@ -602,7 +603,7 @@ struct BandSpan {
     count: i64,
 }
 
-/// Locate `band` in the order the list actually renders it.
+/// Locates `band` in the order the list actually renders it.
 ///
 /// The direction matters: the `Released` column header flips the sort, and with it which band is
 /// at the top. Reading the offsets in rank order regardless would address `Earlier` at offset 0
@@ -637,12 +638,11 @@ fn mark_group_blocked(i18n: Translator, count: i64) -> Option<String> {
     (count == 0).then(|| i18n.t("watchlist.markGroupEmpty"))
 }
 
-/// Mark every title in one band read.
+/// Marks every title in one band read.
 ///
-/// The ids come from the server, not from the rendered rows: the action used to be refused
-/// whenever the band was not fully loaded, which — on any list longer than one page, and on every
-/// list at all now that the window slides — is nearly always. The button was disabled and said so
-/// in a `title` nobody opens, so clicking it did nothing and looked like a broken control.
+/// The ids come from the server, not from the rendered rows: a band is rarely fully loaded (on
+/// any list longer than one page, and on every list once the window slides), so an action limited
+/// to rendered rows would be refused nearly always, and look like a broken control.
 #[expect(
     clippy::large_types_passed_by_value,
     reason = "`RowCtx` outlives this call inside a spawned future; see its doc comment"
@@ -675,7 +675,7 @@ fn mark_band_read(query: &WatchlistQuery, span: BandSpan, ctx: RowCtx) {
             .send()
             .await
         {
-            // Changes unread counts across rows and band aggregates — genuinely warrants a
+            // Changes unread counts across rows and band aggregates: genuinely warrants a
             // refetch, not a local edit.
             Ok(_) => ctx.reload.bump(),
             Err(e) => ctx.failed(e),
@@ -715,10 +715,10 @@ fn watchlist_slice<'a>(
 
 /// The height the rows released above the window have to leave behind.
 ///
-/// Derived from the window's own measured height rather than from a row constant: the row height
+/// Derived from the window's own measured height instead of from a row constant: the row height
 /// is a stylesheet decision the narrow-viewport rules re-make, and the band headings between the
 /// rows are part of what a released page occupied. It is an average over the window, so it is
-/// exact while the rows are uniform and close where they are not — the alternative is a page-tall
+/// exact while the rows are uniform and close where they are not: the alternative is a page-tall
 /// jump on every slide.
 fn released_height(window_px: f64, loaded: i64, released: i64) -> f64 {
     if loaded <= 0 || released <= 0 {
@@ -791,7 +791,7 @@ fn sync_chip(i18n: Translator, status: &Resource<Option<SyncAccountStatus>>) -> 
 }
 
 /// Nothing matched: an empty account needs a pointer to Discover, a filtered-to-nothing list
-/// needs "reset filters" — offering the reset to an empty account would be worse than nothing.
+/// needs "reset filters"; offering the reset to an empty account would be worse than nothing.
 fn empty_state(
     i18n: Translator,
     query: &WatchlistQuery,
@@ -839,7 +839,7 @@ mod tests {
         assert_eq!(bucket_of_age(7.0 * 24.0 * HOUR), Bucket::Earlier);
     }
 
-    /// A negative age (browser clock behind the server's) must band as `Today`, not `Earlier` —
+    /// A negative age (browser clock behind the server's) must band as `Today`, not `Earlier`,
     /// which would bury a just-released chapter at the bottom of the page.
     #[test]
     fn a_skewed_clock_does_not_bury_a_fresh_release() {
@@ -848,7 +848,7 @@ mod tests {
 
     /// The window must stop growing at the API's own `limit` cap and start *sliding* instead.
     /// Past the cap the server answers the same 200 rows however many pages are asked for, so the
-    /// request got steadily more expensive while nothing new arrived — and the list simply ended,
+    /// request got steadily more expensive while nothing new arrived, and the list simply ended,
     /// leaving every row past the 200th of a longer watchlist unreachable.
     #[test]
     fn the_window_slides_once_it_reaches_the_api_cap() {
@@ -863,7 +863,7 @@ mod tests {
         for _ in 0..10 {
             window.advance(PAGE_SIZE);
         }
-        // Whole pages only, so the offset stays a page boundary — three of them here, not the
+        // Whole pages only, so the offset stays a page boundary: three of them here, not the
         // 200 the cap would allow, because 200 is not a whole number of pages.
         assert_eq!(
             window.limit(PAGE_SIZE),
@@ -898,7 +898,7 @@ mod tests {
 
     /// `Mark group read` addresses a band by offset, so the offsets have to follow the order the
     /// list is *rendered* in. Read in rank order regardless of direction, `Earlier` would be
-    /// addressed at offset 0 while it renders last — and the action would mark today's releases
+    /// addressed at offset 0 while it renders last, and the action would mark today's releases
     /// read instead.
     #[test]
     fn a_band_is_addressed_in_the_order_it_renders() {
@@ -935,7 +935,7 @@ mod tests {
                 count: 3
             }
         );
-        // Oldest first flips it, and `Today` is now the run at the bottom.
+        // Oldest first flips it, and `Today` is the run at the bottom.
         assert_eq!(
             band_span(&groups, Bucket::Today, Order::Asc),
             BandSpan {
@@ -954,7 +954,7 @@ mod tests {
     }
 
     /// The spacer has to hold exactly what was released, or every slide moves the rows under the
-    /// reader's hands. Nothing measured yet is a spacer of nothing — never a NaN in a style
+    /// reader's hands. Nothing measured yet is a spacer of nothing: never a NaN in a style
     /// attribute, which the browser drops and the list then jumps by a whole window.
     #[test]
     fn the_spacer_holds_the_height_the_released_rows_had() {

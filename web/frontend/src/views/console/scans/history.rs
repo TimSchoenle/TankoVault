@@ -1,4 +1,4 @@
-//! The run history table and the drawer one row opens.
+//! Owns the run history table and the drawer one row opens.
 
 use super::{duration_label, elapsed_seconds, percent, run_state_ring, scope_label};
 use crate::api;
@@ -14,8 +14,8 @@ use dioxus::prelude::*;
 use inkstone_ui::{Button, Size};
 /// Recent runs under the current filter, with the drawer for the selected one and a pager.
 ///
-/// Paged rather than capped: the panel used to show whichever page the server's default handed
-/// it and print `30 of 743` beside it, with nothing that could reach the other 713.
+/// Paged, not capped: a capped panel shows whichever page the server's default hands it and
+/// prints `30 of 743` beside it, with nothing that can reach the other 713.
 #[component]
 pub(super) fn RunHistory(
     runs: Vec<ScanRun>,
@@ -37,7 +37,7 @@ pub(super) fn RunHistory(
             div { class: "ik-flex", style: "justify-content:space-between;align-items:baseline;",
                 div { class: "ik-subhead", {i18n.t("console.scans.recent")} }
                 // Says what the list is a window on, so a page of 30 out of 400 does not read as
-                // the whole history — and, under a filter, states that it is one.
+                // the whole history: and, under a filter, states that it is one.
                 span { class: "ik-muted ik-mono", style: "font-size:11.5px;",
                     {
                         i18n.args(
@@ -126,7 +126,7 @@ fn RunHistoryRow(run: ScanRun) -> Element {
             role: "button",
             "aria-selected": if selected { "true" } else { "false" },
             onclick: move |_| {
-                // Toggle, so clicking the open run closes the drawer rather than doing nothing.
+                // Toggle, so clicking the open run closes the drawer instead of doing nothing.
                 let next = if selected { None } else { Some(run_id.to_string()) };
                 nav.select(nav.query().with_selection(next));
             },
@@ -165,7 +165,7 @@ fn RunHistoryRow(run: ScanRun) -> Element {
 
 /// The selected run, fetched by id.
 ///
-/// Fetched rather than picked out of the list, because a run linked to from elsewhere may be
+/// Fetched, not picked out of the list, because a run linked to from elsewhere may be
 /// older than the window the list holds.
 #[component]
 fn RunDrawer() -> Element {

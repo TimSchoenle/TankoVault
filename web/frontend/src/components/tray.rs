@@ -1,4 +1,4 @@
-//! The tray icon's lifecycle, for the desktop build only.
+//! Owns the tray icon's lifecycle, for the desktop build only.
 //!
 //! Renders nothing. It exists because a tray icon is a *resource* with the lifetime of a
 //! component: [`crate::platform::Tray`] removes the icon when it is dropped, so holding it in a
@@ -6,13 +6,13 @@
 //!
 //! It also owns the two consequences of that switch, which are easy to separate and must not be:
 //! the window hides instead of closing **and** there is something in the tray to bring it back.
-//! Either one alone is a defect — a hidden window with no tray entry is an app that has to be
-//! killed from the task manager — so both are decided here, from one signal.
+//! Either one alone is a defect (a hidden window with no tray entry is an app that has to be
+//! killed from the task manager), so both are decided here, from one signal.
 //!
 //! The loop below is not the tray's at all: a launch refused by the single-instance lock leaves
 //! an activation request behind, and this is where it is answered. It lives here because raising
 //! the window needs the `DesktopContext` captured at mount, which this component already holds
-//! for the tray's own Open entry — a second component would exist only to capture the same
+//! for the tray's own Open entry: a second component would exist only to capture the same
 //! handle again.
 
 use crate::i18n::use_i18n;
@@ -27,8 +27,8 @@ const ACTIVATION_POLL_MS: u32 = 500;
 
 /// The reader's close-to-tray choice: written by the settings sheet, acted on by [`TrayHost`].
 ///
-/// A context rather than a read of the settings file on both sides, because the two have to move
-/// together within one session — the sheet is what the reader watches, and the tray is what makes
+/// A context instead of a read of the settings file on both sides, because the two have to move
+/// together within one session: the sheet is what the reader watches, and the tray is what makes
 /// the answer true.
 #[derive(Clone, Copy)]
 pub(crate) struct CloseToTray(pub(crate) Signal<bool>);
@@ -55,7 +55,7 @@ pub(crate) fn TrayHost() -> Element {
             return;
         };
         if enabled() {
-            // Rebuilt rather than reused when the labels change with the reader's language: a
+            // Rebuilt, not reused, when the labels change with the reader's language: a
             // tray menu's text is set at build time by both backends.
             tray.set(Tray::install(
                 &i18n.t("settings.window.tray.open"),

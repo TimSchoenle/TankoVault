@@ -1,6 +1,6 @@
-//! The modal dialog.
+//! Owns the modal dialog.
 //!
-//! Rendered inline rather than through a portal: this kit has to work in a wry webview as well
+//! Rendered inline instead of through a portal: this kit has to work in a wry webview as well
 //! as a browser, and the app that owns it forbids `document::eval`, so there is no DOM escape
 //! hatch to move a node with. A scrim with its own stacking context does the same job.
 
@@ -10,7 +10,7 @@ use dioxus::prelude::*;
 /// How wide the dialog is.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum ModalSize {
-    /// A question with one answer — a confirmation, a code.
+    /// A question with one answer: a confirmation, a code.
     #[default]
     Compact,
     /// A form.
@@ -26,7 +26,7 @@ impl ModalSize {
 /// A modal dialog.
 ///
 /// Takes focus on mount and closes on `Escape`. `dismiss_on_backdrop` defaults to *false* on
-/// purpose: a dialog that is answered by typing — a code, a password — loses a half-entered
+/// purpose: a dialog that is answered by typing (a code, a password) loses a half-entered
 /// answer *and* the action waiting behind it to one stray click on the scrim. Turn it on for
 /// dialogs that only present.
 #[component]

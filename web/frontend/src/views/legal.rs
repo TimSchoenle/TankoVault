@@ -1,4 +1,4 @@
-//! `/legal/:slug` — one operator-published document, at the prose measure.
+//! Owns `/legal/:slug`: one operator-published document, at the prose measure.
 //!
 //! The body is **operator input**, not developer input, so it is never turned into an HTML
 //! string: `terrace-legal-dioxus` renders it through `terrace-legal-markdown`, which maps it onto

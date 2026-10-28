@@ -1,4 +1,4 @@
-//! The top command bar: instant search, the language control and the notifications bell.
+//! Owns the top command bar: instant search, the language control and the notifications bell.
 
 use crate::components::{use_focus_targets, UnreadBadge};
 use crate::i18n::{use_i18n, Translator, LOCALES};
@@ -21,7 +21,7 @@ pub(crate) fn TopBar() -> Element {
 
     rsx! {
         header { class: "ik-topbar",
-            // The band is full-bleed — its blur and hairline span the window — while this row
+            // The band is full-bleed (its blur and hairline span the window) while this row
             // is capped at the page's `--measure`, so the bell stays over the list it counts.
             div { class: "ik-measure",
                 // Small viewports only: the rail is gone, so the bar has to say where you are.
@@ -32,7 +32,7 @@ pub(crate) fn TopBar() -> Element {
                 div { class: "ik-search",
                     span { class: "lead", Ic { icon: Icon::Search, size: 16 } }
                     input {
-                        // `index.html` binds ⌘K / Ctrl+K to focus this field by id — a web-only
+                        // `index.html` binds ⌘K / Ctrl+K to focus this field by id: a web-only
                         // boot script. The console's jump button goes through the handle below,
                         // which works on both builds.
                         id: "tv-search",
@@ -73,7 +73,7 @@ pub(crate) fn TopBar() -> Element {
                     if signed_in {
                         Link {
                             to: Route::Notifications { query: crate::views::NotificationsQuery::default() },
-                            // The bell leaves the bar below 820px — `/notifications` is a tab there.
+                            // The bell leaves the bar below 820px: `/notifications` is a tab there.
                             class: "ik-bell wide-only",
                             title: i18n.t("nav.notifications"),
                             "aria-label": if unread > 0 {
@@ -83,7 +83,8 @@ pub(crate) fn TopBar() -> Element {
                             },
                             Ic { icon: Icon::Notifications, size: 18 }
                             if unread > 0 {
-                                // Polite, not assertive: an SSE-pushed count should not interrupt the reader.
+                                // Polite, not assertive: an SSE-pushed count should not interrupt
+                                // the reader.
                                 //
                                 // Compacted: the dot is a fixed circle on the bell's corner, and a
                                 // literal four-figure count grew it past the icon and pushed the
@@ -99,9 +100,9 @@ pub(crate) fn TopBar() -> Element {
     }
 }
 
-/// The language control, in the slot the retired external-sync pill freed (handoff §4.3).
+/// The language control (handoff §4.3).
 ///
-/// In the top bar rather than the footer or Account for one reason: it is reachable from every
+/// In the top bar instead of the footer or Account for one reason: it is reachable from every
 /// screen *including signed-out ones*, and it is the one preference a reader may need before
 /// they can read anything. Account → Appearance stays the full surface; below 820px this
 /// collapses into the **More** sheet, where the bar has room for two icon buttons and no more.
@@ -142,7 +143,7 @@ fn LanguageButton() -> Element {
     }
 }
 
-/// One row per shipped catalogue, named in its own language — a reader looking for theirs
+/// One row per shipped catalogue, named in its own language: a reader looking for theirs
 /// recognises "Deutsch", not "German".
 fn locale_rows(i18n: Translator, current: &str, mut open: Signal<bool>) -> Element {
     let current = current.to_owned();

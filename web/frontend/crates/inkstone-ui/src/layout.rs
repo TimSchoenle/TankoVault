@@ -1,8 +1,8 @@
-//! Layout primitives.
+//! Owns the layout primitives.
 //!
 //! These exist to delete inline styles. A `style: "display:flex;gap:8px;align-items:baseline;"`
-//! is invisible to the stylesheet, to the theme switch and to every audit that greps for a class
-//! — and the screens this kit replaced carried more than eight hundred of them. [`Row`] and
+//! is invisible to the stylesheet, to the theme switch and to every audit that greps for a class,
+//! and hand-built screens accumulate them by the hundred. [`Row`] and
 //! [`Stack`] express the same intent as a closed set of tokens the skin names.
 
 use crate::skin::{use_skin, Flag, Part, Variant};
@@ -16,7 +16,7 @@ pub fn Row(
     #[props(default)] align: Align,
     #[props(default)] justify: Justify,
     #[props(default = false)] wrap: bool,
-    /// Fill the remaining space in a parent flex line.
+    /// Fills the remaining space in a parent flex line.
     #[props(default = false)]
     grow: bool,
     #[props(default)] class: String,
@@ -70,14 +70,14 @@ pub fn Tile(#[props(default)] class: String, children: Element) -> Element {
     }
 }
 
-/// A surface panel with an icon + title header.
+/// A surface panel with an icon-and-title header.
 #[component]
 pub fn Card(
     #[props(default)] title: Option<String>,
     /// A glyph before the title. The kit ships no icons, so this is the app's.
     #[props(default)]
     icon: Option<Element>,
-    /// Right-aligned beside the title — a count, a state pill, an action.
+    /// Right-aligned beside the title: a count, a state pill, an action.
     #[props(default)]
     trailing: Option<Element>,
     #[props(default)] class: String,
@@ -107,7 +107,7 @@ pub fn Card(
 #[component]
 pub fn Section(
     label: String,
-    /// Right-aligned beside the label — a validity note, a result pill.
+    /// Right-aligned beside the label: a validity note, a result pill.
     #[props(default)]
     trailing: Option<Element>,
     #[props(default)] class: String,
@@ -130,7 +130,7 @@ pub fn Section(
 
 /// A definition list: a fixed-width key column beside its values.
 ///
-/// A `<dl>` rather than a grid of `<div>`s so the pairing survives a screen reader, which is the
+/// A `<dl>` instead of a grid of `<div>`s so the pairing survives a screen reader, which is the
 /// whole reason to use one instead of two columns of text.
 #[component]
 pub fn Kv(
@@ -157,7 +157,7 @@ pub fn KvRow(key_label: String, #[props(default)] class: String, children: Eleme
     }
 }
 
-/// A thin brush-stroke divider — the design's one signature device.
+/// A thin brush-stroke divider: the design's one signature device.
 #[component]
 pub fn Brush() -> Element {
     rsx! {

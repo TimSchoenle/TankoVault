@@ -1,4 +1,4 @@
-//! The Config tab's dry-run verdict, and the one rule that reads a sample out of it.
+//! Owns the Config tab's dry-run verdict, and the one rule that reads a sample out of it.
 
 use crate::components::{ErrorLine, Section};
 use crate::i18n::use_i18n;
@@ -60,8 +60,8 @@ pub(super) fn DryRunResult(result: Option<Result<serde_json::Value, String>>) ->
 /// How many entries a dry-run returned, when the payload's shape makes that answerable.
 ///
 /// Adapter output is adapter-defined, so this looks for the two shapes every adapter in the
-/// tree produces — a bare array, or an object with one array in it — and otherwise declines to
-/// guess rather than reporting a number it cannot stand behind.
+/// tree produces (a bare array, or an object with one array in it), and otherwise declines to
+/// guess instead of reporting a number it cannot stand behind.
 pub(super) fn parsed_count(value: &serde_json::Value) -> Option<usize> {
     if let Some(array) = value.as_array() {
         return Some(array.len());

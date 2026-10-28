@@ -1,4 +1,4 @@
-//! Reverting a reviewed list of merges in one go.
+//! Owns reverting a reviewed list of merges in one go.
 //!
 //! The lists come from queries an operator runs and reviews outside the console, so the input is
 //! pasted decision ids. A dry run reports what would be attempted; the real run is offered only

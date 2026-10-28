@@ -1,6 +1,6 @@
-//! The scan panel's filter bar.
+//! Owns the scan panel's filter bar.
 //!
-//! Every control writes straight to the URL and reads straight back out of it — no signal
+//! Every control writes straight to the URL and reads straight back out of it: no signal
 //! shadows a parameter, because a shadowed filter is one that reverts on the back button.
 //!
 //! Each one also returns to page one. A narrowed list has nothing at page four, so carrying the
@@ -13,7 +13,7 @@ use crate::views::console::query::Window as TimeWindow;
 use crate::views::console::{use_console_nav, ConsoleQuery};
 use dioxus::prelude::*;
 use inkstone_ui::{Button, Size};
-/// State, mode, window, ordering, provider and the show-cleared toggle, plus a reset.
+/// State, mode, window, ordering, provider and the show-cleared toggle, and a reset.
 #[component]
 pub(super) fn FilterBar(filter: ScanFilter) -> Element {
     let i18n = use_i18n();
@@ -161,7 +161,7 @@ pub(super) fn FilterBar(filter: ScanFilter) -> Element {
 /// The provider slugs the filter box completes against, taken from whatever the health table
 /// already knows about.
 ///
-/// A `datalist` rather than a `select`: the filter accepts free text so a link can name a
+/// A `datalist` instead of a `select`: the filter accepts free text so a link can name a
 /// provider that has since gone quiet, and turning it into a picker would make that unreachable.
 #[component]
 pub(super) fn ProviderOptions(slugs: Vec<String>) -> Element {

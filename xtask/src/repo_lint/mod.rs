@@ -7,6 +7,7 @@
 //! One module per artefact family; [`text`] holds the scanning primitives they share. A rule's
 //! reason lives on the rule, so read it there before changing it.
 
+mod components;
 mod deploy;
 mod floors;
 mod frontend;
@@ -72,9 +73,10 @@ pub(crate) fn run(root: &Path) -> anyhow::Result<()> {
     findings.extend(tls::every_service_installs_a_crypto_provider(root)?);
     findings.extend(prose::doc_comments_open_with_the_fact(root));
     findings.extend(prose::documents_keep_the_em_dash_budget(root)?);
+    findings.extend(components::components_fit_the_line_threshold(root)?);
 
     if findings.is_empty() {
-        println!("repo-lint: 28 rules, no violations");
+        println!("repo-lint: 29 rules, no violations");
         return Ok(());
     }
 

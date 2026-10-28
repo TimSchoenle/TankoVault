@@ -370,9 +370,9 @@ doc_include_without_cfg = "warn"
 # `crate::models` is this crate's DTO namespace: a screen that renders a payload needs most
 # of it, and spelling out fifteen imports per view obscures more than it documents.
 wildcard_imports = "allow"
-# `rsx!` bodies are long by nature — they are markup, and splitting a screen's tree purely to
-# satisfy a line count would hurt readability rather than help it.
-too_many_lines = "allow"
+# `rsx!` markup is long, so `clippy.toml` raises the threshold to 250 lines. A component past
+# that holds more than one screen region and is split into one component per region.
+too_many_lines = "warn"
 # Screen-local helpers are deliberately declared next to the handler that uses them rather
 # than hoisted above the hooks, which would separate them from their only caller.
 items_after_statements = "allow"

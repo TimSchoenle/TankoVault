@@ -4,12 +4,15 @@
 //! second provider needs no frontend change. Every claim on this screen comes from
 //! `GET /v1/me/sync/{provider}/status`: nothing is reported as connected while it is not.
 
+mod provider;
+
+use provider::{Direction, ProviderSync};
+
 use crate::api;
 use crate::components::{
-    async_list, async_view, use_step_up_gate, EmptyBox, ErrorLine, OutcomeLine, PanelCard,
-    SkeletonBlock, StepUpGuard,
+    async_list, async_view, EmptyBox, ErrorLine, OutcomeLine, PanelCard, SkeletonBlock, StepUpGuard,
 };
-use crate::hooks::{use_busy, use_outcome, use_reload, Reload};
+use crate::hooks::{use_busy, use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
@@ -68,98 +71,32 @@ pub(crate) fn SyncPanel() -> Element {
 /// One provider's connect/disconnect, automatic-sync settings and manual pull/push.
 #[component]
 fn ProviderSyncCard(slug: String, name: String) -> Element {
-    let session = use_session();
-    let i18n = use_i18n();
-    let api = api::use_api();
-    let gate = use_step_up_gate();
-    let reload = use_reload();
-    let busy = use_busy();
-    let mut outcome = use_outcome();
+    let sync = ProviderSync::use_new();
+    let ProviderSync {
+        i18n,
+        gate,
+        reload,
+        busy,
+        outcome,
+        ..
+    } = sync;
     let mut show_conflicts = use_signal(|| false);
 
-    let status = use_resource({
-        let slug = slug.clone();
-        move || {
-            reload.track();
-            let slug = slug.clone();
-            let client = api.client();
-            let authed = session.is_authenticated();
-            async move {
-                if !authed {
-                    return Ok(SyncAccountStatus {
-                        linked: false,
-                        username: None,
-                        last_synced_at: None,
-                    });
-                }
-                client
-                    .sync_status()
-                    .provider(slug)
-                    .send()
-                    .await
-                    .map(ResponseValue::into_inner)
-                    .map_err(|e| api::friendly_error(i18n, e))
-            }
-        }
-    });
+    let status = sync.use_status(&slug);
+    let settings = sync.use_settings(&slug);
 
-    // The account's persisted automatic-sync settings (design v2 §B.6/§B.8). Must stay generated
-    // from the producer's own type — a hand-written struct drifts from the service and silently
-    // falls back to hardcoded defaults.
-    let settings = use_resource({
-        let slug = slug.clone();
-        move || {
-            reload.track();
-            let slug = slug.clone();
-            let client = api.client();
-            let authed = session.is_authenticated();
-            async move {
-                if !authed {
-                    return None;
-                }
-                client
-                    .sync_settings()
-                    .provider(slug)
-                    .send()
-                    .await
-                    .ok()
-                    .map(ResponseValue::into_inner)
-            }
-        }
-    });
-
-    let policy = settings
+    let (policy, auto_sync, pending) = settings
         .read_unchecked()
         .as_ref()
-        .and_then(|s| s.as_ref())
-        .map_or(ConflictPolicy::NewestWins, |s| s.conflict_policy);
-    let auto_sync = settings
-        .read_unchecked()
-        .as_ref()
-        .and_then(|s| s.as_ref())
-        .is_none_or(|s| s.auto_sync_enabled);
-    let pending = settings
-        .read_unchecked()
-        .as_ref()
-        .and_then(|s| s.as_ref())
-        .map_or(0, |s| s.pending_conflicts);
+        .and_then(Option::as_ref)
+        .map_or((ConflictPolicy::NewestWins, true, 0), |s| {
+            (s.conflict_policy, s.auto_sync_enabled, s.pending_conflicts)
+        });
     let linked = matches!(&*status.read_unchecked(), Some(Ok(status)) if status.linked);
 
     let patch_settings = {
         let slug = slug.clone();
-        move |patch: SyncSettingsPatch| {
-            let slug = slug.clone();
-            let client = api.client();
-            spawn(async move {
-                let _ = client
-                    .sync_settings_patch()
-                    .provider(slug)
-                    .body(patch)
-                    .send()
-                    .await;
-                reload.bump();
-            });
-        }
+        move |patch: SyncSettingsPatch| sync.patch_settings(slug.clone(), patch)
     };
 
     let toggle_auto = {
@@ -174,117 +111,19 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
 
     let connect = {
         let slug = slug.clone();
-        move |_| {
-            let slug = slug.clone();
-            gate.attempt(move || {
-                outcome.set(None);
-                let slug = slug.clone();
-                // Elevated, exactly like the unlink below: following the URL this returns grants
-                // a third party a standing OAuth token against the caller's account there, so the
-                // API answers `403` until a second factor has been presented.
-                let client = gate.client(api);
-                spawn(async move {
-                    match client.sync_authorize_url().provider(slug).send().await {
-                        Ok(response) => {
-                            // A full-page navigation, not a router push: the consent screen lives
-                            // on the provider's origin.
-                            crate::platform::navigate_to(&response.into_inner().url);
-                        }
-                        Err(e) => {
-                            if !gate.refused(api::Refusal::of(&e)) {
-                                outcome.set(Some(Err(api::friendly_error(i18n, e))));
-                            }
-                        }
-                    }
-                });
-            });
-        }
+        move |_| sync.connect(slug.clone())
     };
-
     let disconnect = {
-        let slug = slug.clone();
-        let name = name.clone();
-        move |_| {
-            let (slug, name) = (slug.clone(), name.clone());
-            gate.attempt(move || {
-                if !busy.claim() {
-                    return;
-                }
-                outcome.set(None);
-                let (slug, name) = (slug.clone(), name.clone());
-                // Elevated: unlinking a tracker is an account change, so the API demands a second
-                // factor and answers `403` until it has one.
-                let client = gate.client(api);
-                spawn(async move {
-                    match client.sync_disconnect().provider(slug).send().await {
-                        Ok(_) => {
-                            outcome.set(Some(Ok(
-                                i18n.args("account.sync.disconnected", &[("provider", &name)])
-                            )));
-                            reload.bump();
-                        }
-                        Err(e) => {
-                            if !gate.refused(api::Refusal::of(&e)) {
-                                outcome.set(Some(Err(api::friendly_error(i18n, e))));
-                            }
-                        }
-                    }
-                    busy.release();
-                });
-            });
-        }
+        let (slug, name) = (slug.clone(), name.clone());
+        move |_| sync.disconnect(slug.clone(), name.clone())
     };
-
-    // Pull and push get their own closures rather than one parameterised by direction: a
-    // shared `FnMut` capturing the non-`Copy` slug cannot be moved into both buttons.
     let pull = {
         let slug = slug.clone();
-        move |_| {
-            if !busy.claim() {
-                return;
-            }
-            outcome.set(None);
-            let slug = slug.clone();
-            let client = api.client();
-            spawn(async move {
-                let opts = SyncOpts {
-                    policy: Some(policy),
-                };
-                match client.sync_pull().provider(slug).body(opts).send().await {
-                    Ok(_) => {
-                        outcome.set(Some(Ok(i18n.t("account.sync.pullStarted"))));
-                        reload.bump();
-                    }
-                    Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
-                }
-                busy.release();
-            });
-        }
+        move |_| sync.transfer(slug.clone(), Direction::Pull, policy)
     };
-
     let push = {
         let slug = slug.clone();
-        move |_| {
-            if !busy.claim() {
-                return;
-            }
-            outcome.set(None);
-            let slug = slug.clone();
-            let client = api.client();
-            spawn(async move {
-                let opts = SyncOpts {
-                    policy: Some(policy),
-                };
-                match client.sync_push().provider(slug).body(opts).send().await {
-                    Ok(_) => {
-                        outcome.set(Some(Ok(i18n.t("account.sync.pushStarted"))));
-                        reload.bump();
-                    }
-                    Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
-                }
-                busy.release();
-            });
-        }
+        move |_| sync.transfer(slug.clone(), Direction::Push, policy)
     };
 
     let card_name = name.clone();

@@ -7,19 +7,21 @@ mod config;
 mod coverage;
 mod create;
 mod danger;
+mod inspector;
 mod politeness;
 mod row;
 mod runs;
+mod tabs;
 mod test;
 
 pub(in crate::views::console) use test::AdapterTestPanel;
 
 use crate::api;
 use crate::components::{
-    async_view, use_step_up_gate, HealthPill, InlineConfirm, ListFooter, ListSearch, NoSelection,
-    OutcomeLine, Section, SkeletonBlock, SliderRow, StepUpGuard, TabBar, TabKind,
+    async_view, HealthPill, InlineConfirm, ListFooter, ListSearch, NoSelection, OutcomeLine,
+    SkeletonBlock, StepUpGuard, TabBar, TabKind,
 };
-use crate::hooks::{use_busy, use_outcome, use_reload, Reload};
+use crate::hooks::{use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
@@ -27,13 +29,12 @@ use crate::state::capabilities::use_capabilities;
 use crate::util::{monogram, rel_time, thousands};
 use crate::views::console::{config_editor_text, landing_selection, use_console_nav};
 use crate::wire::types::Permission;
-use config::DryRunResult;
 use coverage::CoverageTab;
 use create::{CloneSeed, CreateProviderForm};
 use danger::DangerTab;
 use dioxus::prelude::*;
 use inkstone_ui::{Button, Pill, Size, Tone};
-use politeness::{emulation_token, politeness_body, EMULATION_CHOICES};
+use inspector::{Inspector, Rights};
 use progenitor_client::ResponseValue;
 use row::ProviderRow;
 use runs::RunsTab;
@@ -399,237 +400,34 @@ fn ProviderInspector(
     on_clone: EventHandler<CloneSeed>,
     on_deleted: EventHandler<()>,
 ) -> Element {
-    let api = api::use_api();
-    let i18n = use_i18n();
-    let caps = use_capabilities();
-    // One control per capability: each appears exactly when the server would accept the call.
-    let can_edit = caps.can(Permission::ProvidersWrite);
-    // A clone is a registration, so it needs the registration capability rather than write.
-    let can_create = caps.can(Permission::ProvidersCreate);
-    let can_change_state = caps.can(Permission::ProvidersState);
-    let can_scan = caps.can(Permission::ScansRun);
-    let can_test = caps.can(Permission::ProvidersTest);
-    let can_delete = caps.can(Permission::ProvidersDelete);
-
-    let id = provider.id;
-    let original_base = provider.base_url.clone();
-    let original_config = config_editor_text(&provider.config);
-    let is_disabled = provider.state == ProviderState::Disabled;
-
-    // The preset link drives what may be edited here. `locked` is the server's rule too: a
-    // PATCH touching a preset-owned field of a locked provider is refused with a 409, so
-    // disabling the inputs is the courtesy, not the enforcement.
-    let link = provider.preset.clone();
-    let locked = link.as_ref().is_some_and(|l| l.locked);
-    // Everything preset-owned is read-only while locked; politeness never is.
-    let can_edit_owned = can_edit && !locked;
-    let retired_preset = link.is_some() && preset.is_none();
-
+    let inspector = Inspector::use_new(&provider, reload);
+    let Inspector {
+        i18n,
+        busy,
+        outcome,
+        gate,
+        config,
+        dry_run_passed,
+        mut scan_mode,
+        ..
+    } = inspector;
+    let rights = Rights::use_for(&provider);
     let nav = use_console_nav();
     let tab = Tab::parse(nav.query().tab_token());
-    // Fast scan checks deltas; full re-reads the catalogue for this provider only.
-    let mut scan_mode = use_signal(|| ScanMode::Fast);
-    let busy = use_busy();
-    let mut outcome = use_outcome();
-    // One gate for the inspector: saving, changing state and triggering a scan are all mutating
-    // operator capabilities, and the inspector has one outcome line to answer through.
-    let gate = use_step_up_gate();
 
-    let mut name = use_signal(|| provider.name.clone());
-    let mut base_url = use_signal(|| provider.base_url.clone());
-    let mut config = use_signal(|| original_config.clone());
-    // The dry-run gate: cleared by every config edit, re-armed by a passing dry run.
-    let mut dry_run_passed = use_signal(|| false);
-    let mut dry_run: Signal<Option<Result<serde_json::Value, String>>> = use_signal(|| None);
-
-    let mut rps = use_signal(|| provider.politeness.rps.unwrap_or(1.0));
-    let mut concurrency = use_signal(|| f64::from(provider.politeness.concurrency.unwrap_or(2)));
-    #[expect(
-        clippy::cast_precision_loss,
-        reason = "crawl delays are milliseconds, well inside f64's exact integer range"
-    )]
-    let mut crawl_delay = use_signal(|| provider.politeness.crawl_delay_ms.unwrap_or(0) as f64);
-    let mut user_agent = use_signal(|| provider.politeness.user_agent.clone().unwrap_or_default());
-    let mut emulation = use_signal(|| emulation_token(provider.politeness.emulation.as_ref()));
-
-    let config_dirty = *config.read() != original_config;
-    let base_changed = *base_url.read() != original_base;
-    let config_valid = serde_json::from_str::<serde_json::Value>(&config.read()).is_ok();
+    let id = provider.id;
+    let is_disabled = provider.state == ProviderState::Disabled;
+    let link = provider.preset.clone();
+    let retired_preset = link.is_some() && preset.is_none();
     // Saving is blocked while an unproven config edit is pending; everything else is free.
-    let save_blocked = config_dirty && !*dry_run_passed.read();
+    let save_blocked =
+        *config.read() != config_editor_text(&provider.config) && !*dry_run_passed.read();
 
     let save = {
-        let original_base = original_base.clone();
+        let original_base = provider.base_url.clone();
         move |_| {
             let original_base = original_base.clone();
-            gate.attempt(move || {
-                if !busy.claim() {
-                    return;
-                }
-                outcome.set(None);
-                let parsed = match serde_json::from_str::<serde_json::Value>(&config.peek()) {
-                    Ok(value) => value,
-                    Err(e) => {
-                        outcome.set(Some(Err(i18n.args(
-                            "console.providers.badConfig",
-                            &[("message", &e.to_string())],
-                        ))));
-                        busy.release();
-                        return;
-                    }
-                };
-                let politeness = match politeness_body(
-                    &format!("{}", *rps.peek()),
-                    &format!("{:.0}", *concurrency.peek()),
-                    &format!("{:.0}", *crawl_delay.peek()),
-                    &user_agent.peek(),
-                    &emulation.peek(),
-                ) {
-                    Ok(value) => value,
-                    Err(key) => {
-                        outcome.set(Some(Err(i18n.t(key))));
-                        busy.release();
-                        return;
-                    }
-                };
-                let migrating = *base_url.peek() != original_base;
-                let body = UpdateProvider {
-                    name: name.peek().clone(),
-                    base_url: base_url.peek().clone(),
-                    config: Some(parsed),
-                    politeness: Some(politeness),
-                };
-                let client = gate.client(api);
-                spawn(async move {
-                    match client.update_provider().id(id).body(body).send().await {
-                        Ok(_) => {
-                            outcome.set(Some(Ok(i18n.t(if migrating {
-                                "console.providers.savedMigrating"
-                            } else {
-                                "console.providers.saved"
-                            }))));
-                            dry_run_passed.set(false);
-                            reload.bump();
-                        }
-                        Err(e) => {
-                            if !gate.refused(api::Refusal::of(&e)) {
-                                outcome.set(Some(Err(api::guarded_error(i18n, e))));
-                            }
-                        }
-                    }
-                    busy.release();
-                });
-            });
-        }
-    };
-
-    let set_state = use_callback(move |target: ProviderState| {
-        if !busy.claim() {
-            return;
-        }
-        outcome.set(None);
-        let client = gate.client(api);
-        spawn(async move {
-            match client
-                .set_provider_state()
-                .id(id)
-                .body(SetProviderStateBody { state: target })
-                .send()
-                .await
-            {
-                Ok(_) => reload.bump(),
-                Err(e) => {
-                    if !gate.refused(api::Refusal::of(&e)) {
-                        outcome.set(Some(Err(api::guarded_error(i18n, e))));
-                    }
-                }
-            }
-            busy.release();
-        });
-    });
-
-    let scan = move |_| {
-        gate.attempt(move || {
-            outcome.set(None);
-            let client = gate.client(api);
-            spawn(async move {
-                let body = TriggerScan {
-                    mode: *scan_mode.peek(),
-                    provider_id: Some(id),
-                };
-                match client.trigger_scan().body(body).send().await {
-                    Ok(_) => outcome.set(Some(Ok(i18n.t("console.providers.scanQueued")))),
-                    Err(e) => {
-                        if !gate.refused(api::Refusal::of(&e)) {
-                            outcome.set(Some(Err(api::guarded_error(i18n, e))));
-                        }
-                    }
-                }
-            });
-        });
-    };
-
-    // Both directions of the preset link. Re-locking discards the local edits to the
-    // preset-owned fields, so it is behind an inline confirmation below.
-    let set_lock = use_callback(move |lock: bool| {
-        if !busy.claim() {
-            return;
-        }
-        outcome.set(None);
-        let client = gate.client(api);
-        spawn(async move {
-            match client
-                .set_provider_preset_lock()
-                .id(id)
-                .body(SetPresetLockBody { locked: lock })
-                .send()
-                .await
-            {
-                Ok(_) => {
-                    outcome.set(Some(Ok(i18n.t(if lock {
-                        "console.providers.preset.relinked"
-                    } else {
-                        "console.providers.preset.unlocked"
-                    }))));
-                    reload.bump();
-                }
-                Err(e) => {
-                    if !gate.refused(api::Refusal::of(&e)) {
-                        outcome.set(Some(Err(api::guarded_error(i18n, e))));
-                    }
-                }
-            }
-            busy.release();
-        });
-    });
-    let mut relinking = use_signal(|| false);
-
-    let run_dry = move |_| {
-        if !busy.claim() {
-            return;
-        }
-        dry_run.set(None);
-        let client = api.client();
-        spawn(async move {
-            let outcome_value = client
-                .test_adapter()
-                .id(id)
-                .body(TestAdapterRequest { path: None })
-                .send()
-                .await
-                .map(ResponseValue::into_inner)
-                .map_err(|e| api::friendly_error(i18n, e));
-            dry_run_passed.set(outcome_value.is_ok());
-            dry_run.set(Some(outcome_value));
-            busy.release();
-        });
-    };
-
-    let format_config = move |_| {
-        // Read the text out before writing back: `peek` holds a borrow for the whole `if let`.
-        let text = config.peek().clone();
-        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
-            config.set(config_editor_text(&value));
+            gate.attempt(move || inspector.save(id, &original_base));
         }
     };
 
@@ -693,7 +491,7 @@ fn ProviderInspector(
                         }
                     }
                     div { class: "ik-flex", style: "gap:7px;flex:none;flex-wrap:wrap;justify-content:flex-end;",
-                        if can_scan {
+                        if rights.scan {
                             select {
                                 class: "ik-select",
                                 style: "font-size:12px;padding:8px 10px;",
@@ -708,19 +506,17 @@ fn ProviderInspector(
                             }
                             Button {
                                 size: Size::Sm,
-                                on_click: scan,
+                                on_click: move |_| gate.attempt(move || inspector.scan(id)),
                                 {i18n.t("console.providers.scanNow")}
                             }
                         }
-                        if can_change_state {
+                        if rights.change_state {
                             Button {
                                 size: Size::Sm,
                                 disabled: busy.is_busy(),
                                 on_click: move |_| {
                                     gate.attempt(move || {
-                                        set_state.call(
-                                            if is_disabled { ProviderState::Active } else { ProviderState::Disabled },
-                                        );
+                                        inspector.set_state(id, if is_disabled { ProviderState::Active } else { ProviderState::Disabled });
                                     });
                                 },
                                 if is_disabled {
@@ -730,7 +526,7 @@ fn ProviderInspector(
                                 }
                             }
                         }
-                        if can_create {
+                        if rights.create {
                             Button {
                                 size: Size::Sm,
                                 title: i18n.t("console.providers.cloneHint"),
@@ -754,7 +550,7 @@ fn ProviderInspector(
                                 {i18n.t("console.providers.clone")}
                             }
                         }
-                        if can_edit {
+                        if rights.edit {
                             Button {
                                 size: Size::Sm,
                                 tone: Tone::Primary,
@@ -777,251 +573,8 @@ fn ProviderInspector(
                 OutcomeLine { outcome: outcome.read().clone() }
             }
             match tab {
-                Tab::Config => rsx! {
-                    // Two-up: the dry-run result is the answer to the config beside it, and
-                    // stacking it under a 168px textarea puts it off screen while you edit.
-                    div { class: "ik-cons-inspbody two-up",
-                        div { class: "ik-cons-col",
-                            if let Some(link) = link.clone() {
-                                PresetBanner {
-                                    link,
-                                    retired: retired_preset,
-                                    can_edit,
-                                    busy: busy.is_busy(),
-                                    relinking,
-                                    on_unlock: move |()| gate.attempt(move || set_lock.call(false)),
-                                    on_relink: move |()| {
-                                        relinking.set(false);
-                                        gate.attempt(move || set_lock.call(true));
-                                    },
-                                }
-                            }
-                            Section { label: i18n.t("console.providers.identity"),
-                                div { style: "display:flex;flex-direction:column;gap:9px;",
-                                    div { class: "ik-kv",
-                                        label { class: "k", r#for: "tv-p-name", {i18n.t("console.providers.field.name")} }
-                                        input {
-                                            id: "tv-p-name",
-                                            class: "ik-input",
-                                            style: "font-size:12.5px;padding:9px 11px;",
-                                            disabled: !can_edit_owned,
-                                            value: "{name}",
-                                            oninput: move |e| name.set(e.value()),
-                                        }
-                                    }
-                                    div { class: "ik-kv",
-                                        label { class: "k", r#for: "tv-p-base", {i18n.t("console.providers.field.baseUrl")} }
-                                        input {
-                                            id: "tv-p-base",
-                                            class: "ik-input ik-mono",
-                                            style: "font-size:12.5px;padding:9px 11px;",
-                                            disabled: !can_edit_owned,
-                                            value: "{base_url}",
-                                            oninput: move |e| base_url.set(e.value()),
-                                        }
-                                    }
-                                    if base_changed {
-                                        div { class: "ik-kv",
-                                            span {}
-                                            span { class: "warn",
-                                                {
-                                                    i18n.args(
-                                                        "console.providers.migrateWarning",
-                                                        &[
-                                                            (
-                                                                "count",
-                                                                &stat
-                                                                    .as_ref()
-                                                                    .map_or_else(|| "—".to_owned(), |s| thousands(s.series_count)),
-                                                            ),
-                                                        ],
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                    div { class: "ik-kv",
-                                        span { class: "k", {i18n.t("console.providers.field.slug")} }
-                                        span { class: "ik-mono", style: "font-size:12.5px;", "{provider.slug}" }
-                                    }
-                                    div { class: "ik-kv",
-                                        span { class: "k", {i18n.t("console.providers.field.adapter")} }
-                                        span {
-                                            span { class: "ik-mono", style: "font-size:12.5px;",
-                                                "{provider.adapter}"
-                                            }
-                                            span { class: "ik-muted", style: "font-size:11.5px;display:block;margin-top:2px;",
-                                                {i18n.t("console.providers.adapterFixed")}
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            Section {
-                                label: i18n.t("console.providers.adapterConfig"),
-                                trailing: rsx! {
-                                    span {
-                                        class: "ik-mono",
-                                        style: if config_valid { "font-size:11px;color:var(--muted);" } else { "font-size:11px;color:var(--star);" },
-                                        if config_valid {
-                                            {i18n.t("console.providers.jsonValid")}
-                                        } else {
-                                            {i18n.t("console.providers.jsonInvalid")}
-                                        }
-                                    }
-                                },
-                                textarea {
-                                    class: if config_valid { "ik-jsonblock" } else { "ik-jsonblock bad" },
-                                    spellcheck: "false",
-                                    disabled: !can_edit_owned,
-                                    "aria-label": i18n.t("console.providers.adapterConfig"),
-                                    value: "{config}",
-                                    oninput: move |e| {
-                                        config.set(e.value());
-                                        dry_run_passed.set(false);
-                                    },
-                                }
-                                div { class: "ik-flex", style: "gap:7px;margin-top:9px;flex-wrap:wrap;",
-                                    if can_test {
-                                        Button {
-                                            size: Size::Sm,
-                                            disabled: busy.is_busy(),
-                                            on_click: run_dry,
-                                            {i18n.t("console.providers.dryRun")}
-                                        }
-                                    }
-                                    Button {
-                                        size: Size::Sm,
-                                        disabled: !config_valid || !can_edit_owned,
-                                        on_click: format_config,
-                                        {i18n.t("console.providers.format")}
-                                    }
-                                    span { class: "ik-mono", style: "margin-left:auto;align-self:center;font-size:11.5px;color:var(--muted);",
-                                        {i18n.t("console.providers.saveGate")}
-                                    }
-                                }
-                            }
-                        }
-                        div { class: "ik-cons-col",
-                            DryRunResult { result: dry_run.read().clone() }
-                        }
-                    }
-                },
-                Tab::Politeness => rsx! {
-                    div { class: "ik-cons-inspbody",
-                        div { class: "ik-cons-col",
-                            Section { label: i18n.t("console.providers.politeness"),
-                                div { style: "display:flex;flex-direction:column;gap:12px;",
-                                    SliderRow {
-                                        label: i18n.t("console.providers.field.rps"),
-                                        value: *rps.read(),
-                                        min: 0.1,
-                                        max: 10.0,
-                                        step: 0.1,
-                                        display: format!("{:.1}", *rps.read()),
-                                        on_input: move |v| rps.set(v),
-                                    }
-                                    SliderRow {
-                                        label: i18n.t("console.providers.field.concurrency"),
-                                        value: *concurrency.read(),
-                                        min: 1.0,
-                                        max: 16.0,
-                                        step: 1.0,
-                                        display: format!("{:.0}", *concurrency.read()),
-                                        on_input: move |v| concurrency.set(v),
-                                    }
-                                    SliderRow {
-                                        label: i18n.t("console.providers.field.crawlDelay"),
-                                        value: *crawl_delay.read(),
-                                        min: 0.0,
-                                        max: 5000.0,
-                                        step: 50.0,
-                                        display: format!("{:.0}ms", *crawl_delay.read()),
-                                        on_input: move |v| crawl_delay.set(v),
-                                    }
-                                    div { class: "ik-kv narrow",
-                                        label { class: "k", r#for: "tv-p-emu", {i18n.t("console.providers.field.emulation")} }
-                                        select {
-                                            id: "tv-p-emu",
-                                            class: "ik-select",
-                                            disabled: !can_edit,
-                                            value: "{emulation}",
-                                            onchange: move |e| emulation.set(e.value()),
-                                            for (profile , label) in EMULATION_CHOICES {
-                                                option { key: "{profile}", value: "{profile}", "{label}" }
-                                            }
-                                            option { value: "", {i18n.t("console.providers.emulationNone")} }
-                                        }
-                                    }
-                                    div { class: "ik-kv narrow",
-                                        label { class: "k", r#for: "tv-p-ua", {i18n.t("console.providers.field.userAgent")} }
-                                        input {
-                                            id: "tv-p-ua",
-                                            class: "ik-input ik-mono",
-                                            style: "font-size:11.5px;padding:8px 10px;",
-                                            disabled: !can_edit || !emulation.read().is_empty(),
-                                            value: "{user_agent}",
-                                            oninput: move |e| user_agent.set(e.value()),
-                                        }
-                                    }
-                                }
-                                p { class: "ik-muted", style: "font-size:11.5px;line-height:1.5;margin:10px 0 0;",
-                                    {i18n.t("console.providers.politenessNote")}
-                                }
-                            }
-                        }
-                        div { class: "ik-cons-col",
-                            if let Some(preset) = preset.clone() {
-                                Section { label: i18n.t("console.providers.preset.budgetHead"),
-                                    p { class: "ik-muted", style: "font-size:11.5px;line-height:1.55;margin:0 0 9px;",
-                                        {i18n.t("console.providers.preset.budgetNote")}
-                                    }
-                                    div { class: "ik-mono", style: "font-size:11.5px;color:var(--muted);",
-                                        {
-                                            i18n.args(
-                                                "console.providers.preset.budgetValues",
-                                                &[
-                                                    ("rps", &format!("{:.1}", preset.politeness.rps.unwrap_or(1.0))),
-                                                    ("concurrency", &preset.politeness.concurrency.unwrap_or(2).to_string()),
-                                                    ("delay", &preset.politeness.crawl_delay_ms.unwrap_or(0).to_string()),
-                                                ],
-                                            )
-                                        }
-                                    }
-                                    if can_edit {
-                                        Button {
-                                            size: Size::Sm,
-                                            style: "margin-top:9px;",
-                                            on_click: {
-                                                let preset = preset.clone();
-                                                move |_| {
-                                                    rps.set(preset.politeness.rps.unwrap_or(1.0));
-                                                    concurrency
-                                                        .set(f64::from(preset.politeness.concurrency.unwrap_or(2)));
-                                                    #[expect(
-                                                        clippy::cast_precision_loss,
-                                                        reason = "crawl delays are milliseconds, well inside f64's exact integer range"
-                                                    )]
-                                                    crawl_delay
-                                                        .set(preset.politeness.crawl_delay_ms.unwrap_or(0) as f64);
-                                                }
-                                            },
-                                            {i18n.t("console.providers.preset.budgetCta")}
-                                        }
-                                    }
-                                }
-                            }
-                            Section { label: i18n.t("console.providers.limitsHead"),
-                                p { class: "ik-muted", style: "font-size:11.5px;line-height:1.5;margin:0 0 8px;",
-                                    {i18n.t("console.providers.clampNote")}
-                                }
-                                p { class: "ik-muted", style: "font-size:11.5px;line-height:1.5;margin:0;",
-                                    {i18n.t("console.providers.emulationNote")}
-                                }
-                            }
-                        }
-                    }
-                },
+                Tab::Config => tabs::config(&inspector, &provider, stat.as_ref(), retired_preset, rights),
+                Tab::Politeness => tabs::politeness(&inspector, preset.as_ref(), rights),
                 Tab::Coverage => rsx! {
                     div { class: "ik-cons-inspbody",
                         div { class: "ik-cons-col",
@@ -1042,8 +595,8 @@ fn ProviderInspector(
                             DangerTab {
                                 provider: provider.clone(),
                                 stat: stat.clone(),
-                                can_change_state,
-                                can_delete,
+                                can_change_state: rights.change_state,
+                                can_delete: rights.delete,
                                 reload,
                                 on_deleted,
                             }

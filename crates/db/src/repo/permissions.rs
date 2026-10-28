@@ -149,9 +149,10 @@ pub async fn list_for_user<'e, E: PgExecutor<'e>>(
 
 /// Replaces a user's entire grant set in one transaction, returning what changed.
 ///
-/// A whole-set diff, so a checklist submit cannot interleave with itself. Unchanged grants keep
-/// their `granted_at`, a concurrent identical grant is absorbed, and
-/// [`Permission::SuperUser`] is inert in both directions.
+/// A whole-set diff, so a checklist submit cannot interleave with itself, and the user row is
+/// locked first, so two submits for one user serialise. Unchanged grants keep their
+/// `granted_at`, a concurrent identical grant is absorbed, and [`Permission::SuperUser`] is
+/// inert in both directions.
 ///
 /// # Errors
 /// `Sqlx`, rolling back on the first failure; an unknown `user_id` fails the insert's foreign
@@ -163,6 +164,17 @@ pub async fn replace(
     granted_by: UserId,
 ) -> DbResult<GrantDiff> {
     let mut tx = conn.begin().await?;
+
+    // Locking only the grant rows cannot serialise two submits for a user with no grants: there
+    // is nothing to lock, both read an empty set, and both commit their union. The user row
+    // always exists to lock. `NO KEY UPDATE` still lets other writers take the `KEY SHARE` their
+    // foreign keys to `users` need.
+    sqlx::query_scalar!(
+        "SELECT 1 AS \"locked!\" FROM users WHERE id = $1 FOR NO KEY UPDATE",
+        user_id.as_uuid(),
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
 
     let existing: Vec<String> = sqlx::query_scalar!(
         "SELECT permission FROM user_permissions WHERE user_id = $1 FOR UPDATE",

@@ -46,8 +46,8 @@ pub const STEP_SECONDS: i64 = 30;
 /// step keeps a shoulder-surfed code usable for minutes.
 const SKEW_STEPS: i64 = 1;
 
-/// The characters escaped in the `otpauth://` label and issuer: everything outside the URI
-/// unreserved set.
+/// The characters escaped in the `otpauth://` label and issuer: controls, space, and the
+/// delimiters that would re-split the label or end a query value.
 ///
 /// The label is `issuer:account`, so an unescaped `:` in either half re-splits it and the
 /// authenticator files the entry under the wrong name. Both halves are text this service does

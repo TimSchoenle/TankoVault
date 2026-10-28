@@ -8,9 +8,10 @@ use secrecy::{ExposeSecret as _, SecretSlice, SecretString};
 
 /// Builds an argon2id hasher keyed with a server-side `pepper`, held outside the database.
 ///
-/// The pepper is argon2's secret input, not concatenated with the password, so a database leak
-/// alone cannot be brute-forced offline. An empty pepper reproduces [`Argon2::default`], so
-/// hashes made without one keep verifying.
+/// The pepper is argon2's secret input, not concatenated with the password, so with a strong
+/// pepper a database leak alone cannot be brute-forced offline. An empty pepper reproduces
+/// [`Argon2::default`], so hashes made without one keep verifying, and those hashes have no such
+/// protection.
 fn hasher(pepper: &SecretSlice<u8>) -> Result<Argon2<'_>, AuthError> {
     Argon2::new_with_secret(
         pepper.expose_secret(),

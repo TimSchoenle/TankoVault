@@ -30,8 +30,8 @@ impl Sealer {
     /// Builds a sealer from a raw 32-byte key.
     ///
     /// Prefer [`from_key_bytes`](Self::from_key_bytes) or
-    /// [`from_base64_key`](Self::from_base64_key), which zeroize the key; this one serves tests
-    /// and fixed-size KMS callers.
+    /// [`from_base64_key`](Self::from_base64_key), which take the key as a `secrecy` type that
+    /// zeroizes it when its owner drops it; this one serves tests and fixed-size KMS callers.
     #[must_use]
     pub fn new(key: &[u8; KEY_LEN]) -> Self {
         let key = Key::<Aes256Gcm>::from(*key);

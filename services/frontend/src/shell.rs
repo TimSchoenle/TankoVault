@@ -1,4 +1,5 @@
-//! The app shell: read from the bundle, and branded with the operator's name before it is served.
+//! Owns the app shell: read from the bundle, and branded with the operator's name before it is
+//! served.
 
 use std::path::{Path, PathBuf};
 
@@ -6,16 +7,16 @@ use tankovault_config::BrandingConfig;
 
 /// Rewrite the shell's `<title>` and description to name *this* deployment.
 ///
-/// Both are pre-boot placeholders — the SPA replaces the document title from `/v1/branding` as
-/// soon as it mounts — but they are what a reader sees for the several hundred milliseconds the
+/// Both are pre-boot placeholders (the SPA replaces the document title from `/v1/branding` as
+/// soon as it mounts), but they are what a reader sees for the several hundred milliseconds the
 /// WASM bundle takes to download, and what a crawler or a link unfurler sees for good.
 ///
 /// Applied to the source **before** [`content_security_policy`] hashes it, so the bytes the
 /// browser receives and the bytes that were hashed stay the same generation. Only element text
-/// and an attribute value change, never a `<script>`, so no hash actually moves — but deriving
-/// the policy from the pre-rewrite source would make that a coincidence rather than a guarantee.
+/// and an attribute value change, never a `<script>`, so no hash actually moves; but deriving
+/// the policy from the pre-rewrite source would make that a coincidence instead of a guarantee.
 ///
-/// A shell whose markup has moved on is left alone rather than mangled: this is a string
+/// A shell whose markup has moved on is left alone instead of mangled: this is a string
 /// replacement, not an HTML parser, and printing a warning is better than emitting broken markup.
 ///
 /// [`content_security_policy`]: super::csp::content_security_policy
@@ -55,7 +56,7 @@ pub(super) fn brand_shell(source: &str, branding: &BrandingConfig) -> String {
     out
 }
 
-/// Replace the text between `open` and the next `close` after it, or `None` when the pair is
+/// Replaces the text between `open` and the next `close` after it, or `None` when the pair is
 /// absent.
 fn replace_between(source: &str, open: &str, close: &str, value: &str) -> Option<String> {
     let start = source.find(open)? + open.len();
@@ -69,7 +70,7 @@ fn replace_between(source: &str, open: &str, close: &str, value: &str) -> Option
 
 /// Escape a configured value on its way into markup.
 ///
-/// The value is the operator's, not a reader's, so this is not an XSS boundary — but an
+/// The value is the operator's, not a reader's, so this is not an XSS boundary, but an
 /// unescaped `&` or `"` in a perfectly ordinary product name would still break the attribute it
 /// lands in, and a shell that fails to parse is a blank page.
 fn escape_html(value: &str) -> String {
@@ -92,7 +93,7 @@ pub(super) fn shell_path(static_dir: &str) -> PathBuf {
     Path::new(static_dir).join("index.html")
 }
 
-/// Read the app shell once, at startup.
+/// Reads the app shell once, at startup.
 ///
 /// One read, not one per request, and that is the whole point: the bytes the browser receives and
 /// the bytes [`content_security_policy`] hashed are then the same generation *by construction*.

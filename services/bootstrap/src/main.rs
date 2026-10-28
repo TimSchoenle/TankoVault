@@ -1,5 +1,5 @@
-//! One-shot installation steps for a deployed `TankoVault`, as a shipped image: `migrate` before
-//! a rollout, `seed-admin` and `seed-providers` once at install.
+//! Owns the one-shot installation steps for a deployed `TankoVault`, as a shipped image: `migrate`
+//! before a rollout, `seed-admin` and `seed-providers` once at install.
 //!
 //! Separate from `xtask` on purpose. `xtask` performs the same steps against a developer's own
 //! database, but it also carries `reset`, which DROPs the schema, and it is on the deploy
@@ -8,8 +8,8 @@
 //! seed steps leave an existing installation untouched.
 //!
 //! Configuration comes from the same layered loader every service uses, so a deployment sets
-//! `TANKOVAULT_DATABASE__URL` here as it does everywhere else. Output is plain stdout rather
-//! than structured logs: a `Job`'s whole purpose is the few lines it prints.
+//! `TANKOVAULT_DATABASE__URL` here as it does everywhere else. Output is plain stdout, not
+//! structured logs: a `Job`'s whole purpose is the few lines it prints.
 
 use secrecy::{ExposeSecret as _, SecretSlice, SecretString};
 use tankovault_bootstrap::config::Config;
@@ -47,7 +47,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Provision the first administrator from the configured credentials.
+/// Provisions the first administrator from the configured credentials.
 async fn seed_admin(pool: &tankovault_db::PgPool, cfg: &Config) -> anyhow::Result<()> {
     let Some(password) = cfg.seed_admin_password.as_ref() else {
         anyhow::bail!(
@@ -97,7 +97,7 @@ async fn seed_admin(pool: &tankovault_db::PgPool, cfg: &Config) -> anyhow::Resul
     Ok(())
 }
 
-/// The pepper bytes to hash the admin password with.
+/// Returns the pepper bytes to hash the admin password with.
 ///
 /// Un-peppered hashes are a deliberate local-development shape and never a deployed one: the
 /// api refuses to *start* that way under the production profile, so seeding here would
@@ -105,7 +105,7 @@ async fn seed_admin(pool: &tankovault_db::PgPool, cfg: &Config) -> anyhow::Resul
 /// refusal can be tested without a database.
 ///
 /// # Errors
-/// No pepper configured under `TANKOVAULT_PROFILE=production`.
+/// Returns an error when no pepper is configured under `TANKOVAULT_PROFILE=production`.
 fn resolve_pepper(configured: Option<&SecretString>, production: bool) -> anyhow::Result<Vec<u8>> {
     let pepper = configured.map_or_else(Vec::new, |p| p.expose_secret().as_bytes().to_vec());
     if pepper.is_empty() && production {
@@ -117,7 +117,7 @@ fn resolve_pepper(configured: Option<&SecretString>, production: bool) -> anyhow
     Ok(pepper)
 }
 
-/// Record the shipped preset catalogue and reconcile every provider against it.
+/// Records the shipped preset catalogue and reconciles every provider against it.
 async fn seed_providers(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
     let report = tankovault_bootstrap::seed_providers(pool).await?;
     for (slug, outcome) in &report.providers {

@@ -1,6 +1,6 @@
-//! Targeted single-series push: the fast path when a user asserts state directly (e.g. marking
-//! a chapter read), as opposed to bulk reconciliation in [`super::reconcile`]. Local state wins
-//! outright — no remote fetch, no three-way merge.
+//! Owns the targeted single-series push: the fast path when a user asserts state directly (e.g.
+//! marking a chapter read), as opposed to bulk reconciliation in [`super::reconcile`]. Local state
+//! wins outright: no remote fetch, no three-way merge.
 
 use std::sync::Arc;
 
@@ -46,7 +46,7 @@ impl TargetedPush {
         }
     }
 
-    /// Push one series to every linked provider. Never fails the caller; every outcome
+    /// Pushes one series to every linked provider. Never fails the caller; every outcome
     /// (including failures) is best-effort logged and recorded via `record_sync_error`.
     pub(crate) async fn push_series(
         &self,
@@ -130,7 +130,7 @@ impl TargetedPush {
         let access = self.tokens.access(slug, provider, user_id).await?;
         // The same blocklist the scheduled reconciliation reads. A targeted push is the one path
         // that could otherwise re-create a mapping an operator has just rejected, because it runs
-        // the moment a reader marks a chapter read rather than on the next sweep.
+        // the moment a reader marks a chapter read instead of on the next sweep.
         let blocked = self.resolver.blocklist(slug).await?;
         let external_id = self
             .resolver
@@ -156,17 +156,17 @@ impl TargetedPush {
             .await
     }
 
-    /// Record what this push settled, for the pushed series and for every other local series
+    /// Records what this push settled, for the pushed series and for every other local series
     /// mapped to the same remote entry.
     ///
     /// The reader asserted a frontier for a *work*, and the provider keeps one entry per work:
     /// leaving a catalogue duplicate on its old number would show the same chapter read on one
-    /// copy and unread on the other, and nothing would ever correct it — a reconciliation
+    /// copy and unread on the other, and nothing would ever correct it: a reconciliation
     /// reconciles the remote entry once and skips the rest of the group as already handled.
     ///
     /// The ancestor snapshot is refreshed here too, for the same reason the reconciliation
     /// refreshes it: both sides now hold this value, so the next run must read it as "neither
-    /// side changed" rather than re-deciding a remote that has moved since against an ancestor
+    /// side changed" instead of re-deciding a remote that has moved since against an ancestor
     /// from before this push.
     ///
     /// Only the mirrored series are journalled in `sync_history`. The pushed series' own change

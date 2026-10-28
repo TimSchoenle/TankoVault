@@ -1,6 +1,6 @@
-//! What the `bootstrap` binary reads from its configuration.
+//! Owns what the `bootstrap` binary reads from its configuration.
 //!
-//! Public, and in the library rather than beside `main`, because it is the root
+//! Public, and in the library instead of beside `main`, because it is the root
 //! `config-contract` describes for this image: the contract has to be generated from the very
 //! type the binary deserialises, or it is a claim about something else.
 
@@ -40,8 +40,8 @@ pub struct AuthConfig {
     /// brute-forced offline. Empty (default) is un-peppered and offers no such protection;
     /// once configured it must stay stable or passwords stop verifying.
     //
-    // Word for word the API's, and a `//` rather than a `///` on purpose: this is the same value
-    // — the seed writes a hash the API then verifies, and a deployment that gave the two
+    // Word for word the API's, and a `//`, not a `///`, on purpose: this is the same value. The
+    // seed writes a hash the API then verifies, and a deployment that gave the two
     // different peppers has an admin account whose correct password is refused with nothing in
     // the logs naming the cause. The published contracts carry the whole `///` comment, and a
     // consumer merging two images that read one key requires the descriptions to agree, so the

@@ -1,4 +1,4 @@
-//! The inline (one-shot) full and fast scan entry points.
+//! Owns the inline (one-shot) full and fast scan entry points.
 
 use tankovault_domain::Provider;
 
@@ -8,7 +8,7 @@ impl Engine {
     /// One-shot full scan of a provider without the broker (the CLI `worker scan` path).
     ///
     /// Two phases: walk the entire catalogue registering every series, then fetch
-    /// chapters + metadata per series. A malformed series fails only that series.
+    /// chapters and metadata per series. A malformed series fails only that series.
     pub(crate) async fn run_full_scan_inline(
         &self,
         provider: &Provider,
@@ -16,7 +16,7 @@ impl Engine {
         let (adapter, ctx) = self.provider_context(provider)?;
         let mut summary = ScanSummary::default();
 
-        // Phase 1 — collect ALL series: walk every catalogue page and register each series
+        // Phase 1, collect every series: walk every catalogue page and register each series
         // immediately (metadata-light, no chapters).
         let mut paths: Vec<String> = Vec::new();
         let mut seen = std::collections::HashSet::new();
@@ -43,7 +43,7 @@ impl Engine {
                 truncated_by_page_cap = false;
                 break;
             }
-            // Skip cross-page duplicates, then register the rest in one batch — a
+            // Skip cross-page duplicates, then register the rest in one batch: a
             // 20k-entry sitemap page costs one existence query, not 20k.
             let fresh: Vec<(&str, &str)> = catalog
                 .items
@@ -94,7 +94,7 @@ impl Engine {
             catalog_truncated(&provider.slug);
         }
 
-        // Phase 2 — enrich: fetch chapters + full metadata for every collected series.
+        // Phase 2, enrich: fetch chapters and full metadata for every collected series.
         //
         // Detached: this path has no task row to report a stage to. The reporter still travels
         // because `process_series` is shared with the broker path, where it does.

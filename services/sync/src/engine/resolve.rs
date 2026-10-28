@@ -1,4 +1,4 @@
-//! Matching a remote entry to a canonical local series and back again, caching each answer in
+//! Owns matching a remote entry to a canonical local series and back again, caching each answer in
 //! `sync_mappings`. Thresholds and candidate limit are the same `MatchingConfig` the worker's
 //! ingest canonicalisation reads, so the two paths can't disagree about what's confident.
 
@@ -13,7 +13,7 @@ use tankovault_matcher::{Assessment, Query, Thresholds, best_assessment, explain
 
 use crate::provider::{ExternalProvider, RemoteEntry};
 
-/// How a remote entry was resolved — or why it was not.
+/// How a remote entry was resolved, or why it was not.
 ///
 /// The whole value is journalled. Before it, a mapping was written from a bare `Option<SeriesId>`:
 /// the score that justified it, which of the entry's titles matched, and the runner-up it beat
@@ -61,7 +61,7 @@ impl SeriesResolver {
 
     /// Every (external id, series) pair an operator has judged wrong for this provider.
     ///
-    /// Read once per run and passed into [`Self::series_for_entry`] rather than queried per
+    /// Read once per run and passed into [`Self::series_for_entry`] instead of queried per
     /// entry: the list is small, and the alternative is a round trip inside the resolution loop.
     ///
     /// # Errors
@@ -76,7 +76,7 @@ impl SeriesResolver {
             .collect())
     }
 
-    /// Resolve a remote entry to a canonical series: first via an existing mapping, then by
+    /// Resolves a remote entry to a canonical series: first via an existing mapping, then by
     /// the best confident title match against the local catalogue.
     ///
     /// Every candidate title is scored independently and the global best is kept, so the entry
@@ -111,7 +111,7 @@ impl SeriesResolver {
             .filter(|normalized| !normalized.is_empty() && seen.insert(normalized.clone()))
             .collect();
 
-        // One round trip for the whole title family rather than one trigram scan per title.
+        // One round trip for the whole title family instead of one trigram scan per title.
         let per_title =
             matching::find_candidates_multi(&self.pool, &normalized_titles, self.candidate_limit)
                 .await?;
@@ -201,8 +201,8 @@ impl SeriesResolver {
             },
         });
 
-        // An operator's refusal outranks the score. Checked after scoring rather than before, so
-        // the journal records what *would* have matched — a blocklist entry that is suppressing a
+        // An operator's refusal outranks the score. Checked after scoring, not before, so
+        // the journal records what *would* have matched: a blocklist entry that is suppressing a
         // 0.99 match is worth seeing, and one suppressing a 0.87 one is worth reconsidering.
         if blocked.contains(&(entry.external_id().to_owned(), id)) {
             return Ok(MatchOutcome {
@@ -241,7 +241,7 @@ impl SeriesResolver {
         })
     }
 
-    /// Resolve a local series to a `provider` external id: via an existing mapping, else by a
+    /// Resolves a local series to a `provider` external id: via an existing mapping, else by a
     /// title search (whose result is cached as a mapping).
     ///
     /// The search result is checked against the blocklist before it is cached: a provider search

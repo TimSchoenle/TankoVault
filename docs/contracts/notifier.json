@@ -697,7 +697,7 @@
         "env": "TANKOVAULT_CHANNELS__DISCORD_WEBHOOK_URL",
         "env_file": "TANKOVAULT_CHANNELS__DISCORD_WEBHOOK_URL_FILE",
         "secrets_file": "channels__discord_webhook_url",
-        "docs": "A Discord \"Incoming Webhook\" URL. Receives the Discord message/embed shape.\n\nA [`SecretString`], not a URL: Discord's form embeds the token in the path\n(`https://discord.com/api/webhooks/{id}/{token}`), and this struct derives `Debug`.",
+        "docs": "A Discord \"Incoming Webhook\" URL. Receives the Discord message and embed shape.\n\nA [`SecretString`], not a URL: Discord's form embeds the token in the path\n(`https://discord.com/api/webhooks/{id}/{token}`), and this struct derives `Debug`.",
         "ty": "SecretString",
         "values": [],
         "constraint": {
@@ -1731,7 +1731,7 @@
         "additionalProperties": false,
         "properties": {
           "discord_webhook_url": {
-            "description": "A Discord \"Incoming Webhook\" URL. Receives the Discord message/embed shape.\n\nA [`SecretString`], not a URL: Discord's form embeds the token in the path\n(`https://discord.com/api/webhooks/{id}/{token}`), and this struct derives `Debug`.",
+            "description": "A Discord \"Incoming Webhook\" URL. Receives the Discord message and embed shape.\n\nA [`SecretString`], not a URL: Discord's form embeds the token in the path\n(`https://discord.com/api/webhooks/{id}/{token}`), and this struct derives `Debug`.",
             "type": "string",
             "writeOnly": true
           },

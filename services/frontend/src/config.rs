@@ -1,6 +1,6 @@
-//! What the `frontend` binary reads from its configuration.
+//! Owns what the `frontend` binary reads from its configuration.
 //!
-//! Public, and in a library rather than beside `main`, because it is the root
+//! Public, and in a library instead of beside `main`, because it is the root
 //! `config-contract` describes for this image: the contract has to be generated from the very
 //! type the binary deserialises, or it is a claim about something else.
 
@@ -21,13 +21,13 @@ pub struct Config {
     #[serde(default)]
     #[config(nested)]
     pub frontend: FrontendConfig,
-    /// Prometheus metrics, with the same `TANKOVAULT_METRICS__*` surface as every service —
+    /// Prometheus metrics, with the same `TANKOVAULT_METRICS__*` surface as every service:
     /// including the isolated scrape port, so the scrape never shares the public listener.
     #[serde(default)]
     #[config(nested)]
     pub metrics: MetricsConfig,
     /// What this deployment calls itself. Written into the served shell's `<title>` and
-    /// description so the tab is named before the WASM bundle boots — the SPA takes over from
+    /// description so the tab is named before the WASM bundle boots; the SPA takes over from
     /// `/v1/branding` once it has.
     #[serde(default)]
     #[config(nested)]
@@ -48,16 +48,16 @@ pub struct FrontendConfig {
     pub static_dir: String,
     /// The generated third-party licence notices, served at `/third-party-notices`.
     ///
-    /// Points at the image's own copy (`/THIRD-PARTY-NOTICES`, beside `/LICENSE`) rather than a
+    /// Points at the image's own copy (`/THIRD-PARTY-NOTICES`, beside `/LICENSE`) instead of a
     /// second one inside the bundle: it is 300-odd KB, and two copies is the arrangement where
-    /// one of them goes stale. Configurable because the path only exists inside the image — a
+    /// one of them goes stale. Configurable because the path only exists inside the image: a
     /// developer running `dx serve` and the tests point it at their own checkout.
     #[serde(default = "FrontendConfig::default_notices_path")]
     pub notices_path: String,
     /// The same notices as the structured inventory the `/licenses` screen renders, served at
     /// `/third-party-notices.json`.
     ///
-    /// Written into the image by `xtask notices --json` during the build rather than committed:
+    /// Written into the image by `xtask notices --json` during the build instead of committed:
     /// it is a second representation of the document above, and the two come out of one merge, so
     /// committing it would double the repository's generated weight for a drift gate the
     /// plain-text `--check` already provides. A deployment whose image predates it, or a
@@ -74,7 +74,7 @@ pub struct FrontendConfig {
     /// `to_bytes` so the two cannot drift.
     #[serde(default = "FrontendConfig::default_max_body_bytes")]
     pub max_body_bytes: usize,
-    /// Connection-establishment timeout for the upstream — not a whole-request timeout, since
+    /// Connection-establishment timeout for the upstream, not a whole-request timeout, since
     /// an SSE stream stays open indefinitely.
     #[serde(default = "FrontendConfig::default_connect_timeout_secs")]
     pub connect_timeout_secs: u64,
@@ -90,14 +90,14 @@ pub struct FrontendConfig {
 /// admits something the policy otherwise refuses, and an unused concession is only a weakness.
 #[derive(Debug, Clone, Default, Deserialize, Describe)]
 pub struct CloudflareConfig {
-    /// Send a freshly minted `'nonce-…'` in `script-src` on every response.
+    /// Sends a freshly minted `'nonce-…'` in `script-src` on every response.
     ///
     /// Cloudflare's bot products (Bot Fight Mode, JavaScript Detections, the challenge platform)
     /// inject an inline `<script>` into the served HTML at the edge, after this service has
-    /// hashed the shell — so `script-src` refuses it and the detection silently never runs.
+    /// hashed the shell, so `script-src` refuses it and the detection silently never runs.
     /// Cloudflare's documented answer is a nonce: it parses the `Content-Security-Policy`
     /// *response header* and copies the nonce onto what it injects. That is why nothing is
-    /// stamped into the shell here — the header is the whole contract, and the shell's own
+    /// stamped into the shell here: the header is the whole contract, and the shell's own
     /// inline scripts keep running by hash either way.
     ///
     /// The concession is real but narrow: an injected script that can already run could read
@@ -105,7 +105,7 @@ pub struct CloudflareConfig {
     /// forge one ahead of time (128 CSPRNG bits, minted per response), and it still cannot
     /// reach `'unsafe-eval'` or an off-origin host. Load-bearing for that: the shell is never
     /// served from a stored copy, which is why it is `Cache-Control: no-store` with no validator
-    /// and not `no-cache` — see `FixedResponse::shell` in `main.rs`. A stored shell would pin
+    /// and not `no-cache`; see `FixedResponse::shell` in `main.rs`. A stored shell would pin
     /// one nonce across every reader for the lifetime of the entry, which is `'unsafe-inline'`
     /// with extra steps.
     #[serde(default)]

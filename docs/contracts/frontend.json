@@ -612,7 +612,7 @@
         "env": "TANKOVAULT_FRONTEND__NOTICES_PATH",
         "env_file": "TANKOVAULT_FRONTEND__NOTICES_PATH_FILE",
         "secrets_file": "frontend__notices_path",
-        "docs": "The generated third-party licence notices, served at `/third-party-notices`.\n\nPoints at the image's own copy (`/THIRD-PARTY-NOTICES`, beside `/LICENSE`) rather than a\nsecond one inside the bundle: it is 300-odd KB, and two copies is the arrangement where\none of them goes stale. Configurable because the path only exists inside the image — a\ndeveloper running `dx serve` and the tests point it at their own checkout.",
+        "docs": "The generated third-party licence notices, served at `/third-party-notices`.\n\nPoints at the image's own copy (`/THIRD-PARTY-NOTICES`, beside `/LICENSE`) instead of a\nsecond one inside the bundle: it is 300-odd KB, and two copies is the arrangement where\none of them goes stale. Configurable because the path only exists inside the image: a\ndeveloper running `dx serve` and the tests point it at their own checkout.",
         "ty": "String",
         "values": [],
         "constraint": {
@@ -635,7 +635,7 @@
         "env": "TANKOVAULT_FRONTEND__NOTICES_JSON_PATH",
         "env_file": "TANKOVAULT_FRONTEND__NOTICES_JSON_PATH_FILE",
         "secrets_file": "frontend__notices_json_path",
-        "docs": "The same notices as the structured inventory the `/licenses` screen renders, served at\n`/third-party-notices.json`.\n\nWritten into the image by `xtask notices --json` during the build rather than committed:\nit is a second representation of the document above, and the two come out of one merge, so\ncommitting it would double the repository's generated weight for a drift gate the\nplain-text `--check` already provides. A deployment whose image predates it, or a\ndeveloper who has not run the command, serves nothing here and the screen says so.",
+        "docs": "The same notices as the structured inventory the `/licenses` screen renders, served at\n`/third-party-notices.json`.\n\nWritten into the image by `xtask notices --json` during the build instead of committed:\nit is a second representation of the document above, and the two come out of one merge, so\ncommitting it would double the repository's generated weight for a drift gate the\nplain-text `--check` already provides. A deployment whose image predates it, or a\ndeveloper who has not run the command, serves nothing here and the screen says so.",
         "ty": "String",
         "values": [],
         "constraint": {
@@ -709,7 +709,7 @@
         "env": "TANKOVAULT_FRONTEND__CONNECT_TIMEOUT_SECS",
         "env_file": "TANKOVAULT_FRONTEND__CONNECT_TIMEOUT_SECS_FILE",
         "secrets_file": "frontend__connect_timeout_secs",
-        "docs": "Connection-establishment timeout for the upstream — not a whole-request timeout, since\nan SSE stream stays open indefinitely.",
+        "docs": "Connection-establishment timeout for the upstream, not a whole-request timeout, since\nan SSE stream stays open indefinitely.",
         "ty": "u64",
         "values": [],
         "constraint": {
@@ -737,7 +737,7 @@
         "env": "TANKOVAULT_FRONTEND__CLOUDFLARE__SCRIPT_NONCE",
         "env_file": "TANKOVAULT_FRONTEND__CLOUDFLARE__SCRIPT_NONCE_FILE",
         "secrets_file": "frontend__cloudflare__script_nonce",
-        "docs": "Send a freshly minted `'nonce-…'` in `script-src` on every response.\n\nCloudflare's bot products (Bot Fight Mode, JavaScript Detections, the challenge platform)\ninject an inline `<script>` into the served HTML at the edge, after this service has\nhashed the shell — so `script-src` refuses it and the detection silently never runs.\nCloudflare's documented answer is a nonce: it parses the `Content-Security-Policy`\n*response header* and copies the nonce onto what it injects. That is why nothing is\nstamped into the shell here — the header is the whole contract, and the shell's own\ninline scripts keep running by hash either way.\n\nThe concession is real but narrow: an injected script that can already run could read\nthis header back off a same-origin fetch and admit further inline script. It cannot\nforge one ahead of time (128 CSPRNG bits, minted per response), and it still cannot\nreach `'unsafe-eval'` or an off-origin host. Load-bearing for that: the shell is never\nserved from a stored copy, which is why it is `Cache-Control: no-store` with no validator\nand not `no-cache` — see `FixedResponse::shell` in `main.rs`. A stored shell would pin\none nonce across every reader for the lifetime of the entry, which is `'unsafe-inline'`\nwith extra steps.",
+        "docs": "Sends a freshly minted `'nonce-…'` in `script-src` on every response.\n\nCloudflare's bot products (Bot Fight Mode, JavaScript Detections, the challenge platform)\ninject an inline `<script>` into the served HTML at the edge, after this service has\nhashed the shell, so `script-src` refuses it and the detection silently never runs.\nCloudflare's documented answer is a nonce: it parses the `Content-Security-Policy`\n*response header* and copies the nonce onto what it injects. That is why nothing is\nstamped into the shell here: the header is the whole contract, and the shell's own\ninline scripts keep running by hash either way.\n\nThe concession is real but narrow: an injected script that can already run could read\nthis header back off a same-origin fetch and admit further inline script. It cannot\nforge one ahead of time (128 CSPRNG bits, minted per response), and it still cannot\nreach `'unsafe-eval'` or an off-origin host. Load-bearing for that: the shell is never\nserved from a stored copy, which is why it is `Cache-Control: no-store` with no validator\nand not `no-cache`; see `FixedResponse::shell` in `main.rs`. A stored shell would pin\none nonce across every reader for the lifetime of the entry, which is `'unsafe-inline'`\nwith extra steps.",
         "ty": "bool",
         "values": [],
         "constraint": {
@@ -1255,7 +1255,7 @@
             "additionalProperties": false,
             "properties": {
               "script_nonce": {
-                "description": "Send a freshly minted `'nonce-…'` in `script-src` on every response.\n\nCloudflare's bot products (Bot Fight Mode, JavaScript Detections, the challenge platform)\ninject an inline `<script>` into the served HTML at the edge, after this service has\nhashed the shell — so `script-src` refuses it and the detection silently never runs.\nCloudflare's documented answer is a nonce: it parses the `Content-Security-Policy`\n*response header* and copies the nonce onto what it injects. That is why nothing is\nstamped into the shell here — the header is the whole contract, and the shell's own\ninline scripts keep running by hash either way.\n\nThe concession is real but narrow: an injected script that can already run could read\nthis header back off a same-origin fetch and admit further inline script. It cannot\nforge one ahead of time (128 CSPRNG bits, minted per response), and it still cannot\nreach `'unsafe-eval'` or an off-origin host. Load-bearing for that: the shell is never\nserved from a stored copy, which is why it is `Cache-Control: no-store` with no validator\nand not `no-cache` — see `FixedResponse::shell` in `main.rs`. A stored shell would pin\none nonce across every reader for the lifetime of the entry, which is `'unsafe-inline'`\nwith extra steps.",
+                "description": "Sends a freshly minted `'nonce-…'` in `script-src` on every response.\n\nCloudflare's bot products (Bot Fight Mode, JavaScript Detections, the challenge platform)\ninject an inline `<script>` into the served HTML at the edge, after this service has\nhashed the shell, so `script-src` refuses it and the detection silently never runs.\nCloudflare's documented answer is a nonce: it parses the `Content-Security-Policy`\n*response header* and copies the nonce onto what it injects. That is why nothing is\nstamped into the shell here: the header is the whole contract, and the shell's own\ninline scripts keep running by hash either way.\n\nThe concession is real but narrow: an injected script that can already run could read\nthis header back off a same-origin fetch and admit further inline script. It cannot\nforge one ahead of time (128 CSPRNG bits, minted per response), and it still cannot\nreach `'unsafe-eval'` or an off-origin host. Load-bearing for that: the shell is never\nserved from a stored copy, which is why it is `Cache-Control: no-store` with no validator\nand not `no-cache`; see `FixedResponse::shell` in `main.rs`. A stored shell would pin\none nonce across every reader for the lifetime of the entry, which is `'unsafe-inline'`\nwith extra steps.",
                 "type": "boolean"
               },
               "turnstile": {
@@ -1266,7 +1266,7 @@
             "type": "object"
           },
           "connect_timeout_secs": {
-            "description": "Connection-establishment timeout for the upstream — not a whole-request timeout, since\nan SSE stream stays open indefinitely.",
+            "description": "Connection-establishment timeout for the upstream, not a whole-request timeout, since\nan SSE stream stays open indefinitely.",
             "minimum": 0,
             "type": "integer"
           },
@@ -1276,11 +1276,11 @@
             "type": "integer"
           },
           "notices_json_path": {
-            "description": "The same notices as the structured inventory the `/licenses` screen renders, served at\n`/third-party-notices.json`.\n\nWritten into the image by `xtask notices --json` during the build rather than committed:\nit is a second representation of the document above, and the two come out of one merge, so\ncommitting it would double the repository's generated weight for a drift gate the\nplain-text `--check` already provides. A deployment whose image predates it, or a\ndeveloper who has not run the command, serves nothing here and the screen says so.",
+            "description": "The same notices as the structured inventory the `/licenses` screen renders, served at\n`/third-party-notices.json`.\n\nWritten into the image by `xtask notices --json` during the build instead of committed:\nit is a second representation of the document above, and the two come out of one merge, so\ncommitting it would double the repository's generated weight for a drift gate the\nplain-text `--check` already provides. A deployment whose image predates it, or a\ndeveloper who has not run the command, serves nothing here and the screen says so.",
             "type": "string"
           },
           "notices_path": {
-            "description": "The generated third-party licence notices, served at `/third-party-notices`.\n\nPoints at the image's own copy (`/THIRD-PARTY-NOTICES`, beside `/LICENSE`) rather than a\nsecond one inside the bundle: it is 300-odd KB, and two copies is the arrangement where\none of them goes stale. Configurable because the path only exists inside the image — a\ndeveloper running `dx serve` and the tests point it at their own checkout.",
+            "description": "The generated third-party licence notices, served at `/third-party-notices`.\n\nPoints at the image's own copy (`/THIRD-PARTY-NOTICES`, beside `/LICENSE`) instead of a\nsecond one inside the bundle: it is 300-odd KB, and two copies is the arrangement where\none of them goes stale. Configurable because the path only exists inside the image: a\ndeveloper running `dx serve` and the tests point it at their own checkout.",
             "type": "string"
           },
           "static_dir": {

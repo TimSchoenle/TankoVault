@@ -1,5 +1,5 @@
-//! Full three-way reconciliation of a linked account. Owns the *I/O* half — fetching, resolving,
-//! persisting, applying — while every merge rule itself lives in [`super::plan`].
+//! Owns the full three-way reconciliation of a linked account: the *I/O* half (fetching,
+//! resolving, persisting, applying), while every merge rule itself lives in [`super::plan`].
 //!
 //! Every per-series decision a run takes is journalled in `sync_decisions`, including the ones
 //! that changed nothing: the entries that matched no local series, the series skipped as
@@ -62,7 +62,7 @@ struct RunState {
 }
 
 impl RunState {
-    /// Start a decision and hand back a handle to fill in. The identifying half comes from the
+    /// Starts a decision and hands back a handle to fill in. The identifying half comes from the
     /// run, so a caller cannot journal a decision against the wrong user or provider.
     fn note(
         &mut self,
@@ -193,8 +193,8 @@ impl Reconciler {
         }
     }
 
-    /// Manual "pull": runs the full three-way reconciliation and reports it in the historical
-    /// `PullReport` shape (`pull` and `push` now do the same reconcile).
+    /// Manual "pull": runs the full three-way reconciliation and reports it in the
+    /// `PullReport` shape (`pull` and `push` do the same reconcile).
     pub(crate) async fn pull(
         &self,
         slug: &str,
@@ -341,11 +341,11 @@ impl Reconciler {
         Ok(state.counts)
     }
 
-    /// Write the journal so far and clear it.
+    /// Writes the journal so far and clears it.
     ///
     /// Best-effort, like `sync_history`: the record of a reconciliation must not be able to fail
     /// the reconciliation. Cleared whether or not the write succeeded, so a persistent failure
-    /// costs the journal rather than growing the run's memory without bound.
+    /// costs the journal instead of growing the run's memory without bound.
     async fn flush(&self, run: &RunContext<'_>, state: &mut RunState) {
         if state.decisions.is_empty() {
             return;
@@ -357,9 +357,9 @@ impl Reconciler {
         }
     }
 
-    /// Journal how one remote entry resolved — including, and especially, when it resolved to
-    /// nothing. An unmatched entry was previously a counter and no more, so the commonest sync
-    /// complaint ("the tracker has this and it never syncs") had no evidence at all.
+    /// Journals how one remote entry resolved, including, and especially, when it resolved to
+    /// nothing. Were an unmatched entry only counted, the commonest sync complaint ("the tracker
+    /// has this and it never syncs") would have no evidence at all.
     fn note_match(
         run: &RunContext<'_>,
         entry: &RemoteEntry,
@@ -384,7 +384,7 @@ impl Reconciler {
             outcome.series_id.is_some() && outcome.reason == "title_match_above_threshold";
     }
 
-    /// Persist every fetched snapshot and every resolved mapping in two set-based statements.
+    /// Persists every fetched snapshot and every resolved mapping in two set-based statements.
     async fn persist_fetched(
         &self,
         run: &RunContext<'_>,
@@ -418,7 +418,7 @@ impl Reconciler {
     }
 
     /// Fold each matched entry's upstream metadata into its local series, reusing the metadata
-    /// already returned by the list fetch — no extra provider call. Only series due per
+    /// already returned by the list fetch: no extra provider call. Only series due per
     /// [`METADATA_REFRESH_INTERVAL`] are written, so a settled catalogue costs one query.
     /// Best-effort: a failure is logged and the progress/status merge proceeds regardless.
     async fn enrich_matched(
@@ -491,9 +491,9 @@ impl Reconciler {
             state.counts.matched += 1;
             handled_ids.insert(entry.external_id().to_owned());
             if !handled_series.insert(series_id) {
-                // Journalled rather than silently skipped: a provider returning one work twice is
-                // an upstream anomaly, and it used to be visible only as a count that did not add
-                // up against the fetched total.
+                // Journalled instead of silently skipped: a provider returning one work twice is
+                // an upstream anomaly, and a bare count would show it only as a total that does
+                // not add up against the fetched one.
                 let decision = state.note(
                     run,
                     "series",
@@ -547,7 +547,7 @@ impl Reconciler {
                 decision.series_id = Some(wl.series_id);
                 continue;
             };
-            // Already settled — either in the remote-driven pass, or by an earlier watchlist
+            // Already settled, either in the remote-driven pass, or by an earlier watchlist
             // entry linked to the same remote id. Both wrote every member of the group, and
             // creating the same entry twice from a second member's state would have the two
             // clobber each other on the remote.
@@ -567,7 +567,7 @@ impl Reconciler {
     ///
     /// `series_id` is the member the caller arrived at, which [`plan_group`] takes as the group's
     /// driver unless it is excluded. Returns the whole group, so the caller can mark every member
-    /// handled rather than only that one.
+    /// handled instead of only that one.
     async fn reconcile_series(
         &self,
         run: &RunContext<'_>,
@@ -579,7 +579,7 @@ impl Reconciler {
     ) -> anyhow::Result<Vec<SeriesId>> {
         let mut group = sync::mapping_linked_series(&self.pool, run.slug, external_id).await?;
         // Both callers reach this having just written the mapping, so an empty group is a
-        // concurrent deletion rather than an unmapped series; the caller's own series is still
+        // concurrent deletion instead of an unmapped series; the caller's own series is still
         // the right thing to reconcile.
         if group.is_empty() {
             group.push(series_id);
@@ -725,7 +725,7 @@ impl Reconciler {
         Ok(())
     }
 
-    /// Add the remote's entry to the watchlist when the plan imports it.
+    /// Adds the remote's entry to the watchlist when the plan imports it.
     async fn import_status(
         &self,
         run: &RunContext<'_>,
@@ -936,7 +936,7 @@ impl Reconciler {
         Ok(())
     }
 
-    /// Make the plan's single remote write, if it has one, and journal it once.
+    /// Makes the plan's single remote write, if it has one, and journals it once.
     async fn write_remote(
         &self,
         run: &RunContext<'_>,
@@ -1009,14 +1009,14 @@ impl Reconciler {
     /// record that as each member's new common ancestor.
     ///
     /// This is what makes a duplicate stop drifting. The remote holds one entry for the whole
-    /// group, so a member the merge did not drive is not "unchanged" — it describes the same
+    /// group, so a member the merge did not drive is not "unchanged": it describes the same
     /// work with a frontier the reader has already moved past, and nothing else in a run would
     /// ever revisit it (the local-driven pass skips it as an already-handled external id).
     ///
     /// The driving series is written here too, since the settled progress may have come from a
     /// different member, but it is not journalled here: the merge already recorded a decision
-    /// for it. Nothing is settled while a field is in conflict, so nothing is fanned out either
-    /// — [`MergePlan::snapshot`] is `None` and this is not reached.
+    /// for it. Nothing is settled while a field is in conflict, so nothing is fanned out either:
+    /// [`MergePlan::snapshot`] is `None` and this is not reached.
     #[expect(
         clippy::too_many_arguments,
         reason = "the settled pair, the series it was settled on, its group and the journal are \
@@ -1139,7 +1139,7 @@ impl Reconciler {
         decision.ancestor_remote = ancestor.1;
     }
 
-    /// Record the state both sides are known to agree on. Local and remote are written with the
+    /// Records the state both sides are known to agree on. Local and remote are written with the
     /// same value because that is what agreement means at this point.
     async fn record_snapshot(
         &self,
@@ -1163,7 +1163,7 @@ impl Reconciler {
         Ok(())
     }
 
-    /// History is an audit trail, not a control path: a failed append is dropped rather than
+    /// History is an audit trail, not a control path: a failed append is dropped instead of
     /// failing the reconciliation that produced it.
     async fn append_history(
         &self,

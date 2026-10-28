@@ -1,5 +1,5 @@
-//! External-sync microservice: owns each provider's `OAuth2` flow, encrypts tokens at rest, and
-//! reconciles a user's remote list with the local watchlist/progress. The user-facing
+//! Owns the external-sync microservice, which runs each provider's `OAuth2` flow, encrypts tokens
+//! at rest, and reconciles a user's remote list with the local watchlist/progress. The user-facing
 //! `/v1/me/sync/{provider}/*` routes on the API delegate to the internal contract exposed here.
 
 mod engine;
@@ -33,8 +33,8 @@ mod path {
 
 /// Who may reach each of this service's routes.
 ///
-/// `api` alone, everywhere. Every route here acts on behalf of a named user — reading a
-/// reader's progress history, unlinking their tracker account, pulling their list — and `api` is
+/// `api` alone, everywhere. Every route here acts on behalf of a named user (reading a
+/// reader's progress history, unlinking their tracker account, pulling their list), and `api` is
 /// the only tier that authenticates users, so it is the only one with a user to act for. Under
 /// one tier-wide token `worker`, `render` and `challenge-solver` all held a credential that
 /// opened every one of these.
@@ -46,7 +46,7 @@ static INTERNAL_ROUTES: &[tankovault_service::InternalRoute] = {
     use tankovault_service::InternalRoute;
 
     /// Every route on this service has the same permitted caller; this keeps that visible in
-    /// one place rather than repeated on every row.
+    /// one place instead of repeated on every row.
     const API: &[&str] = &["api"];
     const fn route(method: Method, path: &'static str) -> InternalRoute {
         InternalRoute {
@@ -116,7 +116,7 @@ use tracing::Instrument as _;
 
 // `Clone`: see [`MetadataConfig`]. The `SecretString` fields clone their `Arc`, not the secret.
 
-/// Build the provider registry; register additional providers here as they land.
+/// Builds the provider registry; every additional provider is registered here.
 fn build_providers(
     cfg: AniListConfig,
 ) -> anyhow::Result<HashMap<&'static str, Box<dyn ExternalProvider>>> {
@@ -224,7 +224,7 @@ struct AppState {
 }
 
 /// This service's feature-gate table, built from the single suffix-keyed declaration in
-/// `tankovault_contracts::sync` — the API gates the same surface from the same list, so the two
+/// `tankovault_contracts::sync`: the API gates the same surface from the same list, so the two
 /// tiers can't drift apart the way they once did.
 fn route_features() -> RouteFeatures {
     tankovault_contracts::sync::sync_route_features()
@@ -234,8 +234,8 @@ fn route_features() -> RouteFeatures {
         })
 }
 
-/// Whether `encoded` is a key made entirely of zero bytes. Compares decoded bytes, not the
-/// string, so every base64 spelling of 32 zero bytes is caught, not just the compose file's literal.
+/// Whether `encoded` is a key made entirely of zero bytes. Compares decoded bytes, not the string,
+/// so every base64 spelling of 32 zero bytes is caught, not just the compose file's literal.
 fn is_placeholder_key(encoded: &SecretString) -> bool {
     use base64::Engine as _;
     base64::engine::general_purpose::STANDARD
@@ -274,10 +274,10 @@ async fn main() -> anyhow::Result<()> {
     .await
 }
 
-/// Build and run everything a configuration change rebuilds: the pool, the token sealer, the
+/// Builds and runs everything a configuration change rebuilds: the pool, the token sealer, the
 /// provider clients, the background loops, the router and the listener.
 ///
-/// Returns when `shutdown` is cancelled — by the OS signal, or by the supervisor because the
+/// Returns when `shutdown` is cancelled, by the OS signal, or by the supervisor because the
 /// configuration changed and this runtime is being replaced. A rotated `AniList` client secret
 /// takes effect here; rotating `anilist.token_encryption_key` does not re-seal what is already
 /// stored, so that one still needs the migration it always did.
@@ -286,7 +286,7 @@ async fn serve_once(
     metrics: MetricsRegistry,
     shutdown: CancellationToken,
 ) -> anyhow::Result<()> {
-    // Resolved before anything binds: production refuses to boot rather than silently serving
+    // Resolved before anything binds: production refuses to boot instead of silently serving
     // privileged routes without the identity that guards them.
     let internal_auth = &tankovault_service::internal_auth::resolve(&cfg.internal)?;
 
@@ -302,7 +302,7 @@ async fn serve_once(
     let flags_pool = pool.clone();
 
     // Refused in every profile: this key seals every user's AniList tokens at rest, and the
-    // published compose-file fallback is 32 zero bytes — a well-known value anyone can read.
+    // published compose-file fallback is 32 zero bytes, a well-known value anyone can read.
     if is_placeholder_key(&cfg.anilist.token_encryption_key) {
         anyhow::bail!(
             "refusing to start: anilist.token_encryption_key is the all-zero placeholder \
@@ -411,9 +411,9 @@ async fn providers_list(State(state): State<AppState>) -> Json<Vec<ProviderInfo>
     Json(state.engine.registry())
 }
 
-/// `POST /v1/sync/enrich` — run one tokenless metadata-enrichment sweep on demand (no user
+/// `POST /v1/sync/enrich`: runs one tokenless metadata-enrichment sweep on demand (no user
 /// token). Uses the configured batch/cap. Handy for ops and for kicking a fresh sweep after
-/// a bulk import rather than waiting for the periodic worker.
+/// a bulk import instead of waiting for the periodic worker.
 async fn enrich(State(state): State<AppState>) -> Result<Json<engine::EnrichReport>, AppError> {
     let report = state
         .engine
@@ -428,7 +428,7 @@ struct PushSeriesRequest {
     series_id: SeriesId,
 }
 
-/// Always `200`, even when every provider push failed — failures are reported per-provider in
+/// Always `200`, even when every provider push failed; failures are reported per-provider in
 /// the body (and recorded to `external_accounts.last_error`), never surfaced as an HTTP error,
 /// since this is called fire-and-forget from the API.
 async fn push_series(
@@ -467,7 +467,7 @@ struct UserRequest {
     user_id: UserId,
 }
 
-/// `GET /v1/sync/{provider}/status/{user_id}` — always `200`; `linked: false` when unlinked.
+/// `GET /v1/sync/{provider}/status/{user_id}`: always `200`; `linked: false` when unlinked.
 async fn status(
     State(state): State<AppState>,
     Path((provider, user_id)): Path<(String, UserId)>,
@@ -515,7 +515,7 @@ async fn push(
     Ok(Json(report))
 }
 
-/// `GET /v1/sync/{provider}/settings/{user_id}` — the account's automatic-sync settings.
+/// `GET /v1/sync/{provider}/settings/{user_id}`: the account's automatic-sync settings.
 async fn get_settings(
     State(state): State<AppState>,
     Path((provider, user_id)): Path<(String, UserId)>,
@@ -532,7 +532,7 @@ struct SettingsPatch {
     conflict_policy: Option<ConflictPolicy>,
 }
 
-/// `PATCH /v1/sync/{provider}/settings/{user_id}` — update automatic-sync settings.
+/// `PATCH /v1/sync/{provider}/settings/{user_id}`: updates automatic-sync settings.
 async fn patch_settings(
     State(state): State<AppState>,
     Path((provider, _user_id)): Path<(String, UserId)>,
@@ -550,7 +550,7 @@ async fn patch_settings(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// `GET /v1/sync/conflicts/{user_id}` — the user's pending conflicts across all providers.
+/// `GET /v1/sync/conflicts/{user_id}`: the user's pending conflicts across all providers.
 async fn list_conflicts(
     State(state): State<AppState>,
     Path(user_id): Path<UserId>,
@@ -565,7 +565,7 @@ struct ResolveRequest {
     resolution: String,
 }
 
-/// `POST /v1/sync/conflicts/{id}/resolve` — apply a user's chosen resolution.
+/// `POST /v1/sync/conflicts/{id}/resolve`: applies a user's chosen resolution.
 async fn resolve_conflict(
     State(state): State<AppState>,
     Path(id): Path<uuid::Uuid>,
@@ -588,7 +588,7 @@ struct HistoryQuery {
     page: Option<i64>,
 }
 
-/// `GET /v1/sync/history/{user_id}` — a page of the user's sync history.
+/// `GET /v1/sync/history/{user_id}`: a page of the user's sync history.
 async fn list_history(
     State(state): State<AppState>,
     Path(user_id): Path<UserId>,
@@ -628,7 +628,7 @@ struct DecisionQuery {
     offset: Option<i64>,
 }
 
-/// `GET /v1/sync/decisions` — the operator-facing journal of what the engine decided and why.
+/// `GET /v1/sync/decisions`: the operator-facing journal of what the engine decided and why.
 async fn list_decisions(
     State(state): State<AppState>,
     axum::extract::Query(q): axum::extract::Query<DecisionQuery>,
@@ -661,7 +661,7 @@ struct RevertRequest {
     reason: String,
 }
 
-/// `POST /v1/sync/decisions/{id}/revert` — undo one journalled decision.
+/// `POST /v1/sync/decisions/{id}/revert`: undoes one journalled decision.
 async fn revert_decision(
     State(state): State<AppState>,
     Path(id): Path<uuid::Uuid>,
@@ -684,7 +684,7 @@ struct FlagRequest {
     block_match: bool,
 }
 
-/// `POST /v1/sync/decisions/{id}/flag` — mark one decision wrong without undoing it.
+/// `POST /v1/sync/decisions/{id}/flag`: marks one decision wrong without undoing it.
 async fn flag_decision(
     State(state): State<AppState>,
     Path(id): Path<uuid::Uuid>,
@@ -707,7 +707,7 @@ struct BlockMatchRequest {
     reason: String,
 }
 
-/// `POST /v1/sync/match-blocks` — refuse one title match permanently, without a decision row.
+/// `POST /v1/sync/match-blocks`: refuses one title match permanently, without a decision row.
 async fn block_match(
     State(state): State<AppState>,
     Json(req): Json<BlockMatchRequest>,
@@ -725,7 +725,7 @@ async fn block_match(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// `POST /v1/sync/mappings/reverify` — start re-verifying every stored mapping in the
+/// `POST /v1/sync/mappings/reverify`: starts re-verifying every stored mapping in the
 /// background. Answers at once; progress is read from `mapping_reverify_state`.
 async fn reverify_mappings(
     State(state): State<AppState>,

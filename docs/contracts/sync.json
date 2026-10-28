@@ -715,7 +715,7 @@
         "env": "TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY",
         "env_file": "TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY_FILE",
         "secrets_file": "anilist__token_encryption_key",
-        "docs": "Base64 32-byte data-encryption key for tokens at rest — opens every user's stored\n`AniList` access and refresh token.",
+        "docs": "Base64 32-byte data-encryption key for tokens at rest, which opens every user's stored\n`AniList` access and refresh token.",
         "ty": "SecretString",
         "values": [],
         "constraint": {
@@ -2457,7 +2457,7 @@
             "type": "string"
           },
           "token_encryption_key": {
-            "description": "Base64 32-byte data-encryption key for tokens at rest — opens every user's stored\n`AniList` access and refresh token.",
+            "description": "Base64 32-byte data-encryption key for tokens at rest, which opens every user's stored\n`AniList` access and refresh token.",
             "type": "string",
             "writeOnly": true
           }

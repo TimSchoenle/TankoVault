@@ -1,11 +1,11 @@
-//! What a pass decided about one pair, and why.
+//! Owns what a pass decided about one pair, and why.
 
 use tankovault_db::repo::matching::{DuplicatePair, SeriesMatchFacts};
 use tankovault_domain::matching::LiveTiming;
 use tankovault_matcher::{Adjudication, PairReading};
 
 /// Which shortlist a pair came from, recorded on its decision so a run can be read back by the
-/// question it was answering rather than as one undifferentiated list.
+/// question it was answering instead of as one undifferentiated list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Trigger {
     New,
@@ -26,8 +26,8 @@ impl Trigger {
 /// What the judging pass did about a pair, and therefore what the journal has to record.
 #[derive(Debug, Clone, Copy)]
 pub(super) enum Action<'a> {
-    /// Merged. Journalled on the spot rather than with the batch, because this is the only
-    /// outcome whose record carries an undo — see [`sweep`].
+    /// Merged. Journalled on the spot, not with the batch, because this is the only
+    /// outcome whose record carries an undo; see [`sweep`].
     ///
     /// [`sweep`]: super::sweep
     Merged {
@@ -45,7 +45,7 @@ pub(super) enum Action<'a> {
 /// One pair, judged.
 ///
 /// Carries everything the queue writes *and* the journal need, so the action taken and the record
-/// of that action are read out of one value rather than rebuilt independently in two places.
+/// of that action are read out of one value instead of rebuilt independently in two places.
 pub(super) struct Judged<'a> {
     pub(super) pair: DuplicatePair,
     pub(super) trigger: Trigger,

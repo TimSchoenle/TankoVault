@@ -1,4 +1,4 @@
-//! Reconciliation tests driving [`crate::engine`] through its real entry points against a
+//! Tests reconciliation, driving [`crate::engine`] through its real entry points against a
 //! migrated Postgres and a [`FakeProvider`]. Opt-in: gated behind `integration`, requires Docker.
 
 use std::collections::HashMap;
@@ -29,7 +29,7 @@ use crate::provider::{
 /// The provider slug every test in this module links.
 const SLUG: &str = "fake";
 
-/// One recorded `save_entry` call — the only remote side effect the engine has.
+/// One recorded `save_entry` call: the only remote side effect the engine has.
 #[derive(Debug, Clone, PartialEq)]
 struct RemoteWrite {
     external_id: String,
@@ -155,7 +155,7 @@ struct Fixture {
 
 /// The local series' canonical title. Remote entries reuse it verbatim so the title matcher
 /// resolves them with an exact normalized match (similarity 1.0), keeping these tests about
-/// merge semantics rather than matcher tuning.
+/// merge semantics instead of matcher tuning.
 const TITLE: &str = "Solo Leveling";
 
 impl Fixture {
@@ -281,7 +281,7 @@ impl Fixture {
     }
 
     /// The fixture series' tag links and adaptation source, read through the feature
-    /// extractor's own query rather than a hand-written one — this is the path the recommender
+    /// extractor's own query instead of a hand-written one; this is the path the recommender
     /// uses, so it is the path worth asserting on.
     async fn recsys_facts(&self) -> (Vec<(String, f32)>, Option<String>) {
         let facts = recsys::list_series_facts(&self.db.pool, None, 10)
@@ -303,7 +303,7 @@ impl Fixture {
             .expect("the fixture series has prior inputs")
     }
 
-    /// Put the series on the user's watchlist at `status` with whole-chapter `progress`.
+    /// Puts the series on the user's watchlist at `status` with whole-chapter `progress`.
     async fn local_state(&self, status: WatchStatus, progress: f64) {
         self.local_state_of(self.series, status, progress).await;
     }
@@ -319,7 +319,7 @@ impl Fixture {
     }
 
     /// Ingest a second local series under its own source path, so the catalogue holds two rows
-    /// that a single remote entry can be mapped to — the duplicate the linked-group work exists
+    /// that a single remote entry can be mapped to: the duplicate the linked-group work exists
     /// for. `title` is deliberately unlike [`TITLE`], so the matcher cannot attach the remote
     /// entry to it by score; only an explicit mapping links it.
     async fn duplicate_series(&self, title: &str) -> SeriesId {
@@ -354,7 +354,7 @@ impl Fixture {
         .series_id
     }
 
-    /// Map any series to `external_id`, the multi-series form of [`Self::map`].
+    /// Maps any series to `external_id`, the multi-series form of [`Self::map`].
     async fn map_series(&self, series_id: SeriesId, external_id: &str) {
         sync::upsert_mapping(&self.db.pool, series_id, SLUG, external_id)
             .await
@@ -381,7 +381,7 @@ impl Fixture {
             .map(|s| (s.last_synced_local_progress, s.last_synced_remote_progress))
     }
 
-    /// Record a common-ancestor snapshot, i.e. pretend a previous reconciliation agreed on
+    /// Records a common-ancestor snapshot, i.e. pretends a previous reconciliation agreed on
     /// these values. Requires the mapping row, which [`Self::map`] creates.
     async fn snapshot(&self, progress: f64, status: WatchStatus) {
         sync::record_snapshot(
@@ -515,7 +515,7 @@ mod reconcile {
 
     #[tokio::test]
     async fn unmapped_local_series_is_reported_not_pushed() {
-        // No mapping and no remote search hit: the entry is counted `unmapped` rather than
+        // No mapping and no remote search hit: the entry is counted `unmapped` instead of
         // silently pushed against a guessed id.
         let f = Fixture::spawn().await;
         f.local_state(WatchStatus::Reading, 4.0).await;
@@ -531,7 +531,7 @@ mod reconcile {
     #[tokio::test]
     async fn only_the_remote_moved_so_the_local_row_is_pulled() {
         // Ancestor says both sides last agreed at 5. Only the remote advanced, so this is not a
-        // conflict and the policy is irrelevant — `LocalWins` must still pull.
+        // conflict and the policy is irrelevant: `LocalWins` must still pull.
         let f = Fixture::spawn().await;
         f.local_state(WatchStatus::Reading, 5.0).await;
         f.map("m1").await;
@@ -682,7 +682,7 @@ mod reconcile {
     #[tokio::test]
     async fn two_remote_ids_resolving_to_one_series_reconcile_it_once() {
         // Two remote works matching one local series must reconcile it once, not replay the
-        // merge against a second divergent value — what `handled_series` guards against.
+        // merge against a second divergent value, which is what `handled_series` guards against.
         let f = Fixture::spawn().await;
         f.local_state(WatchStatus::Reading, 7.0).await;
         f.set_list(vec![
@@ -735,7 +735,7 @@ mod reconcile {
     #[tokio::test]
     async fn an_unmatched_remote_entry_is_recorded_but_not_reconciled() {
         // A remote work with no confident local match is still persisted for the admin
-        // console's review queue, and counted `unmatched` rather than dropped.
+        // console's review queue, and counted `unmatched` instead of dropped.
         let f = Fixture::spawn().await;
         let mut entry = remote_entry("m9", WatchStatus::Reading, 3.0, STALE);
         entry.metadata.titles = vec!["Something Entirely Unrelated".to_owned()];
@@ -813,10 +813,10 @@ mod signals {
     /// The adult flag and the appeal priors must reach the series row.
     ///
     /// The bug this pins: `series.is_adult` defaults to `false`, and an unwritten gate is an
-    /// open one. This failing means adult series are visible to every reader — in browse,
-    /// search and the shelf alike — as a silent failure with no error anywhere.
+    /// open one. This failing means adult series are visible to every reader (in browse,
+    /// search and the shelf alike) as a silent failure with no error anywhere.
     ///
-    /// Reads through `adult_gated`, the generated column the gate actually tests, rather than
+    /// Reads through `adult_gated`, the generated column the gate actually tests, instead of
     /// `is_adult` directly: this asserts that what `AniList` said reaches *the column the read
     /// paths consult*, which is the property that matters and the one a refactor could break
     /// while leaving `is_adult` correctly written.
@@ -841,7 +841,7 @@ mod signals {
     /// A later scrape must not flatten a rank the enrichment path already stored.
     ///
     /// The bug this pins: an adapter knows a tag's name and nothing else, so it writes weight
-    /// 1.0. With a plain `DO UPDATE` the two writers alternate on every sweep — the weight flaps
+    /// 1.0. With a plain `DO UPDATE` the two writers alternate on every sweep: the weight flaps
     /// between 0.87 and 1.0, and because the feature digest moves with it, each flap re-embeds
     /// the series for a change that carries no new information.
     #[tokio::test]
@@ -872,7 +872,7 @@ mod signals {
     }
 }
 
-/// Two local series mapped to one remote entry — the *linked group*.
+/// Two local series mapped to one remote entry: the *linked group*.
 ///
 /// The remote keeps a single entry per work, so a value settled against it is settled for every
 /// local series mapped to it. Before this module's subject existed, only one of them was ever
@@ -919,7 +919,7 @@ mod linked_entries {
     }
 
     /// A series the reader excluded from sync stays excluded when it is reached sideways, through
-    /// a sibling's push, rather than head-on.
+    /// a sibling's push, instead of head-on.
     #[tokio::test]
     async fn an_excluded_linked_series_is_still_not_written() {
         let f = Fixture::spawn().await;

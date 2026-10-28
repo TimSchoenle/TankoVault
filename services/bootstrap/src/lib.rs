@@ -1,4 +1,4 @@
-//! The installation steps a deployment has to run outside any service: apply the schema,
+//! Owns the installation steps a deployment has to run outside any service: apply the schema,
 //! provision the first administrator, install the built-in provider presets.
 //!
 //! A library as well as a binary because `xtask` performs the same three steps for a developer's
@@ -11,10 +11,11 @@ use secrecy::{SecretSlice, SecretString};
 use tankovault_db::PgPool;
 use tankovault_domain::{AdapterKind, PresetLink, ProviderId};
 
-/// Apply every pending migration.
+/// Applies every pending migration.
 ///
 /// # Errors
-/// The migration itself failing, including a checksum mismatch against an already-applied one.
+/// Returns an error when the migration itself fails, including a checksum mismatch against an
+/// already-applied one.
 pub async fn migrate(pool: &PgPool) -> anyhow::Result<()> {
     tankovault_db::migrate(pool).await?;
     Ok(())
@@ -41,7 +42,7 @@ pub enum AdminOutcome {
     Created {
         /// The name the account was created under.
         username: String,
-        /// Whether it also became the deployment's super user — false when the database
+        /// Whether it also became the deployment's super user: false when the database
         /// already held other accounts, or a super user.
         super_user: bool,
     },
@@ -54,7 +55,7 @@ pub enum AdminOutcome {
 pub struct AdminReport {
     /// What became of the configured account.
     pub outcome: AdminOutcome,
-    /// The account this run promoted to super user because the deployment had none — by
+    /// The account this run promoted to super user because the deployment had none, by
     /// username, since that is what an install log can be read against.
     ///
     /// `None` in the ordinary case, including the fresh install where
@@ -62,8 +63,9 @@ pub struct AdminReport {
     pub promoted_owner: Option<String>,
 }
 
-/// Create the first administrator, with every grantable permission — plus the super user grant
-/// if this is the deployment's first account — and leave the deployment with an owner either way.
+/// Creates the first administrator, with every grantable permission (and the super user grant
+/// if this is the deployment's first account), and leaves the deployment with an owner either
+/// way.
 ///
 /// Idempotent: an existing account is left exactly as it is, permissions included, so re-running
 /// an install job cannot re-grant something an operator has deliberately revoked. Running it a
@@ -71,19 +73,19 @@ pub struct AdminReport {
 /// is claimed only while no other account exists, and the database refuses a second one.
 ///
 /// The ownership reconciliation is the exception to "leave an existing installation untouched",
-/// and a deliberate one: the super user grant cannot be revoked through the API — the permission
-/// editor filters it out of both sides of an edit — so there is no operator decision to
+/// and a deliberate one: the super user grant cannot be revoked through the API (the permission
+/// editor filters it out of both sides of an edit), so there is no operator decision to
 /// overwrite, only the absence of one. See
 /// [`tankovault_db::repo::permissions::ensure_super_user`] for who it promotes and why that is
 /// nobody who could not already promote themselves.
 ///
-/// Registration mints no privilege anywhere else in the system — this is the one deliberate
+/// Registration mints no privilege anywhere else in the system; this is the one deliberate
 /// exception, and without it no account could ever grant `users.permissions` to another, so a
 /// fresh installation would have no way in.
 ///
 /// # Errors
-/// Hashing the password, the ownership reconciliation, or any of the inserts other than the
-/// "already present" conflict.
+/// Returns an error when hashing the password, the ownership reconciliation, or any insert other
+/// than the "already present" conflict fails.
 pub async fn seed_admin(pool: &PgPool, seed: &AdminSeed<'_>) -> anyhow::Result<AdminReport> {
     let hash = tankovault_auth::hash_password(seed.password, seed.pepper)
         .map_err(|e| anyhow::anyhow!("hash failed: {e}"))?;
@@ -91,14 +93,14 @@ pub async fn seed_admin(pool: &PgPool, seed: &AdminSeed<'_>) -> anyhow::Result<A
         .await
     {
         Ok(user) => {
-            // Provisioned by the operator rather than through the email-confirmation flow, so
-            // the address is marked verified — otherwise the login gate locks the account out
+            // Provisioned by the operator, not through the email-confirmation flow, so the
+            // address is marked verified; otherwise the login gate locks the account out
             // as soon as a mailer is configured.
             tankovault_db::repo::users::mark_email_verified(pool, user.id).await?;
             for permission in tankovault_domain::Permission::grantable() {
                 tankovault_db::repo::permissions::grant(pool, user.id, permission, None).await?;
             }
-            // The enumerated grants above age: a capability added by a later release reaches
+            // The enumerated grants above age: a capability a later release adds reaches
             // this account only if someone re-grants it. The super user grant does not.
             let super_user =
                 tankovault_db::repo::permissions::claim_super_user(pool, user.id).await?;
@@ -147,7 +149,8 @@ pub enum ProviderOutcome {
 }
 
 impl ProviderOutcome {
-    /// A stable token for the install log — the whole output of this job is those few lines.
+    /// Returns a stable token for the install log; the whole output of this job is those few
+    /// lines.
     #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -194,12 +197,12 @@ enum ProviderOutcomeKind {
     Adopted,
 }
 
-/// Decide one preset's fate.
+/// Decides one preset's fate.
 ///
 /// The rule that matters is the middle one: a row that predates the preset link is **adopted
 /// but not locked** unless it still equals the shipped definition byte for byte. An upgrade
-/// must never silently overwrite a config an operator hand-tuned before this feature existed —
-/// so equality is the only evidence accepted that there is nothing of theirs to lose.
+/// must never silently overwrite a config an operator hand-tuned before the link was made, so
+/// equality is the only evidence accepted that there is nothing of theirs to lose.
 fn plan(preset: &PresetView<'_>, existing: Option<&ExistingProvider<'_>>) -> Action {
     match existing {
         None => Action::Install,
@@ -228,7 +231,7 @@ struct PresetView<'a> {
     config: &'a serde_json::Value,
 }
 
-/// The same fields of a provider row, plus its identity and current link.
+/// The same fields of a provider row, and its identity and current link.
 struct ExistingProvider<'a> {
     id: ProviderId,
     name: &'a str,
@@ -240,7 +243,7 @@ struct ExistingProvider<'a> {
 
 impl PresetView<'_> {
     /// Whether every preset-owned field of `row` already equals this preset. Politeness and
-    /// state are excluded because they are not preset-owned — an operator who lowered a rate
+    /// state are excluded because they are not preset-owned: an operator who lowered a rate
     /// limit has not customised the *preset*, and must not be dropped out of sync for it.
     fn matches(&self, row: &ExistingProvider<'_>) -> bool {
         self.name == row.name
@@ -250,9 +253,9 @@ impl PresetView<'_> {
     }
 }
 
-/// Record the shipped preset catalogue and reconcile every provider against it.
+/// Records the shipped preset catalogue and reconciles every provider against it.
 ///
-/// Idempotent, and safe on every rollout — which is how it is meant to run. Providers an
+/// Idempotent, and safe on every rollout, which is how it is meant to run. Providers an
 /// operator registered by hand are never touched; providers installed from a preset follow it
 /// until the operator unlocks them in the console.
 ///
@@ -260,7 +263,7 @@ impl PresetView<'_> {
 /// retargeted from the admin console, and neither is undone by a later run.
 ///
 /// # Errors
-/// Any of the catalogue writes or provider writes failing.
+/// Returns an error when any catalogue or provider write fails.
 pub async fn seed_providers(pool: &PgPool) -> anyhow::Result<ProviderReport> {
     use tankovault_db::repo::{provider_presets, providers};
 
@@ -394,8 +397,8 @@ mod tests {
     }
 
     /// The point of the whole feature: a locked row is re-written on every run, which is how a
-    /// selector fix reaches a deployment that already carries the provider. Before the preset
-    /// link existed, seeding was create-only and a fix reached new installations only.
+    /// selector fix reaches a deployment that already carries the provider. A create-only seed
+    /// would reach new installations only.
     #[test]
     fn a_locked_provider_is_rewritten_from_the_preset() {
         let config = json!({ "latest": { "item": "div.old" } });
@@ -419,7 +422,7 @@ mod tests {
 
     /// Adoption of rows that predate the link is the upgrade path, and the dangerous one: an
     /// untouched row may be locked, but a row carrying operator edits must only be *labelled*,
-    /// never overwritten — that data has no other copy.
+    /// never overwritten: that data has no other copy.
     #[test]
     fn adoption_locks_only_a_row_that_still_matches_the_preset() {
         let shipped = json!({ "latest": { "item": "div.manga-item" } });

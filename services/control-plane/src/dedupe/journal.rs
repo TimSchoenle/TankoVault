@@ -1,5 +1,5 @@
-//! The `merge_decisions` rows a sweep writes: the itemised score, the deciding rule, the guards and
-//! the undo.
+//! Owns the `merge_decisions` rows a sweep writes: the itemised score, the deciding rule, the
+//! guards and the undo.
 
 use std::collections::{HashMap, HashSet};
 
@@ -91,12 +91,12 @@ impl Judged<'_> {
 /// belongs to.
 ///
 /// Merges are absent: they were journalled as they happened. What is left out entirely is the
-/// noise — a row re-scored to the same place every hour is not a decision, and re-confirming that
+/// noise: a row re-scored to the same place every hour is not a decision, and re-confirming that
 /// two unrelated series are unrelated on every run would bury the decisions that matter under
 /// hundreds of rows a day that say nothing changed. A deferral is noise once the pair's latest
 /// row already says it was deferred (`repeat_deferrals`).
 ///
-/// The payloads are returned rather than turned into [`NewMergeDecision`]s here because those
+/// The payloads are returned instead of turned into [`NewMergeDecision`]s here because those
 /// borrow their payload, so it has to outlive the batch that names it.
 pub(super) fn journal_payloads<'a>(
     judged: &'a [Judged<'a>],
@@ -143,11 +143,11 @@ fn journal_outcome(
     }
 }
 
-/// Write a batch of journal rows.
+/// Writes a batch of journal rows.
 ///
 /// Best-effort, like the sync history it sits beside: the record of a merge must not be able to
-/// fail the merge. Batching moves what a failure costs — one statement now carries a run's
-/// review and distinct decisions rather than one apiece — which is why the merges, the only rows
+/// fail the merge. Batching moves what a failure costs (one statement carries a run's review and
+/// distinct decisions, not one apiece), which is why the merges, the only rows
 /// carrying an undo, are written separately as they happen.
 pub(super) async fn journal(pool: &PgPool, decisions: &[NewMergeDecision<'_>]) {
     if decisions.is_empty() {
@@ -162,7 +162,7 @@ pub(super) async fn journal(pool: &PgPool, decisions: &[NewMergeDecision<'_>]) {
     }
 }
 
-/// The human sentence the review queue shows, naming the rule rather than the sweep.
+/// The human sentence the review queue shows, naming the rule, not the sweep.
 pub(super) fn review_reason(verdict: &Adjudication) -> String {
     match verdict.reason {
         "no_structural_identity" => {

@@ -1,4 +1,4 @@
-//! One sweep from start to finish: its budget and scope, its passes, and the exhaustive run.
+//! Owns one sweep from start to finish: its budget and scope, its passes, and the exhaustive run.
 
 use std::collections::HashSet;
 
@@ -12,14 +12,14 @@ use tracing::Instrument as _;
 use super::{orphans::clean_up_orphans, pass::sweep_once};
 
 /// How much work one sweep may do. `max_auto_merges` bounds a background action that deletes
-/// rows — without it, a bad threshold change could collapse the whole catalogue in one run.
+/// rows: without it, a bad threshold change could collapse the whole catalogue in one run.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct SweepBudget {
-    /// Newly-blocked pairs to shortlist — ones the sweep has never recorded a verdict for.
+    /// Newly-blocked pairs to shortlist: ones the sweep has never recorded a verdict for.
     pub pairs: i64,
     /// Open queue rows to re-score, oldest-refreshed first.
     pub requeue: i64,
-    /// Pairs previously judged distinct to reconsider, oldest-refreshed first.
+    /// Pairs already judged distinct to reconsider, oldest-refreshed first.
     pub recheck: i64,
     /// Automatic merges permitted in this run.
     pub max_auto_merges: i64,
@@ -29,7 +29,7 @@ pub(crate) struct SweepBudget {
 ///
 /// Discovery blocks the whole catalogue on the compact title key, so it costs the same whether
 /// anything changed or not; the two rotations are index scans sized by their own budgets.
-/// Separating them is what lets the queue be re-scored on a cadence discovery could not afford —
+/// Separating them is what lets the queue be re-scored on a cadence discovery could not afford:
 /// see `scheduler.merge_sweep_rotation_interval_secs`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SweepScope {
@@ -47,22 +47,23 @@ pub(crate) enum SweepScope {
 /// deletes no more rows for having taken three passes than it would have in one.
 const MAX_PASSES: u32 = 3;
 
-/// Run a sweep, following the merge chains it creates.
+/// Runs a sweep, following the merge chains it creates.
 ///
-/// `actor` is the operator who triggered it, or `None` for the scheduled run — recorded
+/// `actor` is the operator who triggered it, or `None` for the scheduled run, recorded
 /// in `merge_candidates.resolved_by` and on every decision this run journals.
 ///
 /// # Why more than one pass
 ///
 /// A pass that merges A into B has invalidated the facts it loaded for every other pair naming
 /// A, so it skips them (`chains_deferred`). Left there, a three-way duplicate needs three
-/// scheduler ticks — an hour apart each — to collapse, and for the whole of that time the
+/// scheduler ticks (an hour apart each) to collapse, and for the whole of that time the
 /// catalogue holds a duplicate the sweep has already proved. Re-running immediately costs
-/// another shortlist query and resolves it now.
+/// another shortlist query and resolves it at once.
 ///
 /// # Errors
 ///
-/// Database failures; merges already committed stay committed (idempotent, safe to re-run).
+/// Returns an error on a database failure; merges already committed stay committed (idempotent,
+/// safe to re-run).
 pub(crate) async fn sweep(
     pool: &PgPool,
     policy: Thresholds,
@@ -108,10 +109,10 @@ pub(crate) struct SweepRun {
     pub(crate) shortlisted: Vec<DuplicatePair>,
 }
 
-/// Add one pass's counts into the run's totals.
+/// Adds one pass's counts into the run's totals.
 ///
 /// Everything sums except `chains_deferred`, which is a statement about what is *left* to do and
-/// so belongs to the last pass alone — summing it would report chains that later passes resolved.
+/// so belongs to the last pass alone; summing it would report chains that later passes resolved.
 pub(super) fn accumulate(total: &mut MergeSweepView, pass: &MergeSweepView) {
     total.pairs_examined += pass.pairs_examined;
     total.auto_merged += pass.auto_merged;
@@ -127,7 +128,7 @@ pub(super) fn accumulate(total: &mut MergeSweepView, pass: &MergeSweepView) {
 
 /// The budget an exhaustive run draws under: the scheduled one with its ceiling lifted.
 ///
-/// `max_auto_merges` bounds a *background* action — it is the rate at which a mistaken threshold
+/// `max_auto_merges` bounds a *background* action: it is the rate at which a mistaken threshold
 /// can delete series between two looks by a human. An exhaustive run is that look: an operator
 /// pressed a button that says it sweeps the whole catalogue, and a run which stopped two hundred
 /// merges in reported work remaining and asked to be pressed again. `scanning.auto_merge` is the
@@ -135,7 +136,7 @@ pub(super) fn accumulate(total: &mut MergeSweepView, pass: &MergeSweepView) {
 ///
 /// The three shortlist sizes stay as configured. They are the page the walk is drawn in, not a
 /// bound on it: rounds continue until one comes back with nothing new, so a smaller page costs
-/// rounds rather than coverage, and it is what keeps one round's facts and scoring in memory.
+/// rounds, not coverage, and it is what keeps one round's facts and scoring in memory.
 pub(super) const fn exhaustive_budget(scheduled: SweepBudget) -> SweepBudget {
     SweepBudget {
         max_auto_merges: i64::MAX,
@@ -154,9 +155,9 @@ pub(super) const fn exhaustive_budget(scheduled: SweepBudget) -> SweepBudget {
 ///
 /// That is the only thing that ends it. The walk terminates because the catalogue is finite and
 /// merging only ever shrinks it: every round either judges a pair no round has judged or is the
-/// last. The costs that grow with it are [`Self::seen`] — two ids per distinct pair — and the
+/// last. The costs that grow with it are [`Self::seen`] (two ids per distinct pair) and the
 /// wall clock, and a run holds its claim by stamping a heartbeat every round, so one that stops
-/// making progress is visible in the console rather than silent.
+/// making progress is visible in the console instead of silent.
 pub(super) struct RoundLoop {
     /// Every pair shortlisted so far this run.
     seen: HashSet<DuplicatePair>,
@@ -203,21 +204,21 @@ const fn counters(total: &MergeSweepView) -> matching::FullSweepCounters {
     }
 }
 
-/// Start an exhaustive sweep on a task of its own, answering whether this call started one.
+/// Starts an exhaustive sweep on a task of its own, answering whether this call started one.
 ///
 /// `false` means a live run already holds the claim. The correct response is to say so, not to
 /// queue behind it: the other run is doing this one's work.
 ///
 /// **An exhaustive run must never be awaited inside a request handler.** It draws rounds until
 /// the shortlists hold nothing new, which is minutes, and the API's upstream timeout is
-/// twenty-five seconds — a handler awaiting one would be dropped mid-run, taking the only call
+/// twenty-five seconds: a handler awaiting one would be dropped mid-run, taking the only call
 /// that releases the claim with it. The lease on the claim is the second half of that guard;
 /// this is the first. `recsys::build_detached` carries the same note because that is where the
 /// failure was found the first time.
 ///
 /// # Errors
 ///
-/// Database failures while claiming. Failures *within* the run are recorded on
+/// Returns an error on a database failure while claiming. Failures *within* the run are recorded on
 /// `merge_full_sweep_state`, which is where the console reads them from.
 pub(crate) async fn sweep_all_detached(
     pool: &PgPool,
@@ -263,8 +264,8 @@ pub(crate) async fn sweep_all_detached(
 ///
 /// # Errors
 ///
-/// Database failures. Whatever earlier rounds committed stays committed; every round is an
-/// ordinary sweep and re-running is idempotent.
+/// Returns an error on a database failure. Whatever earlier rounds committed stays committed; every
+/// round is an ordinary sweep and re-running is idempotent.
 async fn run_full_sweep(
     pool: &PgPool,
     policy: Thresholds,

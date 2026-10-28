@@ -1,4 +1,4 @@
-//! Prioritised, fair scan-task scheduling: restores per-provider fairness that a single
+//! Owns prioritised, fair scan-task scheduling: it restores per-provider fairness that a single
 //! wildcard consumer's FIFO order would let one large catalogue scan monopolize.
 
 use futures::StreamExt;
@@ -13,32 +13,26 @@ use tokio::time::Instant;
 ///
 /// A pull with `no_wait` costs one round trip per lane, so an idle pool polling flat out
 /// would be pure chatter. The backoff doubles from here to [`IDLE_POLL_MAX`], which trades
-/// a few seconds of pickup latency on a task that arrives into an idle pool — irrelevant
-/// next to the seconds-to-minutes a scan task itself takes — for a quiet broker.
+/// a few seconds of pickup latency on a task that arrives into an idle pool (irrelevant
+/// next to the seconds-to-minutes a scan task itself takes) for a quiet broker.
 const IDLE_POLL_MIN: Duration = Duration::from_millis(200);
 
 /// Ceiling for the idle backoff.
 const IDLE_POLL_MAX: Duration = Duration::from_secs(5);
 
-/// The backoff's next step, capped at [`IDLE_POLL_MAX`].
+/// Returns the backoff's next step, capped at [`IDLE_POLL_MAX`].
 fn next_idle(current: Duration) -> Duration {
     (current * 2).min(IDLE_POLL_MAX)
 }
 
-/// The scan modes, fast first — the order [`tier_order`] serves them in by default.
+/// The scan modes, fast first: the order [`tier_order`] serves them in by default.
 const TIERS: [ScanMode; 2] = [ScanMode::Fast, ScanMode::Full];
 
 /// Fast tasks served in a row before the full tier is offered a turn ahead of them.
 ///
-/// ## Why this exists at all
-///
-/// Priority used to be strict, and that was safe **because the fast tier was bounded by
-/// construction**: a fast run enqueued exactly one `latest_feed` task per provider and walked the
-/// feed inside it, so the fast lanes could never hold more than one task per provider and could
-/// not outlast the full tier's patience.
-///
-/// A fast run now fans out a `series` task per feed entry — which is what makes its progress
-/// legible at all — and that argument lapses with it. Under strict priority a single provider
+/// Strict priority would be safe only if the fast tier were bounded, and it is not: a fast run
+/// fans out a `series` task per feed entry, which is what makes its progress legible at all.
+/// Under strict priority a single provider
 /// with a large latest feed would hold a non-empty fast lane for the whole run, and since every
 /// fast lane is offered a turn before any full lane is looked at, **every other provider's full
 /// scan would wait behind it**. That is not a slow full scan; it is a full scan that does not run.
@@ -48,7 +42,8 @@ const TIERS: [ScanMode; 2] = [ScanMode::Fast, ScanMode::Full];
 /// always" is a bound and "always" is not.
 const FULL_TIER_EVERY: u32 = 8;
 
-/// The order to offer the tiers in, given how many fast tasks have been served consecutively.
+/// Returns the order to offer the tiers in, given how many fast tasks have been served
+/// consecutively.
 ///
 /// Split out from the polling so the policy can be tested without a broker: the starvation this
 /// prevents takes hours to show up in a deployment and nothing about it fails loudly.
@@ -66,7 +61,7 @@ struct Lane {
     consumer: BrokerConsumer,
 }
 
-/// Every provider's lane for a single scan mode, plus the round-robin cursor over them.
+/// Every provider's lane for a single scan mode, and the round-robin cursor over them.
 ///
 /// Each tier carries its own cursor. A shared one would let a busy fast tier advance the
 /// full tier's position, so a full lane could be skipped for reasons that have nothing to
@@ -81,7 +76,7 @@ struct Tier {
 /// A prioritised, round-robin view over every provider's task lanes.
 ///
 /// Not `Clone` and not shared: the consumer loop owns one, and takes one message at a time
-/// from it. Holding messages in a local buffer would be faster but wrong — a buffered task
+/// from it. Holding messages in a local buffer would be faster but wrong: a buffered task
 /// is a *claimed* task, and one waiting behind several minutes of other work would breach
 /// its redelivery deadline and be handed to a second worker. It would also defeat the
 /// prioritisation, since a fast task arriving mid-buffer would still queue behind whatever
@@ -103,12 +98,12 @@ pub(crate) struct FairQueue {
 }
 
 impl FairQueue {
-    /// Open the queue: retire the wildcard consumer this replaces, then build the lanes.
+    /// Opens the queue: retires the wildcard consumer this replaces, then builds the lanes.
     ///
     /// # Errors
-    /// Fails if the wildcard consumer cannot be removed. That is fatal rather than
+    /// Returns an error if the wildcard consumer cannot be removed. That is fatal, not
     /// tolerated: its filter subject overlaps every per-lane filter, and a work-queue stream
-    /// refuses to create a second consumer that overlaps an existing one — so a worker that
+    /// refuses to create a second consumer that overlaps an existing one, so a worker that
     /// carried on would sit against zero lanes and silently consume nothing.
     pub(crate) async fn open(
         bus: Bus,
@@ -136,16 +131,16 @@ impl FairQueue {
         Ok(queue)
     }
 
-    /// The next task to run, if one can be served **right now**.
+    /// Returns the next task to run, if one can be served **right now**.
     ///
-    /// Returns immediately either way — an empty round is `None`, not a wait. The waiting is
+    /// Returns immediately either way: an empty round is `None`, not a wait. The waiting is
     /// the caller's job, and that division is the whole point: `busy` is a snapshot the caller
     /// owns, and the only event that can change it is one of the caller's tasks finishing. A
-    /// queue that slept on its own therefore slept on a snapshot that could no longer change,
-    /// and once every lane's provider was in `busy` — one task per provider, so a pool with
-    /// fewer providers than its concurrency limit reaches that routinely — it never returned
-    /// and the caller never got back to the top of its loop to release the finished task that
-    /// would have freed a lane. That is a permanent deadlock, and it presents as a worker with
+    /// queue that slept on its own would sleep on a snapshot that can no longer change, and
+    /// once every lane's provider is in `busy` (one task per provider, so a pool with fewer
+    /// providers than its concurrency limit reaches that routinely) it would never return, and
+    /// the caller would never get back to the top of its loop to release the finished task
+    /// that would free a lane. That is a permanent deadlock, and it presents as a worker with
     /// nothing in flight sitting against a full queue: see [`crate::run_consumer`].
     pub(crate) async fn try_next(&mut self, busy: &HashSet<String>) -> Option<BrokerMessage> {
         if Instant::now() >= self.next_refresh {
@@ -158,7 +153,7 @@ impl FairQueue {
         msg
     }
 
-    /// How long to wait before the next round, and the backoff's step towards
+    /// Returns how long to wait before the next round, and the backoff's step towards
     /// [`IDLE_POLL_MAX`]. Reset by [`try_next`](Self::try_next) whenever a round serves a task.
     pub(crate) fn idle_delay(&mut self) -> Duration {
         let delay = self.idle;
@@ -166,9 +161,9 @@ impl FairQueue {
         delay
     }
 
-    /// Offer every lane a turn, in [`tier_order`], and return the first task found.
+    /// Offers every lane a turn, in [`tier_order`], and returns the first task found.
     ///
-    /// A tier is exhausted before the next is touched — that is the whole of the fast-over-full
+    /// A tier is exhausted before the next is touched: that is the whole of the fast-over-full
     /// guarantee, and it survives `busy`: a fast lane skipped for being in flight does not promote
     /// a full lane past a fast one that is merely idle. The order itself is the one concession,
     /// and only after [`FULL_TIER_EVERY`] consecutive fast tasks.
@@ -191,11 +186,11 @@ impl FairQueue {
         None
     }
 
-    /// Open lanes for any provider that does not have one yet, in every tier.
+    /// Opens lanes for any provider that does not have one yet, in every tier.
     ///
     /// Lanes are only ever added. Dropping one would strand whatever it still holds, and a
-    /// lane costs nothing but a round trip per idle poll — so a provider that is deleted
-    /// keeps being drained rather than leaving its queued tasks (and the runs waiting on
+    /// lane costs nothing but a round trip per idle poll, so a provider that is deleted
+    /// keeps being drained instead of leaving its queued tasks (and the runs waiting on
     /// them) hanging.
     ///
     /// Both sources are best-effort: a failure to read either one leaves the existing lanes
@@ -262,20 +257,20 @@ impl FairQueue {
 }
 
 impl Tier {
-    /// Try every lane in this tier once, starting where the last round left off, and return
+    /// Tries every lane in this tier once, starting where the last round left off, and returns
     /// the first task found.
     ///
     /// ## Why the lanes are still polled sequentially
     ///
     /// An idle round costs one `no_wait` round trip per lane, so pickup latency and broker
-    /// chatter both scale with provider count — at 25 providers and 1 ms RTT that is ~50 ms
+    /// chatter both scale with provider count: at 25 providers and 1 ms RTT that is ~50 ms
     /// per tier per poll. The obvious fix is to issue the fetches concurrently and take the
     /// first answer.
     ///
     /// That fix is **wrong here**, and the reason is worth recording so it is not
     /// re-attempted: a concurrent round claims a message from *every* non-empty lane, but a
     /// worker may only hold one. The extras have to be handed back, and handing a `JetStream`
-    /// message back — whether by `nak` or by letting the ack deadline lapse — **increments
+    /// message back (whether by `nak` or by letting the ack deadline lapse) **increments
     /// its delivery count**. `MAX_TASK_DELIVERIES` is 3. During a busy period a task could
     /// therefore exhaust its entire retry budget by being polled past, never once having
     /// actually failed, and be recorded as a permanent failure. Trading a correctness
@@ -286,13 +281,12 @@ impl Tier {
     /// [`FairQueue::idle_delay`] between rounds, doubling from [`IDLE_POLL_MIN`] to
     /// [`IDLE_POLL_MAX`] while every tier comes back empty, so an idle pool settles at one
     /// round per lane per five seconds, not a spin.
-    /// Deliberately left as is.
     ///
     /// ## Why `busy` is filtered before the pull, never after
     ///
-    /// The worker now runs several providers concurrently, one task each, so a lane whose
+    /// The worker runs several providers concurrently, one task each, so a lane whose
     /// provider is already in flight has nowhere to put a message. Because a lane *is* a
-    /// provider, that is known before pulling — so the skip costs nothing and, crucially,
+    /// provider, that is known before pulling, so the skip costs nothing and, crucially,
     /// keeps the property the section above depends on: every message this returns is
     /// executed immediately, so none is ever handed back and no delivery count moves.
     /// Pulling first and returning the message on a busy provider would reintroduce exactly
@@ -300,7 +294,7 @@ impl Tier {
     async fn poll_round(&mut self, busy: &HashSet<String>) -> Option<BrokerMessage> {
         // Snapshotted up front so the cursor can advance while `self.lanes` is borrowed for
         // the pull, and so a tier whose providers are all in flight costs no round trips
-        // at all rather than one per lane.
+        // at all instead of one per lane.
         let blocked: Vec<bool> = self.lanes.iter().map(|l| busy.contains(&l.slug)).collect();
         let mut free = blocked.iter().filter(|b| !**b).count();
         while free > 0 {
@@ -334,9 +328,9 @@ impl Tier {
     }
 }
 
-/// Give the next lane its turn, and return which one that is.
+/// Gives the next lane its turn, and returns which one that is.
 ///
-/// The cursor advances *before* the lane is served rather than after: the following round
+/// The cursor advances *before* the lane is served, not after: the following round
 /// has to start at the lane after the one that answered, or a busy lane sitting early in the
 /// vec would be offered two turns per cycle. Modulo on read as well as on write keeps a
 /// cursor valid across lanes being appended.
@@ -348,7 +342,7 @@ fn take_turn(cursor: &mut usize, lane_count: usize) -> usize {
     idx
 }
 
-/// The next lane free to be served, advancing the cursor past every provider already in
+/// Returns the next lane free to be served, advancing the cursor past every provider already in
 /// flight. `None` when they all are.
 ///
 /// A blocked lane **spends its turn** on the way past. That is the fairness rule: the provider
@@ -369,7 +363,7 @@ fn next_free_lane(cursor: &mut usize, blocked: &[bool]) -> Option<usize> {
     None
 }
 
-/// Pull at most one task from a lane, without waiting for one to arrive.
+/// Pulls at most one task from a lane, without waiting for one to arrive.
 ///
 /// `fetch` sends a `no_wait` pull request, so an empty lane answers immediately and the
 /// round moves on. Asking for exactly one message is also what makes dropping the batch
@@ -411,7 +405,7 @@ mod tests {
     }
 
     /// A fast run fans out a task per feed entry, so its lane stays non-empty for the whole run.
-    /// Under strict priority that is not "the full tier waits" — it is every other provider's full
+    /// Under strict priority that is not "the full tier waits"; it is every other provider's full
     /// scan not running at all for as long as any provider has a fast run in flight. The debt
     /// counter is the bound, and nothing about its absence would fail loudly.
     #[test]
@@ -492,7 +486,7 @@ mod tests {
     ///
     /// The fairness rule, and the one that is silently wrong if it regresses: a provider that
     /// is already being served must not keep its place in the queue, or it is offered again
-    /// the instant it frees — ahead of a provider that has been idle the whole time. Nothing
+    /// the instant it frees, ahead of a provider that has been idle the whole time. Nothing
     /// fails loudly if this breaks; one provider simply gets scanned far more often than the
     /// rest.
     #[test]

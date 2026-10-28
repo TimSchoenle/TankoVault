@@ -1,5 +1,5 @@
-//! The scheduler's housekeeping: dispatch reconciliation, rollup and browse verification, watchlist
-//! import resolution, unlock and unread sweeps, and history pruning.
+//! Owns the scheduler's housekeeping: dispatch reconciliation, rollup and browse verification,
+//! watchlist import resolution, unlock and unread sweeps, and history pruning.
 
 use std::time::Duration;
 
@@ -13,7 +13,7 @@ use crate::{leader, reconcile};
 ///
 /// Deliberately **not** behind [`Feature::ScanningScheduler`]. That flag stops new scans being
 /// planned; it is the switch an operator reaches for during an incident, which is exactly when
-/// the runs already in flight most need to be able to finish. A repair creates no new work — it
+/// the runs already in flight most need to be able to finish. A repair creates no new work: it
 /// republishes messages for rows that already exist and closes runs that are already over.
 pub(super) async fn maybe_reconcile(state: &AppState, leadership: &leader::Leadership) {
     if !leadership.is_leader() {
@@ -321,7 +321,7 @@ const PRUNE_DECISION_BATCH: i64 = 5_000;
 
 /// Deletes `deferred` merge-journal rows past retention, inside what is left of the tick budget.
 ///
-/// Runs on the scan-history pruning tick rather than its own: it is the same kind of
+/// Runs on the scan-history pruning tick instead of its own: it is the same kind of
 /// housekeeping, on the leader, and a first pass over a backlog catches up over later ticks.
 async fn prune_deferred_merge_decisions(
     state: &AppState,

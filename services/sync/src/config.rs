@@ -1,6 +1,6 @@
-//! What the `sync` binary reads from its configuration.
+//! Owns what the `sync` binary reads from its configuration.
 //!
-//! Public, and in a library rather than beside `main`, because it is the root
+//! Public, and in a library instead of beside `main`, because it is the root
 //! `config-contract` describes for this image: the contract has to be generated from the very
 //! type the binary deserialises, or it is a claim about something else.
 
@@ -13,7 +13,7 @@ use terrace_config::schema::Describe;
 
 /// Default `AniList` GraphQL endpoint.
 pub const DEFAULT_GRAPHQL_URL: &str = "https://graphql.anilist.co";
-/// Default `AniList` OAuth base (authorize + token live under here).
+/// Default `AniList` OAuth base (authorize and token live under here).
 pub const DEFAULT_OAUTH_BASE: &str = "https://anilist.co/api/v2/oauth";
 
 /// Top-level sync config.
@@ -53,7 +53,7 @@ pub struct Config {
     #[serde(default)]
     #[config(nested)]
     pub metrics: tankovault_config::MetricsConfig,
-    /// Runtime feature flags — how often this replica re-reads the operator's decisions.
+    /// Runtime feature flags: how often this replica re-reads the operator's decisions.
     #[serde(default)]
     #[config(nested)]
     pub features: tankovault_config::FeaturesConfig,
@@ -69,13 +69,13 @@ pub struct Config {
     pub matching: tankovault_config::MatchingConfig,
 }
 
-/// Metadata-priority + tokenless enrichment-worker settings.
-// `Clone` because the config now lives behind an `Arc` shared with the reload supervisor and
+/// Metadata-priority and tokenless enrichment-worker settings.
+// `Clone` because the config lives behind an `Arc` shared with the reload supervisor and
 // so cannot be moved out of.
 #[derive(Debug, Clone, Deserialize, Describe)]
 pub struct MetadataConfig {
     /// Per-field source authority order (default: `AniList` before the adapters).
-    // `nested`, through `tankovault-domain`'s `schema` feature — the same subtree
+    // `nested`, through `tankovault-domain`'s `schema` feature: the same subtree
     // `tankovault_config::MetadataPriorityConfig::priority` publishes, so the two services'
     // contracts describe one key one way.
     #[config(nested)]
@@ -116,7 +116,7 @@ pub struct AniListConfig {
     /// Where `AniList` returns the reader after they authorise. Registered on the `AniList`
     /// application, and refused if the two disagree by a single character.
     pub redirect_uri: String,
-    /// Base64 32-byte data-encryption key for tokens at rest — opens every user's stored
+    /// Base64 32-byte data-encryption key for tokens at rest, which opens every user's stored
     /// `AniList` access and refresh token.
     #[config(secret)]
     pub token_encryption_key: SecretString,
@@ -129,7 +129,7 @@ pub struct AniListConfig {
     pub oauth_base: String,
     /// Which side wins a two-sided change for a reader who has expressed no preference. Each
     /// reader may override it on their own link.
-    // `values_from` rather than `values`: the type is `tankovault-contracts`', which is a
+    // `values_from` instead of `values`: the type is `tankovault-contracts`', which is a
     // wire-shape crate and has no business linking figment, so there is no `Values` impl on it
     // to read. [`ConflictPolicyDef`] is the mirror the compiler holds to it.
     #[config(values_from = "ConflictPolicyDef")]
@@ -144,11 +144,11 @@ pub struct AniListConfig {
 /// The four spellings [`ConflictPolicy`] accepts, published by
 /// [`AniListConfig::default_conflict_policy`].
 ///
-/// A `#[serde(remote)]` mirror rather than a literal `#[config(values(…))]` list, because the
+/// A `#[serde(remote)]` mirror, not a literal `#[config(values(…))]` list, because the
 /// two cannot drift: serde's remote derive constructs `ConflictPolicy`'s own variants, so a
-/// spelling that stopped matching the real enum would fail to compile rather than reach the
-/// contract. `ConflictPolicy` deserialises through serde's own derive — no `try_from`, no
-/// `from` — so this renamed variant list *is* the accepted set. Nothing deserialises through
+/// spelling that stopped matching the real enum would fail to compile instead of reaching the
+/// contract. `ConflictPolicy` deserialises through serde's own derive (no `try_from`, no
+/// `from`), so this renamed variant list *is* the accepted set. Nothing deserialises through
 /// the mirror; the field keeps `ConflictPolicy`'s own `Deserialize`.
 #[derive(Deserialize, Describe)]
 #[serde(remote = "ConflictPolicy", rename_all = "snake_case")]
@@ -165,7 +165,7 @@ enum ConflictPolicyDef {
     RemoteWins,
     /// Whichever side was updated most recently wins.
     NewestWins,
-    /// Genuine conflicts are queued for the user to resolve rather than auto-picked.
+    /// Genuine conflicts are queued for the user to resolve instead of auto-picked.
     AskMe,
 }
 
@@ -208,7 +208,7 @@ fn default_enrich_max() -> usize {
 }
 
 /// `figment`'s `Env` provider infers numeric-looking values (e.g. `TANKOVAULT_ANILIST__CLIENT_ID`)
-/// as numbers rather than strings, so accept either and coerce to `String`.
+/// as numbers instead of strings, so accept either and coerce to `String`.
 fn string_or_number<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: serde::Deserializer<'de>,

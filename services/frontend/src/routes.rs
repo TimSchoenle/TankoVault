@@ -1,4 +1,4 @@
-//! The router: the shell, hashed assets, the licence notices, health, and the `/v1/*` proxy.
+//! Owns the router: the shell, hashed assets, the licence notices, health, and the `/v1/*` proxy.
 
 use std::convert::Infallible;
 use std::future::{Ready, ready};
@@ -45,18 +45,18 @@ struct FixedResponse {
 impl FixedResponse {
     /// The app shell, from the bytes [`read_shell`] took at startup.
     ///
-    /// **`no-store` rather than `no-cache`, and no `Last-Modified` or `ETag`.** All three are one
+    /// **`no-store`, not `no-cache`, and no `Last-Modified` or `ETag`.** All three are one
     /// requirement: this document must never be reconstructed from a stored copy. It carries a
     /// per-response CSP nonce and the inline-script hashes of exactly one build, so a body paired
     /// with any other response's header is a document that response's policy refuses.
     ///
-    /// `no-cache` does not prevent that — it means *revalidate*, and a successful revalidation
+    /// `no-cache` does not prevent that: it means *revalidate*, and a successful revalidation
     /// re-uses the stored body under the new response's headers. Served from disk it did exactly
     /// that: image timestamps are clamped to `SOURCE_DATE_EPOCH`, which this repository pins to a
     /// constant `0` on purpose (see `the_build_epoch_is_one_constant` in `xtask`), so every build
     /// answered `Last-Modified: Thu, 01 Jan 1970 00:00:00 GMT` and every conditional request was
     /// a `304` forever. Serving from memory with no validator is what makes the `304` impossible
-    /// rather than merely unlikely.
+    /// not merely unlikely.
     fn shell(body: Bytes) -> Self {
         Self {
             status: StatusCode::OK,
@@ -68,7 +68,7 @@ impl FixedResponse {
 
     /// The shell could not be read at startup, so there is no SPA to serve.
     ///
-    /// A `503` rather than the `404` a missing file used to produce: the bundle is broken, which
+    /// A `503`, not a `404`: the bundle is broken, which
     /// is an operator's problem and not a wrong URL.
     fn unavailable() -> Self {
         Self {
@@ -82,8 +82,8 @@ impl FixedResponse {
     /// A bundle file that is not there.
     ///
     /// A `404`, never the shell. Answering a `<script type="module">` request with HTML fails in
-    /// the browser on the MIME type instead, which reads as a bundler or CSP fault rather than
-    /// the missing file it is — the same reasoning that makes the notices a route of their own.
+    /// the browser on the MIME type instead, which reads as a bundler or CSP fault instead of
+    /// the missing file it is, the same reasoning that makes the notices a route of their own.
     ///
     /// `no-store` because a rolling deploy legitimately serves this: a client that already has
     /// the new shell asks a replica that has not rolled yet for a file only the new image has.
@@ -128,8 +128,8 @@ impl Service<Request> for FixedResponse {
 
 /// Where the SPA links its third-party licence notices, and the only URL they are published at.
 ///
-/// `web/frontend/src/components/nav.rs` repeats this literal — it is a separate workspace, so
-/// there is no compile-time relationship between the two — and `xtask repo-lint` is what holds
+/// `web/frontend/src/components/nav.rs` repeats this literal (it is a separate workspace, so
+/// there is no compile-time relationship between the two), and `xtask repo-lint` is what holds
 /// them equal.
 pub(super) const NOTICES_ROUTE: &str = "/third-party-notices";
 
@@ -166,8 +166,8 @@ pub(super) fn build_router(
     });
 
     // `/assets/…` is content-hashed, so a changed file is a changed URL and a year is safe. A
-    // miss is a `404` rather than the shell — see [`FixedResponse::missing`]. `if_not_present`
-    // rather than `overriding`, so that `404` keeps its own `no-store`.
+    // miss is a `404` instead of the shell; see [`FixedResponse::missing`]. `if_not_present`
+    // instead of `overriding`, so that `404` keeps its own `no-store`.
     let assets = ServiceBuilder::new()
         .layer(SetResponseHeaderLayer::if_not_present(
             header::CACHE_CONTROL,
@@ -208,11 +208,10 @@ pub(super) fn build_router(
             csp,
         ))
         // The default for anything in the bundle that states nothing of its own: revalidate.
-        // The two that do state their own are the ones that matter — the shell is `no-store`
-        // ([`FixedResponse::shell`]) and `/assets/…` is immutable — and `if_not_present` is what
-        // leaves both alone. This layer previously read `no-cache` and applied it to *everything*
-        // under a comment claiming hashed assets were cached immutably; nothing set that, and
-        // every asset paid a revalidation round-trip per load.
+        // The two that do state their own are the ones that matter (the shell is `no-store`,
+        // [`FixedResponse::shell`], and `/assets/…` is immutable), and `if_not_present` is what
+        // leaves both alone. Overriding instead would cost every hashed asset a revalidation
+        // round trip per load.
         .layer(SetResponseHeaderLayer::if_not_present(
             header::CACHE_CONTROL,
             HeaderValue::from_static("no-cache"),
@@ -220,12 +219,12 @@ pub(super) fn build_router(
         .service(bundle);
     // Compression isn't layered here separately: `HttpStack`'s single `CompressionLayer`
     // already covers the WASM bundle and proxied JSON, and skips a response already carrying
-    // `Content-Encoding` or `text/event-stream` — which is what keeps SSE flushing frame by
+    // `Content-Encoding` or `text/event-stream`, which is what keeps SSE flushing frame by
     // frame.
 
-    // A route of its own rather than a file dropped into the bundle, for two reasons that both
+    // A route of its own instead of a file dropped into the bundle, for two reasons that both
     // end in a reader not seeing the notices: an extensionless file is served
-    // `application/octet-stream`, which downloads rather than displays under `nosniff`; and any
+    // `application/octet-stream`, which downloads instead of displaying under `nosniff`; and any
     // path the bundle does not contain resolves to the app shell, so a typo'd or renamed file
     // would answer 200 with the SPA and nothing would look wrong.
     let notices = ServiceBuilder::new()

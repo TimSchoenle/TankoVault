@@ -1,4 +1,4 @@
-//! The GraphQL operations this service issues against `AniList`. Each query/mutation document
+//! Owns the GraphQL operations this service issues against `AniList`. Each query/mutation document
 //! sits immediately above the one method that sends it, so a field added to one and a field read
 //! from the response are visible together.
 
@@ -54,7 +54,7 @@ const MEDIA_LIST_QUERY: &str = concat!(
     " } } } } }"
 );
 
-/// Create or update one remote list entry.
+/// Creates or updates one remote list entry.
 const SAVE_ENTRY_MUTATION: &str = "\
     mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int) { \
       SaveMediaListEntry(mediaId: $mediaId, status: $status, progress: $progress) { id } \
@@ -85,7 +85,7 @@ const METADATA_BY_TITLE_QUERY: &str = concat!(
 );
 
 impl AniListClient {
-    /// Resolve the authenticated viewer's `AniList` user id and display name (the latter is
+    /// Resolves the authenticated viewer's `AniList` user id and display name (the latter is
     /// cached against the linked account so the UI can show "Connected as X").
     pub(crate) async fn viewer(&self, access_token: &SecretString) -> anyhow::Result<Viewer> {
         let data = self
@@ -109,11 +109,11 @@ impl AniListClient {
         })
     }
 
-    /// Fetch the viewer's full manga list.
+    /// Fetches the viewer's full manga list.
     ///
     /// A large list spans several responses, so every chunk is paged through via the
-    /// `hasNextChunk` flag and the results concatenated — the whole list is returned rather
-    /// than only its first page.
+    /// `hasNextChunk` flag and the results concatenated: the whole list is returned, not
+    /// only its first page.
     pub(crate) async fn fetch_media_list(
         &self,
         access_token: &SecretString,
@@ -144,7 +144,7 @@ impl AniListClient {
         Ok(all)
     }
 
-    /// Create or update a remote list entry.
+    /// Creates or updates a remote list entry.
     pub(crate) async fn save_entry(
         &self,
         access_token: &SecretString,
@@ -186,13 +186,13 @@ impl AniListClient {
             .and_then(serde_json::Value::as_i64))
     }
 
-    /// Fetch public metadata for a known `AniList` media id — **no user token**. Returns
+    /// Fetches public metadata for a known `AniList` media id, with **no user token**. Returns
     /// `None` when the record is not one a library holds (see [`parse_media_metadata`]).
     ///
     /// # Errors
-    /// Transport and GraphQL failures and a null `Media`, an id `AniList` no longer knows included. Unlike the title
-    /// search these are not folded into `None`: re-verification removes a mapping on `None`, and
-    /// an outage must not read as a verdict.
+    /// Transport and GraphQL failures and a null `Media`, an id `AniList` no longer knows included.
+    /// Unlike the title search these are not folded into `None`: re-verification removes a mapping
+    /// on `None`, and an outage must not read as a verdict.
     pub(crate) async fn fetch_metadata_by_id(
         &self,
         media_id: i64,
@@ -207,7 +207,7 @@ impl AniListClient {
         parse_media_metadata_by_id(&data)
     }
 
-    /// Fetch public metadata for a work by title — **no user token**. Returns `None` when
+    /// Fetches public metadata for a work by title, with **no user token**. Returns `None` when
     /// nothing matches (a no-match search surfaces as a GraphQL error, treated as absence).
     pub(crate) async fn fetch_metadata_by_title(
         &self,

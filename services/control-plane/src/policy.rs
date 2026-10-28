@@ -1,9 +1,9 @@
-//! The automatic-merge policy the duplicate sweep applies, and the console surface that moves
+//! Owns the automatic-merge policy the duplicate sweep applies, and the console surface that moves
 //! it without a redeploy.
 //!
 //! Two layers, resolved here because this is the only service that holds both: the deployment's
-//! configured `matching` block is the baseline, and a row in `tunable_overrides` — written from
-//! the console — replaces it key by key. Nothing else may resolve them; an API that paired the
+//! configured `matching` block is the baseline, and a row in `tunable_overrides` (written from
+//! the console) replaces it key by key. Nothing else may resolve them; an API that paired the
 //! stored overrides with the *compiled* registry defaults instead would report, and reset to, a
 //! policy this deployment does not run.
 
@@ -17,7 +17,7 @@ use tankovault_service::TunableSet;
 
 /// The thresholds and guards in force: the configured policy with every stored override applied.
 ///
-/// `high`, `low` and `candidate_limit` are absent from the console on purpose — they are read by
+/// `high`, `low` and `candidate_limit` are absent from the console on purpose: they are read by
 /// the worker and by external sync, neither of which watches this table, so a knob here would
 /// move a number those services never see.
 pub(crate) fn thresholds(config: &MatchingConfig, tunables: &TunableSet) -> Thresholds {
@@ -64,7 +64,7 @@ fn baseline(config: &MatchingConfig, tunable: Tunable) -> f64 {
         // Unreachable for anything `Tunable::matching()` lists, and the console is served from
         // that list. A knob added to the group without a baseline here would silently follow the
         // compiled default instead of the configuration, so it answers with the registry's own
-        // value rather than pretending to a configured one.
+        // value instead of pretending to a configured one.
         other => other.default_value(),
     }
 }
@@ -72,7 +72,7 @@ fn baseline(config: &MatchingConfig, tunable: Tunable) -> f64 {
 /// Every knob of the policy, with its effective value and the provenance of any override.
 ///
 /// # Errors
-/// Database failures reading the override rows.
+/// Returns an error on a database failure reading the override rows.
 pub(crate) async fn view(
     pool: &PgPool,
     config: &MatchingConfig,
@@ -91,7 +91,7 @@ pub(crate) async fn view(
                 description: spec.description.to_owned(),
                 kind: spec.kind.as_str().to_owned(),
                 applies: spec.applies.as_str().to_owned(),
-                // Resolved through the same call the sweep makes, rather than from `row`
+                // Resolved through the same call the sweep makes, instead of from `row`
                 // directly, so the number on the page cannot disagree with the number applied.
                 value: tunables.resolve(tunable, default_value),
                 default_value,
@@ -112,16 +112,16 @@ fn updated_at(row: &TunableOverrideRow) -> Option<String> {
         .ok()
 }
 
-/// Record — or withdraw — an operator's decision about one knob, then re-read the snapshot so
+/// Records, or withdraws, an operator's decision about one knob, then re-reads the snapshot so
 /// this replica's next sweep already applies it.
 ///
 /// `value: None` withdraws the override, returning the knob to the deployment's configuration.
-/// The value is expected to have been range-checked by the caller — [`refusal`] is that check —
+/// The value is expected to have been range-checked by the caller ([`refusal`] is that check)
 /// because every reader clamps regardless and a write that reached here out of range would be
 /// stored and then silently applied as something else.
 ///
 /// # Errors
-/// Database failures.
+/// Returns an error on a database failure.
 pub(crate) async fn apply(
     pool: &PgPool,
     tunables: &TunableSet,
@@ -140,15 +140,15 @@ pub(crate) async fn apply(
         }
     }
     // Before answering, so the sweep this replica runs next already applies the new policy
-    // rather than waiting out the refresh interval.
+    // instead of waiting out the refresh interval.
     tunables.refresh().await;
     Ok(())
 }
 
 /// Why this write cannot be stored, or `None` when it can.
 ///
-/// Refused rather than clamped: every reader clamps, so a stored value outside the range is
-/// survivable — but accepting the write would report success for a policy the sweep will not
+/// Refused, not clamped: every reader clamps, so a stored value outside the range is
+/// survivable, but accepting the write would report success for a policy the sweep will not
 /// apply.
 #[must_use]
 pub(crate) fn refusal(tunable: Tunable, value: f64) -> Option<String> {

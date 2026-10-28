@@ -1,4 +1,4 @@
-//! An alternate [`ChallengeSolver`] back-end that solves via a real headless browser instead
+//! Owns an alternate [`ChallengeSolver`] back-end that solves via a real headless browser instead
 //! of TRAWL; same contract, so the fetch pipeline can't tell which is in play.
 
 use std::sync::Arc;
@@ -37,7 +37,7 @@ pub(crate) fn render_result_into_outcome(result: RenderResult, ttl_secs: u64) ->
             Some(result.html)
         },
         // No status reaches the fetch stack from this path; it must detect a throttle
-        // notice by reading the page (`is_rate_limit_page`) rather than trusting a 200.
+        // notice by reading the page (`is_rate_limit_page`) instead of trusting a 200.
         status: None,
         headers: Vec::new(),
         ttl_secs,

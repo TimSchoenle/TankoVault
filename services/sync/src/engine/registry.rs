@@ -1,4 +1,4 @@
-//! The set of external providers this service knows about, keyed by slug.
+//! Owns the set of external providers this service knows about, keyed by slug.
 
 use std::collections::HashMap;
 
@@ -23,7 +23,8 @@ impl ProviderRegistry {
         })
     }
 
-    /// The provider registered under `slug`, if any, for callers that skip unknown slugs instead of failing.
+    /// The provider registered under `slug`, if any, for callers that skip unknown slugs instead of
+    /// failing.
     pub(crate) fn try_get(&self, slug: &str) -> Option<&dyn ExternalProvider> {
         self.providers.get(slug).map(Box::as_ref)
     }

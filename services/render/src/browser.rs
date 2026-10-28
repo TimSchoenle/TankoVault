@@ -1,4 +1,4 @@
-//! Manages a single, long-lived `chromiumoxide` browser, launched lazily on first render
+//! Owns a single, long-lived `chromiumoxide` browser, launched lazily on first render
 //! so `/health`/`/ready` come up even without a Chrome binary present, and relaunched once its
 //! CDP connection is gone.
 
@@ -51,18 +51,18 @@ pub(crate) struct RenderOptions {
     pub(crate) wait_ms: u64,
 }
 
-/// The settle delay actually applied: the larger of the caller's and the configured default,
-/// never more than [`MAX_SETTLE_MS`].
+/// Returns the settle delay actually applied: the larger of the caller's and the configured
+/// default, never more than [`MAX_SETTLE_MS`].
 fn settle_ms(requested: u64, default: u64) -> u64 {
     requested.max(default).min(MAX_SETTLE_MS)
 }
 
-/// The wall-clock budget for one render, queueing for a tab included.
+/// Returns the wall-clock budget for one render, queueing for a tab included.
 fn render_budget(nav_timeout_ms: u64, settle_ms: u64) -> Duration {
     Duration::from_millis(nav_timeout_ms.saturating_add(settle_ms)).saturating_add(RENDER_OVERHEAD)
 }
 
-/// True when `error` means the CDP connection itself is gone, not just one bad message.
+/// Returns true when `error` means the CDP connection itself is gone, not just one bad message.
 fn ends_connection(error: &CdpError) -> bool {
     matches!(
         error,
@@ -109,7 +109,7 @@ impl BrowserManager {
             .map_err(|e| anyhow::anyhow!("invalid browser config: {e}"))
     }
 
-    /// Return the shared browser, launching it on first use and again after it disconnects.
+    /// Returns the shared browser, launching it on first use and again after it disconnects.
     async fn browser(&self) -> anyhow::Result<Arc<Browser>> {
         let mut guard = self.instance.lock().await;
         if let Some(instance) = guard.as_ref() {
@@ -151,10 +151,10 @@ impl BrowserManager {
         Ok(browser)
     }
 
-    /// Navigate to `opts.url`, wait for it to render, and capture the DOM + session.
+    /// Navigates to `opts.url`, waits for it to render, and captures the DOM and session.
     ///
     /// # Errors
-    /// Launch, navigation or capture failures, and exceeding the render budget.
+    /// Returns an error on a launch, navigation or capture failure, or past the render budget.
     pub(crate) async fn render(&self, opts: RenderOptions) -> anyhow::Result<RenderResult> {
         let settle = settle_ms(opts.wait_ms, self.cfg.default_wait_ms);
         let budget = render_budget(self.cfg.nav_timeout_ms, settle);
@@ -219,7 +219,7 @@ impl BrowserManager {
 ///
 /// The tab is closed on every exit, including the ones that never reach a `close().await`: an
 /// early `?`, a render timeout, or the HTTP caller hanging up and dropping the future. Without
-/// this each of those leaked a renderer process until the browser died.
+/// this each of those would leak a renderer process until the browser died.
 struct Tab {
     page: Page,
     /// Taken by whichever close runs, so the tab is closed exactly once.
@@ -238,7 +238,7 @@ impl Tab {
         &self.page
     }
 
-    /// Close the tab now, releasing its permit once it is gone.
+    /// Closes the tab now, releasing its permit once it is gone.
     async fn close(mut self) {
         let permit = self.permit.take();
         close_page(self.page.clone()).await;
@@ -291,7 +291,7 @@ mod tests {
             render_budget(30_000, 5_000),
             Duration::from_secs(35) + RENDER_OVERHEAD
         );
-        // Saturates rather than overflowing on a hostile configuration.
+        // Saturates instead of overflowing on a hostile configuration.
         assert!(render_budget(u64::MAX, MAX_SETTLE_MS) >= RENDER_OVERHEAD);
     }
 

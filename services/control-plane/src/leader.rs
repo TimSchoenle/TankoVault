@@ -1,4 +1,4 @@
-//! Redis-backed leader election for the singleton scheduler: it must run on exactly one
+//! Owns the Redis-backed leader election for the singleton scheduler: it must run on exactly one
 //! control-plane replica, expressed as a best-effort distributed lock over Redis. Fails
 //! open to sole-leader when unconfigured, but drops leadership on a Redis error while
 //! leading, so partitioned replicas cannot both believe they lead.
@@ -41,7 +41,7 @@ pub(crate) async fn connect(url: &SecretString) -> anyhow::Result<Client> {
     Ok(client)
 }
 
-/// Start leader election.
+/// Starts leader election.
 ///
 /// With `Some(client)` a background task continuously acquires/renews the lock and
 /// publishes the result into the returned [`Leadership`]. With `None` (no Redis) the
@@ -75,7 +75,7 @@ pub(crate) fn spawn(client: Option<Client>) -> Leadership {
     Leadership { held }
 }
 
-/// Try to acquire the free lock, or renew it if we already hold it. Returns whether this
+/// Tries to acquire the free lock, or renews it if we already hold it. Returns whether this
 /// replica holds leadership after the attempt.
 async fn acquire_or_renew(client: &Client, token: &str) -> Result<bool, Error> {
     let ttl_ms = LOCK_TTL_MS;
@@ -93,7 +93,7 @@ async fn acquire_or_renew(client: &Client, token: &str) -> Result<bool, Error> {
     }
     // Extend only if the lease is still ours. GET-then-PEXPIRE isn't atomic, but TTL
     // comfortably exceeds the renewal interval, so the worst case is a one-cycle-late
-    // hand-off — and scan planning is idempotent regardless.
+    // hand-off, and scan planning is idempotent regardless.
     let current: Option<String> = client.get(LOCK_KEY).await?;
     if current.as_deref() == Some(token) {
         let _: i64 = client.pexpire(LOCK_KEY, ttl_ms, None).await?;

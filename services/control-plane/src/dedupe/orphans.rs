@@ -1,5 +1,5 @@
-//! Sourceless series: merged into a sourced twin when one exists, deleted when nothing refers to
-//! them.
+//! Owns sourceless series: merged into a sourced twin when one exists, deleted when nothing refers
+//! to them.
 
 use tankovault_db::PgPool;
 use tankovault_db::repo::matching::{self, NewMergeDecision, SeriesMatchFacts};
@@ -19,7 +19,7 @@ const TWIN_BATCH: i64 = 500;
 /// Unreferenced orphans deleted per statement of [`clean_up_orphans`].
 const ORPHAN_DELETE_BATCH: i64 = 1_000;
 
-/// Merge every sourceless series into its sourced twin, then delete the sourceless series nothing
+/// Merges every sourceless series into its sourced twin, then deletes the sourceless series nothing
 /// refers to. Returns how many twins were merged.
 ///
 /// Only the exhaustive run does this. The orphans are tens of thousands of copies left by a fixed
@@ -30,7 +30,7 @@ const ORPHAN_DELETE_BATCH: i64 = 1_000;
 ///
 /// # Errors
 ///
-/// Database failures. Merges and deletions already committed stay committed.
+/// Returns an error on a database failure. Merges and deletions already committed stay committed.
 pub(super) async fn clean_up_orphans(
     pool: &PgPool,
     thresholds: Thresholds,
@@ -83,7 +83,7 @@ pub(super) async fn clean_up_orphans(
     Ok(merged)
 }
 
-/// Merge one sourceless series into its sourced twin and journal it with its undo.
+/// Merges one sourceless series into its sourced twin and journals it with its undo.
 async fn merge_twin(
     pool: &PgPool,
     ctx: &JournalContext,

@@ -804,7 +804,7 @@
         "env": "TANKOVAULT_SCHEDULER__MERGE_SWEEP_ROTATION_INTERVAL_SECS",
         "env_file": "TANKOVAULT_SCHEDULER__MERGE_SWEEP_ROTATION_INTERVAL_SECS_FILE",
         "secrets_file": "scheduler__merge_sweep_rotation_interval_secs",
-        "docs": "Seconds between rotation-only sweeps — the open queue and the recheck set, no discovery.\n0 disables.\n\nFour times an hour by default. These two shortlists are index scans bounded by their own\nbudgets, and re-scoring is how a pair that was genuinely ambiguous in January becomes an\nautomatic merge once both sides have been enriched; tying that to the discovery cadence\nmeant a queue of thousands took most of a day to turn over once.",
+        "docs": "Seconds between rotation-only sweeps: the open queue and the recheck set, no discovery.\n0 disables.\n\nFour times an hour by default. These two shortlists are index scans bounded by their own\nbudgets, and re-scoring is how a pair that was genuinely ambiguous in January becomes an\nautomatic merge once both sides have been enriched; tying that to the discovery cadence\nmeant a queue of thousands took most of a day to turn over once.",
         "ty": "u64",
         "values": [],
         "constraint": {
@@ -913,7 +913,7 @@
         "env": "TANKOVAULT_SCHEDULER__RECSYS_INCREMENTAL_INTERVAL_SECS",
         "env_file": "TANKOVAULT_SCHEDULER__RECSYS_INCREMENTAL_INTERVAL_SECS_FILE",
         "secrets_file": "scheduler__recsys_incremental_interval_secs",
-        "docs": "Seconds between incremental recommendation-model builds. 0 disables.\n\nFrequent by default: an incremental pass re-embeds only what changed and inserts into a\nlive HNSW index, so the cost is proportional to catalogue churn rather than to the\ncatalogue.",
+        "docs": "Seconds between incremental recommendation-model builds. 0 disables.\n\nFrequent by default: an incremental pass re-embeds only what changed and inserts into a\nlive HNSW index, so the cost is proportional to catalogue churn instead of to the\ncatalogue.",
         "ty": "u64",
         "values": [],
         "constraint": {
@@ -941,7 +941,7 @@
         "env": "TANKOVAULT_SCHEDULER__RECSYS_FULL_INTERVAL_SECS",
         "env_file": "TANKOVAULT_SCHEDULER__RECSYS_FULL_INTERVAL_SECS_FILE",
         "secrets_file": "scheduler__recsys_full_interval_secs",
-        "docs": "Seconds between full recommendation-model rebuilds. 0 disables.\n\nA full build re-solves the projection from the whole catalogue, which is what keeps the\nidf and the embedding space current. Weekly: the incremental pass covers changed series,\nso this exists for vocabulary drift rather than for freshness.",
+        "docs": "Seconds between full recommendation-model rebuilds. 0 disables.\n\nA full build re-solves the projection from the whole catalogue, which is what keeps the\nidf and the embedding space current. Weekly: the incremental pass covers changed series,\nso this exists for vocabulary drift, not for freshness.",
         "ty": "u64",
         "values": [],
         "constraint": {
@@ -1023,7 +1023,7 @@
         "env": "TANKOVAULT_SCHEDULER__MERGE_SWEEP_MAX_AUTO_MERGES",
         "env_file": "TANKOVAULT_SCHEDULER__MERGE_SWEEP_MAX_AUTO_MERGES_FILE",
         "secrets_file": "scheduler__merge_sweep_max_auto_merges",
-        "docs": "Automatic merges permitted in a single sweep — the only bound on a destructive\nbackground action. Without it, a bad threshold or normalization rule could collapse\nthe whole catalogue between two scheduler ticks.",
+        "docs": "Automatic merges permitted in a single sweep: the only bound on a destructive\nbackground action. Without it, a bad threshold or normalization rule could collapse\nthe whole catalogue between two scheduler ticks.",
         "ty": "i64",
         "values": [],
         "constraint": {
@@ -1050,7 +1050,7 @@
         "env": "TANKOVAULT_SCHEDULER__RUN_STALE_AFTER_SECS",
         "env_file": "TANKOVAULT_SCHEDULER__RUN_STALE_AFTER_SECS_FILE",
         "secrets_file": "scheduler__run_stale_after_secs",
-        "docs": "How long an unfinished run keeps suppressing new runs of the same provider and mode.\n\nThe suppression itself has no expiry condition other than this one, so the value is the\nonly thing standing between a run that can never settle — a task persisted but never\npublished — and a provider that is never scanned again.",
+        "docs": "How long an unfinished run keeps suppressing new runs of the same provider and mode.\n\nThe suppression itself has no expiry condition other than this one, so the value is the\nonly thing standing between a run that can never settle (a task persisted but never\npublished) and a provider that is never scanned again.",
         "ty": "u64",
         "values": [],
         "constraint": {
@@ -1106,7 +1106,7 @@
         "env": "TANKOVAULT_SCHEDULER__RECONCILE_INTERVAL_SECS",
         "env_file": "TANKOVAULT_SCHEDULER__RECONCILE_INTERVAL_SECS_FILE",
         "secrets_file": "scheduler__reconcile_interval_secs",
-        "docs": "Seconds between passes that reconcile `JetStream` against `scan_tasks`. 0 disables.\n\nThis is a repair, not a schedule: it exists because dispatch and the task table can come\napart with no failure on either side, and nothing else notices when they do. Disabling it\nleaves a lost message costing a run — and, until `run_stale_after_secs`, the provider's\nnext run of that mode as well.",
+        "docs": "Seconds between passes that reconcile `JetStream` against `scan_tasks`. 0 disables.\n\nThis is a repair, not a schedule: it exists because dispatch and the task table can come\napart with no failure on either side, and nothing else notices when they do. Disabling it\nleaves a lost message costing a run and, until `run_stale_after_secs`, the provider's\nnext run of that mode as well.",
         "ty": "u64",
         "values": [],
         "constraint": {
@@ -2770,7 +2770,7 @@
             "type": "integer"
           },
           "merge_sweep_max_auto_merges": {
-            "description": "Automatic merges permitted in a single sweep — the only bound on a destructive\nbackground action. Without it, a bad threshold or normalization rule could collapse\nthe whole catalogue between two scheduler ticks.",
+            "description": "Automatic merges permitted in a single sweep: the only bound on a destructive\nbackground action. Without it, a bad threshold or normalization rule could collapse\nthe whole catalogue between two scheduler ticks.",
             "type": "integer"
           },
           "merge_sweep_pairs": {
@@ -2786,12 +2786,12 @@
             "type": "integer"
           },
           "merge_sweep_rotation_interval_secs": {
-            "description": "Seconds between rotation-only sweeps — the open queue and the recheck set, no discovery.\n0 disables.\n\nFour times an hour by default. These two shortlists are index scans bounded by their own\nbudgets, and re-scoring is how a pair that was genuinely ambiguous in January becomes an\nautomatic merge once both sides have been enriched; tying that to the discovery cadence\nmeant a queue of thousands took most of a day to turn over once.",
+            "description": "Seconds between rotation-only sweeps: the open queue and the recheck set, no discovery.\n0 disables.\n\nFour times an hour by default. These two shortlists are index scans bounded by their own\nbudgets, and re-scoring is how a pair that was genuinely ambiguous in January becomes an\nautomatic merge once both sides have been enriched; tying that to the discovery cadence\nmeant a queue of thousands took most of a day to turn over once.",
             "minimum": 0,
             "type": "integer"
           },
           "reconcile_interval_secs": {
-            "description": "Seconds between passes that reconcile `JetStream` against `scan_tasks`. 0 disables.\n\nThis is a repair, not a schedule: it exists because dispatch and the task table can come\napart with no failure on either side, and nothing else notices when they do. Disabling it\nleaves a lost message costing a run — and, until `run_stale_after_secs`, the provider's\nnext run of that mode as well.",
+            "description": "Seconds between passes that reconcile `JetStream` against `scan_tasks`. 0 disables.\n\nThis is a repair, not a schedule: it exists because dispatch and the task table can come\napart with no failure on either side, and nothing else notices when they do. Disabling it\nleaves a lost message costing a run and, until `run_stale_after_secs`, the provider's\nnext run of that mode as well.",
             "minimum": 0,
             "type": "integer"
           },
@@ -2800,12 +2800,12 @@
             "type": "integer"
           },
           "recsys_full_interval_secs": {
-            "description": "Seconds between full recommendation-model rebuilds. 0 disables.\n\nA full build re-solves the projection from the whole catalogue, which is what keeps the\nidf and the embedding space current. Weekly: the incremental pass covers changed series,\nso this exists for vocabulary drift rather than for freshness.",
+            "description": "Seconds between full recommendation-model rebuilds. 0 disables.\n\nA full build re-solves the projection from the whole catalogue, which is what keeps the\nidf and the embedding space current. Weekly: the incremental pass covers changed series,\nso this exists for vocabulary drift, not for freshness.",
             "minimum": 0,
             "type": "integer"
           },
           "recsys_incremental_interval_secs": {
-            "description": "Seconds between incremental recommendation-model builds. 0 disables.\n\nFrequent by default: an incremental pass re-embeds only what changed and inserts into a\nlive HNSW index, so the cost is proportional to catalogue churn rather than to the\ncatalogue.",
+            "description": "Seconds between incremental recommendation-model builds. 0 disables.\n\nFrequent by default: an incremental pass re-embeds only what changed and inserts into a\nlive HNSW index, so the cost is proportional to catalogue churn instead of to the\ncatalogue.",
             "minimum": 0,
             "type": "integer"
           },
@@ -2814,7 +2814,7 @@
             "type": "integer"
           },
           "run_stale_after_secs": {
-            "description": "How long an unfinished run keeps suppressing new runs of the same provider and mode.\n\nThe suppression itself has no expiry condition other than this one, so the value is the\nonly thing standing between a run that can never settle — a task persisted but never\npublished — and a provider that is never scanned again.",
+            "description": "How long an unfinished run keeps suppressing new runs of the same provider and mode.\n\nThe suppression itself has no expiry condition other than this one, so the value is the\nonly thing standing between a run that can never settle (a task persisted but never\npublished) and a provider that is never scanned again.",
             "minimum": 0,
             "type": "integer"
           },

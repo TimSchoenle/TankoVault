@@ -1,7 +1,8 @@
-//! Frontend service: serves the compiled Dioxus WASM SPA and reverse-proxies `/v1/*` (REST + SSE)
+//! Owns the frontend service: it serves the compiled Dioxus WASM SPA and reverse-proxies `/v1/*`
+//! (REST and SSE)
 //! to the `api` service from one origin, via the shared [`HttpStack`] runtime.
 //!
-//! Two shared-stack concerns are deliberately *not* adopted here — see [`stack_security`] and the
+//! Two shared-stack concerns are deliberately *not* adopted here; see [`stack_security`] and the
 //! rate-limiting note in [`main`].
 
 mod csp;
@@ -36,7 +37,7 @@ async fn main() -> anyhow::Result<()> {
     // for itself in this graph and panics instead of erroring. See `tankovault_service::crypto`.
     tankovault_service::install_crypto_provider();
 
-    // Before anything else: this may be Docker's HEALTHCHECK invoking the binary rather than
+    // Before anything else: this may be Docker's HEALTHCHECK invoking the binary instead of
     // the server. `scratch` has no shell/wget, so the binary probing itself is the only probe.
     if tankovault_service::healthcheck::requested() {
         let cfg: Config = tankovault_config::load()?;
@@ -63,10 +64,10 @@ async fn main() -> anyhow::Result<()> {
     .await
 }
 
-/// Build and run everything a configuration change rebuilds: the upstream client, the proxy
+/// Builds and runs everything a configuration change rebuilds: the upstream client, the proxy
 /// state, the router and the listener.
 ///
-/// Returns when `shutdown` is cancelled — by the OS signal, or by the supervisor because the
+/// Returns when `shutdown` is cancelled, by the OS signal, or by the supervisor because the
 /// configuration changed and this runtime is being replaced.
 async fn serve_once(
     cfg: Arc<Config>,
@@ -74,7 +75,7 @@ async fn serve_once(
     shutdown: CancellationToken,
 ) -> anyhow::Result<()> {
     // Decompression off so the response body forwards byte-for-byte alongside its
-    // `Content-Encoding` header, rather than being silently decoded and shipped mismatched.
+    // `Content-Encoding` header, instead of being silently decoded and shipped mismatched.
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(cfg.frontend.connect_timeout_secs))
         .gzip(false)
@@ -94,7 +95,7 @@ async fn serve_once(
         "frontend serving the SPA and proxying /v1/* to the api"
     );
 
-    // No rate limiter here: one page load fetches the shell plus every hashed asset, so any
+    // No rate limiter here: one page load fetches the shell and every hashed asset, so any
     // bucket tight enough to matter throttles a legit cold load. The API applies the limits
     // that protect state, and sees the real client via the X-Forwarded-For this hop appends.
     let health = upstream_health(&state);
@@ -103,7 +104,7 @@ async fn serve_once(
     Ok(())
 }
 
-/// The shared [`HttpStack`]'s hardening config, derived rather than operator-supplied.
+/// The shared [`HttpStack`]'s hardening config, derived, not operator-supplied.
 ///
 /// `security_headers` must stay off: the shared middleware's `default-src 'none'` CSP is right
 /// for a JSON API but blocks the WASM bundle from booting; this tier sends its own policy
@@ -144,7 +145,7 @@ fn upstream_health(state: &AppState) -> Health {
 }
 
 /// Assemble the served application: the app router inside the shared middleware stack, plus
-/// the ops probes merged *outside* it — so a body cap or a timeout can never make a healthy
+/// the ops probes merged *outside* it, so a body cap or a timeout can never make a healthy
 /// replica look unhealthy to its orchestrator.
 fn build_app(
     frontend: &FrontendConfig,

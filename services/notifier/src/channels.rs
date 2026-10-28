@@ -1,4 +1,4 @@
-//! Pluggable external notification channels.
+//! Owns the pluggable external notification channels.
 //!
 //! In-app `notifications` rows remain the source of truth; these optional channels fan a
 //! genuinely-new-chapter alert out to operator-configured endpoints (a generic JSON
@@ -21,13 +21,13 @@ pub(crate) struct Alert {
     pub series_id: SeriesId,
     pub chapter_number: f64,
     pub chapter_title: Option<String>,
-    /// RELATIVE chapter path (resolve against the provider `base_url` at read time).
+    /// Relative chapter path, resolved against the provider `base_url` at read time.
     pub chapter_path: String,
     pub provider_slug: String,
 }
 
 impl Alert {
-    /// A compact human summary line reused by every channel.
+    /// Returns a compact human summary line every channel reuses.
     pub(crate) fn summary(&self) -> String {
         let num = format_number(self.chapter_number);
         match self.chapter_title.as_deref() {
@@ -39,13 +39,13 @@ impl Alert {
     }
 }
 
-/// Format a chapter number without a trailing `.0` for whole numbers (`12.0` -> `12`,
+/// Formats a chapter number without a trailing `.0` for whole numbers (`12.0` -> `12`,
 /// `12.5` -> `12.5`).
 pub(crate) fn format_number(n: f64) -> String {
     format!("{n}")
 }
 
-/// The JSON body delivered to a generic [`WebhookChannel`].
+/// Returns the JSON body delivered to a generic [`WebhookChannel`].
 pub(crate) fn webhook_payload(alert: &Alert) -> serde_json::Value {
     serde_json::json!({
         "type": "new_chapter",
@@ -58,7 +58,7 @@ pub(crate) fn webhook_payload(alert: &Alert) -> serde_json::Value {
     })
 }
 
-/// The JSON body delivered to a Discord incoming webhook (message + a single embed).
+/// Returns the JSON body delivered to a Discord incoming webhook (a message and a single embed).
 pub(crate) fn discord_payload(alert: &Alert) -> serde_json::Value {
     let title = match alert.chapter_title.as_deref() {
         Some(t) if !t.is_empty() => t.to_owned(),
@@ -76,12 +76,12 @@ pub(crate) fn discord_payload(alert: &Alert) -> serde_json::Value {
     })
 }
 
-/// The subject line for a new-chapter alert email (reuses the shared summary).
+/// Returns the subject line for a new-chapter alert email (the shared summary).
 pub(crate) fn email_subject(alert: &Alert) -> String {
     alert.summary()
 }
 
-/// The plain-text body of a new-chapter alert email.
+/// Returns the plain-text body of a new-chapter alert email.
 pub(crate) fn email_body(alert: &Alert) -> String {
     let num = format_number(alert.chapter_number);
     let mut body = format!(
@@ -95,24 +95,24 @@ pub(crate) fn email_body(alert: &Alert) -> String {
     body
 }
 
-/// A pluggable delivery back-end. Implementations must be cheap to clone/share and are
-/// invoked once per genuinely-new chapter.
+/// A pluggable delivery back-end. Implementations must be cheap to clone and share, and are
+/// invoked once per genuinely new chapter.
 #[async_trait]
 pub(crate) trait NotificationChannel: Send + Sync {
-    /// Stable identifier for logging/metrics.
+    /// Returns a stable identifier for logging and metrics.
     fn name(&self) -> &'static str;
 
-    /// The feature that governs this channel at runtime.
+    /// Returns the feature that governs this channel at runtime.
     ///
     /// Configuration decides whether a channel *exists*; this flag decides whether it
-    /// currently *delivers* — so an operator can silence a channel during an incident
+    /// currently *delivers*, so an operator can silence a channel during an incident
     /// without redeploying, and get it back without losing the configuration.
     fn feature(&self) -> Feature;
 
-    /// Deliver `alert`. Errors are logged by the caller and never abort fan-out.
+    /// Delivers `alert`. The caller logs errors, and they never abort the fan-out.
     ///
     /// # Errors
-    /// Returns any transport/HTTP error so the caller can log it per channel.
+    /// Returns any transport or HTTP error so the caller can log it per channel.
     async fn deliver(&self, alert: &Alert) -> anyhow::Result<()>;
 }
 
@@ -196,14 +196,14 @@ impl NotificationChannel for DiscordChannel {
 ///
 /// Must stay a thin adapter over [`tankovault_email::EmailService`], not a second SMTP
 /// stack: `crates/email` resolves the envelope sender from the SMTP login, which relays
-/// enforcing "send as" require — a second stack without that gets mail rejected.
+/// enforcing "send as" require; a second stack without that gets mail rejected.
 pub(crate) struct EmailChannel {
     mailer: Arc<dyn EmailService>,
     to: Vec<String>,
 }
 
 impl EmailChannel {
-    /// Build from the shared mailer and the configured recipients.
+    /// Builds the channel from the shared mailer and the configured recipients.
     fn new(mailer: Arc<dyn EmailService>, to: Vec<String>) -> Self {
         Self { mailer, to }
     }
@@ -234,8 +234,8 @@ impl NotificationChannel for EmailChannel {
 /// Warns, once at startup, when a webhook will be delivered in clear.
 ///
 /// The URL is a `SecretString` because the token *is* the path for Discord/generic
-/// receivers — `http://` puts a bearer credential and the alert body on the wire in plain
-/// text. Warns rather than refuses, since `http://` is legitimate on a private network;
+/// receivers: `http://` puts a bearer credential and the alert body on the wire in plain
+/// text. Warns instead of refusing, since `http://` is legitimate on a private network;
 /// only the channel and scheme are logged, never the URL.
 fn warn_if_cleartext(channel: &str, url: &SecretString) {
     if !url.expose_secret().starts_with("https://") {
@@ -246,7 +246,7 @@ fn warn_if_cleartext(channel: &str, url: &SecretString) {
     }
 }
 
-/// Build the set of enabled channels from config (empty when none are configured).
+/// Builds the set of enabled channels from config (empty when none are configured).
 pub(crate) fn build(
     cfg: &ChannelsConfig,
     email: &tankovault_config::EmailConfig,
@@ -449,7 +449,7 @@ mod tests {
         // Relay, no recipients.
         assert!(build(&ChannelsConfig::default(), &relay).is_empty());
 
-        // Recipients, no relay — the mirror image, and equally not a working channel.
+        // Recipients, no relay: the mirror image, and equally not a working channel.
         let with_recipients = ChannelsConfig {
             email_to: vec!["reader@example.com".to_owned()],
             ..ChannelsConfig::default()
@@ -480,7 +480,7 @@ mod tests {
         assert!(email_body(&sample()).contains("kunmanga"));
     }
 
-    /// Asserts the delivered document *is* the payload builder's output — this catches
+    /// Asserts the delivered document *is* the payload builder's output; this catches
     /// `deliver` sending something else, not the builder changing shape.
     #[tokio::test]
     async fn the_generic_webhook_posts_the_payload_builder_output_as_json() {
@@ -507,7 +507,7 @@ mod tests {
         );
     }
 
-    /// Same for Discord — a different document, same transport; only a test would notice
+    /// Same for Discord: a different document, same transport; only a test would notice
     /// one channel handed the other's builder.
     #[tokio::test]
     async fn the_discord_webhook_posts_the_discord_document() {
@@ -525,7 +525,7 @@ mod tests {
         assert_eq!(sole_request_body(&server).await, discord_payload(&alert));
     }
 
-    /// A rejected delivery must be an error naming the status — it's the entire diagnostic
+    /// A rejected delivery must be an error naming the status: it's the entire diagnostic
     /// an operator gets for a webhook that's been quietly failing.
     #[tokio::test]
     async fn a_rejected_delivery_is_an_error_naming_the_channel_and_the_status() {
@@ -555,7 +555,7 @@ mod tests {
         assert!(discord.contains("discord"), "no channel in: {discord}");
     }
 
-    /// `timeout_secs`'s effect is invisible in the constructed value — a silently-ignored
+    /// `timeout_secs`'s effect is invisible in the constructed value, and a silently ignored
     /// knob is worse than no knob. Driven through [`build`], since that's the wiring that
     /// could drop it.
     #[tokio::test]

@@ -1,4 +1,4 @@
-//! Consumes `chapter.discovered` events and fans them out to watchers: only users with
+//! Owns consuming `chapter.discovered` events and fanning them out to watchers: only users with
 //! `notify = true` whose preferences allow the kind and the watchlist status, skipping
 //! already-read chapters, deduplicated per `(user, series, chapter)` so overlapping providers
 //! never double-fire, and coalesced into each reader's open row for the series.
@@ -57,12 +57,12 @@ async fn main() -> anyhow::Result<()> {
     .await
 }
 
-/// Build and run everything a configuration change rebuilds: the pool, the bus connection, the
-/// notification channels, the ops listener and the event consumer.
+/// Builds and runs everything a configuration change rebuilds: the pool, the bus connection,
+/// the notification channels, the ops listener and the event consumer.
 ///
-/// Returns when `shutdown` is cancelled — by the OS signal, or by the supervisor because the
+/// Returns when `shutdown` is cancelled, by the OS signal, or by the supervisor because the
 /// configuration changed and this runtime is being replaced. A rotated Discord or webhook URL
-/// takes effect here, on the rebuild, rather than at the next restart.
+/// takes effect here, on the rebuild, not at the next restart.
 async fn serve_once(
     cfg: Arc<Config>,
     metrics: MetricsRegistry,
@@ -187,13 +187,13 @@ async fn fan_out(
     // skipping it would make external channels re-fire every rescan.
     let in_app = features.is_enabled(Feature::NotificationsInApp);
 
-    // Three set-based statements for the whole fan-out, not one per watcher — at ten
-    // thousand watchers, per-watcher cost ~30 000 round trips for one chapter.
+    // Three set-based statements for the whole fan-out, not one per watcher: at ten
+    // thousand watchers, per-watcher statements cost ~30 000 round trips for one chapter.
     let watchers =
         tankovault_db::repo::tracking::watchers_for_series(pool, event.series_id).await?;
 
     // Rescan safety: never notify an already-read chapter. Must use `ReadProgress::covers`,
-    // not `chapter_number > last_read_number` — a part release (`152.5`) belongs to the
+    // not `chapter_number > last_read_number`: a part release (`152.5`) belongs to the
     // chapter it floors to, so a direct comparison would announce it as new again.
     let unread_by: Vec<tankovault_domain::UserId> = watchers
         .iter()
@@ -218,8 +218,7 @@ async fn fan_out(
     // A paywalled chapter is announced only to the readers who bought that provider's early
     // access. To everyone else it is not news: the page answers with a paywall, and the unread
     // predicate already refuses to count it. Announcing it anyway is the exact failure migration
-    // 0047 exists to prevent, and it survived that migration because nothing on this path
-    // looked at `access`.
+    // 0047 exists to prevent, and this path is the one that migration does not reach.
     //
     // Announcing on unlock is deliberately *not* a second event. The stated unlock time is
     // compared against `now()` by the read paths, so a chapter opens in the reader's unread
@@ -236,7 +235,7 @@ async fn fan_out(
     // Preferences are applied *after* the claim, for the same reason the in-app flag is: the
     // claim is the announcement record. Filtering before it would leave the slot unclaimed, so
     // re-enabling a muted watchlist status later would replay every chapter released while it
-    // was off as a fresh flood. The early-access gate sits here for the same reason — opting a
+    // was off as a fresh flood. The early-access gate sits here for the same reason: opting a
     // provider in should not replay every locked chapter released before it.
     let recipients: Vec<tankovault_domain::UserId> = watchers
         .iter()
@@ -250,8 +249,8 @@ async fn fan_out(
         .collect();
 
     if in_app && !recipients.is_empty() {
-        // One immutable document for the whole fan-out — only `user_id` varies. Display fields
-        // are snapshotted rather than joined at read time: a notification is a record of what
+        // One immutable document for the whole fan-out; only `user_id` varies. Display fields
+        // are snapshotted, not joined at read time: a notification is a record of what
         // was announced, and a later rename should not rewrite what the reader was told.
         let context = tankovault_db::repo::tracking::notification_context(
             pool,
@@ -289,8 +288,8 @@ async fn fan_out(
     // Fire external channels once per genuinely-new chapter (i.e. when at least one
     // watcher got a fresh in-app notification), so rescans never re-alert operators.
     //
-    // A locked chapter never reaches them. These channels are broadcasts — one webhook, one
-    // room, no per-reader opt-in to consult — so "chapter N is out" would be posted to an
+    // A locked chapter never reaches them. These channels are broadcasts (one webhook, one
+    // room, no per-reader opt-in to consult), so "chapter N is out" would be posted to an
     // audience for whom it is not.
     if notified_any && broadcastable(event.access) && !channels.is_empty() {
         let alert = Alert {
@@ -321,7 +320,7 @@ fn announceable(
 
 /// Whether this chapter may go to the external broadcast channels.
 ///
-/// They have no per-reader opt-in to consult — one webhook, one room — so a locked chapter would
+/// They have no per-reader opt-in to consult (one webhook, one room), so a locked chapter would
 /// be posted as "chapter N is out" to an audience for whom it is not.
 fn broadcastable(access: tankovault_domain::ChapterAccess) -> bool {
     access == tankovault_domain::ChapterAccess::Free
@@ -332,7 +331,7 @@ fn group_key(series_id: tankovault_domain::SeriesId) -> String {
     format!("series:{}", series_id.as_uuid())
 }
 
-/// Build the `v2` chapter payload — everything a row needs to read without being opened.
+/// Builds the `v2` chapter payload: everything a row needs to read without being opened.
 ///
 /// `context` is `None` only when the series or provider vanished between the scan and here; the
 /// row is still written, just undecorated, because losing the announcement is worse than losing
@@ -368,7 +367,7 @@ fn chapter_payload(
 /// rows on failure.
 ///
 /// Counts come from one grouped query for the batch. A miss (a race with a concurrent
-/// "mark all read") is treated as `0` rather than panicking.
+/// "mark all read") is treated as `0` instead of panicking.
 async fn push_live(pool: &PgPool, bus: &Bus, created: &[&CreatedNotification]) {
     if created.is_empty() {
         return;
@@ -384,7 +383,7 @@ async fn push_live(pool: &PgPool, bus: &Bus, created: &[&CreatedNotification]) {
         };
     let created_at = OffsetDateTime::now_utc();
     // The payload is the *stored* document, not the one this event contributed: a coalesced row
-    // now reads "12 new", and pushing the single-chapter document would put a stale line on
+    // reads "12 new", and pushing the single-chapter document would put a stale line on
     // screen that only a reload would correct.
     for entry in created {
         let live = UserNotification {
@@ -437,7 +436,7 @@ async fn dispatch_external(
     }
 }
 
-/// Count one channel's delivery attempt.
+/// Counts one channel's delivery attempt.
 ///
 /// The only signal a *fast-failing* relay produces. A relay that hangs stalls the consumer and
 /// shows up as an undraining backlog; one that refuses immediately is logged, acked and
@@ -457,8 +456,8 @@ mod tests {
     use super::{announceable, broadcastable};
     use tankovault_domain::{ChapterAccess, UserId};
 
-    /// Regression: the fan-out never looked at `access`, so a chapter the provider had published
-    /// behind a paywall fired a "new chapter" notification at every watcher — the exact failure
+    /// The bug: the fan-out never looked at `access`, so a chapter the provider had published
+    /// behind a paywall fired a "new chapter" notification at every watcher, the exact failure
     /// migration `0047` was written to prevent, on the one surface that migration did not reach.
     /// A reader with no early-access opt-in for the provider was sent to a page that answers with
     /// a paywall, for a chapter their unread count correctly refused to show.
@@ -475,7 +474,7 @@ mod tests {
     }
 
     /// The external channels are broadcasts with no reader behind them to check, so a locked
-    /// chapter must not reach them at all — there is no "only the payers" to narrow to.
+    /// chapter must not reach them at all: there is no "only the payers" to narrow to.
     #[test]
     fn a_paywalled_chapter_never_reaches_a_broadcast_channel() {
         assert!(broadcastable(ChapterAccess::Free));

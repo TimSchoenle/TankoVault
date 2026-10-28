@@ -1,6 +1,6 @@
-//! `AniList`-shaped response types and the pure functions that build them from GraphQL JSON, kept
-//! free of the network so the response shaping is directly testable. Both types convert into the
-//! provider-agnostic `RemoteEntry`/`RemoteMetadata` via `From`.
+//! Owns the `AniList`-shaped response types and the pure functions that build them from GraphQL
+//! JSON, kept free of the network so the response shaping is directly testable. Both types convert
+//! into the provider-agnostic `RemoteEntry`/`RemoteMetadata` via `From`.
 
 use time::OffsetDateTime;
 
@@ -88,8 +88,8 @@ impl From<MediaMetadata> for RemoteMetadata {
     }
 }
 
-/// Extract [`AniListEntry`]s from a `MediaListCollection` GraphQL `data` object. Entries
-/// with an unrecognised status or no usable title are skipped rather than failing the run.
+/// Extracts [`AniListEntry`]s from a `MediaListCollection` GraphQL `data` object. Entries
+/// with an unrecognised status or no usable title are skipped instead of failing the run.
 #[must_use]
 pub(crate) fn parse_media_list(data: &serde_json::Value) -> Vec<AniListEntry> {
     let Some(lists) = data
@@ -146,7 +146,7 @@ fn parse_entry(entry: &serde_json::Value) -> Option<AniListEntry> {
     })
 }
 
-/// Extract [`MediaMetadata`] from a public `Media(...)` GraphQL `data` object (no user token).
+/// Extracts [`MediaMetadata`] from a public `Media(...)` GraphQL `data` object (no user token).
 /// Returns `None` when there is no `Media` node, it has no usable id/title, or it is a light
 /// novel.
 ///
@@ -166,7 +166,7 @@ pub(crate) fn parse_media_metadata(data: &serde_json::Value) -> Option<MediaMeta
 /// so only a confirmed novel returns it; a record that could not be read is an error.
 ///
 /// # Errors
-/// No `Media` node, a null one, or a non-novel with no usable id or title.
+/// Returns an error for no `Media` node, a null one, or a non-novel with no usable id or title.
 pub(crate) fn parse_media_metadata_by_id(
     data: &serde_json::Value,
 ) -> anyhow::Result<Option<MediaMetadata>> {
@@ -182,7 +182,7 @@ pub(crate) fn parse_media_metadata_by_id(
     })
 }
 
-/// Read one `media` node — the single place a GraphQL media selection becomes local values,
+/// Reads one `media` node, the single place a GraphQL media selection becomes local values,
 /// shared by the list and public-metadata parsers so neither can drift from the other. Returns
 /// `None` for a node with no id or usable title: an entry we can't name, we can't match.
 fn parse_media(media: &serde_json::Value) -> Option<MediaMetadata> {
@@ -308,12 +308,12 @@ fn genres_from_media(media: &serde_json::Value) -> Vec<String> {
 /// `AniList`'s descriptive tags for a `media` object, weighted by rank (empty when absent).
 ///
 /// **Spoiler- and adult-flagged tags are dropped here and never stored.** `series_tags` has no
-/// visibility column, and every path that reads it — the series page's tag chips, the browse
+/// visibility column, and every path that reads it (the series page's tag chips, the browse
 /// filters, the matcher's overlap score, and the recommender's own "because you liked X, which
-/// shares …" explanation — renders what it finds. A tag naming a late plot twist or an explicit
+/// shares …" explanation) renders what it finds. A tag naming a late plot twist or an explicit
 /// act would reach a reader through any one of them, and a filter that has to be remembered in
 /// five places is a filter that will be forgotten in one. The recall this costs is real and is
-/// the price of not needing that audit. Restoring them means a visibility column plus a
+/// the price of not needing that audit. Restoring them means a visibility column and a
 /// predicate on every one of those reads, not a change here.
 fn themes_from_media(media: &serde_json::Value) -> Vec<RemoteTag> {
     let Some(tags) = media.get("tags").and_then(serde_json::Value::as_array) else {
@@ -332,7 +332,7 @@ fn themes_from_media(media: &serde_json::Value) -> Vec<RemoteTag> {
             continue;
         }
         // A rank of zero is a term nobody upvoted, and absent is the same statement. Both floor
-        // rather than drop: the tag is still evidence, just the weakest kind the column allows.
+        // instead of dropping: the tag is still evidence, just the weakest kind the column allows.
         let rank = tag
             .get("rank")
             .and_then(serde_json::Value::as_i64)
@@ -363,8 +363,8 @@ fn staff_from_media(media: &serde_json::Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Strip HTML tags and collapse the common `<br>` breaks `AniList` uses in descriptions to
-/// plain text with normal line breaks. Deliberately tiny — `AniList` descriptions only ever
+/// Strips HTML tags and collapses the common `<br>` breaks `AniList` uses in descriptions to
+/// plain text with normal line breaks. Deliberately tiny: `AniList` descriptions only ever
 /// carry simple inline markup, not arbitrary HTML.
 fn strip_html(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
@@ -569,8 +569,8 @@ mod tests {
         assert!(parse_media_metadata(&media("MANGA")).is_some());
     }
 
-    /// Re-verification blocks a mapping on `Ok(None)`. A by-id response whose `Media` was null
-    /// once read as "not a library record", so a record `AniList` failed to return lost its mapping.
+    /// Re-verification blocks a mapping on `Ok(None)`. A by-id response whose `Media` was null once
+    /// read as "not a library record", so a record `AniList` failed to return lost its mapping.
     #[test]
     fn a_by_id_lookup_with_no_record_is_an_error_not_a_verdict() {
         assert!(parse_media_metadata_by_id(&serde_json::json!({ "Media": null })).is_err());
@@ -658,7 +658,7 @@ mod tests {
     /// and never zero.
     ///
     /// The bug this pins: `series_tags_weight_check` rejects `weight <= 0`, so a literal
-    /// `rank / 100` of zero aborts the transaction that carried the whole enrichment batch —
+    /// `rank / 100` of zero aborts the transaction that carried the whole enrichment batch,
     /// one unvoted tag silently costing a series every other signal in the same sweep.
     #[test]
     fn a_rank_becomes_a_weight_and_zero_is_floored() {
@@ -711,7 +711,7 @@ mod tests {
         assert_eq!(m.source.as_deref(), Some("web_novel"));
     }
 
-    /// Absent signals must stay absent rather than defaulting to a fabricated value.
+    /// Absent signals must stay absent instead of defaulting to a fabricated value.
     ///
     /// The bug this pins: a score of `0` for "nobody has scored this" makes the appeal prior
     /// read an unrated series as the worst in the catalogue.

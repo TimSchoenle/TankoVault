@@ -1,5 +1,5 @@
-//! One pass over the shortlist: read each pair, adjudicate it, act on the verdict, and queue the
-//! rest.
+//! Owns one pass over the shortlist: read each pair, adjudicate it, act on the verdict, and queue
+//! the rest.
 
 use std::collections::{HashMap, HashSet};
 
@@ -23,14 +23,14 @@ use super::{
     run::{SweepBudget, SweepScope},
 };
 
-/// Run one pass of a sweep.
+/// Runs one pass of a sweep.
 ///
 /// # Three phases, and why the merges are not in the last one
 ///
-/// Judging is cheap and writing is not: a run judges thousands of pairs and used to spend two
-/// statements on each, which made round trips — not scoring, and not the shortlist query — the
-/// cost of a sweep. The review and distinct verdicts and their journal rows are therefore
-/// buffered and written once each.
+/// Judging is cheap and writing is not: a run judges thousands of pairs, and two statements on each
+/// would make round trips (not scoring, and not the shortlist query) the cost of a sweep. The
+/// review and distinct verdicts and their journal rows are therefore buffered and written once
+/// each.
 ///
 /// Merges stay inline in the judging phase, for two independent reasons. They mutate the
 /// catalogue, so every later pair naming an absorbed series has stale facts and must be skipped;
@@ -39,7 +39,8 @@ use super::{
 ///
 /// # Errors
 ///
-/// Database failures; merges already committed stay committed (idempotent, safe to re-run).
+/// Returns an error on a database failure; merges already committed stay committed (idempotent,
+/// safe to re-run).
 pub(super) async fn sweep_once(
     pool: &PgPool,
     policy: Thresholds,
@@ -58,13 +59,13 @@ pub(super) async fn sweep_once(
         budget,
         triggers,
         ctx: JournalContext {
-            // One id for the whole run, so a bad sweep can be read — and reverted — as a unit.
+            // One id for the whole run, so a bad sweep can be read, and reverted, as a unit.
             sweep_id: Uuid::now_v7(),
             actor,
             policy: policy_json(policy),
         },
         // Batched reads for the whole shortlist. `pair_similarities` is per-pair, not
-        // per-series — omitting it would re-score a trigram-matched row lower on no new evidence.
+        // per-series; omitting it would re-score a trigram-matched row lower on no new evidence.
         facts: load_facts(pool, &pairs).await?,
         similarity: matching::pair_similarities(pool, &pairs)
             .await?
@@ -115,7 +116,7 @@ impl Pass<'_> {
         for &pair in pairs {
             let (a, b) = pair;
             // Facts loaded for an already-merged series are stale; skip it for the rest of the
-            // pass. `sweep` runs another rather than leaving the chain for the next tick.
+            // pass. `sweep` runs another instead of leaving the chain for the next tick.
             if absorbed.contains(&a) || absorbed.contains(&b) {
                 report.chains_deferred += 1;
                 continue;
@@ -166,8 +167,8 @@ impl Pass<'_> {
                         None,
                         Action::Merged { keep, drop },
                     );
-                    // Written now, alone: this row carries the undo record, and it is the only
-                    // thing standing between a wrong automatic merge and an unrecoverable one.
+                    // Written immediately, alone: this row carries the undo record, and it is the
+                    // only thing standing between a wrong automatic merge and an unrecoverable one.
                     let payload = entry.payload("merged");
                     journal(
                         self.pool,
@@ -200,7 +201,7 @@ impl Pass<'_> {
         Ok(judged)
     }
 
-    /// Merge `drop` into `keep`, logging the decision that deleted a row.
+    /// Merges `drop` into `keep`, logging the decision that deleted a row.
     async fn merge(
         &self,
         keep: &SeriesMatchFacts,
@@ -271,8 +272,8 @@ impl Pass<'_> {
     }
 }
 
-/// Drop the judgements this pass invalidated by merging one of their series away, returning how
-/// many — a chain deferral, exactly like a pair the judging loop skipped after the merge.
+/// Drops the judgements this pass invalidated by merging one of their series away, returning how
+/// many: a chain deferral, exactly like a pair the judging loop skipped after the merge.
 ///
 /// That loop can only skip pairs it has **not yet reached**. A pair judged *before* the merge kept
 /// a verdict naming a series the merge then deleted, and those verdicts are written in one batch
@@ -360,7 +361,7 @@ pub(super) enum QueueWrite {
     },
 }
 
-/// Write the review and distinct verdicts, one statement each, and count them into `report`.
+/// Writes the review and distinct verdicts, one statement each, and counts them into `report`.
 async fn flush_queue_writes(
     pool: &PgPool,
     judged: &[Judged<'_>],
@@ -411,7 +412,7 @@ async fn flush_queue_writes(
 /// The deferred pairs of this pass whose latest journal row is already a deferral.
 ///
 /// Best-effort like [`journal`]: a failed lookup journals every deferral, which is the old
-/// behaviour, rather than failing a pass whose merges are already committed.
+/// behaviour, instead of failing a pass whose merges are already committed.
 pub(super) async fn repeat_deferrals(
     pool: &PgPool,
     judged: &[Judged<'_>],
@@ -430,7 +431,7 @@ pub(super) async fn repeat_deferrals(
     }
 }
 
-/// Load [`SeriesMatchFacts`] for every series named by `pairs`, keyed by id.
+/// Loads [`SeriesMatchFacts`] for every series named by `pairs`, keyed by id.
 pub(super) async fn load_facts(
     pool: &PgPool,
     pairs: &[DuplicatePair],

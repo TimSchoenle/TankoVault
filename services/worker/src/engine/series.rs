@@ -1,4 +1,4 @@
-//! Processing one scanned series: ingest, outlier rejection and change detection.
+//! Owns processing one scanned series: ingest, outlier rejection and change detection.
 
 use std::collections::HashMap;
 use tankovault_adapters::{Ctx, SourceAdapter};
@@ -10,7 +10,7 @@ use time::OffsetDateTime;
 use super::{Engine, StageReporter, chapter_key, content_hash, drop_implausible, drop_unstorable};
 
 impl Engine {
-    /// Fetch, parse, and idempotently ingest one series; emit `chapter.discovered` for
+    /// Fetches, parses and idempotently ingests one series, and emits `chapter.discovered` for
     /// genuinely new chapters. Returns the count of new chapters.
     ///
     /// The three stages reported here are the ones a slow series divides into: two provider
@@ -99,7 +99,7 @@ impl Engine {
         .await?;
 
         if let Some(bus) = &self.bus {
-            // One indexing pass, then a lookup per new chapter — an O(n) scan per new
+            // One indexing pass, then a lookup per new chapter: an O(n) scan per new
             // number would cost a 2,000-chapter series with 50 new chapters 100,000
             // comparisons.
             let by_number: HashMap<u64, &ChapterUpsert> = scanned

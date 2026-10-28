@@ -1,10 +1,10 @@
-//! Reporting which stage a task is in, and accumulating where its wall clock went.
+//! Owns reporting which stage a task is in, and accumulating where its wall clock went.
 //!
-//! One scan task does several distinguishable things — fetch a page, register its series, fan out
-//! its children — and until now the only thing it published about any of them was that it was
-//! still claimed. That is why a fast scan could sit at `0/1` for twenty minutes with nothing to
-//! say about it. The reporter writes the current stage to the task row as it moves, and hands back
-//! a [`StageTimings`] when the task ends so the settle can record where the time went.
+//! One scan task does several distinguishable things (fetch a page, register its series, fan out
+//! its children), and without a stage the only thing it publishes about any of them is that it is
+//! still claimed: a fast scan can sit at `0/1` for twenty minutes with nothing to say about it. The
+//! reporter writes the current stage to the task row as it moves, and hands back a [`StageTimings`]
+//! when the task ends so the settle can record where the time went.
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -15,14 +15,14 @@ use tankovault_fetch::FetchAccounting;
 /// How often a stage that is only *progressing* rewrites the task row.
 ///
 /// A stage change always writes. Progress inside one is throttled, because the fan-out reports
-/// per chunk and the console reads at 2 s — a write per chunk would be a statement per thousand
+/// per chunk and the console reads at 2 s, and a write per chunk would be a statement per thousand
 /// series for a number nobody can see move.
 const PROGRESS_WRITE_EVERY: Duration = Duration::from_secs(2);
 
 /// The mutable half, behind one lock.
 ///
-/// A `std::sync::Mutex` rather than `tokio`'s: nothing awaits while it is held — the guard is
-/// dropped before the database write — so an async lock would buy nothing and make every
+/// A `std::sync::Mutex`, not `tokio`'s: nothing awaits while it is held (the guard is
+/// dropped before the database write), so an async lock would buy nothing and make every
 /// reporting call a suspension point.
 struct State {
     /// The stage the task is in, and when it entered it.
@@ -35,7 +35,7 @@ struct State {
 /// Reports a task's stage to its row and accumulates its per-stage timings.
 ///
 /// The task id is optional: the one-shot CLI scan has no task row, and there the reporter still
-/// accumulates timings (which nothing reads) rather than forcing every engine method to have two
+/// accumulates timings (which nothing reads) instead of forcing every engine method to have two
 /// versions.
 pub(crate) struct StageReporter {
     pool: PgPool,
@@ -49,7 +49,7 @@ impl StageReporter {
         Self::new(pool, Some(task_id))
     }
 
-    /// A reporter with no row to write to — the inline scan path.
+    /// A reporter with no row to write to: the inline scan path.
     pub(crate) fn detached(pool: PgPool) -> Self {
         Self::new(pool, None)
     }
@@ -63,7 +63,7 @@ impl StageReporter {
                 timings: StageTimings::default(),
                 // Backdated so the first progress report is never throttled. `checked_sub`
                 // because a process started inside the window has no earlier instant to name,
-                // and "now" there costs one throttled report rather than anything worse.
+                // and "now" there costs one throttled report and nothing worse.
                 last_progress_write: Instant::now()
                     .checked_sub(PROGRESS_WRITE_EVERY)
                     .unwrap_or_else(Instant::now),
@@ -71,9 +71,9 @@ impl StageReporter {
         }
     }
 
-    /// Enter `stage`, closing whatever stage was open and charging it its elapsed time.
+    /// Enters `stage`, closing whatever stage was open and charging it its elapsed time.
     ///
-    /// `detail` is what the stage is working against — a series path, a catalogue page — and is
+    /// `detail` is what the stage is working against (a series path, a catalogue page) and is
     /// the field that turns "fetching chapters" into something an operator can act on.
     pub(crate) async fn enter(&self, stage: ScanStage, detail: Option<&str>) {
         {
@@ -84,7 +84,7 @@ impl StageReporter {
         self.write(stage, None, detail).await;
     }
 
-    /// Report progress within the current stage. Throttled; a caller may report per item.
+    /// Reports progress within the current stage. Throttled; a caller may report per item.
     pub(crate) async fn progress(&self, done: usize, total: usize, detail: Option<&str>) {
         let current = {
             let mut held = self.lock();
@@ -101,9 +101,9 @@ impl StageReporter {
             .await;
     }
 
-    /// Close the task out and return where its time went, folding in what the fetch stack spent.
+    /// Closes the task out and returns where its time went, folding in what the fetch stack spent.
     ///
-    /// Consuming, so a reporter cannot keep reporting after the settle it fed — a late stage write
+    /// Consuming, so a reporter cannot keep reporting after the settle it fed: a late stage write
     /// against a finished row is exactly the "completed run still fetching" the repository's
     /// `state = 'claimed'` guard also refuses.
     pub(crate) fn finish(self, fetched: FetchAccounting) -> StageTimings {
@@ -122,7 +122,7 @@ impl StageReporter {
         timings
     }
 
-    /// Recover the lock rather than propagate a poisoning: a panic in one stage must not stop the
+    /// Recovers the lock instead of propagating a poisoning: a panic in one stage must not stop the
     /// remaining stages of the task from being reported.
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
         self.state
@@ -130,7 +130,7 @@ impl StageReporter {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    /// Push the current stage to the task row. Best-effort by design — a scan must not fail
+    /// Pushes the current stage to the task row. Best-effort by design: a scan must not fail
     /// because its progress report did not land.
     async fn write(&self, stage: ScanStage, progress: Option<(i32, i32)>, detail: Option<&str>) {
         let Some(task_id) = self.task_id else {
@@ -145,7 +145,7 @@ impl StageReporter {
     }
 }
 
-/// Charge the open stage its elapsed time and leave none open.
+/// Charges the open stage its elapsed time and leaves none open.
 fn close_open_stage(state: &mut State) {
     if let Some((stage, since)) = state.current.take() {
         let millis = i64::try_from(since.elapsed().as_millis()).unwrap_or(i64::MAX);
@@ -205,7 +205,7 @@ mod tests {
         assert_eq!(timings.throttled, 2);
     }
 
-    /// Progress reporting is called per fan-out chunk — potentially per thousand series — and each
+    /// Progress reporting is called per fan-out chunk (potentially per thousand series), and each
     /// call would otherwise be a statement. The throttle is what makes it safe to report often.
     #[tokio::test]
     async fn progress_within_one_stage_is_throttled() {

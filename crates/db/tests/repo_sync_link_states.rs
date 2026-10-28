@@ -2,7 +2,7 @@
 //!
 //! The `state` is what stops a link-CSRF: an attacker completing their own consent and landing a
 //! victim's browser on the callback with the attacker's `code` (RFC 6749 §10.12). Every predicate
-//! in `consume_link_state` fails open if dropped — the callback still succeeds — so each is
+//! in `consume_link_state` fails open if dropped, since the callback still succeeds, so each is
 //! pinned here.
 //!
 //! Gated behind the `integration` feature (requires Docker).

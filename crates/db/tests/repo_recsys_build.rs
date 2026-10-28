@@ -65,11 +65,10 @@ async fn a_claim_whose_heartbeat_went_stale_is_reclaimed() {
     );
 }
 
-/// **A claim taken before the lease column existed is breakable.**
+/// **A claim with no heartbeat is breakable.**
 ///
-/// The row this migration lands on may already be wedged — that is the reason the migration was
-/// written — and it carries no heartbeat to expire. A NULL therefore has to count as expired, or
-/// the deployment that ships the fix leaves the stuck build stuck.
+/// A row claimed without a heartbeat may already be wedged and has nothing to expire, so a NULL
+/// counts as expired, or the stuck build stays stuck.
 #[tokio::test]
 async fn a_claim_with_no_heartbeat_at_all_is_reclaimed() {
     let db = TestDb::spawn().await;
@@ -94,10 +93,10 @@ async fn a_claim_with_no_heartbeat_at_all_is_reclaimed() {
 
 /// **A heartbeat holds the claim, and only its own.**
 ///
-/// The first half is what keeps a long build from having its claim stolen mid-run. The second is
-/// what stops a superseded build from keeping a claim alive that it no longer owns — without the
-/// `claim_id` fence, the zombie's heartbeat would extend the *new* holder's lease and the two
-/// would take turns writing under different generations indefinitely.
+/// The first half keeps a long build from having its claim stolen mid-run. The second stops a
+/// superseded build from keeping alive a claim it lost: without the `claim_id` fence, the
+/// zombie's heartbeat would extend the *new* holder's lease and the two would take turns writing
+/// under different generations indefinitely.
 #[tokio::test]
 async fn only_the_current_holder_can_stamp_the_lease() {
     let db = TestDb::spawn().await;
@@ -143,9 +142,9 @@ async fn only_the_current_holder_can_stamp_the_lease() {
 ///
 /// Breaking a lease makes two builds briefly concurrent: a cancelled request handler is dropped
 /// but a spawned task is not, and a partitioned replica still believes it owns the build. Without
-/// the `claim_id` fence the zombie's progress writes would land on the new run — the console
-/// showing one run's stage against another's count — and its `finish_build` would release a claim
-/// it does not hold, freeing the state of a build still in progress for a *third* one to claim.
+/// the `claim_id` fence the zombie's progress writes would land on the new run, the console
+/// showing one run's stage against another's count, and its `finish_build` would release a claim
+/// it does not hold, freeing a build still in progress for a *third* one to claim.
 #[tokio::test]
 async fn a_superseded_build_cannot_advance_or_release_the_new_claim() {
     let db = TestDb::spawn().await;

@@ -1,27 +1,25 @@
-//! Identity and session plumbing (`crates/db/src/repo/users.rs`, TEST F-05).
+//! Identity and session plumbing (`crates/db/src/repo/users/`).
 //!
-//! Everything in this file decides whether somebody is let in, or stays let in. The queries
-//! themselves are compile-checked, so what can go wrong is never a type error — it is a
-//! *predicate*:
+//! Everything in this file decides whether somebody is let in, or stays let in. The queries are
+//! compile-checked, so what can go wrong is never a type error but a *predicate*:
 //!
-//! - **Which column an identifier is routed to.** SEC-9's fix replaced `WHERE email = $1 OR
-//!   username = $1` with two branches chosen on `@`. Losing a branch, or restoring the `OR`,
-//!   compiles and passes every type check, and the failure is one account's password being
-//!   checked against another account's row.
+//! - **Which column an identifier is routed to.** The lookup uses two branches chosen on `@`,
+//!   not `WHERE email = $1 OR username = $1`. Losing a branch, or restoring the `OR`, compiles,
+//!   and one account's password is checked against another account's row.
 //! - **Whether a revocation is scoped to its owner.** `revoke_session` scopes through a
-//!   subquery rather than the outer `WHERE`; dropping the `AND user_id = $1` inside it would
-//!   let any signed-in account terminate any other account's session, and every existing
-//!   caller would keep working.
+//!   subquery, not the outer `WHERE`; dropping the `AND user_id = $1` inside it would let any
+//!   signed-in account terminate any other account's session, and every caller would keep
+//!   working.
 //! - **Whether "single-use" is actually single-use.** `consume_*` is single-use only because of
 //!   `AND used_at IS NULL`. Without it the update still reports a row, the handler still
 //!   succeeds, and a reset link becomes replayable for its whole TTL.
-//! - **Whether a changed email drops its verification** (SEC-4). The `CASE` that clears
-//!   `email_verified_at` is three lines that nothing else in the codebase depends on, so it is
-//!   exactly the shape of thing a later "simplification" removes.
+//! - **Whether a changed email drops its verification.** The `CASE` that clears
+//!   `email_verified_at` is three lines nothing else depends on, the shape of thing a later
+//!   "simplification" removes.
 //!
-//! Every one of these fails *open*: the request succeeds, the response looks right, and the
-//! only evidence is in somebody else's account. That is why they are pinned here rather than
-//! left to the handler tests, which cannot see which row the database chose.
+//! Every one of these fails *open*: the request succeeds, the response looks right, and the only
+//! evidence is in somebody else's account. So they are pinned here, not left to the handler
+//! tests, which cannot see which row the database chose.
 //!
 //! Opt-in: gated behind the `integration` feature because it requires Docker.
 #![cfg(feature = "integration")]
@@ -96,27 +94,26 @@ async fn stored_email(db: &TestDb, user: UserId) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// SEC-9 — the split credential lookup
+// The split credential lookup
 // ---------------------------------------------------------------------------
 
 /// An identifier containing `@` must resolve against `email` and nothing else.
 ///
-/// The bug: `WHERE email = $1 OR username = $1` let user B register `victim@example.test` as a
-/// *username* and collide with user A's *address*. Both rows matched, the planner picked one,
-/// and whichever it picked decided whose `password_hash` the login handler verified — so A's
-/// own correct password could authenticate as B, or B's password as A. The two unique
-/// constraints are per-column, so nothing in the schema forbade the collision either.
+/// The bug: `WHERE email = $1 OR username = $1` lets user B register `victim@example.test` as a
+/// *username* and collide with user A's *address*. Both rows match, the planner picks one, and
+/// that decides whose `password_hash` the login handler verifies, so A's correct password can
+/// authenticate as B, or B's as A. The unique constraints are per column, so the schema allows
+/// the collision.
 ///
 /// The fixture drops the `username_not_an_email` CHECK (migration 0021) on purpose: 0021 stops
-/// the state from being *created*, and this test asserts the lookup is unambiguous for data
-/// that already exists — which is the property that made the routing worth doing on top of the
-/// constraint rather than instead of it.
+/// the state from being *created*, and this asserts the lookup is unambiguous for data that
+/// already exists, which is why the routing exists alongside the constraint.
 #[tokio::test]
 async fn an_identifier_containing_an_at_sign_only_ever_resolves_as_an_email() {
     let db = TestDb::spawn().await;
-    // Not `seed::user`: it writes one placeholder hash for every row, and the assertion below
-    // is only worth making if the two rows carry *different* hashes — otherwise it holds just
-    // as well when the lookup returns the squatter's credentials.
+    // Not `seed::user`: it writes one placeholder hash for every row, and the assertion below is
+    // worth making only if the two rows carry *different* hashes, or it holds just as well when
+    // the lookup returns the squatter's credentials.
     let victim = users::create(&db.pool, "victim@example.test", "victim", &a_hash("victim"))
         .await
         .expect("seed the victim")
@@ -175,21 +172,17 @@ async fn a_bare_identifier_only_ever_resolves_as_a_username() {
 
 /// Both identifier columns are `citext`, so lookup and uniqueness agree on case.
 ///
-/// **This test found a live defect.** `email` and `username` are `citext` (migrations 0001 and
-/// 0004) so that `Alice@Example.com` and `alice@example.com` are one account — and the unique
-/// index behaved that way — but every *lookup* was case-sensitive, because `sqlx` binds a Rust
-/// `&str` as `text` and `citext = text` resolves, through citext's implicit cast to `text`, to
-/// a plain `text = text`. Nothing in `find_credentials` was visibly wrong; the whole difference
-/// was the OID on the wire, and the offline `.sqlx` cache recorded the parameter as `citext`,
-/// so even reading the metadata said it was fine.
+/// `email` and `username` are `citext` (migrations 0001 and 0004), so `Alice@Example.com` and
+/// `alice@example.com` are one account to the unique index. The bug: `sqlx` binds a Rust `&str`
+/// as `text`, and `citext = text` resolves, through citext's implicit cast, to `text = text`, so
+/// every *lookup* is case-sensitive. The difference is only the OID on the wire, and the offline
+/// `.sqlx` cache records the parameter as `citext`, so even the metadata looks fine.
 ///
-/// The user-visible failure was a silent, total lockout. Registration refused the second
-/// casing as a duplicate, sign-in refused the first, and both password reset and
-/// resend-confirmation answer identically whether or not an address is known (deliberately —
-/// see `find_by_email`), so someone who capitalised their address differently than they
-/// registered it could not sign in, could not recover, could not re-register, and was told
-/// nothing. Fixed by binding through `repo::users::CiText`; see that type for why the fix is a
-/// binding rather than a change to the SQL.
+/// The effect is a silent, total lockout. Registration refuses the second casing as a duplicate,
+/// sign-in refuses the first, and password reset and resend-confirmation answer identically
+/// whether or not an address is known (see `find_by_email`), so a user who capitalised their
+/// address differently cannot sign in, recover or re-register, and is told nothing. Binding
+/// through `repo::users::CiText` prevents it; see that type for why it is a binding, not SQL.
 #[tokio::test]
 async fn the_credential_lookup_is_case_insensitive_on_both_columns() {
     let db = TestDb::spawn().await;
@@ -254,9 +247,9 @@ async fn the_credential_lookup_reports_verification_and_status() {
 ///
 /// Case-insensitivity here is the schema's (`citext`), not the application's, so it is worth
 /// pinning at this layer: a registration form that lowercases its input would hide a regression
-/// in the column type until somebody registered through the admin console instead. The error
-/// mapping matters too — a raw 23505 reaching the handler is a 500, and a registration form
-/// that returns 500 for a taken name reads as an outage.
+/// in the column type until somebody registered through the admin console. The error mapping
+/// matters too: a raw 23505 reaching the handler is a 500, which reads as an outage on a
+/// registration form.
 #[tokio::test]
 async fn a_duplicate_email_or_username_is_refused_case_insensitively() {
     let db = TestDb::spawn().await;
@@ -284,11 +277,11 @@ async fn a_duplicate_email_or_username_is_refused_case_insensitively() {
 
 /// The schema, not just the validator, refuses a username containing `@`.
 ///
-/// SEC-9 was closed at three layers; this is the last one. A username reaching the database
-/// through any path that skips `validate_username` — a seed script, the admin console, a future
-/// import — must still be rejected, because it is the *stored* row that makes a lookup
-/// ambiguous. Note this is a CHECK violation, not a uniqueness one, so it does **not** map to
-/// `Conflict`: `create` only rewrites 23505.
+/// The last of three layers against ambiguous identifiers. A username reaching the database
+/// through any path that skips `validate_username` (a seed script, the admin console, an import)
+/// must still be rejected, because the *stored* row makes a lookup ambiguous. This is a CHECK
+/// violation, not a uniqueness one, so it does **not** map to `Conflict`: `create` only rewrites
+/// 23505.
 #[tokio::test]
 async fn the_schema_refuses_a_username_containing_an_at_sign() {
     let db = TestDb::spawn().await;
@@ -316,7 +309,7 @@ async fn the_schema_refuses_a_username_containing_an_at_sign() {
 /// `revoke_token` is the *normal rotation* path: it runs on every successful refresh, for a
 /// token that is about to be replaced by its successor in the same family. If its `WHERE` ever
 /// widened to the family (or to the user), every rotation would sign the user out of every
-/// device — which looks like a session-expiry bug and gets "fixed" by lengthening the TTL.
+/// device, which looks like a session-expiry bug and gets "fixed" by lengthening the TTL.
 #[tokio::test]
 async fn revoking_one_token_leaves_its_siblings_and_other_families_alone() {
     let db = TestDb::spawn().await;
@@ -349,11 +342,10 @@ async fn revoking_one_token_leaves_its_siblings_and_other_families_alone() {
 /// Revoking a family kills every live token in it, only that family, and only once.
 ///
 /// This is the reuse-detection response: a presented token that is already revoked means the
-/// lineage is compromised, so the whole family goes. Two properties, both load-bearing:
-/// the blast radius is the family (not the account — a stolen laptop cookie must not sign the
-/// phone out, or nobody will report the theft), and `AND revoked_at IS NULL` means a second
-/// call cannot rewrite the instant the family was actually killed, which is the only record of
-/// when the compromise was detected.
+/// lineage is compromised, so the whole family goes. Two properties: the blast radius is the
+/// family, not the account (a stolen laptop cookie must not sign the phone out, or nobody will
+/// report the theft), and `AND revoked_at IS NULL` stops a second call rewriting the instant the
+/// family was killed, the only record of when the compromise was detected.
 #[tokio::test]
 async fn revoking_a_family_kills_that_family_once_and_no_other() {
     let db = TestDb::spawn().await;
@@ -390,12 +382,11 @@ async fn revoking_a_family_kills_that_family_once_and_no_other() {
 
 /// `find_refresh` returns revoked and expired tokens **on purpose**.
 ///
-/// Filtering them would be the intuitive read of "find a valid token", and it would silently
-/// disable reuse detection: a stolen token that has already been rotated would come back as
-/// `None`, indistinguishable from a garbage cookie, so `session.rs` would answer 401 and leave
-/// the family alive for the thief to keep rotating. The liveness filter belongs to
-/// `list_sessions` — asserted here in the same test so the split of responsibility is visible
-/// in one place — and to the handler's own `expires_at`/`revoked_at` checks.
+/// Filtering them, the intuitive read of "find a valid token", would silently disable reuse
+/// detection: a stolen, already rotated token would come back as `None`, indistinguishable from
+/// a garbage cookie, so `session.rs` would answer 401 and leave the family alive for the thief.
+/// The liveness filter belongs to `list_sessions`, asserted in the same test so the split is
+/// visible in one place, and to the handler's own `expires_at` and `revoked_at` checks.
 #[tokio::test]
 async fn find_refresh_returns_revoked_and_expired_tokens_for_reuse_detection() {
     let db = TestDb::spawn().await;
@@ -457,12 +448,12 @@ async fn find_refresh_returns_revoked_and_expired_tokens_for_reuse_detection() {
 // Password reset
 // ---------------------------------------------------------------------------
 
-/// A reset token is single-use, and the second attempt loses rather than both winning.
+/// A reset token is single-use, and the second attempt loses instead of both winning.
 ///
-/// `consume_password_reset` is the whole guard: `AND used_at IS NULL` is what makes the flip
-/// atomic, so of two concurrent resets presenting the same token exactly one sees `1`. Drop it
-/// and both see `1` — the update still matches — so a reset link mailed once becomes replayable
-/// for its entire TTL by anyone who reads the mailbox later.
+/// `consume_password_reset` is the whole guard: `AND used_at IS NULL` makes the flip atomic, so
+/// of two concurrent resets presenting the same token exactly one sees `1`. Without it both see
+/// `1`, and a reset link mailed once is replayable for its entire TTL by anyone who reads the
+/// mailbox later.
 #[tokio::test]
 async fn a_password_reset_token_can_be_consumed_exactly_once() {
     let db = TestDb::spawn().await;
@@ -511,10 +502,10 @@ async fn a_password_reset_token_can_be_consumed_exactly_once() {
 
 /// Expiry is reported by the lookup **and** enforced by `consume_password_reset`.
 ///
-/// The repository still answers "is this token known" separately, so the handler can respond
-/// identically for unknown, expired and already-used tokens. The consume used to check only
-/// `used_at`, and the handler hashes the new password between its lookup and the consume: a
-/// token that expired while that hash waited for a slot was still honoured.
+/// The repository answers "is this token known" separately, so the handler can respond
+/// identically for unknown, expired and already-used tokens. The bug: a consume checking only
+/// `used_at`, while the handler hashes the new password between lookup and consume, honours a
+/// token that expired while that hash waited for a slot.
 #[tokio::test]
 async fn an_expired_reset_token_is_reported_expired_and_cannot_be_consumed() {
     let db = TestDb::spawn().await;
@@ -553,7 +544,7 @@ async fn an_expired_reset_token_is_reported_expired_and_cannot_be_consumed() {
 /// A password reset replaces the hash and invalidates every live session for that user only.
 ///
 /// `revoke_all_for_user` is the second half of a reset: the point is that a session stolen
-/// before the reset dies with the credential it was minted from. Scoping is the risk — the
+/// before the reset dies with the credential it was minted from. Scoping is the risk: the
 /// statement's only predicate on identity is `user_id = $1`.
 #[tokio::test]
 async fn a_password_reset_invalidates_only_the_resetting_users_sessions() {
@@ -604,10 +595,10 @@ async fn a_password_reset_invalidates_only_the_resetting_users_sessions() {
 
 /// Verification tokens are single-use, and confirming twice keeps the original instant.
 ///
-/// `COALESCE(email_verified_at, now())` is what makes `mark_email_verified` idempotent. A plain
-/// `SET email_verified_at = now()` would also pass every functional test — the flag is still
-/// true — while quietly resetting "verified since" on every replay of the link, so the one
-/// timestamp that could date an account takeover would always read as "just now".
+/// `COALESCE(email_verified_at, now())` makes `mark_email_verified` idempotent. A plain
+/// `SET email_verified_at = now()` would pass every functional test while resetting "verified
+/// since" on every replay of the link, so the one timestamp that could date an account takeover
+/// would always read "just now".
 #[tokio::test]
 async fn email_verification_is_single_use_and_confirming_twice_keeps_the_first_instant() {
     let db = TestDb::spawn().await;
@@ -660,12 +651,11 @@ async fn email_verification_is_single_use_and_confirming_twice_keeps_the_first_i
 /// The resend-confirmation lookup reports the flag, matches case-insensitively, and answers
 /// `None` for an unregistered address.
 ///
-/// `None` rather than an error is the anti-enumeration contract: the handler responds
-/// identically either way, which it can only do if this call does not distinguish them by
-/// failing. That silence is also what made the `citext` binding bug
-/// ([`the_credential_lookup_is_case_insensitive_on_both_columns`]) so hard to see from the
-/// outside — a registered address that failed to match looked exactly like an unregistered
-/// one, and the user was told their mail was on its way either way.
+/// `None`, not an error, is the anti-enumeration contract: the handler responds identically
+/// either way, which needs this call not to distinguish them by failing. That silence is also
+/// what hides the `citext` binding bug
+/// ([`the_credential_lookup_is_case_insensitive_on_both_columns`]) from the outside: a registered
+/// address that fails to match looks exactly like an unregistered one.
 #[tokio::test]
 async fn the_resend_lookup_reports_verification_without_disclosing_registration() {
     let db = TestDb::spawn().await;
@@ -716,18 +706,16 @@ async fn the_resend_lookup_reports_verification_without_disclosing_registration(
 }
 
 // ---------------------------------------------------------------------------
-// SEC-4 — a changed email loses its verification
+// A changed email loses its verification
 // ---------------------------------------------------------------------------
 
 /// Changing the address clears `email_verified_at`; changing only the username does not.
 ///
-/// The bug SEC-4 closed: an attacker holding a 15-minute access token could point the account
-/// at their own address, which arrived already "verified" because nothing reset the column,
-/// then drive a password reset to it and lock the owner out of an account whose recovery
-/// address they no longer controlled. The `CASE` that clears the column is the fix; the
-/// username half is asserted alongside it because the cheap over-correction — clearing on every
-/// `PATCH` — would force a re-verification email for a display-name edit, and would be reported
-/// as a bug and reverted.
+/// The bug: an attacker holding a short-lived access token points the account at their own
+/// address, which arrives already "verified" because nothing resets the column, then drives a
+/// password reset to it and locks the owner out. The `CASE` clearing the column prevents it. The
+/// username half is asserted too, because the cheap over-correction, clearing on every `PATCH`,
+/// would force a re-verification email for a display-name edit and get reverted as a bug.
 #[tokio::test]
 async fn changing_the_email_clears_verification_and_changing_the_username_does_not() {
     let db = TestDb::spawn().await;
@@ -769,16 +757,15 @@ async fn changing_the_email_clears_verification_and_changing_the_username_does_n
 
 /// A case-only email edit is written through, but is not treated as a change of address.
 ///
-/// The third failing face of the `citext`-versus-`text` binding bug (see
+/// The third face of the `citext`-versus-`text` binding bug (see
 /// [`the_credential_lookup_is_case_insensitive_on_both_columns`]). `update_profile` decides
-/// whether the address *changed* with `$3 <> email`; bound as `text`, that comparison honoured
-/// case, so correcting your own capitalisation counted as moving to a new address: SEC-4's
-/// `CASE` cleared `email_verified_at`, the account was pushed back into the unverified state
-/// that blocks sign-in, and a confirmation link went to the mailbox you were already using.
+/// whether the address *changed* with `$3 <> email`; bound as `text`, that comparison honours
+/// case, so correcting one's own capitalisation counts as a new address: the `CASE` clears
+/// `email_verified_at`, the account drops into the unverified state that blocks sign-in, and a
+/// confirmation link goes to the mailbox already in use.
 ///
-/// Both halves are pinned now: the new spelling is stored (the user sees the capitalisation
-/// they typed) and the verification survives (two spellings deliver to the same mailbox, so
-/// re-verification would be a papercut with no security value).
+/// Both halves are pinned: the new spelling is stored, so the user sees what they typed, and the
+/// verification survives, since two spellings deliver to the same mailbox.
 #[tokio::test]
 async fn a_case_only_email_edit_is_stored_but_is_not_a_change_of_address() {
     let db = TestDb::spawn().await;
@@ -994,7 +981,7 @@ async fn the_session_listing_is_scoped_ordered_and_live_only() {
 ///
 /// The count is the whole reason `revoke_all_sessions` exists next to `revoke_all_for_user`: an
 /// operator forcing a sign-out needs to be told whether there was anything to sign out of. The
-/// second call returning `0` is what makes that number meaningful rather than a constant.
+/// second call returning `0` makes that number meaningful, not a constant.
 #[tokio::test]
 async fn revoking_all_sessions_reports_the_count_and_is_scoped_to_one_user() {
     let db = TestDb::spawn().await;
@@ -1036,14 +1023,13 @@ async fn revoking_all_sessions_reports_the_count_and_is_scoped_to_one_user() {
 /// Preferences default to `{}` and round-trip unchanged.
 ///
 /// An empty document means "use the product defaults", and the read is deliberately total: an
-/// unknown id also answers the defaults rather than failing, because the column is `NOT NULL
-/// DEFAULT '{}'` and the caller is always an authenticated principal. The write is *not* total —
-/// it reports `NotFound` — and that asymmetry is pinned here so nobody reconciles it by making the
-/// write silent, which would turn a settings save against a deleted account into a success.
+/// unknown id also answers the defaults, because the column is `NOT NULL DEFAULT '{}'` and the
+/// caller is always an authenticated principal. The write is *not* total, reporting `NotFound`;
+/// the asymmetry is pinned so nobody makes the write silent, which would turn a settings save
+/// against a deleted account into a success.
 ///
-/// The stored blob was free-form until the preferences became a typed contract; a document this
-/// build cannot parse still has to read as the defaults, since failing here would cost the reader
-/// the notification the preferences only ever meant to shape.
+/// A document this build cannot parse reads as the defaults, since failing here would cost the
+/// reader the notification the preferences only shape.
 #[tokio::test]
 async fn notification_prefs_default_and_round_trip() {
     let db = TestDb::spawn().await;
@@ -1149,9 +1135,9 @@ async fn account_state_reflects_suspension_and_is_absent_for_an_unknown_id() {
         "an unknown id must be absent, not a default Active state"
     );
 
-    // `get` answers the same question with the whole record, and reports the missing row as an
-    // error rather than as `None` — the two are used at different layers and must not be
-    // reconciled into one shape without deciding which caller changes.
+    // `get` answers the same question with the whole record and reports the missing row as an
+    // error, not `None`. The two serve different layers and must not be merged into one shape
+    // without deciding which caller changes.
     assert_eq!(
         users::get(&db.pool, user).await.expect("get").username,
         "state"
@@ -1162,13 +1148,12 @@ async fn account_state_reflects_suspension_and_is_absent_for_an_unknown_id() {
     ));
 }
 
-/// Only a completed sign-in advances `last_login_at` — looking the account up does not.
+/// Only a completed sign-in advances `last_login_at`; looking the account up does not.
 ///
-/// The timestamp is written by a separate statement precisely so a *failed* attempt cannot move
-/// it. Folding it into `find_credentials` as an `UPDATE … RETURNING` would be one fewer round
-/// trip and would make "last login" advance on every password guess, which is worse than not
-/// recording it: both the operator reading the directory and the user checking their own
-/// account would be told the attacker's guess was a successful sign-in.
+/// A separate statement writes the timestamp so a *failed* attempt cannot move it. Folding it
+/// into `find_credentials` as an `UPDATE … RETURNING` would save a round trip and advance "last
+/// login" on every password guess, telling the operator and the user that the attacker's guess
+/// was a successful sign-in.
 #[tokio::test]
 async fn only_a_completed_sign_in_advances_last_login() {
     let db = TestDb::spawn().await;
@@ -1215,10 +1200,10 @@ async fn only_a_completed_sign_in_advances_last_login() {
 
 /// The order is the whole preference, so a write has to *replace* it.
 ///
-/// Written as a differential against a naive upsert: an implementation that merged instead of
-/// replacing would leave the demoted provider ranked and the positions non-contiguous, which the
-/// unique index on `(user_id, position)` would then reject on the *next* write rather than this
-/// one — a failure that surfaces one edit later, against a list the reader has moved on from.
+/// A differential against a naive upsert: merging instead of replacing would leave the demoted
+/// provider ranked and the positions non-contiguous, which the unique index on
+/// `(user_id, position)` rejects on the *next* write, one edit later, against a list the reader
+/// has moved on from.
 #[tokio::test]
 async fn saving_a_provider_order_replaces_the_previous_one() {
     let db = TestDb::spawn().await;
@@ -1265,9 +1250,9 @@ async fn saving_a_provider_order_replaces_the_previous_one() {
     );
 }
 
-/// A disabled provider carries nothing a reader can open, so it must not come back from a read —
-/// otherwise the account panel offers a rank that can never apply and the Series screen ranks
-/// against a provider that is not in any source list.
+/// A disabled provider carries nothing a reader can open, so it must not come back from a read,
+/// or the account panel offers a rank that can never apply and the Series screen ranks against a
+/// provider in no source list.
 #[tokio::test]
 async fn a_disabled_provider_drops_out_of_the_order() {
     let db = TestDb::spawn().await;

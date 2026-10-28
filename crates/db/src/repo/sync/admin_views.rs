@@ -300,8 +300,10 @@ pub struct SeriesCandidateRow {
 }
 
 /// Returns the trigram-similar local series for a remote entry's `normalized` title, richest
-/// first. Mirrors [`crate::repo::matching::find_candidates`], adding the display title and source
-/// count. With no matches, the console offers manual assignment.
+/// first.
+///
+/// Mirrors [`crate::repo::matching::find_candidates`], adding the display title and source count.
+/// With no matches, the console offers manual assignment.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.

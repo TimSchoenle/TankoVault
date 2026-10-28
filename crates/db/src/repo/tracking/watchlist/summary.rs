@@ -76,10 +76,9 @@ pub async fn watchlist_summary<'e, E: PgExecutor<'e>>(
 
 /// How many entries sit at each status under every filter *but* `status`.
 ///
-/// The predicate list is [`fetch_page`]'s minus the status arm and must stay that way: a tab whose
-/// count disagrees with the list it opens is worse than no count. That includes `pattern`, which
-/// arrives pre-escaped from
-/// [`search_pattern`](super::query::search_pattern).
+/// The predicate list is `page::fetch_page`'s minus the status arm and must stay that way: a tab
+/// whose count disagrees with the list it opens is worse than no count. That includes `pattern`,
+/// which arrives pre-escaped from [`search_pattern`](super::query::search_pattern).
 pub(super) async fn fetch_counts(
     pool: &PgPool,
     user_id: UserId,

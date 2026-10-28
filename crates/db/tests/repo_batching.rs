@@ -1,5 +1,5 @@
 //! Set-based rewrites of per-row loops, tested against a real Postgres for semantics a type
-//! check can't catch — e.g. `ON CONFLICT DO UPDATE` aborting when one statement touches a row
+//! check cannot catch, such as `ON CONFLICT DO UPDATE` aborting when one statement touches a row
 //! twice.
 //!
 //! Gated behind the `integration` feature (requires Docker).
@@ -105,7 +105,7 @@ async fn notifications_upsert_many_writes_one_row_per_user_and_counts_group() {
     assert_eq!(counts.get(&a), Some(&1));
     assert_eq!(counts.get(&b), Some(&1));
 
-    // Absent from the map, not zero — `GROUP BY` can't invent a row.
+    // Absent from the map, not zero: `GROUP BY` cannot invent a row.
     let c = db.seed_user("c", &[], AccountStatus::Active).await;
     let counts = tracking::notifications_unread_counts(&db.pool, &[c])
         .await
@@ -115,10 +115,10 @@ async fn notifications_upsert_many_writes_one_row_per_user_and_counts_group() {
 
 /// A group key coalesces into the reader's *open* row; a read one starts a fresh row.
 ///
-/// Twelve chapters overnight used to be twelve rows and a bell reading `12`, none of which said
-/// which series they were about. The merge is what makes the count mean "things to look at": it
-/// sums `count`, widens `first_number`/`last_number`, and keeps `latest` on whichever side is
-/// further along, so an event arriving out of order cannot walk the row backwards.
+/// Without it, twelve chapters overnight are twelve rows and a bell reading `12`, none saying
+/// which series they are about. The merge sums `count`, widens `first_number` and
+/// `last_number`, and keeps `latest` on whichever side is further along, so an event arriving out
+/// of order cannot walk the row backwards.
 #[tokio::test]
 async fn a_group_key_coalesces_into_the_open_row_only() {
     let db = TestDb::spawn().await;
@@ -187,13 +187,12 @@ async fn a_group_key_coalesces_into_the_open_row_only() {
 
 /// The window is a window, and the two totals count the inbox behind it.
 ///
-/// `GET /v1/me/notifications` used to answer with a single hard-capped batch of 100 rows and no
-/// counts at all, so a reader with more than that saw exactly 100 rows, a notification bell stuck
-/// at 100, and no way to reach the rest. `total` and `unread` must therefore be counted from the
-/// table rather than from the page — deriving them from `items` reproduces the cap exactly.
+/// The bug: a single hard-capped batch with no counts leaves a reader with more rows than the cap
+/// seeing exactly the cap, a bell stuck at it, and no way to reach the rest. `total` and
+/// `unread` are counted from the table, since deriving them from `items` reproduces the cap.
 ///
-/// The filter is server-side for the same reason: the tabs used to filter the one page the client
-/// had loaded, so "Unread" showed nothing whenever the unread rows sat on page two.
+/// The filter is server-side for the same reason: filtering the one loaded page shows "Unread"
+/// empty whenever the unread rows sit on page two.
 #[tokio::test]
 async fn notifications_page_windows_the_inbox_and_counts_all_of_it() {
     let db = TestDb::spawn().await;
@@ -230,7 +229,7 @@ async fn notifications_page_windows_the_inbox_and_counts_all_of_it() {
         assert_eq!(page.items.len(), if offset == 4 { 1 } else { 2 });
         seen.extend(page.items.iter().map(|n| n.id));
     }
-    // Walking the offsets reaches every row exactly once — the point of paging over truncating.
+    // Walking the offsets reaches every row exactly once, the point of paging over truncating.
     assert_eq!(seen.len(), 5);
 
     let filtered = tracking::notifications_page(

@@ -42,15 +42,12 @@ async fn affinity_series(db: &TestDb, user: UserId) -> Vec<SeriesId> {
 
 /// **A rebuild that fails leaves the affinity the reader already had.**
 ///
-/// The bug: `replace_affinity` was a `DELETE` followed by an `INSERT`, both issued on the pool
-/// and so each committing on its own. When the insert failed — which it did on every request, for
-/// any reader with a series past the engagement knee, because `engagement` was computed unclamped
-/// against a `CHECK (engagement <= 1)` column — the delete had already gone through. So the 500
-/// the reader saw came with their whole derived profile deleted, and the next rebuild started
-/// from nothing.
+/// The bug: a `DELETE` followed by an `INSERT`, each committing on its own. When the insert fails,
+/// for example on an unclamped `engagement` against its `CHECK (engagement <= 1)` column, the
+/// delete has already gone through, so the reader's 500 comes with their whole derived profile
+/// deleted and the next rebuild starts from nothing.
 ///
-/// An out-of-range engagement is the trigger here because it is the one production hit, and it
-/// stays a valid trigger for any other statement-level failure.
+/// An out-of-range engagement stands in for any statement-level failure.
 #[tokio::test]
 async fn a_failed_rebuild_leaves_the_previous_affinity_intact() {
     let db = TestDb::spawn().await;
@@ -75,10 +72,10 @@ async fn a_failed_rebuild_leaves_the_previous_affinity_intact() {
 
 /// A repeat rebuild updates the rows in place instead of colliding with them.
 ///
-/// The reason it is an upsert rather than a fresh insert is concurrency — the SPA rebuilds one
-/// reader's stale profile from several surfaces at once — which no sequential test can force. So
-/// this pins the half that is deterministic: the `ON CONFLICT` target has to match the primary
-/// key, or the second rebuild is a duplicate-key error.
+/// It is an upsert for concurrency, since the SPA rebuilds one reader's stale profile from
+/// several surfaces at once, which no sequential test can force. This pins the deterministic
+/// half: the `ON CONFLICT` target matches the primary key, or the second rebuild is a
+/// duplicate-key error.
 #[tokio::test]
 async fn rebuilding_affinity_twice_updates_rather_than_conflicts() {
     let db = TestDb::spawn().await;
@@ -98,8 +95,8 @@ async fn rebuilding_affinity_twice_updates_rather_than_conflicts() {
 /// A series the reader stopped tracking loses its affinity row, or it keeps seeding
 /// recommendations for something they said they were done with.
 ///
-/// The empty case is not redundant: pruning is now a predicate rather than an unconditional
-/// delete, and `series_id <> ALL('{}')` is the one input where reading it wrong is silent.
+/// The empty case is not redundant: pruning is a predicate, not an unconditional delete, and
+/// `series_id <> ALL('{}')` is the one input where reading it wrong is silent.
 #[tokio::test]
 async fn a_series_dropped_from_the_rebuild_loses_its_row() {
     let db = TestDb::spawn().await;

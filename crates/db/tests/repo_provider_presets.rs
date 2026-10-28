@@ -1,21 +1,21 @@
 //! The preset link: what a rollout may rewrite on a provider row, and what it may never touch
 //! (`crates/db/src/repo/providers.rs`, `crates/db/src/repo/provider_presets.rs`).
 //!
-//! # What is actually at stake here
+//! # What is at stake
 //!
 //! A locked provider is rewritten from its preset on **every** install run, unattended. That is
-//! the point — it is how a selector fix reaches a deployment that already carries the row — and
-//! it is also the whole risk: the write set is the only thing standing between "upgrades fix my
-//! providers" and "upgrades undo my configuration".
+//! how a selector fix reaches a deployment that already carries the row, and it is the whole
+//! risk: the write set is all that separates "upgrades fix my providers" from "upgrades undo my
+//! configuration".
 //!
-//! Two halves, and the second is the one with no undo:
+//! Two halves, and the second has no undo:
 //!
 //! - **Preset-owned**: `name`, `base_url`, `adapter`, `config`. Overwritten, by design.
 //! - **Operator-owned, always**: `politeness` and `state`. A crawl budget is an answer to the
 //!   operator's own infrastructure, robots policy and legal exposure, and a pause is usually an
 //!   incident response. Restoring either from a shipped default would be a silent regression
-//!   with real-world consequences — the provider starts crawling faster than the operator
-//!   allowed, or resumes crawling a site they deliberately stopped.
+//!   with real-world consequences: the provider crawls faster than the operator allowed, or
+//!   resumes crawling a site they deliberately stopped.
 //!
 //! Nothing in the type system separates those two sets: they are adjacent columns in one
 //! `UPDATE`. This suite is the separation.
@@ -58,8 +58,8 @@ async fn record_preset(db: &TestDb, slug: &str, config: serde_json::Value) -> Pr
 ///
 /// This is the invariant the whole feature is sold on: an operator can tune politeness on a
 /// managed provider *without* unlocking it, so the lock never becomes a reason to detach a row
-/// from its updates. If a sync ever writes these columns, a rollout silently raises a rate limit
-/// somebody lowered on purpose — or resumes crawling a site they stopped — and nothing in the
+/// from its updates. If a sync writes these columns, a rollout silently raises a rate limit
+/// somebody lowered on purpose, or resumes crawling a site they stopped, and nothing in the
 /// install log says so.
 #[tokio::test]
 async fn a_preset_sync_never_touches_politeness_or_state() {
@@ -84,8 +84,8 @@ async fn a_preset_sync_never_touches_politeness_or_state() {
         .await
         .expect("sync from the preset");
 
-    // Bit-identical rather than approximate on purpose: this value is carried through, never
-    // recomputed, so anything but an exact match means a conversion crept into the path.
+    // Bit-identical on purpose: this value is carried through, never recomputed, so anything but
+    // an exact match means a conversion crept into the path.
     assert!(
         (synced.politeness.rps - careful.rps).abs() < f64::EPSILON,
         "rate limit survives: {} != {}",
@@ -162,8 +162,8 @@ async fn an_unlocked_provider_keeps_its_link_and_its_edits() {
 /// A row the installer creates is locked; one the console creates is not linked at all.
 ///
 /// The asymmetry is deliberate and load-bearing: `preset_locked` is derived from the slug at
-/// insert time, so no caller can produce a row that names a preset yet silently never follows
-/// it — which would look managed in the console and drift forever.
+/// insert time, so no caller can produce a row that names a preset yet never follows it, which
+/// would look managed in the console and drift forever.
 #[tokio::test]
 async fn only_a_row_installed_from_a_preset_starts_managed() {
     let db = TestDb::spawn().await;
@@ -232,8 +232,8 @@ async fn retiring_a_preset_leaves_its_providers_alone() {
 /// The database refuses a lock that names no preset.
 ///
 /// `preset_locked` without `preset_slug` would be a row the installer can never satisfy: it
-/// claims to follow something unnameable. The CHECK constraint is what makes that state
-/// unrepresentable rather than merely unlikely.
+/// claims to follow something unnameable. The CHECK constraint makes that state unrepresentable,
+/// not merely unlikely.
 #[tokio::test]
 async fn a_lock_without_a_preset_is_refused_by_the_schema() {
     let db = TestDb::spawn().await;
@@ -249,8 +249,8 @@ async fn a_lock_without_a_preset_is_refused_by_the_schema() {
 /// Every `AdapterKind` the Rust enum declares must be storable, because the two definitions are
 /// separate artefacts: the variant lives in `crates/domain/src/enums.rs` and the label in a
 /// migration, with nothing but review connecting them. Adding one without the other compiles,
-/// passes every offline gate, and then fails at runtime the first time an installer writes that
-/// provider — `invalid input value for enum adapter_kind`, from `seed-providers`, on a rollout.
+/// passes every offline gate, and fails at runtime the first time an installer writes that
+/// provider: `invalid input value for enum adapter_kind`, from `seed-providers`, on a rollout.
 #[tokio::test]
 async fn every_declared_adapter_kind_exists_in_the_sql_enum() {
     let db = TestDb::spawn().await;

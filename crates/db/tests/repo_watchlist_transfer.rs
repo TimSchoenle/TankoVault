@@ -1,6 +1,6 @@
 //! Watchlist backup and restore against a real schema: that an export identifies its series
 //! without ids, that it restores into a database which has never seen those ids, and that an
-//! entry whose series is not crawled yet waits rather than vanishing.
+//! entry whose series is not crawled yet waits instead of vanishing.
 //!
 //! Opt-in: gated behind the `integration` feature because it requires Docker.
 #![cfg(feature = "integration")]
@@ -24,9 +24,9 @@ const MERGE: ImportOptions = ImportOptions {
 /// The scenario the feature exists for: back up, wipe, restore before the catalogue is crawled
 /// again, and have the entry attach once it is.
 ///
-/// Uses a second database rather than deleting rows, so no uuid can survive between the two
-/// halves; and names the provider differently on the restoring side, so the match has to come
-/// from the source URL's host rather than from a slug that happens to agree.
+/// Uses a second database, not deleted rows, so no uuid can survive between the two halves, and
+/// names the provider differently on the restoring side, so the match must come from the source
+/// URL's host, not a slug that happens to agree.
 #[tokio::test]
 async fn a_backup_restores_into_a_fresh_database_once_its_series_is_crawled() {
     let old = TestDb::spawn().await;

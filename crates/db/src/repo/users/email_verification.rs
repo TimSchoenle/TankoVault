@@ -154,9 +154,10 @@ pub async fn mark_email_verified<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId
     Ok(())
 }
 
-/// Returns whether a user's email address has been confirmed, the one-column read for sign-in
-/// paths, such as passkeys, that already know who is signing in. An unknown `user_id` is
-/// `false`, the safe default for a gate.
+/// Returns whether a user's email address has been confirmed.
+///
+/// The one-column read for sign-in paths, such as passkeys, that already know who is signing in.
+/// An unknown `user_id` is `false`, the safe default for a gate.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.

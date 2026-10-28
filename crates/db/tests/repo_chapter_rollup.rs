@@ -173,8 +173,8 @@ async fn without_triggers(db: &TestDb, statements: &[&str]) {
 
 /// **Every writer of `chapters` keeps the console's chapter figures equal to a live count.**
 ///
-/// The console used to count `chapters` whole on every refresh (7.8–48.7 s in production); it now
-/// sums `chapter_rollup`, which is only as good as its triggers. Each step is a different writer,
+/// The console sums `chapter_rollup` instead of counting `chapters` whole on every refresh, so it
+/// is only as good as its triggers. Each step is a different writer,
 /// through its repository function where one exists. The fold is the subtle part: a chapter
 /// older than a week is counted in its source's folded row, and a delete has to find it there, or
 /// the total drifts up forever with no error anywhere.
@@ -277,7 +277,7 @@ async fn every_chapter_writer_keeps_the_console_figures_equal_to_a_live_count() 
     assert_figures_match_a_live_count(&db, "provider delete").await;
 }
 
-/// **The verifier finds a source whose chapters were written around the triggers, and rebuilds it.**
+/// **The verifier finds a source whose chapters bypassed the triggers, and rebuilds it.**
 ///
 /// A restore, or a session with `session_replication_role = replica`, writes chapters no trigger
 /// sees; the console then shows a wrong total with no error anywhere. The verifier is what notices,

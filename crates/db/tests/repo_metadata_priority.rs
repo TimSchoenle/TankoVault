@@ -2,8 +2,8 @@
 //! which field, across the two writers that both touch `series`.
 //!
 //! The policy itself is unit-tested in `crates/domain/src/metadata_priority.rs`. What is only
-//! observable here is whether both write paths actually *consult* it — the bug these pin is a
-//! writer that resolved nothing and simply wrote.
+//! observable here is whether both write paths *consult* it; the bug these pin is a writer that
+//! resolves nothing and simply writes.
 //!
 //! Gated behind the `integration` feature (requires Docker).
 #![cfg(feature = "integration")]
@@ -70,8 +70,8 @@ fn enrichment<'a>(title: &'a str, description: &'a str) -> MetadataEnrichment<'a
 
 /// The recorded `(description, content_type)` provenance, as `metadata_source` tokens.
 ///
-/// Runtime query rather than `query!`: a read that exists only to inspect the mechanism has no
-/// business growing the committed offline cache.
+/// A runtime query, not `query!`: a read that only inspects the mechanism should not grow the
+/// committed offline cache.
 async fn provenance(db: &TestDb, series: SeriesId) -> (Option<String>, Option<String>) {
     sqlx::query_as(
         "SELECT description_source::text, content_type_source::text FROM series WHERE id = $1",
@@ -82,13 +82,13 @@ async fn provenance(db: &TestDb, series: SeriesId) -> (Option<String>, Option<St
     .expect("read provenance")
 }
 
-/// The reported bug: enrichment wrote `AniList`'s description, and the very next catalogue scan
-/// wrote the scraped one straight back over it, because ingest resolved no priority at all —
-/// it `COALESCE`d, which only protects a stored value from a scan that reports *nothing*.
+/// The bug: enrichment writes `AniList`'s description, and the next catalogue scan writes the
+/// scraped one straight back over it, because ingest resolves no priority: it `COALESCE`s, which
+/// only protects a stored value from a scan that reports *nothing*.
 ///
-/// The content type is the same bug with the volume up: ingest wrote it unconditionally, so
-/// every enriched series reverted to the adapters' hardcoded `unknown` on its next scan and
-/// stayed there until the sweep came round again, ~27h later on a 54k-series catalogue.
+/// The content type is the same bug, worse: written unconditionally, every enriched series
+/// reverts to the adapters' hardcoded `unknown` on its next scan and stays there until the next
+/// enrichment sweep.
 #[tokio::test]
 async fn an_adapter_rescan_does_not_overwrite_enriched_metadata() {
     let db = TestDb::spawn().await;
@@ -148,8 +148,8 @@ async fn an_adapter_rescan_does_not_overwrite_enriched_metadata() {
 }
 
 /// The other half of the same bug: the priority is configuration, so an operator naming the
-/// adapters first must get the scraped value — otherwise "`AniList` wins" is hardcoded and the
-/// config is decoration.
+/// adapters first must get the scraped value, or "`AniList` wins" is hardcoded and the config is
+/// decoration.
 #[tokio::test]
 async fn an_adapter_first_order_lets_the_scan_win() {
     let db = TestDb::spawn().await;

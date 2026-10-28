@@ -39,8 +39,8 @@ async fn a_series(db: &TestDb, title: &str, sources: usize, alt_titles: &[&str])
     series_id.expect("at least one source")
 }
 
-/// Link `user` to `provider`. The token bytes are opaque here — nothing in these read models
-/// decrypts them.
+/// Links `user` to `provider`. The token bytes are opaque here, since nothing in these read
+/// models decrypts them.
 async fn link(db: &TestDb, user: UserId, provider: &str) {
     sync::upsert_account(&db.pool, user, provider, b"token", None, None)
         .await
@@ -344,7 +344,7 @@ async fn the_assign_queues_search_ignores_only_a_blank_query() {
     };
 
     assert_eq!(matched(Some("vinland")).await, vec!["Vinland Saga"]);
-    // Case-insensitive, and a substring rather than a prefix.
+    // Case-insensitive, and a substring, not a prefix.
     assert_eq!(matched(Some("SAGA")).await, vec!["Vinland Saga"]);
     // One character is still a filter.
     assert_eq!(matched(Some("k")).await, vec!["Berserk"]);
@@ -493,9 +493,9 @@ async fn the_single_entry_reads_and_writes_are_scoped_to_one_user() {
 
 // Candidate suggestions
 
-/// Best-similarity first; an alternative title counts as a match. `ORDER BY 7` is positional —
-/// a column inserted before it would silently re-sort by the wrong thing, so this asserts
-/// sequence, not just membership.
+/// Best-similarity first; an alternative title counts as a match. `ORDER BY 7` is positional, so
+/// a column inserted before it would silently re-sort by the wrong thing; this asserts sequence,
+/// not just membership.
 #[tokio::test]
 async fn suggestions_rank_by_the_best_similarity_across_every_title() {
     let db = TestDb::spawn().await;

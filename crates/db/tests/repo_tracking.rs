@@ -1,31 +1,28 @@
 //! Read progress: the one question this product answers five times over
-//! (`crates/db/src/repo/tracking/`, TEST F-05).
+//! (`crates/db/src/repo/tracking/`).
 //!
 //! # Why this file exists
 //!
 //! "Has this user read this chapter?" is implemented **twice, independently**:
-//! [`ReadProgress::covers`] decides it in Rust, and four SQL statements decide it inline because
-//! `sqlx`'s checked macros need a string literal and will not expand `concat!`. A fifth caller —
-//! the notifier — used to decide it a third way, by hand, from one of the two frontiers.
+//! [`ReadProgress::covers`] decides it in Rust, and several SQL statements decide it inline
+//! because `sqlx`'s checked macros need a string literal and will not expand `concat!`.
 //!
-//! Nothing compared them. Every one of those statements type-checks against the schema and
-//! passes `cargo sqlx prepare --check` whether the predicate is right or inverted, so the only
-//! thing that can catch a copy drifting is a test that drives both implementations over the same
-//! seeded matrix and asserts they agree. That is
-//! [`the_sql_and_the_rust_predicate_agree_on_every_chapter`], and it is the reason this file
-//! exists — the audit calls it the single highest-value database test in the repository.
+//! Every one of those statements type-checks and passes `cargo sqlx prepare --check` whether the
+//! predicate is right or inverted, so only a test driving both implementations over the same
+//! seeded matrix can catch a copy drifting. That is
+//! [`the_sql_and_the_rust_predicate_agree_on_every_chapter`], the reason this file exists.
 //!
 //! # What the matrix is shaped to catch
 //!
 //! The two frontiers exist because a source can ship *part* releases (`4.5`, `4.75`) ahead of the
-//! compiled whole chapter, and a part belongs **to** the chapter it floors to rather than
+//! compiled whole chapter, and a part belongs **to** the chapter it floors to instead of
 //! following it. That makes three regions where the two implementations can disagree, and the
 //! catalogue below has a chapter in each:
 //!
-//! - a part *below* the whole frontier (`3.5` with the frontier at `3`) — read, because its
+//! - a part *below* the whole frontier (`3.5` with the frontier at `3`), read because its
 //!   chapter is read;
 //! - a part *ahead* of the whole frontier (`4.5`, `4.75`, whose whole chapter `4` does not exist
-//!   as a row at all) — decided by the part frontier alone;
+//!   as a row), decided by the part frontier alone;
 //! - a gap (no chapter `5`) and a chapter far past the frontier (`10`), so "unread" cannot be
 //!   satisfied by counting.
 //!
@@ -33,17 +30,15 @@
 //! matrix for the same reason: `0` is both this schema's "nothing read" sentinel and a
 //! legitimate chapter number.
 //!
-//! # TRACK-1 — what the differential found
+//! # The bug the differential pins
 //!
-//! Three of the four SQL copies carried only the whole-frontier half of the predicate
-//! (`floor(c.number) > COALESCE(last_read_whole_number, 0)`), which is precisely the hand-roll
-//! [`ReadProgress::covers`]'s own documentation forbids. The user-visible effect was a
-//! continue-reading card that **could not be cleared**: read every part of an unreleased chapter
-//! and the badge still claimed one unread, `next_number` pointed at a part already read, and
-//! marking that part read again is a deliberate no-op in [`progress_mark_read`] — so the card
-//! stayed, forever, while the feed on the same page correctly showed nothing. The watchlist badge
-//! and the lifetime stats counted the same phantom. All four copies are now spelled identically;
-//! the tests below fail if any of them regresses.
+//! A SQL copy carrying only the whole-frontier half of the predicate
+//! (`floor(c.number) > COALESCE(last_read_whole_number, 0)`), the hand-roll
+//! [`ReadProgress::covers`] forbids. The effect is a continue-reading card that **cannot be
+//! cleared**: with every part of an unreleased chapter read, the badge claims one unread,
+//! `next_number` points at a part already read, and marking it read again is a no-op in
+//! [`progress_mark_read`], so the card stays while the feed on the same page shows nothing. The
+//! watchlist badge and the lifetime stats count the same phantom.
 //!
 //! Opt-in: gated behind the `integration` feature because it requires Docker.
 #![cfg(feature = "integration")]
@@ -93,8 +88,8 @@ const MATRIX: &[Frontier] = &[
     },
     Frontier {
         // `0` is the "nothing read" sentinel *and* chapter zero. No chapter zero exists here, so
-        // this must answer exactly as "no row" does — if it did not, the `COALESCE(…, 0)` in the
-        // SQL and the `Default` in Rust would have drifted apart.
+        // this must answer exactly as "no row" does, or the `COALESCE(…, 0)` in the SQL and the
+        // `Default` in Rust have drifted apart.
         name: "frontier at the zero sentinel",
         progress: Some((0.0, None)),
     },
@@ -115,7 +110,7 @@ const MATRIX: &[Frontier] = &[
     },
     Frontier {
         // Every part of the unreleased chapter 4 has been read. Whole-frontier-only SQL reports
-        // chapter 4 as unread here and offers `4.5` as the next chapter — TRACK-1.
+        // chapter 4 as unread here and offers `4.5` as the next chapter.
         name: "every part of an unreleased chapter",
         progress: Some((3.0, Some(4.75))),
     },
@@ -202,7 +197,7 @@ fn rust_unread(progress: ReadProgress) -> Vec<f64> {
         .collect()
 }
 
-/// Distinct **whole** chapters with unread content — what every `unread` badge counts.
+/// Distinct **whole** chapters with unread content, what every `unread` badge counts.
 fn rust_unread_whole_count(progress: ReadProgress) -> i64 {
     let mut wholes: Vec<f64> = rust_unread(progress).iter().map(|n| n.floor()).collect();
     // `CHAPTERS` is ascending, so its floors are too and adjacent dedup is a full dedup.
@@ -210,12 +205,12 @@ fn rust_unread_whole_count(progress: ReadProgress) -> i64 {
     i64::try_from(wholes.len()).expect("catalogue fits in i64")
 }
 
-/// Distinct **whole** chapters at or below the whole frontier — the progress bar's numerator.
+/// Distinct **whole** chapters at or below the whole frontier, the progress bar's numerator.
 ///
 /// Deliberately *not* the complement of [`rust_unread_whole_count`]: a whole chapter above the
 /// frontier whose every part the part frontier covers is in neither set, so `read + unread` can
-/// be less than the total. The bar under-reads in that case, which is the honest direction —
-/// the alternative is claiming a chapter is read because nothing in it is unread.
+/// be less than the total. The bar under-reads then, the honest direction, instead of claiming a
+/// chapter is read because nothing in it is unread.
 fn rust_read_whole_count(progress: ReadProgress) -> i64 {
     let mut wholes: Vec<f64> = CHAPTERS
         .iter()
@@ -235,13 +230,10 @@ fn rust_read_whole_count(progress: ReadProgress) -> i64 {
 /// state the two frontiers can express.
 ///
 /// Deleting this leaves five implementations of one predicate with nothing comparing them. The
-/// failure mode it guards is silent in every other kind of test: each statement compiles, passes
-/// `sqlx prepare --check`, and returns a plausible page — just not the same page as the Rust
-/// definition, so the feed, the continue rail, the watchlist badge and the lifetime stats
-/// disagree with each other about the same chapter.
-///
-/// It found TRACK-1 (see the module docs) on its first run: three of the four copies were missing
-/// the part-frontier clause entirely.
+/// failure is silent in every other kind of test: each statement compiles, passes
+/// `sqlx prepare --check`, and returns a plausible page, just not the page the Rust definition
+/// gives, so the feed, the continue rail, the watchlist badge and the lifetime stats disagree
+/// about the same chapter. See the module docs for the bug it pins.
 #[tokio::test]
 async fn the_sql_and_the_rust_predicate_agree_on_every_chapter() {
     let db = TestDb::spawn().await;
@@ -298,7 +290,7 @@ async fn the_sql_and_the_rust_predicate_agree_on_every_chapter() {
         }
 
         // 3. The watchlist badge. `limit` is raised past the page default so the assertion is
-        //    about the predicate rather than about which page the series landed on.
+        //    about the predicate, not about which page the series landed on.
         let page = watchlist_page(
             &db.pool,
             user,
@@ -319,10 +311,10 @@ async fn the_sql_and_the_rust_predicate_agree_on_every_chapter() {
             "watchlist_page unread count ({})",
             state.name
         );
-        // `next_unread` is a fifth copy of the predicate — a `LEFT JOIN LATERAL … LIMIT 1`
-        // rather than a `count(… ) FILTER`, so it can drift from the badge above it
-        // independently. A row reading "3 unread · next Ch 4" while the feed opens Ch 5 is
-        // exactly the TRACK-1 shape, one column over.
+        // `next_unread` is a fifth copy of the predicate, a `LEFT JOIN LATERAL … LIMIT 1`
+        // instead of a `count(… ) FILTER`, so it can drift from the badge above it
+        // independently. A row reading "3 unread · next Ch 4" while the feed opens Ch 5 is the
+        // module docs' bug, one column over.
         assert_eq!(
             card.next_unread.as_ref().map(|n| n.number),
             expected.first().copied(),
@@ -358,16 +350,14 @@ async fn the_sql_and_the_rust_predicate_agree_on_every_chapter() {
 ///
 /// # The bug this exists to stop
 ///
-/// The seek predicate and the `ORDER BY` are two spellings of one ordering, and nothing but this
-/// test compares them. Get the direction, the `NULLS LAST` arm or the id tiebreaker wrong in one
-/// of them and the pages still come back full of plausible rows — just with one row repeated
-/// across a page boundary and another never shown at all. That is invisible in a page-sized
-/// assertion and invisible in production until a reader notices a title missing from a list they
-/// scrolled past.
+/// The seek predicate and the `ORDER BY` are two spellings of one ordering, and only this test
+/// compares them. Get the direction, the `NULLS LAST` arm or the id tiebreaker wrong in one and
+/// the pages still come back full of plausible rows, with one row repeated across a page
+/// boundary and another never shown, invisible until a reader notices a title missing.
 ///
-/// The fixture is deliberately degenerate: `limit` is 2 against 7 series, several of which tie
-/// on `unread` and on `progress` (so the tiebreaker is load-bearing rather than decorative), and
-/// two carry no chapters at all (so every order has `NULL` keys to place last).
+/// The fixture is deliberately degenerate: `limit` is 2 against 7 series, several tying on
+/// `unread` and `progress` (so the tiebreaker is load-bearing), and two carrying no chapters (so
+/// every order has `NULL` keys to place last).
 #[tokio::test]
 async fn keyset_pages_visit_every_row_exactly_once() {
     use tankovault_db::repo::tracking::{WatchlistOrder, WatchlistSort};
@@ -417,7 +407,7 @@ async fn keyset_pages_visit_every_row_exactly_once() {
 
             let mut walked = Vec::new();
             let mut cursor = None;
-            // Bounded so a seek predicate that never advances fails as a wrong list rather than
+            // Bounded so a seek predicate that never advances fails as a wrong list instead of
             // hanging the suite.
             for _ in 0..fixture.len() + 2 {
                 let page = watchlist_page(
@@ -503,12 +493,10 @@ async fn the_summary_ignores_the_filters_the_list_counts_apply() {
 /// One provider carrying a series twice is **one** carrier in the `Sources` column.
 ///
 /// `series_sources` is unique on `(provider_id, source_path)`, not on `(series_id,
-/// provider_id)`, so a provider can hold the same series under several paths — legitimately for
-/// a colour edition, and in bulk when a scan mis-attaches. The column's query emitted a row per
-/// source, so the ledger repeated one carrier's monogram across all four tiles and then
-/// overflowed into a `+n` counting paths: a live catalogue had 309 rows and 3 providers on one
-/// series, rendered as `+305`. It also disagreed with `source_count` on the same row, which has
-/// always been `count(DISTINCT provider_id)`.
+/// provider_id)`, so a provider can hold the same series under several paths, legitimately for a
+/// colour edition and in bulk when a scan mis-attaches. The bug: a row per source repeats one
+/// carrier's monogram across all four tiles and overflows into a `+n` counting paths, disagreeing
+/// with `source_count` on the same row, which is `count(DISTINCT provider_id)`.
 #[tokio::test]
 async fn a_provider_carrying_a_series_twice_is_one_source() {
     let db = TestDb::spawn().await;
@@ -518,7 +506,7 @@ async fn a_provider_carrying_a_series_twice_is_one_source() {
 
     let series = a_series(&db, alpha, "Vagabond", &[1.0, 2.0]).await;
     // A second path on the *same* provider, ranked above the first so the survivor is the one
-    // `preferred_source_name` names — the flag and the submeta have to agree.
+    // `preferred_source_name` names: the flag and the submeta must agree.
     add_source(&db, series, alpha, "/vagabond-colored", 99).await;
     // ...and a genuinely different carrier, which must survive as its own tile.
     add_source(&db, series, beta, "/vagabond", 5).await;
@@ -574,13 +562,12 @@ async fn add_source(
 
 /// A merged series lists each chapter **once** in the feed, resolved to its preferred carrier.
 ///
-/// The bug: a merge re-parents the absorbed series' sources onto the survivor, so from then on
-/// one chapter legitimately exists as two `chapters` rows carrying the same number. The feed
-/// emitted a row per source, so Home showed the merged series twice, each row claiming the full
-/// count — while the "New chapters" tile directly above them, `continue_reading`'s badge and the
-/// watchlist ledger all count `DISTINCT number_milli / 10000` and said it once, and the notifier
-/// claims one announcement per `(user, series, chapter)`. The duplicates also spent the `limit`,
-/// so a watchlist of merged series came back as half a feed.
+/// A merge re-parents the absorbed series' sources onto the survivor, so one chapter exists as
+/// two `chapters` rows with the same number. The bug: a row per source shows the merged series
+/// twice on Home, each row claiming the full count, while the "New chapters" tile above,
+/// `continue_reading`'s badge and the watchlist ledger count `DISTINCT number_milli / 10000`, and
+/// the notifier claims one announcement per `(user, series, chapter)`. The duplicates also spend
+/// the `limit`, so a watchlist of merged series comes back as half a feed.
 #[tokio::test]
 async fn a_merged_series_lists_each_chapter_once_in_the_feed() {
     let db = TestDb::spawn().await;
@@ -599,7 +586,7 @@ async fn a_merged_series_lists_each_chapter_once_in_the_feed() {
         .expect("merge");
 
     // Beta is the richer carrier, so it is the source the ledger's `preferred_source_name`
-    // names — and therefore the one whose link every shared chapter must resolve to.
+    // names, and the one whose link every shared chapter must resolve to.
     prefer_source(&db, keep, beta, 99).await;
     prefer_source(&db, keep, alpha, 3).await;
 
@@ -639,13 +626,11 @@ async fn prefer_source(db: &TestDb, series: SeriesId, provider: ProviderId, chap
 /// The notifier's "already read?" filter must be [`ReadProgress::covers`], not a comparison
 /// against one frontier.
 ///
-/// `watchers_for_series` returns the frontiers rather than a verdict, so the judgement is made in
-/// `services/notifier`. It used to be written there as `chapter_number > last_read_number` over
-/// the whole frontier alone, which announced every part release of an already-read chapter as
-/// new — chapter `152.5` mailed out to a user who had finished `152`. This test drives the same
-/// data through `covers` and asserts the two frontiers survive the round trip, which is what the
-/// notifier needs to make the call at all: before the fix the part frontier was not even
-/// selected.
+/// `watchers_for_series` returns the frontiers, not a verdict, so the judgement is made in
+/// `services/notifier`. The bug: `chapter_number > last_read_number` over the whole frontier alone
+/// announces every part release of an already-read chapter as new, mailing `152.5` to a user who
+/// finished `152`. This drives the same data through `covers` and asserts both frontiers survive
+/// the round trip, which the notifier needs to make the call at all.
 #[tokio::test]
 async fn the_notifier_sees_both_frontiers_and_they_decide_as_covers_does() {
     let db = TestDb::spawn().await;
@@ -699,11 +684,10 @@ async fn the_notifier_sees_both_frontiers_and_they_decide_as_covers_does() {
 
 /// A watcher arrives with the watchlist status and the preference document that decide delivery.
 ///
-/// The notifier used to consult `watchlist_entries.notify` alone, so a series the reader had
-/// *dropped* kept notifying — and the account panel's three toggles were stored in a free-form
-/// blob nothing ever read. Both inputs have to come back on the row, or the filter cannot be made
-/// at all; a document this build cannot parse must arrive as the defaults rather than failing the
-/// whole fan-out.
+/// The bug: consulting `watchlist_entries.notify` alone keeps a *dropped* series notifying and
+/// ignores the account panel's toggles. Both inputs must come back on the row, or the filter
+/// cannot be made; a document this build cannot parse arrives as the defaults instead of failing
+/// the whole fan-out.
 #[tokio::test]
 async fn a_watcher_carries_its_status_and_preferences() {
     let db = TestDb::spawn().await;
@@ -760,8 +744,8 @@ async fn a_watcher_carries_its_status_and_preferences() {
 ///
 /// The subquery is `SELECT DISTINCT w.series_id, floor(c.number)`. Dropping `w.series_id` from
 /// that `DISTINCT` compiles, type-checks, and collapses chapter 1 of every watched series into
-/// one row — so a user tracking twenty series with the same numbering sees the unread count of
-/// one of them. Nothing else in the codebase reads that subquery.
+/// one row, so a user tracking twenty series with the same numbering sees the unread count of one
+/// of them. Nothing else reads that subquery.
 #[tokio::test]
 async fn me_stats_counts_unread_chapters_per_series_not_globally() {
     let db = TestDb::spawn().await;
@@ -798,7 +782,7 @@ async fn me_stats_counts_unread_chapters_per_series_not_globally() {
 }
 
 // ---------------------------------------------------------------------------
-// The write path — §A.3's transitions
+// The write path: §A.3's transitions
 // ---------------------------------------------------------------------------
 
 async fn frontiers(db: &TestDb, user: UserId, series: SeriesId) -> (f64, Option<f64>) {
@@ -870,9 +854,9 @@ async fn progress_mark_read_is_monotonic_in_the_whole_frontier() {
 /// frontier has passed it. A surviving stale part violates §A.1 and makes `covers` answer from a
 /// frontier that no longer means anything.
 ///
-/// The parts here belong to chapter `4` and the frontier sits on `3`, i.e. the part is one
-/// chapter ahead — so the whole frontier has nothing below `4` left to catch up to and genuinely
-/// does not move. Marking a part *further* ahead does move it; that is the test below.
+/// The parts here belong to chapter `4` and the frontier sits on `3`, one chapter ahead, so the
+/// whole frontier has nothing below `4` to catch up to and does not move. Marking a part *further*
+/// ahead does move it; that is the test below.
 #[tokio::test]
 async fn a_part_ahead_advances_only_the_part_frontier_and_is_cleared_when_overtaken() {
     let db = TestDb::spawn().await;
@@ -903,18 +887,16 @@ async fn a_part_ahead_advances_only_the_part_frontier_and_is_cleared_when_overta
 
 /// Marking a part release far ahead of the whole frontier drags the whole frontier up with it.
 ///
-/// The bug: `progress_mark_read` treated a part purely as part-frontier business, so marking
-/// `6.1` from a frontier of `1` wrote `(1, 6.1)`. Two things were then wrong at once. Locally the
-/// frontier contradicted itself — chapters `2`..`4` reported unread while `6.1` reported read,
-/// which the §A.1 "marking a chapter read means read through here" contract forbids. And
-/// externally, the `AniList` push sends `last_read_whole_number` and nothing else (§B.5), because a
-/// provider with no concept of parts can be told nothing else — so it kept receiving `1` no
-/// matter how many part releases were read on top. Deriving the number at the push site would
-/// have fixed the second and left the first.
+/// The bug: treating a part purely as part-frontier business, so marking `6.1` from a frontier
+/// of `1` writes `(1, 6.1)`. Locally the frontier contradicts itself, chapters `2`..`4` unread
+/// while `6.1` is read, which §A.1's "read through here" forbids. Externally, the `AniList` push
+/// sends only `last_read_whole_number` (§B.5), the only thing a provider without parts can be
+/// told, so it keeps receiving `1`. Deriving the number at the push site would fix only the
+/// second.
 ///
 /// The catch-up target is the catalogue's, not `floor(number) - 1`: chapter `5` does not exist
-/// here, and chapter `4` exists only as the parts `4.5`/`4.75`, so the answer is `4` — every part
-/// of chapter 4 that was ever published has been read.
+/// here, and chapter `4` exists only as the parts `4.5` and `4.75`, so the answer is `4`, since
+/// every published part of chapter 4 has been read.
 #[tokio::test]
 async fn marking_a_part_far_ahead_catches_the_whole_frontier_up() {
     let db = TestDb::spawn().await;
@@ -948,10 +930,9 @@ async fn marking_a_part_far_ahead_catches_the_whole_frontier_up() {
 
 /// The whole frontier's catch-up never *retreats* it, and never overshoots a part already read.
 ///
-/// The catch-up target comes from the catalogue rather than from the current frontier, so
-/// applying it unconditionally is how marking a chapter read walks progress backwards — the same
-/// shape as TRACK-2 on the un-read side, in the other direction. Marking `4.5` read while the
-/// frontier sits at `6` must leave `6` alone, not reset it to `4`.
+/// The catch-up target comes from the catalogue, not the current frontier, so applying it
+/// unconditionally walks progress backwards, the mirror of the un-read bug below. Marking `4.5`
+/// read while the frontier sits at `6` must leave `6` alone, not reset it to `4`.
 #[tokio::test]
 async fn the_whole_frontier_catch_up_is_monotonic() {
     let db = TestDb::spawn().await;
@@ -970,7 +951,7 @@ async fn the_whole_frontier_catch_up_is_monotonic() {
 
     // Far ahead of the frontier, but nothing exists between them: chapters `7`..`9` are absent
     // and chapter `10` is excluded (it is the chapter `10.5` is a part of), so the catch-up
-    // target is `6` — the frontier itself — and the whole frontier stays put.
+    // target is `6`, the frontier itself, and the whole frontier stays put.
     progress_mark_read(&db.pool, user, series, 10.5)
         .await
         .expect("mark read");
@@ -996,8 +977,8 @@ async fn progress_set_clears_only_a_part_frontier_it_covers() {
     progress_mark_read(&db.pool, user, series, 6.1)
         .await
         .expect("mark read");
-    // The whole frontier catches up to `4` on the way (the highest chapter below 6 that the
-    // catalogue holds — `5` is missing and `4.5`/`4.75` floor to `4`); see
+    // The whole frontier catches up to `4` on the way (the highest chapter below 6 the
+    // catalogue holds, since `5` is missing and `4.5` and `4.75` floor to `4`); see
     // `marking_a_part_far_ahead_catches_the_whole_frontier_up`. What this test is about starts
     // below.
     assert_eq!(frontiers(&db, user, series).await, (4.0, Some(6.1)));
@@ -1018,12 +999,11 @@ async fn progress_set_clears_only_a_part_frontier_it_covers() {
 /// Un-reading a part of an already-read whole chapter retreats **both** frontiers, to the
 /// chapters the catalogue actually holds.
 ///
-/// The branch this covers carries the longest comment in `progress.rs` for a reason: the two
-/// frontiers cannot express "3.5 unread, 3 read", so un-reading `3.5` has to un-read chapter 3
-/// too and then pick up whatever part is still read underneath. Without the branch the write is a
-/// silent no-op — the button appears to work and nothing changes. The retreat targets come from
-/// `prev_whole_below`/`prev_part_below`, which query the *catalogue*, so this also pins that
-/// un-reading lands on a chapter that exists rather than on `number - 1`.
+/// The two frontiers cannot express "3.5 unread, 3 read", so un-reading `3.5` must un-read
+/// chapter 3 too and pick up whatever part is still read underneath. Without the branch the write
+/// is a silent no-op: the button appears to work and nothing changes. The retreat targets come
+/// from `prev_whole_below` and `prev_part_below`, which query the *catalogue*, so this also pins
+/// that un-reading lands on a chapter that exists, not on `number - 1`.
 #[tokio::test]
 async fn un_reading_a_part_below_the_frontier_retreats_both_frontiers() {
     let db = TestDb::spawn().await;
@@ -1041,8 +1021,8 @@ async fn un_reading_a_part_below_the_frontier_retreats_both_frontiers() {
     // chapter 2 and 3.5 in the catalogue.
     assert_eq!(frontiers(&db, user, series).await, (2.0, None));
 
-    // Un-reading a whole chapter retreats to the previous *existing* whole chapter — 5 is
-    // missing, so un-reading 6 lands on 4 (the floor of 4.5/4.75), not on 5.
+    // Un-reading a whole chapter retreats to the previous *existing* whole chapter: 5 is missing,
+    // so un-reading 6 lands on 4 (the floor of 4.5 and 4.75), not on 5.
     progress_set(&db.pool, user, series, 6.0)
         .await
         .expect("set progress");
@@ -1052,20 +1032,18 @@ async fn un_reading_a_part_below_the_frontier_retreats_both_frontiers() {
     assert_eq!(frontiers(&db, user, series).await, (4.0, None));
 }
 
-/// **TRACK-2.** Un-reading the part frontier itself falls back to the next part still ahead of the
-/// whole frontier, not to nothing.
+/// **Un-reading the part frontier itself falls back to the next part still ahead of the whole
+/// frontier, not to nothing.**
 ///
-/// The bug this pins: `progress_mark_unread` special-cased "the number *is* the part frontier" and
-/// cleared the frontier outright. A single scalar cannot say "`152.6` unread, `152.5` read" by
-/// clearing itself — it says it by retreating — so with `152.1`..`152.6` read, un-reading `152.6`
-/// reported the other five unread as well. One click, five chapters of progress gone, no undo, and
-/// nothing in the response to suggest it had happened. The branch was also redundant: the general
-/// retreat below it computes exactly the same answer when no earlier part exists.
+/// The bug: special-casing "the number *is* the part frontier" and clearing the frontier. A
+/// single scalar says "`152.6` unread, `152.5` read" by retreating, not by clearing, so with
+/// `152.1`..`152.6` read, un-reading `152.6` reports the other five unread too: one click, five
+/// chapters of progress gone, no undo, and nothing in the response to show it.
 ///
-/// The second half pins the bound `prev_part_below` retreats within. It is
-/// `floor(c.number) > whole`, so the fallback cannot land on a part of the whole frontier's *own*
-/// chapter — `3.5` is already covered by a frontier at `3`, and recording it as the part frontier
-/// would be the one `floor(part) == whole` shape no other write site can produce.
+/// The second half pins the bound `prev_part_below` retreats within, `floor(c.number) > whole`,
+/// so the fallback cannot land on a part of the whole frontier's *own* chapter: `3.5` is already
+/// covered by a frontier at `3`, and recording it as the part frontier would be the one
+/// `floor(part) == whole` shape no other write site produces.
 #[tokio::test]
 async fn un_reading_the_part_frontier_falls_back_to_the_previous_part_ahead() {
     let db = TestDb::spawn().await;
@@ -1098,17 +1076,15 @@ async fn un_reading_the_part_frontier_falls_back_to_the_previous_part_ahead() {
     );
 }
 
-/// **TRACK-2, the other half.** Un-reading a part that was never read must not *advance* the part
-/// frontier.
+/// **Un-reading a part that was never read must not *advance* the part frontier.**
 ///
-/// The retreat target comes from the catalogue, not from the frontier, so applying it
-/// unconditionally is how un-reading one chapter marks a different one read: with nothing ahead of
-/// the whole frontier read, un-reading `4.75` set the frontier to `4.5` — the highest part below it
-/// — and `4.5` started reporting as read. The same shape when the frontier is merely below
-/// `number`: it must stay where it is.
+/// The retreat target comes from the catalogue, not the frontier, so applying it unconditionally
+/// marks a different chapter read: with nothing ahead of the whole frontier read, un-reading
+/// `4.75` would set the frontier to `4.5`, the highest part below it, and `4.5` would report as
+/// read. When the frontier is merely below `number`, it must stay where it is.
 ///
-/// This is the direction a test is least likely to be written for, because "un-read" reads as a
-/// verb that can only ever remove.
+/// The direction a test is least likely to be written for, since "un-read" reads as a verb that
+/// can only remove.
 #[tokio::test]
 async fn un_reading_a_part_that_was_never_read_does_not_advance_the_frontier() {
     let db = TestDb::spawn().await;
@@ -1139,18 +1115,17 @@ async fn un_reading_a_part_that_was_never_read_does_not_advance_the_frontier() {
     assert_eq!(frontiers(&db, user, series).await, (3.0, Some(4.5)));
 }
 
-/// **OPS-2.2d.** Excluding a series the user does not track must report that nothing was written.
+/// **Excluding a series the user does not track must report that nothing was written.**
 ///
 /// `sync_excluded` is a column on `watchlist_entries`, so the `UPDATE` has nowhere to land until
-/// the series is tracked. The function used to discard `rows_affected` and answer `Ok(())`, and
-/// `PUT /v1/me/watchlist/{series_id}/sync` answered `{"ok": true}` on top of it — so a user who
-/// opted a series out of external sync *before* adding it to their watchlist was told the opt-out
-/// had been saved, nothing had been, and the next sync pushed their progress to the provider.
+/// the series is tracked. The bug: discarding `rows_affected` lets
+/// `PUT /v1/me/watchlist/{series_id}/sync` answer `{"ok": true}`, so a user opting a series out
+/// of sync *before* tracking it is told the opt-out was saved, and the next sync pushes their
+/// progress to the provider.
 ///
-/// The second half is what makes this a regression test rather than a tautology: the same call
-/// against a tracked series must return `true` **and** be visible to
-/// [`is_sync_excluded`], which is the choke point every sync path actually consults. Asserting
-/// only the boolean would pass against a function that returned `true` without writing.
+/// The second half keeps this from being a tautology: against a tracked series the call must
+/// return `true` **and** be visible to [`is_sync_excluded`], the choke point every sync path
+/// consults. Asserting only the boolean would pass a function returning `true` without writing.
 #[tokio::test]
 async fn excluding_an_untracked_series_reports_that_nothing_was_written() {
     let db = TestDb::spawn().await;
@@ -1207,9 +1182,9 @@ async fn excluding_an_untracked_series_reports_that_nothing_was_written() {
 
 /// One unfiltered-but-for-`term` watchlist page.
 ///
-/// Deliberately reads the whole [`WatchlistPage`], not just `items`: the search predicate is
-/// written out three times — the page, the tab counts and the group aggregates — and asserting on
-/// `items` alone would pass with two of the three still wrong.
+/// Reads the whole [`WatchlistPage`], not just `items`: the search predicate is written out three
+/// times (the page, the tab counts and the group aggregates), and asserting on `items` alone
+/// would pass with two of the three wrong.
 async fn search(db: &TestDb, user: UserId, term: &str) -> WatchlistPage {
     watchlist_page(
         &db.pool,
@@ -1233,7 +1208,7 @@ async fn track_all(db: &TestDb, user: UserId, series: &[SeriesId]) {
 }
 
 /// Search reaches every column it advertises: the canonical title, an alternative title, a tag
-/// name and an author name — case-insensitively, on a substring.
+/// name and an author name, case-insensitively, on a substring.
 #[tokio::test]
 async fn the_search_matches_canonical_titles_alt_titles_tags_and_authors() {
     let db = TestDb::spawn().await;
@@ -1285,11 +1260,10 @@ async fn the_search_matches_canonical_titles_alt_titles_tags_and_authors() {
 
 /// A term containing a LIKE metacharacter is matched literally.
 ///
-/// The predicate used to be `strpos(lower(col), lower($n)) > 0`, which no index can serve, so it
-/// moved to `col ILIKE $n`. That hands `%`, `_` and `\` — ordinary characters to whoever typed
-/// them into the filter box — straight to the pattern matcher. Unescaped, `_` and `%` each widen
-/// the search to the entire watchlist, and a term ending in `\` is a dangling escape that Postgres
-/// rejects, turning a keystroke into a 500 from the filter box.
+/// `col ILIKE $n` hands `%`, `_` and `\`, ordinary characters to whoever typed them, straight to
+/// the pattern matcher. Unescaped, `_` and `%` each widen the search to the entire watchlist, and
+/// a term ending in `\` is a dangling escape that Postgres rejects, turning a keystroke into a 500
+/// from the filter box.
 #[tokio::test]
 async fn a_search_term_with_like_metacharacters_matches_literally() {
     let db = TestDb::spawn().await;
@@ -1330,7 +1304,7 @@ async fn a_search_term_with_like_metacharacters_matches_literally() {
     }
 }
 
-/// A blank or whitespace-only query is no search, not a search for nothing — the same contract
+/// A blank or whitespace-only query is no search, not a search for nothing, the contract
 /// `repo_browse`'s `a_blank_query_is_not_a_filter` pins for Discover.
 #[tokio::test]
 async fn a_blank_watchlist_query_is_not_a_filter() {
@@ -1369,11 +1343,10 @@ async fn only_source(db: &TestDb, series_id: SeriesId) -> SeriesSourceId {
 
 /// A pin must be refused when the source belongs to a different series.
 ///
-/// `series_sources` ids are global, and the foreign key only says "this row exists" — so without
-/// the `EXISTS` that scopes the update to `$2`, a client could point one series' entry at another
-/// series' source. Nothing downstream re-checks it: the pin is taken as the resolved answer, so
-/// every `Open` on the screen would send the reader to a source for a different work. The failure
-/// is silent, which is why it is pinned here rather than left to the handler.
+/// `series_sources` ids are global, and the foreign key only says "this row exists", so without
+/// the `EXISTS` scoping the update to `$2` a client could point one series' entry at another
+/// series' source. Nothing downstream re-checks the pin, so every `Open` would send the reader to
+/// a different work. The failure is silent, so it is pinned here, not left to the handler.
 #[tokio::test]
 async fn a_pin_cannot_point_at_another_series_source() {
     let db = TestDb::spawn().await;
@@ -1408,9 +1381,8 @@ async fn a_pin_cannot_point_at_another_series_source() {
     );
 }
 
-/// Pinning writes to the watchlist entry, so an untracked series has to be distinguishable from
-/// a rejected source — the API answers `404` for one and `400` for the other, and it can only do
-/// that if this layer tells them apart.
+/// Pinning writes to the watchlist entry, so an untracked series must be distinguishable from a
+/// rejected source: the API answers `404` for one and `400` for the other.
 #[tokio::test]
 async fn pinning_an_untracked_series_is_reported_as_untracked() {
     let db = TestDb::spawn().await;
@@ -1430,10 +1402,10 @@ async fn pinning_an_untracked_series_is_reported_as_untracked() {
     );
 }
 
-/// A pin whose source is retired — by a merge, or a provider dropping the entry — must fall back
-/// to the reader's global order rather than leaving the entry pointing at nothing. The schema
-/// does it with `ON DELETE SET NULL`; this is what stops a later migration from "tidying" that
-/// into a cascade, which would delete the whole watchlist entry instead.
+/// A pin whose source is retired, by a merge or a provider dropping the entry, must fall back to
+/// the reader's global order instead of pointing at nothing. The schema does it with
+/// `ON DELETE SET NULL`; this stops a migration from "tidying" that into a cascade, which would
+/// delete the whole watchlist entry.
 #[tokio::test]
 async fn retiring_the_pinned_source_clears_the_pin_and_keeps_the_entry() {
     let db = TestDb::spawn().await;
@@ -1479,18 +1451,16 @@ async fn unread_now(db: &TestDb, user: UserId, series: SeriesId) -> i64 {
         .map_or(0, |c| c.unread)
 }
 
-/// A paid early-access chapter must not be counted as unread until the reader can actually open
-/// it — and must start counting the moment they can, by either route.
+/// A paid early-access chapter must not be counted as unread until the reader can open it, and
+/// must start counting the moment they can, by either route.
 ///
-/// The bug this pins is the one the whole early-access model exists to prevent: before it, a
-/// chapter a provider had published behind a paywall was ingested as an ordinary chapter, so it
-/// inflated every unread badge, produced a "continue reading" card pointing at a page that
-/// answers with a paywall, and fired a new-chapter notification for something unreadable. The
-/// opposite mistake is just as bad and is covered here too — dropping the row at ingest loses
-/// the chapter that has to exist when the timer expires, and re-discovering it later re-dates it.
+/// The bug: a paywalled chapter treated as ordinary inflates every unread badge, produces a
+/// "continue reading" card pointing at a paywall, and fires a notification for something
+/// unreadable. The opposite mistake is covered too: dropping the row at ingest loses the chapter
+/// that must exist when the timer expires, and re-discovering it later re-dates it.
 ///
-/// All three surfaces are asserted because the predicate is spelled out eight times; a copy that
-/// misses the access clause is exactly the drift this file was written to catch.
+/// All three surfaces are asserted because the predicate is spelled out eight times, and a copy
+/// missing the access clause is the drift this file catches.
 #[tokio::test]
 async fn an_early_access_chapter_counts_only_once_the_reader_can_read_it() {
     let db = TestDb::spawn().await;
@@ -1556,8 +1526,8 @@ async fn an_early_access_chapter_counts_only_once_the_reader_can_read_it() {
     );
     assert_stored_matches_live(&db, "opting out closes it again").await;
 
-    // Route two: the timer expires. No rescan is needed — the stored unlock time is what the
-    // predicate compares against, so the chapter opens on its own.
+    // Route two: the timer expires. No rescan is needed: the predicate compares against the
+    // stored unlock time, so the chapter opens on its own.
     sqlx::query(
         "UPDATE chapters SET unlocks_at = now() - interval '1 minute' WHERE number_milli = 30000",
     )
@@ -1575,7 +1545,7 @@ async fn an_early_access_chapter_counts_only_once_the_reader_can_read_it() {
     )
     .await;
 
-    // A locked chapter with no announced date must stay locked rather than defaulting to open.
+    // A locked chapter with no announced date must stay locked, not default to open.
     sqlx::query("UPDATE chapters SET unlocks_at = NULL WHERE number_milli = 30000")
         .execute(&db.pool)
         .await
@@ -1596,9 +1566,9 @@ async fn an_early_access_chapter_counts_only_once_the_reader_can_read_it() {
 ///
 /// It is the same reader-level question the unread predicate answers inline, asked in the one
 /// place that cannot ask it in SQL: the notifier already holds the claimed watcher list in
-/// memory. It is separately pinned because the notifier consumes it as a *whitelist* — an empty
-/// result means "announce to nobody", and a version that returned every user on no match, or
-/// ignored the provider, would silently restore the bug it exists to close.
+/// memory. Pinned separately because the notifier consumes it as a *whitelist*: an empty result
+/// means "announce to nobody", and a version returning every user on no match, or ignoring the
+/// provider, would silently announce paywalled chapters to everyone.
 #[tokio::test]
 async fn the_early_access_opt_in_lookup_is_scoped_to_one_provider() {
     let db = TestDb::spawn().await;
@@ -1636,12 +1606,11 @@ async fn the_early_access_opt_in_lookup_is_scoped_to_one_provider() {
 
 /// Every figure a watchlist card shows must describe the chapters this reader can actually open.
 ///
-/// The unread count was gated by migration `0047`; the card's other numbers were not, so a
-/// paywalled chapter still raised `latest_chapter_number` and `total_chapters`, and its
-/// `discovered_at` still set `latest_chapter_at` — which is what the `released` sort orders by,
-/// what the "updated since" filter compares, and what buckets a series into "today". The card
-/// therefore announced a release the reader could not open, at the top of their list, next to an
-/// unread count of zero.
+/// The bug: gating only the unread count lets a paywalled chapter raise `latest_chapter_number`
+/// and `total_chapters`, and its `discovered_at` set `latest_chapter_at`, which the `released`
+/// sort orders by, the "updated since" filter compares, and "today" buckets on. The card then
+/// announces a release the reader cannot open, at the top of their list, next to an unread count
+/// of zero.
 #[tokio::test]
 async fn a_watchlist_card_counts_only_chapters_the_reader_can_open() {
     let db = TestDb::spawn().await;
@@ -1693,7 +1662,7 @@ async fn a_watchlist_card_counts_only_chapters_the_reader_can_open() {
         locked.latest_chapter_at
     );
 
-    // Paying for it restores every figure at once — one predicate, one opt-in.
+    // Paying for it restores every figure at once: one predicate, one opt-in.
     tankovault_db::repo::users::set_early_access_providers(&db.pool, user, &[provider])
         .await
         .expect("opt in");
@@ -1737,7 +1706,7 @@ async fn marking_a_group_read_stops_at_the_last_chapter_the_reader_can_open() {
         "the frontier stops at 2, not 3: {whole}"
     );
 
-    // And when the timer expires, the chapter is there waiting rather than already consumed.
+    // And when the timer expires, the chapter is there waiting, not already consumed.
     sqlx::query(
         "UPDATE chapters SET unlocks_at = now() - interval '1 minute' WHERE number_milli = 30000",
     )
@@ -1757,10 +1726,10 @@ async fn marking_a_group_read_stops_at_the_last_chapter_the_reader_can_open() {
 
 /// A series the reader has never tracked is on the watchlist after `watchlist_track_if_absent`.
 ///
-/// The bug: marking a chapter read wrote `read_progress` and nothing else, so a series opened
-/// from Discover or Search stayed off the watchlist. Progress was recorded against a series the
-/// reader could not see anywhere in Library — no unread badge, no notifications, no continue
-/// card — and the only way to find it again was to search for it a second time.
+/// The bug: marking a chapter read writes `read_progress` and nothing else, so a series opened
+/// from Discover or Search stays off the watchlist, with progress recorded against a series the
+/// reader cannot see in Library (no unread badge, no notifications, no continue card) until they
+/// search for it again.
 #[tokio::test]
 async fn tracking_an_untracked_series_adds_it_at_the_defaults_a_manual_add_uses() {
     let db = TestDb::spawn().await;
@@ -1781,12 +1750,12 @@ async fn tracking_an_untracked_series_adds_it_at_the_defaults_a_manual_add_uses(
     assert!(entry.notify, "notify defaults on, as a manual add does");
 }
 
-/// An entry that already exists survives untouched — status and notify flag included.
+/// An entry that already exists survives untouched, status and notify flag included.
 ///
-/// The `DO NOTHING` half is the whole reason this is not `watchlist_upsert` with default
-/// arguments. A reader who set `dropped` and muted the bell, then reads one more chapter out of
-/// curiosity, would otherwise find the series back at `reading` with notifications re-armed, and
-/// nothing in the UI would explain why.
+/// The `DO NOTHING` half is why this is not `watchlist_upsert` with default arguments. A reader
+/// who set `dropped` and muted the bell, then reads one more chapter out of curiosity, would
+/// otherwise find the series back at `reading` with notifications re-armed, and nothing in the UI
+/// would explain why.
 #[tokio::test]
 async fn tracking_a_series_already_on_the_watchlist_changes_nothing() {
     let db = TestDb::spawn().await;
@@ -2030,9 +1999,9 @@ async fn an_expired_unlock_counts_once_the_sweeper_runs() {
 
 /// **The reconciler finds and repairs a row no trigger kept true.**
 ///
-/// A writer the triggers do not cover — raw SQL against the stored table, a restore, a future
-/// statement nobody wired up — leaves a wrong count with no error. The reconciler is what notices,
-/// and its drift counts are what tell an operator it happened.
+/// A writer the triggers do not cover (raw SQL against the stored table, a restore, a statement
+/// nobody wired up) leaves a wrong count with no error. The reconciler notices, and its drift
+/// counts tell an operator it happened.
 #[tokio::test]
 async fn the_reconciler_repairs_drift_and_missing_rows() {
     use tankovault_db::repo::tracking::unread::reconcile_batch;
@@ -2197,11 +2166,11 @@ async fn the_staged_feed_matches_the_statement_it_replaced() {
 
 /// **Two chapter batches for one watched series, committing close together, both count.**
 ///
-/// `refresh_watchlist_unread` used to compute and write in one statement, whose snapshot predates
-/// its wait for the row lock. The first batch adds chapter 10 on one source and holds its
-/// transaction; the second adds chapter 11 on the other source, computes an unread count without
-/// chapter 10, waits for the row, and overwrites the first batch's count with its own. The stored
-/// count then stays one short until the reconciler repairs it (migration 0061).
+/// The bug: computing and writing in one statement, whose snapshot predates its wait for the row
+/// lock. The first batch adds chapter 10 on one source and holds its transaction; the second adds
+/// chapter 11 on the other, computes an unread count without chapter 10, waits for the row, and
+/// overwrites the first batch's count, which stays one short until the reconciler repairs it.
+/// Migration 0061 locks the rows before computing.
 #[tokio::test]
 async fn concurrent_chapter_batches_for_one_watched_series_both_count() {
     use tankovault_db::repo::catalog::{ChapterUpsert, upsert_chapters};

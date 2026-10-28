@@ -1,7 +1,7 @@
 # Contributing
 
 **[`docs/ENGINEERING_GUIDE.md`](docs/ENGINEERING_GUIDE.md) is the canonical guide to structure,
-style and security** — every rule, and what enforces it. This file covers workflow: setup, what to
+style and security**: every rule, and what enforces it. This file covers workflow: setup, what to
 run, and what a change needs. The two do not overlap by design.
 
 ## Licensing of contributions
@@ -10,7 +10,7 @@ Read this before opening a pull request. It is short, and it asks for something 
 
 TankoVault is [PolyForm Noncommercial 1.0.0](LICENSE): free for any noncommercial use, commercial
 use only by separate licence from the maintainer. That model only works if one party owns enough
-of the copyright to grant those licences — so **by opening a pull request you agree to both of
+of the copyright to grant those licences: so **by opening a pull request you agree to both of
 the following**:
 
 1. Your contribution is licensed to everyone under the project licence, and
@@ -21,7 +21,7 @@ the following**:
 Said plainly, because it is better said than discovered later: **you are giving the maintainer
 the right to make money from your work, on terms you do not get.** That is the deal. It is the
 same one Grafana, MinIO and Qt ask for, and if it is not one you want to accept, please open an
-issue describing the change instead of a pull request implementing it — a good bug report is
+issue describing the change instead of a pull request implementing it: a good bug report is
 worth as much here and costs you nothing.
 
 Every commit also needs a [Developer Certificate of Origin](https://developercertificate.org/)
@@ -31,8 +31,8 @@ sign-off, which is your assertion that you had the right to submit the code in t
 git commit -s -m "fix: ..."
 ```
 
-Contributions carrying someone else's copyright — code lifted from another project, output you
-are not free to relicense — cannot be accepted, whatever the upstream licence, because clause 2
+Contributions carrying someone else's copyright (code lifted from another project, output you
+are not free to relicense) cannot be accepted, whatever the upstream licence, because clause 2
 is not yours to grant for them.
 
 ## Before you push
@@ -41,16 +41,16 @@ is not yours to grant for them.
 cargo run -p xtask -- ci
 ```
 
-Every gate CI runs that needs no Docker, network or database — `fmt`, pedantic `clippy` with all
-features, offline tests, doc tests, the OpenAPI drift check, and the three `web/frontend` gates —
+Every gate CI runs that needs no Docker, network or database (`fmt`, pedantic `clippy` with all
+features, offline tests, doc tests, the OpenAPI drift check, and the three `web/frontend` gates)
 in CI's order, stopping at the first failure.
 
 It does **not** cover, and CI still does: the integration suites (Docker), the `sqlx` offline-cache
 check (a live migrated Postgres), coverage, `cargo deny`/`audit`/supply-chain (network), the image
-builds, the Tailwind rebuild (Node), the Prometheus rule tests, and secret scanning.
+builds, the Tailwind rebuild (Node), and secret scanning.
 `xtask/src/ci.rs` says why each is excluded.
 
-Install the pre-commit hook once — it regenerates the OpenAPI artifacts when the schema changes:
+Install the pre-commit hook once: it regenerates the OpenAPI artifacts when the schema changes:
 
 ```bash
 cargo run -p xtask -- install-hooks
@@ -63,7 +63,7 @@ provably did not change is skipped. Three things to know before reading a run:
 
 - **A skipped job is a pass, not a gap.** `.github/workflows/ci.yml` is an input to every filter, so
   touching the workflow re-runs everything, and a weekly scheduled run ignores the filters entirely.
-- **`CI` is the only required status check** — the aggregate job at the bottom of `ci.yml`. Do not
+- **`CI` is the only required status check**: the aggregate job at the bottom of `ci.yml`. Do not
   add individual jobs to branch protection: a required check that never reports is pending forever,
   so every skipped job would block its own pull request.
 - **Pull requests build two images, not eight.** The full matrix builds on `main` and weekly.
@@ -79,7 +79,7 @@ docker compose -f deploy/docker-compose.yml up --build      # the whole stack, a
 
 Copy `deploy/local.env.example` to `deploy/local.env`, fill it in, and pass
 `--env-file deploy/local.env`. The published placeholders are refused at boot in every profile,
-deliberately — a working default would only move the failure later.
+deliberately: a working default would only move the failure later.
 
 For a database without the stack:
 
@@ -101,7 +101,7 @@ cargo test -p tankovault-db -p tankovault-api -p tankovault-sync --features inte
 
 They reuse one container named `tankovault-test-postgres` and sweep leftover `tv_test_*` databases
 older than an hour. Each test binary pays ~85 seconds in migrations, so a full run is around
-fifteen minutes — expected, not a hang. `docker rm -f tankovault-test-postgres` starts clean.
+fifteen minutes: expected, not a hang. `docker rm -f tankovault-test-postgres` starts clean.
 
 ## What changes need
 
@@ -109,17 +109,17 @@ fifteen minutes — expected, not a hang. `docker rm -f tankovault-test-postgres
 generated. Change a handler's `#[utoipa::path]` or a `crates/contracts` type and run
 `cargo run -p xtask -- openapi`; `--check` is a CI gate. Never edit either by hand.
 
-**Third-party notices.** `THIRD-PARTY-NOTICES` is generated too, from both lockfiles — the
+**Third-party notices.** `THIRD-PARTY-NOTICES` is generated too, from both lockfiles: the
 backend workspace's and `web/frontend`'s. Add or bump a dependency and run
 `cargo run -p xtask -- notices` (`cargo install cargo-about --locked` first); `--check` is the CI
 `notices` job. It is not a formality: the images are a binary distribution and the SPA is another
-one, and nearly every licence `deny.toml` admits requires its text to travel along — which is why
+one, and nearly every licence `deny.toml` admits requires its text to travel along: which is why
 the file ships at `/THIRD-PARTY-NOTICES` in every image and is served to readers at
 `/third-party-notices`. If generation fails because a crate's licence is unaccepted, that is a
 decision to make in `about.toml`, not a build error to work around.
 
 The SPA's `/licenses` screen renders the same notices from a structured form of that document,
-written into the frontend image during the build by `xtask notices --json` and **not** committed —
+written into the frontend image during the build by `xtask notices --json` and **not** committed:
 a second representation of half a megabyte, out of the same merge, that the plain-text `--check`
 already covers. A checkout has none, so the screen renders its unavailable state until you write
 one where the service can find it:
@@ -130,24 +130,24 @@ TANKOVAULT_FRONTEND__NOTICES_JSON_PATH=target/THIRD-PARTY-NOTICES.json
 ```
 
 **The README.** `README.md` is rendered from `.github/templates/README.md.hbs`; edit the
-template, never the document. The numbers it quotes — the edition, the MSRV, the pinned
-toolchain, the Postgres and Redis majors — are injected from `Cargo.toml` by the shared
+template, never the document. The numbers it quotes (the edition, the MSRV, the pinned
+toolchain, the Postgres and Redis majors) are injected from `Cargo.toml` by the shared
 `readme-variables` action, and from `rust-toolchain.toml` and `deploy/docker-compose.yml` by
 `.github/scripts/readme-stack.sh`,
 so bumping any of those carries the documentation with it. CI renders the template and commits
 the result to your pull request; a hand-edited `README.md` is reverted by that commit, and fails
 the `readme` job outright on a fork.
 
-**Configuration.** `docs/CONFIGURATION.md` is the surface — every `TANKOVAULT_*` key, its default,
+**Configuration.** `docs/CONFIGURATION.md` is the surface: every `TANKOVAULT_*` key, its default,
 and which services read it. Add, rename or retire a field and the document has to follow: a test
 derives the surface from the config structs and the `std::env::var` call sites and fails on a
-disagreement either way. An unknown key is *ignored* at boot rather than rejected, so a stale row
+disagreement either way. An unknown key is *ignored* at boot, not rejected, so a stale row
 costs an operator a silent no-op. Keys are read from the leftmost cell of a table row only;
 `cargo run -p xtask -- config-docs` prints the derived list.
 
 **SQL.** The `query!` macros are checked against the committed `.sqlx/` cache. Change any query
 *text* and run `cargo run -p xtask -- sqlx-prepare` against a migrated Postgres 17. Moving a query
-between files needs nothing — the cache is keyed on text, not location. The workspace must compile
+between files needs nothing: the cache is keyed on text, not location. The workspace must compile
 with `DATABASE_URL` unset; that is what proves the cache is complete.
 
 **Suppressions.** `#[expect(..., reason = "...")]`, never `#[allow]`, enforced by
@@ -160,7 +160,7 @@ so a future reader does not simplify it away.
 **Coverage.** The `coverage` job compares against `.github/coverage-floor.txt` and fails below it.
 That file explains when to raise it and the one legitimate reason to lower it.
 
-**Mutation testing.** `cargo install cargo-mutants --locked`, then `cargo mutants` — about nine
+**Mutation testing.** `cargo install cargo-mutants --locked`, then `cargo mutants`: about nine
 minutes on a warm `target/`. Scoped by `.cargo/mutants.toml` to the four pure decision cores (the
 matcher, the feature gate, the sync merge and its plan), which argues the scope. Advisory: a
 survivor is a missing assertion, not a build failure. Worth running after touching any of the four.
@@ -175,12 +175,12 @@ links one TLS stack.
 Summarised with their enforcement in
 [`docs/ENGINEERING_GUIDE.md`](docs/ENGINEERING_GUIDE.md). Two that come up constantly:
 
-- **Database fixtures come from `tankovault_test_support::seed`** —
+- **Database fixtures come from `tankovault_test_support::seed`**:
   `seed::provider(&db, "alpha").create().await`, `seed::user`, `seed::series(…).chapters(&[…])`.
   Do not write another `a_provider`. Override what your test is actually about (`.adapter(…)`,
-  `.release_year(…)`) so the divergence is stated rather than inferred.
+  `.release_year(…)`) so the divergence is stated, not inferred.
 - **Every public `fn` returning `Result` needs a `# Errors` section**, one line, naming the variants
-  it can actually produce and what it returns *instead of* an error — several of those
+  it can actually produce and what it returns *instead of* an error: several of those
   `Ok(None)`/`Ok(false)`/`Ok(0)` choices are security-relevant. See §3.2.
 
 ## Writing

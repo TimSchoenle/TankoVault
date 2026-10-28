@@ -5,11 +5,11 @@ use sqlx::PgExecutor;
 use tankovault_domain::{SeriesId, UserId};
 use uuid::Uuid;
 
-/// Record (or refresh) the mapping between a canonical series and its external id at
-/// `provider`. Idempotent on `(series_id, provider)`.
+/// Records (or refreshes) the mapping between a canonical series and its external id at `provider`.
+/// Idempotent on `(series_id, provider)`.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; a first mapping and a re-point are indistinguishably `Ok(())`.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn upsert_mapping<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -30,16 +30,16 @@ pub async fn upsert_mapping<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Resolve a provider's external id to a canonical series, if already mapped. Used to
+/// Resolves a provider's external id to a canonical series, if already mapped. Used to
 /// short-circuit title re-matching on subsequent syncs.
 ///
-/// Several series can map to one external id (the primary key is `(series_id, provider)`, not
-/// the pair), so this picks the most recently confirmed of them rather than an arbitrary row:
-/// which duplicate a reconciliation drives must not vary between runs. The others are not
-/// ignored — [`mapping_linked_series`] is how the sync engine reaches them.
+/// Several series can map to one external id, since the primary key is `(series_id, provider)`,
+/// so this picks the most recently confirmed: which duplicate a reconciliation drives must not
+/// vary between runs. [`mapping_linked_series`] reaches the others. `None` sends the caller to
+/// title matching.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; unmapped is `Ok(None)`, sending the caller to title-matching.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn mapping_series_for_external<'e, E: PgExecutor<'e>>(
     exec: E,
     provider: &str,
@@ -56,7 +56,7 @@ pub async fn mapping_series_for_external<'e, E: PgExecutor<'e>>(
     Ok(id.map(SeriesId::from_uuid))
 }
 
-/// Every canonical series mapped to one external id at `provider` — the *linked group*.
+/// Returns every canonical series mapped to one external id at `provider`, the *linked group*.
 ///
 /// Catalogue duplicates routinely resolve onto one remote work, and the remote holds a single
 /// entry for all of them, so a value settled for that entry is settled for every member. A
@@ -67,7 +67,7 @@ pub async fn mapping_series_for_external<'e, E: PgExecutor<'e>>(
 /// Ordered so a run's choice of member is reproducible.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; an unmapped external id is an empty `Vec`.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn mapping_linked_series<'e, E: PgExecutor<'e>>(
     exec: E,
     provider: &str,
@@ -84,11 +84,11 @@ pub async fn mapping_linked_series<'e, E: PgExecutor<'e>>(
     Ok(ids.into_iter().map(SeriesId::from_uuid).collect())
 }
 
-/// Resolve a canonical series to its external id at `provider`, if mapped. Used by push
-/// to target the correct remote entry.
+/// Resolves a canonical series to its external id at `provider`, if mapped. Used by push to target
+/// the correct remote entry.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; unmapped is `Ok(None)` — every series starts out unmapped.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn mapping_external_for_series<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -104,10 +104,10 @@ pub async fn mapping_external_for_series<'e, E: PgExecutor<'e>>(
     Ok(ext)
 }
 
-/// List the provider slugs a user has linked an account for.
+/// Lists the provider slugs a user has linked an account for.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; no accounts is an empty `Vec` — the sync is a no-op.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn list_linked_providers<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -121,12 +121,11 @@ pub async fn list_linked_providers<'e, E: PgExecutor<'e>>(
     Ok(providers)
 }
 
-/// Remove a series↔external mapping for `provider`. Returns `true` if a row was removed.
-/// The next pull/push re-resolves the series from scratch (title match or search).
+/// Removes a series↔external mapping for `provider`, returning `true` if a row was removed. The
+/// next pull or push re-resolves the series from scratch, by title match or search.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; nothing to remove is `Ok(false)`, not
-/// [`crate::DbError::NotFound`].
+/// [`crate::DbError::Sqlx`] only.
 pub async fn delete_mapping<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -142,15 +141,16 @@ pub async fn delete_mapping<'e, E: PgExecutor<'e>>(
     Ok(result.rows_affected() > 0)
 }
 
-/// Record or refresh the mapping for several series in one statement, the batched form of
+/// Records or refreshes the mapping for several series in one statement, the batched form of
 /// [`upsert_mapping`].
 ///
 /// `DISTINCT ON (series_id) … ORDER BY ord DESC` is required: two remote ids resolving to one
 /// series would otherwise abort the statement instead of letting the last win.
 ///
+/// One unknown `series_id` fails the whole batch; an empty `pairs` issues no statement.
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; one unknown `series_id` fails the whole batch. An empty
-/// `pairs` is `Ok(())` with no round trip.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn upsert_mappings<'e, E: PgExecutor<'e>>(
     exec: E,
     provider: &str,

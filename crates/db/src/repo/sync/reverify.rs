@@ -44,8 +44,8 @@ pub struct ReverifyState {
     pub error: Option<String>,
 }
 
-/// Claim the state row for a new run. Returns the run's token, or `None` when a live run holds
-/// the claim.
+/// Claims the state row for a new run. Returns the run's token, or `None` when a live run holds the
+/// claim.
 ///
 /// A claim whose heartbeat is older than ten minutes is taken over: its replica died, or is
 /// stalled, without releasing it, and refusing forever would need a database edit to recover.
@@ -74,8 +74,8 @@ pub async fn begin_reverify<'e, E: PgExecutor<'e>>(
     Ok(claimed)
 }
 
-/// Publish the counters of run `run`, which also renews its claim. Returns `false` when the
-/// claim was taken over by another run, which this one must then stop for.
+/// Publishes the counters of run `run`, which also renews its claim. Returns `false` when the claim
+/// was taken over by another run, which this one must then stop for.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -99,7 +99,7 @@ pub async fn record_reverify_progress<'e, E: PgExecutor<'e>>(
     Ok(updated.rows_affected() > 0)
 }
 
-/// Release run `run`'s claim and record how it ended. **Must run on the failure path too.**
+/// Releases run `run`'s claim and records how it ended. **Must run on the failure path too.**
 /// Returns `false`, writing nothing, when another run has taken the claim over.
 ///
 /// # Errors
@@ -163,10 +163,12 @@ pub async fn block_sync_match_for_reverify(
     Ok(true)
 }
 
-/// The current or last run.
+/// Returns the current or last run.
+///
+/// The row is seeded by its migration.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; the row is seeded by its migration.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn reverify_state<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<ReverifyState> {
     let row = sqlx::query!(
         "SELECT running, dry_run, started_at, finished_at, checked, failed, removed, \
@@ -191,10 +193,10 @@ pub async fn reverify_state<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Reverify
     })
 }
 
-/// One page of `provider`'s mappings in series-id order, after `after`.
+/// Returns one page of `provider`'s mappings in series-id order, after `after`.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; the end of the list is an empty `Vec`.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn list_mappings_after<'e, E: PgExecutor<'e>>(
     exec: E,
     provider: &str,

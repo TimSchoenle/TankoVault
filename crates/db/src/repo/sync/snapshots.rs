@@ -22,10 +22,10 @@ pub struct SyncSnapshot {
     pub last_synced_at: Option<OffsetDateTime>,
 }
 
-/// Fetch the stored three-way-merge snapshot for a mapped series, if any.
+/// Fetches the stored three-way-merge snapshot for a mapped series, if any.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; unmapped is `Ok(None)`, never [`crate::DbError::NotFound`].
+/// [`crate::DbError::Sqlx`] only.
 pub async fn get_snapshot<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -44,16 +44,16 @@ pub async fn get_snapshot<'e, E: PgExecutor<'e>>(
     Ok(row)
 }
 
-/// Fetch the freshest three-way-merge snapshot across every series mapped to `external_id` —
-/// the *linked group*'s common ancestor.
+/// Fetches the freshest three-way-merge snapshot across every series mapped to `external_id`, the
+/// *linked group*'s common ancestor.
 ///
 /// A group's members are one work as far as the provider is concerned, so their ancestors are
 /// written together and agree. They can still diverge across the moment a duplicate joins the
 /// group, and the newest of them is the one that describes what the group last agreed with the
-/// remote; the never-synced member's empty snapshot is not an ancestor, it is the absence of one.
+/// remote; a never-synced member's empty snapshot is the absence of an ancestor.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; an unmapped external id is `Ok(None)`.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn get_group_snapshot<'e, E: PgExecutor<'e>>(
     exec: E,
     provider: &str,
@@ -93,12 +93,13 @@ pub struct AgreedSnapshot<'a> {
     pub remote_status: &'a str,
 }
 
-/// Record the agreed values as the new three-way-merge snapshot (design v2 §B.3). The
+/// Records the agreed values as the new three-way-merge snapshot (design v2 §B.3). The
 /// `sync_mappings` row must already exist.
 ///
+/// A missing row matches nothing silently, so reconciliation keeps re-deciding from no ancestor.
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; a missing row matches nothing and is silently `Ok(())`, so
-/// reconciliation keeps re-deciding from no ancestor.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn record_snapshot<'e, E: PgExecutor<'e>>(
     exec: E,
     agreed: &AgreedSnapshot<'_>,

@@ -1,6 +1,6 @@
 //! External-sync persistence: OAuth accounts and canonical-series mappings per provider.
 //!
-//! Token columns hold **ciphertext only** — sealed by `tankovault_auth::Sealer` before reaching
+//! Token columns hold **ciphertext only**, sealed by `tankovault_auth::Sealer` before reaching
 //! this layer.
 
 pub mod accounts;

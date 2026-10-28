@@ -1,6 +1,6 @@
 //! Linked provider accounts and their automatic-sync settings.
 //!
-//! `access_token`/`refresh_token` hold **ciphertext only** — the sync service seals them with
+//! `access_token` and `refresh_token` hold **ciphertext only**: the sync service seals them with
 //! `tankovault_auth::Sealer` before they reach this layer.
 
 use crate::error::DbResult;
@@ -35,12 +35,13 @@ pub struct ExternalAccount {
     pub conflict_policy: String,
 }
 
-/// Insert or replace a user's account for `provider`. Idempotent on `(user_id, provider)`,
-/// so re-linking (e.g. a token refresh) overwrites the prior ciphertext in place.
+/// Inserts or replaces a user's account for `provider`. Idempotent on `(user_id, provider)`, so
+/// re-linking (e.g. a token refresh) overwrites the prior ciphertext in place.
+///
+/// Re-linking leaves `auto_sync_enabled`, `conflict_policy` and other settings columns untouched.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; re-linking leaves `auto_sync_enabled`, `conflict_policy` and
-/// other settings columns untouched.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn upsert_account<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -68,11 +69,12 @@ pub async fn upsert_account<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Fetch a user's account for `provider`, if linked.
+/// Fetches a user's account for `provider`, if linked.
+///
+/// Never default a failure to `None`: the engine reads it as "skip this provider".
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; unlinked is `Ok(None)`, not [`crate::DbError::NotFound`] — must
-/// not come from a failure, since the engine reads `None` as "skip this provider".
+/// [`crate::DbError::Sqlx`] only.
 pub async fn get_account<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -116,12 +118,13 @@ pub async fn get_account<'e, E: PgExecutor<'e>>(
     }))
 }
 
-/// Update a linked account's automatic-sync policy (design v2 §B.2/§B.6). `None` leaves a field
+/// Updates a linked account's automatic-sync policy (design v2 §B.2/§B.6). `None` leaves a field
 /// unchanged.
 ///
+/// An unlinked provider matches nothing silently, so callers confirm the account exists first.
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; an unlinked provider matches nothing and is silently `Ok(())`
-/// — callers must confirm the account exists first.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn update_account_settings<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -148,11 +151,10 @@ pub async fn update_account_settings<'e, E: PgExecutor<'e>>(
 ///
 /// Does nothing once the user has chosen one. "Not yet chosen" is inferred from the column still
 /// reading `newest_wins`, so a user who deliberately picks that value is seeded again if they
-/// re-link (design v2 §B.1).
+/// re-link (design v2 §B.1). Seeded, declined and no such account are the same outcome.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; always `Ok(())` — seeded, declined, or no such account are the
-/// same outcome for the caller.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn seed_account_policy<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -171,12 +173,14 @@ pub async fn seed_account_policy<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Every linked account with automatic sync enabled, as `(user_id, provider)` pairs, for the
-/// scheduled reconciliation loop (design v2 §B.4).
+/// Returns every linked account with automatic sync enabled, as `(user_id, provider)` pairs, for
+/// the scheduled reconciliation loop (design v2 §B.4).
+///
+/// Always propagate the error: an empty `Vec` from a failure would silently stop sync for
+/// everyone.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; must propagate — an empty `Vec` from a failure would silently
-/// stop sync for everyone.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn list_auto_sync_accounts<'e, E: PgExecutor<'e>>(
     exec: E,
 ) -> DbResult<Vec<(UserId, String)>> {
@@ -198,12 +202,11 @@ pub async fn list_auto_sync_accounts<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Record a fresh sync timestamp and, if known, the provider's display name; clears
-/// `last_error` in the same statement. A `None` username leaves the stored one as-is.
+/// Records a fresh sync timestamp and, if known, the provider's display name; clears `last_error`
+/// in the same statement. A `None` username leaves the stored one as-is.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; an account unlinked since is `Ok(())`, not
-/// [`crate::DbError::NotFound`].
+/// [`crate::DbError::Sqlx`] only.
 pub async fn mark_synced<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -226,12 +229,14 @@ pub async fn mark_synced<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Record a sync failure for a linked account (admin Sync console tab). Overwritten by the
-/// next successful `mark_synced`, which clears it back to `NULL`.
+/// Records a sync failure for a linked account (admin Sync console tab). Overwritten by the next
+/// successful `mark_synced`, which clears it back to `NULL`.
+///
+/// Callers on this already-failing path log the error instead of propagating it, so the original
+/// failure is not lost.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; on this already-failing path callers log rather than
-/// propagate, so as not to lose the record of why the sync failed.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn record_sync_error<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -249,11 +254,13 @@ pub async fn record_sync_error<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Unlink a user's account for `provider`. Returns `true` if a row was removed.
+/// Unlinks a user's account for `provider`, returning `true` if a row was removed.
+///
+/// Never default a failure to `true`: this removes OAuth ciphertext, and a false "disconnected"
+/// leaves live tokens behind.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; not-linked is `Ok(false)`. Never default a failure to `true` —
-/// this removes OAuth ciphertext, and a false "disconnected" leaves live tokens behind.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn delete_account<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,

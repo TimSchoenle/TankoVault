@@ -495,10 +495,9 @@ image is a copy of the software, and the Notices clause requires the terms to tr
 Pulling an image does not grant commercial use.
 
 Publishing is not gated: merging a release pull request publishes, and the structure tests run
-on the publishing path, before the push. `ci.yml`'s `docker-arm64` job runs on every push and
-every full run (pull requests build amd64 only), so the arm64 path is built on `main` before a
-release reaches it. The
-`ALLOW_IMAGE_PUBLISH` and `ENABLE_ARM64_CI` repository variables are read by nothing and can be
+on the publishing path, before the push. `ci.yml`'s `docker-arm64` job runs on every push that touches
+the Docker scope and on every full run (pull requests build amd64 only), so a change to the arm64
+path is built on `main` before a release reaches it. The `ALLOW_IMAGE_PUBLISH` and `ENABLE_ARM64_CI` repository variables are read by nothing and can be
 deleted from the repository settings. `wreq-util` is pinned to 3.x, which is Apache-2.0; the 2.x
 line is GPL-3.0.
 

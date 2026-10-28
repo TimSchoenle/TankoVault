@@ -729,7 +729,7 @@ consumer and stops consuming; it recovers when it is replaced.
 ## 7b. When the queue and the database disagree
 
 JetStream is the truth for **dispatch**; `scan_tasks` is the truth for **progress**. Nothing
-transactional spans the two (a task row is committed and then its message is published) so
+transactional spans the two (a task row is committed and then its message is published), so
 they can come apart with no failure visible on either side:
 
 - a publish that never landed, or landed on a stream that was later purged or recreated;

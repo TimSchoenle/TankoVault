@@ -455,8 +455,8 @@ Two, both labelled `grounding: baseline-needed` in the rule file:
 ## 4. What is not measured
 
 The honest half of this document. These are real, documented failure modes of this system that
-have **no metric**, so there is no rule for them and no panel, not an approximation that
-would read as coverage.
+have **no metric**, so there is no rule or panel for them. There is deliberately no approximation
+that would read as coverage.
 
 Native readiness is `service_ready` / `service_dependency_up`, but `blackbox_exporter` remains
 the availability signal, because a gauge inside a process cannot report that the process is gone.

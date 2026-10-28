@@ -90,7 +90,9 @@ impl Upstream {
     /// Sends `GET path`, decoding the body as `T`.
     ///
     /// # Errors
-    /// Returns the variants of [`Self::send`].
+    /// Returns `ApiError::GatewayTimeout` when the peer times out, `ApiError::NotFound` or
+    /// `ApiError::Conflict` for its `404` or `409`, and `ApiError::BadGateway` for an unreachable
+    /// peer, any other non-success status, or a JSON body that is not a `T`.
     pub async fn get<T: DeserializeOwned>(&self, path: &str) -> ApiResult<Json<T>> {
         let url = self.url(path);
         self.send(self.http.get(url)).await
@@ -99,7 +101,9 @@ impl Upstream {
     /// Sends `POST path` with a JSON body, decoding the response as `T`.
     ///
     /// # Errors
-    /// Returns the variants of [`Self::send`].
+    /// Returns `ApiError::GatewayTimeout` when the peer times out, `ApiError::NotFound` or
+    /// `ApiError::Conflict` for its `404` or `409`, and `ApiError::BadGateway` for an unreachable
+    /// peer, any other non-success status, or a JSON body that is not a `T`.
     pub async fn post<B: Serialize, T: DeserializeOwned>(
         &self,
         path: &str,
@@ -112,7 +116,9 @@ impl Upstream {
     /// Sends `PATCH path` with a JSON body, decoding the response as `T`.
     ///
     /// # Errors
-    /// Returns the variants of [`Self::send`].
+    /// Returns `ApiError::GatewayTimeout` when the peer times out, `ApiError::NotFound` or
+    /// `ApiError::Conflict` for its `404` or `409`, and `ApiError::BadGateway` for an unreachable
+    /// peer, any other non-success status, or a JSON body that is not a `T`.
     pub async fn patch<B: Serialize, T: DeserializeOwned>(
         &self,
         path: &str,
@@ -125,7 +131,9 @@ impl Upstream {
     /// Sends `DELETE path` with a JSON body, decoding the response as `T`.
     ///
     /// # Errors
-    /// Returns the variants of [`Self::send`].
+    /// Returns `ApiError::GatewayTimeout` when the peer times out, `ApiError::NotFound` or
+    /// `ApiError::Conflict` for its `404` or `409`, and `ApiError::BadGateway` for an unreachable
+    /// peer, any other non-success status, or a JSON body that is not a `T`.
     pub async fn delete<B: Serialize, T: DeserializeOwned>(
         &self,
         path: &str,
@@ -178,8 +186,9 @@ impl Upstream {
     ///
     /// # Errors
     /// Returns [`ApiError::GatewayTimeout`] when the peer times out, [`ApiError::NotFound`] or
-    /// [`ApiError::Conflict`] for its `404` or `409`, and [`ApiError::BadGateway`] for anything
-    /// else: an unreachable peer, any other non-success status, or a body that is not a `T`.
+    /// [`ApiError::Conflict`] for its `404` or `409`, and [`ApiError::BadGateway`] for an
+    /// unreachable peer, any other non-success status, or a JSON body that is not a `T`. A success
+    /// whose body is empty, unreadable or not JSON decodes as `{"ok": true}` instead.
     async fn send<T: DeserializeOwned>(&self, req: reqwest::RequestBuilder) -> ApiResult<Json<T>> {
         let resp = self.prepare(req).send().await.map_err(|e| {
             tracing::error!(upstream = self.name, error = %e, "internal service unreachable");
@@ -204,7 +213,8 @@ impl Upstream {
     /// Separate from [`Self::send`] so the two rules it encodes are testable without a peer.
     ///
     /// # Errors
-    /// Returns [`ApiError::BadGateway`] when the body is not a `T`.
+    /// Returns [`ApiError::BadGateway`] when the body, or the `{"ok": true}` an empty or non-JSON
+    /// body stands in for, is not a `T`.
     fn decode<T: DeserializeOwned>(&self, text: &str) -> ApiResult<Json<T>> {
         // A `204`, or a body the peer chose not to give us, is a success with nothing to
         // forward. Callers expect an object, so give them the canonical empty one.

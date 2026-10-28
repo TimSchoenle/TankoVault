@@ -830,7 +830,7 @@ jobs:
 
       - name: collect the README payload
         id: variables
-        uses: TimSchoenle/actions/actions/common/readme-variables@3c25cdf90012583d9d0e2ebc6f74f58749b65475 # pending actions-common-readme-variables release, see TimSchoenle/actions#1957
+        uses: TimSchoenle/actions/actions/common/readme-variables@421289db958b620e2772ba46d11d014bf25a371b # tag=actions-common-readme-variables-v2.1.0
         with:
           branch: ${{ github.event.repository.default_branch }}
           extra: ${{ steps.stack.outputs.json }}

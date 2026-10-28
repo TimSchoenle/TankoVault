@@ -2593,8 +2593,8 @@ Applies to:
   - async-stream 0.3.6
   - async-stream-impl 0.3.6
   - brotli-decompressor 5.0.3
-  - csp-policy 0.2.0
-  - csp-shell 0.2.0
+  - csp-policy 0.2.1
+  - csp-shell 0.2.1
   - governor 0.10.4
   - libm 0.2.16
   - tonic-prost 0.14.6
@@ -2844,7 +2844,7 @@ DEALINGS IN THE SOFTWARE.
 
 Applies to:
 
-  - tokio 1.53.3
+  - tokio 1.54.1
   - tokio-stream 0.1.19
   - tokio-util 0.7.20
 
@@ -6456,7 +6456,7 @@ Ships as: the WebAssembly bundle the frontend image serves, which executes in th
 
 Licences in this section, by number of crates:
 
-  Apache License 2.0 (Apache-2.0) — 447 crates, 30 distinct notices
+  Apache License 2.0 (Apache-2.0) — 448 crates, 30 distinct notices
   MIT License (MIT) — 145 crates, 71 distinct notices
   Unicode License v3 (Unicode-3.0) — 19 crates, 2 distinct notices
   BSD 3-Clause "New" or "Revised" License (BSD-3-Clause) — 9 crates, 6 distinct notices
@@ -7320,6 +7320,7 @@ by the block naming that crate.
   - windows-strings 0.100.0
   - windows-strings 0.4.2
   - windows-strings 0.5.1
+  - windows-sys 0.52.0
   - windows-sys 0.59.0
   - windows-sys 0.60.2
   - windows-sys 0.61.2
@@ -9180,7 +9181,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 Applies to:
 
-  - tokio 1.53.3
+  - tokio 1.54.1
   - tokio-util 0.7.19
 
 MIT License

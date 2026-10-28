@@ -13,7 +13,7 @@ that could silently return gets a test whose doc comment says what the bug was.
 
 | # | Workstream | State | Blocking? |
 |---|---|---|---|
-| W1 | Detection: the JS Detections beacon is not an interstitial | **landed on this branch** | none |
+| W1 | Detection: the JS Detections beacon is not an interstitial | **landed on this branch** | no |
 | W2 | Session lifecycle: cache after validation, evict on failure | open | no |
 | W3 | Observability: make a dark provider visible | open | no |
 | W4 | Cookie scoping: a clearance cookie must not leave its host | open | wire change |

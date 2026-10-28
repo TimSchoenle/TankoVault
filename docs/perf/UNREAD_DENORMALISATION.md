@@ -1,4 +1,7 @@
-# Stored unread state (Phase 3)
+# Stored unread state
+
+Per-entry unread state stored instead of computed on every request, shipped as migration
+`0058_watchlist_unread`.
 
 Status: **implemented** in migration `0058_watchlist_unread`, `repo::tracking::unread` and the
 control plane's unlock sweeper and reconciler. The decisions in §12 were approved as proposed,

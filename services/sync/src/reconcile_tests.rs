@@ -463,12 +463,6 @@ fn remote_entry(
 /// what makes `NewestWins` deterministic without a clock seam.
 const STALE: i64 = 1_600_000_000; // 2020-09-13
 
-// Progress values here are small, exactly-representable integers, so exact float comparison is
-// correct.
-#[expect(
-    clippy::float_cmp,
-    reason = "asserts the reconciled progress is exactly the value that was pushed"
-)]
 mod reconcile {
     use super::*;
 
@@ -531,7 +525,7 @@ mod reconcile {
         let report = f.engine.push(SLUG, f.user, None).await.expect("push");
 
         assert_eq!(report.unmapped, 1);
-        assert!(f.remote.writes().is_empty());
+        assert_eq!(f.remote.writes(), vec![]);
     }
 
     #[tokio::test]
@@ -610,7 +604,7 @@ mod reconcile {
             .expect("pull");
 
         assert_eq!(report.updated, 0);
-        assert!(f.remote.writes().is_empty());
+        assert_eq!(f.remote.writes(), vec![]);
         assert_eq!(f.local_progress().await, Some(7.0));
         assert_eq!(
             f.pending_conflicts().await,
@@ -641,7 +635,7 @@ mod reconcile {
             .expect("pull");
 
         assert_eq!(f.local_progress().await, Some(9.0));
-        assert!(f.remote.writes().is_empty());
+        assert_eq!(f.remote.writes(), vec![]);
     }
 
     #[tokio::test]
@@ -718,8 +712,8 @@ mod reconcile {
         let report = f.engine.pull(SLUG, f.user, None).await.expect("pull");
 
         assert_eq!(report.updated, 0);
-        assert!(f.remote.writes().is_empty());
-        assert!(f.pending_conflicts().await.is_empty());
+        assert_eq!(f.remote.writes(), vec![]);
+        assert_eq!(f.pending_conflicts().await, vec![]);
     }
 
     #[tokio::test]
@@ -735,7 +729,7 @@ mod reconcile {
         f.engine.pull(SLUG, f.user, None).await.expect("pull");
 
         assert_eq!(f.local_status().await, Some(WatchStatus::Dropped));
-        assert!(f.remote.writes().is_empty());
+        assert_eq!(f.remote.writes(), vec![]);
     }
 
     #[tokio::test]
@@ -763,12 +757,6 @@ mod reconcile {
 
 /// The widened recommendation signals, from a fetched list entry to the queries the recommender
 /// reads them back with.
-// Weights are `rank / 100` and IEEE division is correctly rounded, so each is bit-equal to the
-// decimal literal asserted against it.
-#[expect(
-    clippy::float_cmp,
-    reason = "asserts a tag weight is exactly the rank the fixture encodes"
-)]
 mod signals {
     use super::*;
 

@@ -1,9 +1,7 @@
-# Challenge handling — remediation plan
+# Challenge handling
 
-The bot-management tier (design §9) had a detection defect that took every Cloudflare-fronted
-provider with **JS Detections** enabled permanently dark on full-document pages. The defect itself
-is fixed on this branch; this document is the plan for everything the investigation found around
-it, written so a worker with no context can execute it.
+All seven workstreams of the bot-management tier (design §9), from detection to a shared session
+store, with the status of each.
 
 Read [`docs/ENGINEERING_GUIDE.md`](ENGINEERING_GUIDE.md) first. Every workstream below assumes the
 house rules — `#[expect]` over `#[allow]`, short comments except where they carry risk, and a fix

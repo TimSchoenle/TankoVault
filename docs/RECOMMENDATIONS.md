@@ -1,4 +1,7 @@
-# Suggestion system — design
+# Recommendations
+
+The recommendation model: item features and embeddings, the reader's taste profile, retrieval and
+ranking, and the tuning registry behind them.
 
 Status: **phases 0, 1, 2 and 2.5 implemented; 3 partly.**
 

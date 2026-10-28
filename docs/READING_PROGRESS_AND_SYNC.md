@@ -1,4 +1,7 @@
-# Reading Progress & External Sync — Design v2
+# Reading progress and external sync
+
+How read progress is stored for whole chapters and part releases, and how it syncs with AniList
+under a per-user conflict policy.
 
 **Status:** implemented end-to-end (backend, API, and frontend UI). Supersedes `design.md` §6
 (the `read_progress` / `sync_mappings` / `external_accounts` tables) and §15 (external sync

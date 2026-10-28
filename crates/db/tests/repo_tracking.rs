@@ -1669,11 +1669,11 @@ async fn the_early_access_opt_in_lookup_is_scoped_to_one_provider() {
     );
 
     // Never widened to "everyone" by an empty candidate set.
-    assert!(
+    assert_eq!(
         early_access_opted_in(&db.pool, &[], provider)
             .await
-            .expect("lookup")
-            .is_empty()
+            .expect("lookup"),
+        vec![]
     );
 }
 

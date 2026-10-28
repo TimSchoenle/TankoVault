@@ -48,10 +48,9 @@ config-contract = "a build-time generator, not a service: it prints the configur
 version = "11.1.1"
 edition = "2024"
 authors = ["TankoVault contributors"]
-# No member inherits this — each crate describes itself, and this describes the repository.
-# `.github/scripts/readme-variables.sh` reads it for the README's one-liner and for the GitHub
-# repository description, which were a hand-typed sentence and an empty field until it existed.
-# Keep it at or under 120 characters, which is what GitHub accepts for the latter.
+# No member inherits this: each crate describes itself, and this describes the repository. The
+# README's one-liner is read from it, and the GitHub repository description must match it. Keep it
+# at or under 120 characters, which is what GitHub accepts for the latter.
 description = "Multi-service Rust aggregator and tracker for manga, manhwa and manhua. Stores links and metadata, not chapter images."
 license = "PolyForm-Noncommercial-1.0.0"
 # Follows the pinned toolchain: Renovate's `rust toolchain` group (the shared `rust-application`
@@ -111,7 +110,6 @@ doc_include_without_cfg = "warn"
 # generated code carries OpenAPI descriptions' `[`…`]` spans that can't resolve.
 [workspace.lints.rustdoc]
 broken_intra_doc_links = "deny"
-private_intra_doc_links = "warn"
 # A stray backtick escapes into the rendered page as a code span running to the end of the
 # paragraph. Invisible in the source, obvious to whoever opens the documentation.
 unescaped_backticks = "warn"

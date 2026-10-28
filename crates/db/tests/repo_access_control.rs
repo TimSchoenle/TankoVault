@@ -402,11 +402,11 @@ async fn the_super_user_gains_a_stored_row_for_every_capability_added_after_thei
     );
 
     // Idempotent: every replica runs this at boot, and it runs again on the next one.
-    assert!(
+    assert_eq!(
         permissions::grant_all_to_super_user(&db.pool)
             .await
-            .expect("top up")
-            .is_empty()
+            .expect("top up"),
+        Vec::<String>::new()
     );
 }
 
@@ -424,11 +424,11 @@ async fn the_top_up_writes_nothing_when_the_deployment_has_no_super_user() {
         )
         .await;
 
-    assert!(
+    assert_eq!(
         permissions::grant_all_to_super_user(&db.pool)
             .await
-            .expect("top up")
-            .is_empty()
+            .expect("top up"),
+        Vec::<String>::new()
     );
     assert_eq!(
         permissions::resolve(&db.pool, staff)

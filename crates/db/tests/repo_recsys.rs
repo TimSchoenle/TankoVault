@@ -113,5 +113,5 @@ async fn a_series_dropped_from_the_rebuild_loses_its_row() {
     assert_eq!(affinity_series(&db, user).await, vec![kept]);
 
     replace(&db, user, &[]).await;
-    assert!(affinity_series(&db, user).await.is_empty());
+    assert_eq!(affinity_series(&db, user).await, vec![]);
 }

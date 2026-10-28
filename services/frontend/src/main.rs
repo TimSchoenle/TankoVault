@@ -940,13 +940,19 @@ mod tests {
 
     /// With the upstream gone, readiness must fail while liveness must not — a restart can't
     /// bring the API back.
+    ///
+    /// The dead upstream holds its port and drops every connection. It used to bind a port and
+    /// release it, and a parallel test's stub upstream could take the freed port and answer,
+    /// so readiness passed and the test failed at random.
     #[tokio::test]
     async fn readiness_fails_when_the_api_upstream_is_unreachable() {
-        // Bind then drop, so the port is known to have been free and is now unbound.
-        let dead = {
-            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-            listener.local_addr().unwrap()
-        };
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let dead = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            while let Ok((connection, _)) = listener.accept().await {
+                drop(connection);
+            }
+        });
         let dir = write_bundle();
         let front = spawn_frontend(dir.to_str().unwrap(), dead).await;
 

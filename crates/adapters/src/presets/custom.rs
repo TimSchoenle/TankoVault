@@ -95,7 +95,7 @@ pub(super) fn custom_code() -> Vec<BuiltinPreset> {
             config: json!({ "api": "https://api.omegascans.org" }),
             politeness: Politeness::default(),
         },
-        // Iken, added with the 2026-08 expansion; see `iken_platform` below.
+        // Iken; the other Iken sites are in `iken.rs`.
         BuiltinPreset {
             slug: "asura",
             name: "Asura Scans",

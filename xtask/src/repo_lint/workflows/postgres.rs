@@ -4,6 +4,16 @@ use crate::repo_lint::Finding;
 use crate::repo_lint::text::{const_str, is_comment};
 use std::path::{Path, PathBuf};
 
+/// The compose file that pins production's Postgres.
+const COMPOSE: &str = "deploy/docker-compose.yml";
+
+/// The Postgres distributions the compose file and the workflows may pin, as
+/// `image: <name>:<tag>`.
+///
+/// Enumerated so an arbitrary `image:` line cannot satisfy a rule about which Postgres runs.
+/// Stock `postgres` stays listed so the rule keeps working if pgvector is ever dropped.
+const POSTGRES_IMAGES: &[&str] = &["postgres", "pgvector/pgvector"];
+
 /// **The integration harness must run production's Postgres image *and* major.** The query
 /// planner is a major-version artefact, so `crates/db/tests/repo_query_plans.rs` — which asserts
 /// that the trigram searches reach their GIN indexes instead of scanning the whole catalogue —
@@ -30,15 +40,6 @@ pub(in crate::repo_lint) fn tests_run_the_production_postgres_major(
 ) -> anyhow::Result<Vec<Finding>> {
     const RULE: &str = "tests-run-the-production-postgres-major";
     const HARNESS: &str = "crates/test-support/src/lib.rs";
-    const COMPOSE: &str = "deploy/docker-compose.yml";
-
-    /// The Postgres distributions the compose file may pin, as `image: <name>:<tag>`.
-    ///
-    /// Enumerated rather than pattern-matched: an arbitrary `image:` line must not be able to
-    /// satisfy a rule about which Postgres runs. Stock `postgres` stays listed so the rule keeps
-    /// working if the pgvector move is ever reverted.
-    const POSTGRES_IMAGES: &[&str] = &["postgres", "pgvector/pgvector"];
-
     let harness_path = root.join(HARNESS);
     let Ok(harness) = std::fs::read_to_string(&harness_path) else {
         anyhow::bail!("repo-lint: cannot read {}", harness_path.display());
@@ -123,9 +124,6 @@ fn workflow_postgres_findings(
     compose_major: &str,
     compose_line: usize,
 ) -> Vec<Finding> {
-    const COMPOSE: &str = "deploy/docker-compose.yml";
-    const POSTGRES_IMAGES: &[&str] = &["postgres", "pgvector/pgvector"];
-
     let mut findings = Vec::new();
     for entry in std::fs::read_dir(root.join(".github/workflows"))
         .into_iter()
@@ -164,7 +162,10 @@ fn workflow_postgres_findings(
                     file: PathBuf::from(format!(".github/workflows/{workflow_name}")),
                     line: index + 1,
                     detail: format!(
-                        "this job runs `{name}:{tag}`, production runs `{compose_image}`                          {compose_major} ({COMPOSE}:{compose_line}); a job that applies the                          migrations against a different Postgres verifies nothing about the one                          that runs them"
+                        "this job runs `{name}:{tag}`, production runs `{compose_image}` \
+                         {compose_major} ({COMPOSE}:{compose_line}); a job that applies the \
+                         migrations against a different Postgres verifies nothing about the one \
+                         that runs them"
                     ),
                 });
             }

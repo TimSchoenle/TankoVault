@@ -136,8 +136,8 @@ it (`wasm-builder`, the only stage holding both dependency graphs) and publishes
 `/third-party-notices.json`.
 
 Why it is not in `xtask ci` when the other three are: that gate needs nothing but cargo and
-rustfmt, and this one needs `cargo-about` installed. Keeping the promise is worth the separate
-job.
+rustfmt, and this one requires `cargo-about` to be installed. Keeping the promise is worth the
+separate job.
 
 `docs/contracts/*.json` are the fifth, one per published image: the **configuration contract**
 each one carries, which is every `TANKOVAULT_*` key that image's binary reads, in every spelling

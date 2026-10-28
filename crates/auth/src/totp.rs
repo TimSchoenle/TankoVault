@@ -14,7 +14,7 @@
 //! (`user_totp.last_step`). Passing `None` every time re-opens the replay window.
 
 use hmac::{Hmac, KeyInit as _, Mac as _};
-use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use rand::Rng as _;
 use secrecy::{ExposeSecret as _, SecretSlice, SecretString};
 use sha1::Sha1;
@@ -54,25 +54,11 @@ const SKEW_STEPS: i64 = 1;
 /// `issuer:account`, so an unescaped `:` in either half silently re-splits the label and the
 /// authenticator files the entry under the wrong name — and both halves are text this service
 /// does not choose (an operator's issuer string, a user's username).
-const LABEL_ESCAPE: &AsciiSet = &CONTROLS
-    .add(b' ')
-    .add(b'"')
-    .add(b'#')
-    .add(b'%')
-    .add(b'&')
-    .add(b'/')
-    .add(b':')
-    .add(b'<')
-    .add(b'=')
-    .add(b'>')
-    .add(b'?')
-    .add(b'@')
-    .add(b'\\')
-    .add(b'^')
-    .add(b'`')
-    .add(b'{')
-    .add(b'|')
-    .add(b'}');
+const LABEL_ESCAPE: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'.')
+    .remove(b'_')
+    .remove(b'~');
 
 /// Generate a fresh shared secret.
 #[must_use]
@@ -340,5 +326,22 @@ mod tests {
         assert!(uri.contains(&format!("digits={DIGITS}")), "{uri}");
         assert!(uri.contains(&format!("period={STEP_SECONDS}")), "{uri}");
         assert!(uri.contains("issuer=Tanko%20Vault"), "{uri}");
+    }
+
+    /// A `+` in the issuer went out unescaped. A form-style query parser decodes `issuer=A+B` as
+    /// `A B` while the label keeps `A+B`, and an authenticator that checks the two agree rejects
+    /// or misfiles the entry.
+    #[test]
+    fn every_character_outside_the_unreserved_set_is_escaped() {
+        let uri = provisioning_uri("A+B!$'()*,;[]", "u-s.e_r~", &rfc_secret());
+        let uri = uri.expose_secret();
+        assert!(
+            uri.starts_with("otpauth://totp/A%2BB%21%24%27%28%29%2A%2C%3B%5B%5D:u-s.e_r~?"),
+            "{uri}"
+        );
+        assert!(
+            uri.contains("issuer=A%2BB%21%24%27%28%29%2A%2C%3B%5B%5D&"),
+            "{uri}"
+        );
     }
 }

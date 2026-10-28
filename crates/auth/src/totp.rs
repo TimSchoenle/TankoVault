@@ -335,13 +335,14 @@ mod tests {
     fn every_character_outside_the_unreserved_set_is_escaped() {
         let uri = provisioning_uri("A+B!$'()*,;[]", "u-s.e_r~", &rfc_secret());
         let uri = uri.expose_secret();
+        // No `{uri}` in the messages: the URI carries the secret, and a failure log must not.
         assert!(
             uri.starts_with("otpauth://totp/A%2BB%21%24%27%28%29%2A%2C%3B%5B%5D:u-s.e_r~?"),
-            "{uri}"
+            "the label must escape every reserved character"
         );
         assert!(
             uri.contains("issuer=A%2BB%21%24%27%28%29%2A%2C%3B%5B%5D&"),
-            "{uri}"
+            "the issuer parameter must escape every reserved character"
         );
     }
 }

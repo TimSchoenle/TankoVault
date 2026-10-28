@@ -759,4 +759,34 @@ mod tests {
         assert_eq!(redirect_hop("ftp://provider.test/file"), Hop::Stop);
         assert_eq!(redirect_hop("//provider.test/manga/"), Hop::Stop);
     }
+
+    /// The bug: a refused redirect hop that `wreq` no longer carried in the error's `source()`
+    /// chain would map to `TooManyRedirects` or `Transport`, and callers that branch on
+    /// `FetchError::Ssrf` would treat a blocked internal target as an ordinary network fault.
+    /// Driven through a real client, so the policy, the error chain and the mapper are all tested.
+    #[tokio::test]
+    async fn a_refused_redirect_hop_surfaces_as_an_ssrf_error() {
+        use wiremock::{Mock, MockServer, ResponseTemplate, matchers::any};
+
+        let server = MockServer::start().await;
+        Mock::given(any())
+            .respond_with(
+                ResponseTemplate::new(302).insert_header("location", "http://169.254.169.254/"),
+            )
+            .mount(&server)
+            .await;
+        let policy = ClientPolicy {
+            connect_timeout: Duration::from_secs(1),
+            request_timeout: Duration::from_secs(1),
+        };
+        let client = build_client(None, &policy).expect("client builds");
+
+        let err = client
+            .get(server.uri())
+            .send()
+            .await
+            .map_err(map_wreq_err)
+            .expect_err("the redirect hop is refused");
+        assert!(matches!(err, FetchError::Ssrf(_)), "got {err:?}");
+    }
 }

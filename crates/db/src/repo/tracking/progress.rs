@@ -178,8 +178,11 @@ pub async fn progress_state<'e, E: PgExecutor<'e>>(
 /// half is "the part cannot corrupt whole-chapter progress"; the second half is what keeps the
 /// frontier self-consistent, and it is what external sync sees (§B.5 pushes the whole frontier).
 ///
-/// Marking a chapter the frontier already covers leaves both frontiers unchanged but still rewrites
-/// the row and its `updated_at`, which [`progress_state`] reads for `NewestWins`. The read and the
+/// Marking a whole chapter at or below the whole frontier, or a part of one, leaves both frontiers
+/// unchanged. A part the part frontier already covers can still pull the whole frontier up: at
+/// whole `1` and part `4.75` with chapter `3` in the catalogue, marking `4.5` moves it to `3`.
+/// Every call rewrites the row and its `updated_at`, which [`progress_state`] reads for
+/// `NewestWins`. The read and the
 /// write are two statements without a transaction: two concurrent marks can interleave, and the
 /// loser's advance is lost unreported.
 ///
@@ -233,13 +236,12 @@ pub async fn progress_mark_read(
 /// Applies the §A.3 "mark chapter unread" rule for a single chapter `number`, retreating the
 /// relevant frontier to just before it.
 ///
-/// Retreating the whole frontier also clears any part frontier: everything after `number` is
-/// unread.
-///
-/// Un-reading a whole chapter sets the whole frontier to the chapter before it whatever the
-/// frontier was, so un-reading an unread chapter can move progress *forward*: at chapter 1 with
-/// chapters 1 to 3 in the catalogue, un-reading 3 sets the frontier to 2. Every call rewrites the
-/// row, and the read-then-write interleaving of [`progress_mark_read`] applies.
+/// Un-reading a whole chapter at or below the whole frontier retreats it to the catalogue's
+/// chapter before `number` and clears the part frontier. Un-reading a part of a read whole chapter
+/// retreats the whole frontier below that chapter and keeps the parts still read under `number`.
+/// Above the whole frontier only a part frontier at or past `number` retreats, to the part release
+/// before it; anything else is already unread and nothing moves. Every call rewrites the row, and
+/// the read-then-write interleaving of [`progress_mark_read`] applies.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.

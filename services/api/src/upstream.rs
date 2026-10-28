@@ -90,8 +90,7 @@ impl Upstream {
     /// Sends `GET path`, decoding the body as `T`.
     ///
     /// # Errors
-    /// Returns a bad gateway or a gateway timeout when the peer cannot be reached, and the peer's
-    /// own not-found or conflict when it refused deliberately.
+    /// Returns the variants of [`Self::send`].
     pub async fn get<T: DeserializeOwned>(&self, path: &str) -> ApiResult<Json<T>> {
         let url = self.url(path);
         self.send(self.http.get(url)).await
@@ -100,8 +99,7 @@ impl Upstream {
     /// Sends `POST path` with a JSON body, decoding the response as `T`.
     ///
     /// # Errors
-    /// Returns a bad gateway or a gateway timeout when the peer cannot be reached, and the peer's
-    /// own not-found or conflict when it refused deliberately.
+    /// Returns the variants of [`Self::send`].
     pub async fn post<B: Serialize, T: DeserializeOwned>(
         &self,
         path: &str,
@@ -114,8 +112,7 @@ impl Upstream {
     /// Sends `PATCH path` with a JSON body, decoding the response as `T`.
     ///
     /// # Errors
-    /// Returns a bad gateway or a gateway timeout when the peer cannot be reached, and the peer's
-    /// own not-found or conflict when it refused deliberately.
+    /// Returns the variants of [`Self::send`].
     pub async fn patch<B: Serialize, T: DeserializeOwned>(
         &self,
         path: &str,
@@ -128,8 +125,7 @@ impl Upstream {
     /// Sends `DELETE path` with a JSON body, decoding the response as `T`.
     ///
     /// # Errors
-    /// Returns a bad gateway or a gateway timeout when the peer cannot be reached, and the peer's
-    /// own not-found or conflict when it refused deliberately.
+    /// Returns the variants of [`Self::send`].
     pub async fn delete<B: Serialize, T: DeserializeOwned>(
         &self,
         path: &str,
@@ -181,8 +177,9 @@ impl Upstream {
     /// Sends, then translates the outcome into this service's error vocabulary.
     ///
     /// # Errors
-    /// Returns [`ApiError::BadGateway`] or [`ApiError::GatewayTimeout`] on transport failure, and
-    /// [`ApiError::NotFound`] or [`ApiError::Conflict`] when the peer said so deliberately.
+    /// Returns [`ApiError::GatewayTimeout`] when the peer times out, [`ApiError::NotFound`] or
+    /// [`ApiError::Conflict`] for its `404` or `409`, and [`ApiError::BadGateway`] for anything
+    /// else: an unreachable peer, any other non-success status, or a body that is not a `T`.
     async fn send<T: DeserializeOwned>(&self, req: reqwest::RequestBuilder) -> ApiResult<Json<T>> {
         let resp = self.prepare(req).send().await.map_err(|e| {
             tracing::error!(upstream = self.name, error = %e, "internal service unreachable");

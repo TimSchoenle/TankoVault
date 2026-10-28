@@ -451,8 +451,9 @@ CREATE INDEX scan_tasks_queue ON scan_tasks (state) WHERE state = 'queued';
 ```
 
 Notes:
-- `citext` for case-insensitive email/username uniqueness; enable `citext` and `pg_trgm`. UUIDv7
-  ids are generated in-app and passed explicitly, so nothing depends on the server's `uuidv7()`.
+- `citext` for case-insensitive email/username uniqueness; enable `citext` and `pg_trgm`. The
+  repositories generate UUIDv7 ids in-app and pass them explicitly. The `DEFAULT uuidv7()` in the
+  sketch above is illustrative; the migrations fall back to `gen_random_uuid()` for manual inserts.
 - Partitioning `chapters` is **not** needed at MVP. Scale path: range-partition `chapters` and
   `notifications` by month if row counts exceed ~10^8; documented, not built.
 - All writes from workers are idempotent `INSERT ... ON CONFLICT DO UPDATE`, so re-running a task is

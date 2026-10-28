@@ -44,7 +44,7 @@ fn merge(base: &mut Value, over: &Value) {
 /// adapter added.
 ///
 /// # Errors
-/// Returns [`AdapterError::Config`] if the effective config is malformed, or a HeanCMS or Iken
+/// Returns [`AdapterError::Config`] if the effective config is malformed, or a `HeanCMS` or Iken
 /// slug has no `api` host, and [`AdapterError::UnknownCustom`] for an unregistered custom slug.
 pub fn build_adapter(
     adapter: AdapterKind,

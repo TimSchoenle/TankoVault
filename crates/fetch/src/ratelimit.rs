@@ -38,6 +38,16 @@ pub struct RateLimitedFetcher<F> {
     throttle: Arc<Pacer>,
 }
 
+/// The interval between requests at `rps`, after clamping it to `[MIN_RPS, MAX_RPS]`.
+fn period_for(rps: f64) -> Duration {
+    // The ceiling keeps the period above zero, which `Quota::with_period` refuses.
+    #[expect(
+        clippy::manual_clamp,
+        reason = "`f64::clamp` returns a NaN input unchanged; `f64::max` floors it to MIN_RPS"
+    )]
+    Duration::from_secs_f64(1.0 / rps.max(MIN_RPS).min(MAX_RPS))
+}
+
 impl<F> RateLimitedFetcher<F> {
     /// Build a limiter allowing `rps` requests/second and at most `concurrency` in flight,
     /// with a `crawl_delay_ms` floor between requests, adapting to `throttle` when the
@@ -59,13 +69,7 @@ impl<F> RateLimitedFetcher<F> {
         crawl_delay_ms: u64,
         throttle: ThrottlePolicy,
     ) -> Self {
-        // The ceiling keeps the period above zero, which `Quota::with_period` refuses.
-        #[expect(
-            clippy::manual_clamp,
-            reason = "`f64::clamp` returns a NaN input unchanged; `f64::max` floors it to MIN_RPS"
-        )]
-        let period = Duration::from_secs_f64(1.0 / rps.max(MIN_RPS).min(MAX_RPS));
-        let quota = Quota::with_period(period).expect("rps > 0 yields a positive period");
+        let quota = Quota::with_period(period_for(rps)).expect("rps > 0 yields a positive period");
         Self {
             inner,
             limiter: Arc::new(RateLimiter::direct(quota)),
@@ -190,5 +194,20 @@ mod tests {
         ] {
             let _ = RateLimitedFetcher::new((), rps, 1, 0, ThrottlePolicy::default());
         }
+    }
+
+    /// The constructor's clamp has to reach the limiter, not only keep it from panicking: an
+    /// unclamped or unwired period would crawl at the wrong rate with nothing failing.
+    #[test]
+    fn the_limiter_period_is_the_clamped_rate() {
+        let floor = Duration::from_secs_f64(1.0 / MIN_RPS);
+        let ceiling = Duration::from_secs_f64(1.0 / MAX_RPS);
+        for rps in [0.0, -1.0, f64::NAN, f64::NEG_INFINITY] {
+            assert_eq!(period_for(rps), floor, "rps {rps} must floor to MIN_RPS");
+        }
+        for rps in [f64::INFINITY, f64::MAX, 1e300] {
+            assert_eq!(period_for(rps), ceiling, "rps {rps} must cap at MAX_RPS");
+        }
+        assert_eq!(period_for(4.0), Duration::from_millis(250));
     }
 }

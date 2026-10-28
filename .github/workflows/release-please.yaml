@@ -188,9 +188,9 @@ jobs:
           app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
           # Narrowed to what release-please does (zizmor `github-app`): without these, the
-          # minted token inherits every permission the app's installation holds, and this job
-          # goes on to build and publish images, so the blast radius of anything reached through
-          # that build would be the release bot's full authority.
+          # minted token inherits every permission the app's installation holds, so any step in
+          # this job that could read it would carry the release bot's full authority. The image
+          # builds run in separate jobs on fresh runners and never see this token.
           #
           # `contents: write` commits the version bumps, the changelog and the tag;
           # `pull-requests: write` opens, updates and labels the release PR. Nothing else is

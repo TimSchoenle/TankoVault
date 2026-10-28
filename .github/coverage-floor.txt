@@ -20,8 +20,8 @@
 # WHEN TO RAISE IT. Whenever the measured value has drifted a couple of points above it. The
 # job prints the headroom and suggests a new value once there is enough, and writes both to the
 # run summary, so the suggestion is on the run page and not buried in a log. A ratchet that only
-# ever holds its original line stops being a ratchet. Raise it to what a run measured, never to a
-# figure nobody measured.
+# ever holds its original line stops being a ratchet. Raise it to the value a run suggests, never
+# to a figure nobody measured.
 #
 # The value sits one point below the measurement it was taken from (29.15% lines, 33.78%
 # regions, 27.67% functions), to absorb `proptest`'s entropy-seeded runs: the one source of

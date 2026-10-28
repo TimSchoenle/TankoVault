@@ -480,9 +480,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16 # zizmor: ignore[superfluous-actions,stale-action-refs]
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
-      # Its own group, measured, not assumed: `--all-features` resolves a wider dependency graph
-      # than any other job compiles, so sharing `lint` would leave this one rebuilding the
-      # difference, at roughly three times its own-cache time and on the run's critical path.
+      # Its own group, measured, not assumed: the `--no-default-features` legs resolve feature sets
+      # no other job compiles, so sharing `lint` would leave this one rebuilding the difference, at
+      # roughly three times its own-cache time and on the run's critical path.
       # Consolidation is worth a cache only where the members' graphs match.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:

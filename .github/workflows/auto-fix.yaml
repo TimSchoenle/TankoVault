@@ -467,10 +467,8 @@ jobs:
       # commit. A `--` argument reaches the workspace crates only, and `rust-cache` discards
       # workspace artefacts anyway, so the ceiling is free where the env variable is not.
       #
-      # No `--all-features`, for the same reason. It resolves a wider graph than the `lint` cache
-      # holds (which is why `ci.yml`'s `features` job has a key of its own), and the gate this
-      # step exists to satisfy is `cargo clippy --workspace --all-targets`. Rewriting code no
-      # clippy gate judges is not worth a cold build of everything.
+      # No `--all-features`, unlike the `clippy` gate in `ci.yml`: a lint that fires only in
+      # feature-gated code is reported by that gate and left for a hand fix, not rewritten here.
       - name: apply clippy's machine-applicable fixes
         if: steps.scope.outputs.rust == 'true'
         run: |

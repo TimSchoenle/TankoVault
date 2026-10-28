@@ -7,13 +7,19 @@ use dioxus::prelude::*;
 /// optional count and trailing placement some strips need.
 #[derive(Clone, PartialEq, Debug)]
 pub struct TabItem<T> {
+    /// The value selecting this tab writes back.
     pub value: T,
+    /// The tab's text, already translated.
     pub label: String,
+    /// A count beside the label, already formatted.
     pub count: Option<String>,
+    /// Whether the tab sits at the strip's trailing edge, set off from the rest.
     pub apart: bool,
 }
 
 impl<T> TabItem<T> {
+    /// Creates a tab with no count, in the strip's normal flow.
+    #[must_use]
     pub fn new(value: T, label: impl Into<String>) -> Self {
         Self {
             value,

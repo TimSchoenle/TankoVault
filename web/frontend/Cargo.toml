@@ -346,6 +346,7 @@ workspace = true
 [workspace.lints.rust]
 unsafe_code = "forbid"
 unreachable_pub = "warn"
+missing_docs = "warn"
 rust_2018_idioms = { level = "warn", priority = -1 }
 
 [workspace.lints.clippy]
@@ -356,9 +357,16 @@ pedantic = { level = "warn", priority = -1 }
 allow_attributes = "warn"
 allow_attributes_without_reason = "warn"
 module_name_repetitions = "allow"
-missing_errors_doc = "allow"
-missing_panics_doc = "allow"
 must_use_candidate = "allow"
+# The doc-comment gate, the same table as the host workspace's. `pedantic` carries the first two;
+# they are named so that a change to the group cannot drop them.
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
+doc_markdown = "warn"
+too_long_first_doc_paragraph = "warn"
+doc_link_with_quotes = "warn"
+doc_broken_link = "warn"
+doc_include_without_cfg = "warn"
 # `crate::models` is this crate's DTO namespace: a screen that renders a payload needs most
 # of it, and spelling out fifteen imports per view obscures more than it documents.
 wildcard_imports = "allow"
@@ -368,6 +376,10 @@ too_many_lines = "allow"
 # Screen-local helpers are deliberately declared next to the handler that uses them rather
 # than hoisted above the hooks, which would separate them from their only caller.
 items_after_statements = "allow"
+
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "deny"
+unescaped_backticks = "warn"
 
 # Release builds are CDN-bound, so size wins over speed.
 #

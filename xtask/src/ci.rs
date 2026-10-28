@@ -112,11 +112,15 @@ const GATES: &[Gate] = &[
     // It builds two ways from one tree (`web`, the default, and `desktop`), and a check of one
     // proves nothing about the other, so both feature sets are gated. Same set and same order as
     // CI's `frontend` job.
+    //
+    // The frontend manifest is a package and a workspace root at once, with `crates/inkstone-ui`
+    // as a member. Cargo selects only the root package there by default, so every gate names the
+    // whole workspace: without it, `inkstone-ui` is never tested, linted or documented.
     Gate {
         name: "frontend fmt",
         step: Step::Cargo {
             dir: "web/frontend",
-            args: &["fmt", "--check"],
+            args: &["fmt", "--all", "--check"],
             env: &[],
         },
     },
@@ -124,7 +128,7 @@ const GATES: &[Gate] = &[
         name: "frontend test",
         step: Step::Cargo {
             dir: "web/frontend",
-            args: &["test"],
+            args: &["test", "--workspace"],
             env: &[],
         },
     },
@@ -132,15 +136,30 @@ const GATES: &[Gate] = &[
         name: "frontend clippy",
         step: Step::Cargo {
             dir: "web/frontend",
-            args: &["clippy", "--all-targets", "--", "-D", "warnings"],
+            args: &[
+                "clippy",
+                "--workspace",
+                "--all-targets",
+                "--",
+                "-D",
+                "warnings",
+            ],
             env: &[],
+        },
+    },
+    Gate {
+        name: "frontend rustdoc",
+        step: Step::Cargo {
+            dir: "web/frontend",
+            args: &["doc", "--workspace", "--no-deps"],
+            env: &[("RUSTDOCFLAGS", "-D warnings")],
         },
     },
     Gate {
         name: "frontend wasm",
         step: Step::Cargo {
             dir: "web/frontend",
-            args: &["check", "--target", "wasm32-unknown-unknown"],
+            args: &["check", "--workspace", "--target", "wasm32-unknown-unknown"],
             env: &[],
         },
     },
@@ -148,7 +167,13 @@ const GATES: &[Gate] = &[
         name: "frontend desktop test",
         step: Step::Cargo {
             dir: "web/frontend",
-            args: &["test", "--no-default-features", "--features", "desktop"],
+            args: &[
+                "test",
+                "--workspace",
+                "--no-default-features",
+                "--features",
+                "desktop",
+            ],
             env: &[],
         },
     },
@@ -158,6 +183,7 @@ const GATES: &[Gate] = &[
             dir: "web/frontend",
             args: &[
                 "clippy",
+                "--workspace",
                 "--no-default-features",
                 "--features",
                 "desktop",
@@ -167,6 +193,21 @@ const GATES: &[Gate] = &[
                 "warnings",
             ],
             env: &[],
+        },
+    },
+    Gate {
+        name: "frontend desktop rustdoc",
+        step: Step::Cargo {
+            dir: "web/frontend",
+            args: &[
+                "doc",
+                "--workspace",
+                "--no-deps",
+                "--no-default-features",
+                "--features",
+                "desktop",
+            ],
+            env: &[("RUSTDOCFLAGS", "-D warnings")],
         },
     },
 ];
@@ -218,7 +259,7 @@ pub(crate) fn run(workspace_root: &std::path::Path) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{GATES, Step};
+    use super::{GATES, Gate, Step};
 
     /// `cargo test --all-targets` silently excludes doc tests; folding the two gates into one
     /// invocation to save a build would reintroduce that silently.
@@ -303,9 +344,10 @@ mod tests {
     /// `cargo fmt --all` at the root reach none of it — it once ran nowhere at all for exactly
     /// that reason, and three of its files had drifted out of rustfmt before anyone looked.
     ///
-    /// Six, not three: it builds two ways from one source tree, and a gate that only ever
-    /// compiles the default `web` feature says nothing about the `desktop` one that
-    /// `release-please.yaml` ships to readers.
+    /// Eight: it builds two ways from one source tree, and a gate that only ever compiles the
+    /// default `web` feature says nothing about the `desktop` one that `release-please.yaml`
+    /// ships to readers. Rustdoc runs under both, because each build documents modules the other
+    /// compiles out.
     #[test]
     fn the_frontend_gates_run_in_the_frontend() {
         let frontend: Vec<_> = GATES
@@ -314,14 +356,66 @@ mod tests {
             .collect();
         assert_eq!(
             frontend.len(),
-            6,
-            "the frontend needs fmt, test, clippy and wasm gates, plus test and clippy for the \
-             desktop feature set"
+            8,
+            "the frontend needs fmt, test, clippy, rustdoc and wasm gates, plus test, clippy and \
+             rustdoc for the desktop feature set"
         );
         let desktop = frontend
             .iter()
             .filter(|g| matches!(&g.step, Step::Cargo { args, .. } if args.contains(&"desktop")))
             .count();
-        assert_eq!(desktop, 2, "the desktop feature set needs test and clippy");
+        assert_eq!(
+            desktop, 3,
+            "the desktop feature set needs test, clippy and rustdoc"
+        );
+        let desktop_with_web: Vec<&str> = frontend
+            .iter()
+            .filter(|g| {
+                matches!(&g.step, Step::Cargo { args, .. }
+                    if args.contains(&"desktop") && !args.contains(&"--no-default-features"))
+            })
+            .map(|g| g.name)
+            .collect();
+        assert_eq!(
+            desktop_with_web,
+            Vec::<&str>::new(),
+            "a desktop gate without `--no-default-features` also enables `web`, the default, and \
+             the two features are mutually exclusive"
+        );
+        let rustdoc_without_flags = frontend
+            .iter()
+            .filter(|g| {
+                matches!(&g.step, Step::Cargo { args, env, .. }
+                    if args.first() == Some(&"doc") && !env.contains(&("RUSTDOCFLAGS", "-D warnings")))
+            })
+            .count();
+        assert_eq!(
+            rustdoc_without_flags, 0,
+            "a frontend rustdoc gate without `RUSTDOCFLAGS=-D warnings` only reports"
+        );
+        let (rustdoc_desktop, rustdoc_web): (Vec<&&Gate>, Vec<&&Gate>) = frontend
+            .iter()
+            .filter(|g| matches!(&g.step, Step::Cargo { args, .. } if args.first() == Some(&"doc")))
+            .partition(
+                |g| matches!(&g.step, Step::Cargo { args, .. } if args.contains(&"desktop")),
+            );
+        assert_eq!(
+            (rustdoc_web.len(), rustdoc_desktop.len()),
+            (1, 1),
+            "each feature set compiles different code, so each needs exactly one rustdoc gate"
+        );
+        let root_package_only: Vec<&str> = frontend
+            .iter()
+            .filter(|g| {
+                matches!(&g.step, Step::Cargo { args, .. }
+                    if !args.contains(&"--workspace") && !args.contains(&"--all"))
+            })
+            .map(|g| g.name)
+            .collect();
+        assert_eq!(
+            root_package_only,
+            Vec::<&str>::new(),
+            "a frontend gate without `--workspace` (`--all` for fmt) skips `inkstone-ui`"
+        );
     }
 }

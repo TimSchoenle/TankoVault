@@ -120,6 +120,10 @@ pub fn OutcomeLine(outcome: Outcome) -> Element {
 
 /// Render a `Resource` through its three states: `loading` while in flight, an [`ErrorBox`] when
 /// it failed, `content` once it resolved.
+///
+/// # Errors
+///
+/// Returns the render error of whichever branch runs: `loading`, the error box, or `content`.
 pub fn async_view<T: 'static>(
     resource: &Resource<Result<T, String>>,
     retry_label: &str,
@@ -143,6 +147,10 @@ pub fn async_view<T: 'static>(
 /// [`async_view`] for a list, adding the "loaded, but there is nothing here" state.
 ///
 /// `empty` is already-resolved text, so the caller can interpolate the filter or query.
+///
+/// # Errors
+///
+/// Returns the render error of whichever branch runs. See [`async_view`].
 pub fn async_list<T: 'static>(
     resource: &Resource<Result<Vec<T>, String>>,
     retry_label: &str,

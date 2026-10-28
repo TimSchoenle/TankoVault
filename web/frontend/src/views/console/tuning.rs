@@ -416,8 +416,8 @@ fn ResetButton(
 
 /// One write, with everything the three controls that make one have in common.
 ///
-/// `api` and `i18n` are carried rather than resolved inside [`write`]: both are hooks, and a
-/// hook called from an event handler runs outside the render that establishes hook order.
+/// `api` and `i18n` are carried rather than resolved inside [`write`](fn@write): both are hooks,
+/// and a hook called from an event handler runs outside the render that establishes hook order.
 struct WriteRequest {
     api: api::Api,
     i18n: Translator,

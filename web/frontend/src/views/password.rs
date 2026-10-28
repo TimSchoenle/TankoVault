@@ -1,6 +1,6 @@
 //! Password-reset flow (§17.4): request a reset email (`/forgot-password`) and choose a new
 //! password from the emailed link (`/reset-password?token=…`). Both screens reuse the sign-in
-//! card styling and the shared [`AuthBrand`](super::auth::AuthBrand) lockup.
+//! card styling and the shared [`AuthBrand`] lockup.
 
 use super::auth::AuthBrand;
 use crate::api;

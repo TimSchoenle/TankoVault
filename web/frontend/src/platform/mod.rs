@@ -214,7 +214,7 @@ pub(crate) fn preferred_language() -> Option<String> {
 ///
 /// On web this is the origin the SPA was served from, which is the API's own. Desktop has no
 /// served origin, so it is the server the reader connected to at first run; empty until then,
-/// which is the state [`crate::views::connect`] exists to resolve.
+/// which is the state the desktop connect screen exists to resolve.
 pub(crate) fn origin() -> String {
     imp::origin()
 }

@@ -80,7 +80,9 @@ pub struct MatchingConfig {
     /// At or above this score, and only when a primary identity rule fired, the duplicate sweep
     /// may merge two existing series without an operator. A corroborated alias is eligible from
     /// [`Self::low`] up, whatever this is set to, because its corroboration, not its score, is the
-    /// evidence. Either way a veto or an enabled merge guard still holds the pair for review.
+    /// evidence. Either way an edition conflict, or a numeric conflict with its guard enabled,
+    /// reports the pair distinct, and an external-id or live-timing veto or any other enabled
+    /// merge guard holds it for review.
     /// [`Self::high`] files an incoming source; this deletes a series that already exists.
     /// `tankovault_matcher::adjudicate` defines the identity rules, vetoes and guards.
     #[serde(default = "default_threshold_auto_merge")]

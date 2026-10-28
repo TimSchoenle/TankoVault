@@ -4,7 +4,7 @@
 
 # ---------------------------------------------------------------------------
 # Build / output artefacts (rebuilt inside the image). Patterns are matched at
-# the context root AND nested — `target/` alone would only exclude the repo-root
+# the context root AND nested: `target/` alone would only exclude the repo-root
 # Cargo target, leaving `web/frontend/target/` to leak a stale WASM bundle into
 # the frontend image (the `dx build` output is rebuilt from source in-stage).
 # ---------------------------------------------------------------------------
@@ -60,15 +60,15 @@ renovate.json
 
 # `LICENSE` is deliberately NOT excluded, unlike everything above it. PolyForm
 # Noncommercial's Notices clause requires the terms to reach anyone who gets a
-# copy of any part of the software, and a published image is a copy — so every
+# copy of any part of the software, and a published image is a copy, so every
 # runtime stage in deploy/docker/Dockerfile COPYs it to /LICENSE, which it can
 # only do if the file is in the build context. The image contracts under
 # deploy/docker/cst/ assert it is there.
 #
-# `THIRD-PARTY-NOTICES` travels with it, for the dependencies' terms rather than
+# `THIRD-PARTY-NOTICES` travels with it, for the dependencies' terms, not
 # ours, and is why that file has no extension: `**/*.md` above is a whole-suffix
 # exclusion, so a `.md` copy would leave the context and every runtime stage's
-# COPY would fail — at the end of a ten-minute build. Regenerate it with
+# COPY would fail at the end of a ten-minute build. Regenerate it with
 # `cargo run -p xtask -- notices`.
 
 # ---------------------------------------------------------------------------

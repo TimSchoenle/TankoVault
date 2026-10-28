@@ -35,15 +35,15 @@ metrics = { workspace = true, optional = true }
 # The SSRF address policy for the solve target. `dns` because TRAWL and Chromium resolve the
 # name themselves, so a hostname has to be resolved and vetted here too, not only an IP literal.
 tankovault-domain = { workspace = true, optional = true, features = ["dns"] }
-# Only for the shared RFC 9457 error shape the `/v1/solve` route emits (ARCH-12); pulled in with
+# Only for the shared RFC 9457 error shape the `/v1/solve` route emits; pulled in with
 # the `axum` feature so trait-only consumers stay free of the whole service runtime.
 tankovault-service = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
 proptest = { workspace = true }
-# A scriptable TRAWL for `trawl.rs`, whose request payload and error-message mapping were
-# asserted by nothing (TEST F-09).
+# A scriptable TRAWL for `trawl.rs`, so its request payload and error-message mapping are
+# asserted on.
 wiremock = { workspace = true }
 
 [lints]

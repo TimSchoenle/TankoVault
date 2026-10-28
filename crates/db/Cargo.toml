@@ -14,14 +14,14 @@ publish = false
 # macros can bind/decode them as their native Postgres enum types.
 tankovault-domain = { workspace = true, features = ["sqlx"] }
 tankovault-recsys = { workspace = true }
-# Deliberately NOT `tankovault-matcher`, nor `tankovault-config` (ARCH-16 step 3): the
+# Deliberately NOT `tankovault-matcher`, nor `tankovault-config`: the
 # canonicalisation *decision* is made above this crate and reaches it through
 # `tankovault_domain::matching::Canonicaliser`. This crate reads the trigram candidates and
 # performs the outcome; it holds no thresholds and links no scorer. Both are dev-dependencies,
 # because the integration tests exercise the composition with the real configured policy.
 sqlx = { workspace = true }
 # The Postgres DSN carries its password inline, so `pool::connect` takes a `SecretString`
-# rather than a `&str`. Nothing else in this crate handles a secret: sealed OAuth tokens
+# instead of a `&str`. Nothing else in this crate handles a secret: sealed OAuth tokens
 # arrive here already ciphertext, and an argon2 PHC hash is not one.
 secrecy = { workspace = true }
 # For `try_join!` only, so the browse page and its match count overlap on the hottest public
@@ -43,7 +43,7 @@ integration = []
 [dev-dependencies]
 tankovault-test-support = { path = "../test-support" }
 # The real configured matching policy (`impl Canonicaliser for MatchingConfig`), so the ingest
-# and stub-registration suites drive the same decision the worker does rather than a stub.
+# and stub-registration suites drive the same decision the worker does, not a stub.
 tankovault-config = { workspace = true }
 tokio = { workspace = true }
 # Integration tests do not inherit the crate's own dependencies. The privacy suite reads the

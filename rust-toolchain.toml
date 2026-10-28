@@ -2,14 +2,12 @@
 # are the two `FROM` tags in `deploy/docker/Dockerfile`, which Renovate's `rust toolchain` group
 # moves in the same pull request as this line.
 #
-# Before this file existed, three things disagreed about which Rust was in use: the workspace
-# claimed `rust-version = "1.85"` (verified by nothing), CI resolved
-# `dtolnay/rust-toolchain@stable` to whatever stable was that morning, and each developer used
-# whatever `rustup` had last installed. That drift is how `rustfmt.toml`'s nightly-only
-# `ignore` key survived for so long — it worked for whoever added it and failed silently in CI.
+# Without it, the workspace's `rust-version`, CI's `dtolnay/rust-toolchain@stable` and each
+# developer's last `rustup` install would each pick a different Rust, and a nightly-only key in
+# `rustfmt.toml` would work for whoever added it and fail silently in CI.
 #
 # Pinning here means `cargo`, `rustfmt` and `clippy` agree everywhere, and a toolchain bump
-# becomes a reviewed pull request rather than a Tuesday.
+# becomes a reviewed pull request, not a Tuesday.
 #
 # `rust-version` in the workspace manifest is the *minimum supported* version and is what the
 # `msrv` CI job checks; this is the version everything is actually built with. The two are

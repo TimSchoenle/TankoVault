@@ -28,16 +28,15 @@ tankovault-service = { workspace = true, features = ["db", "redis"] }
 tankovault-db = { workspace = true }
 tankovault-recsys = { workspace = true }
 # `dns` supplies `ssrf::validate_and_resolve`, which `admin/providers.rs` needs before it
-# stores an operator-supplied `base_url` (SEC-5). It used to come from `tankovault-fetch` —
-# and `tankovault-adapters`, `tankovault-fetch` and `tankovault-solver` are all *gone* from
-# this manifest as of PERF-18, because they pulled `wreq`/BoringSSL into a binary that already
-# links `rustls` through `reqwest` and `sqlx`. The one endpoint that needed them, the adapter
-# dry-run, is proxied to `services/worker` now. Do not re-add them: check
-# `cargo tree -p tankovault-api -i boring-sys2` before adding any dependency here.
+# stores an operator-supplied `base_url`. `tankovault-adapters`, `tankovault-fetch` and
+# `tankovault-solver` stay out of this manifest: they pull `wreq`/BoringSSL into a binary that
+# already links `rustls` through `reqwest` and `sqlx`, and the one endpoint that needs them, the
+# adapter dry-run, is proxied to `services/worker`. Check `cargo tree -p tankovault-api -i
+# btls-sys` before adding any dependency here.
 tankovault-domain = { workspace = true, features = ["dns"] }
 tankovault-auth = { workspace = true }
 # Passwords, reset tokens, the JWT key and the pepper are all `secrecy` wrappers here, and the
-# request DTOs that carry them are too — a handler that logs `?req` must not be able to print
+# request DTOs that carry them are too: a handler that logs `?req` must not be able to print
 # the password it just received.
 secrecy = { workspace = true }
 # The WebAuthn relying party. Deliberately *not* in `crates/auth` alongside argon2 and the JWT
@@ -67,7 +66,7 @@ reqwest = { workspace = true }
 metrics = { workspace = true }
 uuid = { workspace = true }
 # The watchlist's keyset cursor is an opaque token, so the sort key and id it carries are
-# base64url-encoded rather than spelled in the query string. Already in the lock file via
+# base64url-encoded, not spelled in the query string. Already in the lock file via
 # `crates/auth`; this adds no new dependency to the tree.
 base64 = { workspace = true }
 # Appends the signed OAuth `state` to the provider's consent URL without re-encoding the rest.
@@ -78,8 +77,8 @@ utoipa-scalar = { workspace = true }
 fred = { workspace = true }
 tokio-util = { workspace = true }
 # `crate::stream_tickets::StreamTicketStore` is held as `Arc<dyn …>` in `AppState`, and its two
-# methods are `async`. Native async fns in traits are not dyn compatible, so the seam needs this
-# — the same reason `tankovault_service::ratelimit::RateLimitStore` uses it.
+# methods are `async`. Native async fns in traits are not dyn compatible, so the seam needs
+# this, for the same reason `tankovault_service::ratelimit::RateLimitStore` uses it.
 async-trait = { workspace = true }
 
 [features]
@@ -90,8 +89,8 @@ integration = []
 [dev-dependencies]
 # The model builder, so the recommendation suite can build a real index to query.
 tankovault-control-plane = { path = "../control-plane" }
-# The in-process router harness. Split out of `crates/test-support` (ARCH-17) so that the
-# repository-layer suites no longer compile this service to run SQL tests.
+# The in-process router harness. Kept out of `crates/test-support` so that the repository-layer
+# suites do not compile this service to run SQL tests.
 tankovault-api-test-support = { path = "test-support" }
 tankovault-test-support = { path = "../../crates/test-support" }
 # `mfa.rs` decodes the base32 secret an enrolment response hands back, so it can produce the

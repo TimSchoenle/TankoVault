@@ -11,7 +11,7 @@ publish = false
 
 # A library as well as a binary, so the model builder can be driven by an integration test.
 # Without it the only entry point is a `main` that also wants Redis, NATS and an HTTP listener,
-# and the one stage worth testing end to end — a real build against a real catalogue — would
+# and the one stage worth testing end to end (a real build against a real catalogue) would
 # have no way in.
 [lib]
 name = "tankovault_control_plane"

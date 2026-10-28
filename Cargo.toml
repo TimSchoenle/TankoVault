@@ -85,13 +85,13 @@ allow_attributes_without_reason = "warn"
 # dated skip list; this lint has no way to record why a duplicate is acceptable.
 multiple_crate_versions = "allow"
 # Convention for `missing_errors_doc`: name the reachable error variants, then say what the
-# function returns *instead of* an error — most of this codebase turns a miss into
+# function returns *instead of* an error. Most of this codebase turns a miss into
 # `Ok(None)`/`Ok(false)`/`Ok(0)`, and several of those choices are security-relevant.
 missing_errors_doc = "warn"
 missing_panics_doc = "warn"
 must_use_candidate = "allow"
 # The rest of the doc-comment gate. `pedantic` already carries the first four; naming them is
-# how the next reader learns they are deliberate rather than swept in with the group.
+# how the next reader learns they are deliberate, not swept in with the group.
 #
 # `doc_markdown` is the one that earns its keep daily: an identifier written outside backticks
 # renders as prose, and rustdoc's search index never sees it. `too_long_first_doc_paragraph`
@@ -105,7 +105,7 @@ doc_include_without_cfg = "warn"
 # `clippy::missing_docs_in_private_items` is deliberately absent; see the `missing_docs` note in
 # `[workspace.lints.rust]`.
 
-# A broken intra-doc link renders as literal `[`Foo`]` text — invisible to anyone reading the
+# A broken intra-doc link renders as literal `[`Foo`]` text, invisible to anyone reading the
 # source. `crates/api-client` is exempt by construction (its own `[lints]` table): the
 # generated code carries OpenAPI descriptions' `[`…`]` spans that can't resolve.
 [workspace.lints.rustdoc]
@@ -132,7 +132,7 @@ tankovault-bus = { path = "crates/bus" }
 # The service crates, named here because `config-contract` depends on every one of them: a
 # published contract is a claim about one binary, so the generator has to reach the very config
 # root that binary deserialises. `bootstrap` is also `xtask`'s, which runs the same install steps
-# against a developer's database — one implementation, living with the binary that ships it.
+# against a developer's database: one implementation, living with the binary that ships it.
 tankovault-api = { path = "services/api" }
 tankovault-bootstrap = { path = "services/bootstrap" }
 tankovault-challenge-solver = { path = "services/challenge-solver" }
@@ -142,13 +142,13 @@ tankovault-notifier = { path = "services/notifier" }
 tankovault-render = { path = "services/render" }
 tankovault-sync = { path = "services/sync" }
 tankovault-worker = { path = "services/worker" }
-# Unused by any member today — `web/frontend` is excluded and uses its own path dep — but kept
-# as the one place the crate is named, for a future host-side consumer.
+# No member uses it (`web/frontend` is excluded and uses its own path dep); it stays as the one
+# place the crate is named, for a future host-side consumer.
 tankovault-api-client = { path = "crates/api-client" }
 
-# --- OpenAPI: schema derivation from handlers + browsable API docs ---
+# --- OpenAPI: schema derivation from handlers and browsable API docs ---
 # `progenitor-impl` (xtask) emits code against `progenitor-client`'s (crates/api-client)
-# runtime types, so the two must stay in lockstep — pinned together, since bumping only one
+# runtime types, so the two must stay in lockstep: pinned together, since bumping only one
 # produces a generated crate that doesn't compile.
 progenitor-client = "0.15.0"
 progenitor-impl = "0.15.0"
@@ -178,14 +178,12 @@ tower-http = { version = "0.7", features = ["trace", "cors", "compression-full",
 # a minimal counterexample far more than they need coverage-guided input generation, and
 # because it runs in the ordinary `cargo test` job with no extra toolchain.
 proptest = { version = "1", default-features = false, features = ["std", "bit-set"] }
-# A scriptable HTTP upstream, for the clients that had no test below the trait boundary at all
-# (TEST F-09): the `AniList` transport, the notifier's webhook channels, and the two solve
-# clients on the render path. Those are `reqwest`/`wreq` round trips whose contract is what goes
-# on the wire and what a non-2xx or a `429` is turned into, and a trait fake cannot see either.
-# Chosen over hand-rolling an `axum` stub -- which would cost no new dependency -- because the
-# assertions that matter here are *on the request*: `received_requests` and `expect(n)` are the
-# feature, and reimplementing request capture and call-count verification is how a harness grows
-# bugs that make a test pass. Dev-only, so it reaches no shipping binary.
+# A scriptable HTTP upstream for the clients below the trait boundary: the `AniList` transport,
+# the notifier's webhook channels, and the two solve clients on the render path. Their contract
+# is what goes on the wire and what a non-2xx or a `429` turns into, and a trait fake sees
+# neither. Chosen over a hand-rolled `axum` stub because the assertions that matter are *on the
+# request*: `received_requests` and `expect(n)` are the feature, and hand-rolled request capture
+# is how a harness grows bugs that make a test pass. Dev-only, so it reaches no shipping binary.
 wiremock = "0.6"
 
 # --- data / storage ---
@@ -203,46 +201,43 @@ bytes = "1"
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "gzip", "brotli", "cookies", "stream"] }
 # BoringSSL-backed client with browser TLS/HTTP2 emulation.
 #
-# Both of these are **pre-release on purpose**, and downgrading is a licensing regression, not
-# just a version change: `wreq-util` was GPL-3.0 through 2.x, which made publishing an image
-# — conveying — a source-offer obligation over the whole combined work. Upstream relicensed to
-# Apache-2.0 at 3.0.0-rc.12, and that release requires `wreq ^6.0.0-rc`, so the escape from
-# GPL-3.0 is only available on the rc line. `deny.toml` carries the full reasoning and is what
-# catches a slip back: GPL-3.0 and LGPL-3.0 are both absent from its allow list.
+# Both of these are **pre-release on purpose**, and downgrading is a licensing regression:
+# `wreq-util` 2.x is GPL-3.0, which makes publishing an image (conveying) a source-offer
+# obligation over the whole combined work. 3.0.0-rc.12 is Apache-2.0 and requires
+# `wreq ^6.0.0-rc`, so only the rc line escapes GPL-3.0. `deny.toml` carries the full reasoning
+# and catches a slip back: GPL-3.0 and LGPL-3.0 are both absent from its allow list.
 #
 # `default-features` is left on for `wreq`: its defaults are `webpki-roots` (the bundled trust
-# store — the `scratch` runtime ships no OS CA bundle) and `tokio-rt`. Note that `charset`
-# (`encoding_rs`) was a default in `wreq` 5 and is **not** one in 6. That is deliberate here
-# rather than an oversight: nothing in this workspace relies on charset-aware decoding —
-# `crates/fetch`'s `base.rs` decodes the body from `bytes_stream()` as UTF-8 itself, and the
-# two solver clients only call `.json()`, which is UTF-8 by specification.
+# store; the `scratch` runtime ships no OS CA bundle) and `tokio-rt`. `charset` (`encoding_rs`)
+# is not a default in 6, and nothing here needs it: `crates/fetch`'s `base.rs` decodes the body
+# from `bytes_stream()` as UTF-8 itself, and the two solver clients only call `.json()`, which is
+# UTF-8 by specification.
 wreq = { version = "6.0.0-rc.29", features = ["json", "stream", "gzip", "brotli", "zstd", "deflate"] }
 # The emulation profile catalogue (Chrome/Firefox/Safari/Edge/OkHttp, per-platform header sets).
-# Only `emulation`, which is also its default — spelled out so that a future default gaining a
+# Only `emulation`, which is also its default, spelled out so that a future default gaining a
 # feature does not enable it here silently. In 3.x this pulls `brotli`/`flate2`/`zstd` as its
-# own dependencies rather than re-exporting `wreq`'s, so they are listed in both places.
+# own dependencies instead of re-exporting `wreq`'s, so they are listed in both places.
 #
-# 2.x's `emulation-rand` is gone; randomness is now `Emulation::random()`, which this crate
-# must keep not calling — a random profile per client is the opposite of the stable
+# Never call `Emulation::random()`: a random profile per client is the opposite of the stable
 # per-provider identity the fetch stack needs.
 wreq-util = { version = "3.0.0-rc.14", default-features = false, features = ["emulation"] }
 # `crates/fetch` decodes `Content-Encoding: gzip` itself, because `wreq`'s decoder stops at the
-# first member of a multi-member stream and reports EOF — see `base.rs::decode_gzip`. Already in
+# first member of a multi-member stream and reports EOF; see `base.rs::decode_gzip`. Already in
 # the graph as `wreq-util`'s own dependency, so naming it here adds an edge, not a crate.
 flate2 = "1"
 scraper = "0.29"
 governor = "0.10"
 url = "2.5"
 # Headless-browser driver for the optional `render` service (`docs/ARCHITECTURE.md` §9). Default
-# features only (`bytes`); the `fetcher`/TLS features pull a chromium *downloader* we
-# don't use — the CDP link is a plain local `ws://`, so no aws-lc/OpenSSL is dragged in.
+# features only (`bytes`); the `fetcher`/TLS features pull a chromium *downloader* we don't use:
+# the CDP link is a plain local `ws://`, so no aws-lc/OpenSSL is dragged in.
 chromiumoxide = { version = "0.9", default-features = false, features = ["bytes"] }
 
 # --- domain building blocks ---
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # `v4` alongside `v7`: ids that identify a *row* are v7, so they sort by creation time and keep
-# B-tree inserts local. A WebAuthn ceremony id is not that — it is a short-lived handle a client
+# B-tree inserts local. A WebAuthn ceremony id is not that: it is a short-lived handle a client
 # echoes back, so the timestamp v7 embeds is information given away for nothing. `webauthn-rs`
 # pulls the feature in regardless.
 uuid = { version = "1", features = ["v4", "v7", "serde", "std"] }
@@ -252,25 +247,24 @@ anyhow = "1"
 # The layered configuration loader and the reload supervisor every service boots through:
 # struct defaults, TOML, `TANKOVAULT_*` variables, `$TANKOVAULT_SECRETS_DIR`,
 # `TANKOVAULT_<KEY>_FILE`, and the rebuild that lets a running service pick up a rotated
-# mounted secret. It is the extraction of what used to be `crates/config`'s loader and
-# `crates/service/src/reload.rs`, and replaces both wholesale.
+# mounted secret.
 #
 # Pinned by **tag**, not branch: `Cargo.lock` records the resolved revision either way, but a
 # branch dependency lets `cargo update` move silently across arbitrary commits, whereas a tag
 # makes every bump a manifest edit that shows up in review. `deny.toml`'s `[sources] allow-git`
-# is the other half — an unlisted git source fails that gate.
+# is the other half: an unlisted git source fails that gate.
 #
 # Features are opted into per consumer, so that a crate which only reads a config file at boot
 # links neither the filesystem watcher nor its debouncer: `loader` in `crates/config`, `reload`
 # in `crates/service`, `explain` where a boot log reports which layer supplied each key, and
-# `testing` in the two dev-dependency slots that used to reach for `figment::Jail` directly.
+# `testing` in the two dev-dependency slots.
 #
-# `schema` is the exception, and it is on in `crates/config` unconditionally rather than behind a
-# feature of ours. Gating it would mean `#[cfg_attr(feature = …, config(nested))]` on every nested
-# field — `config` is the derive's helper attribute, so the attribute has to be gated wherever the
-# derive is — and, worse, generating a contract would then compile the whole service tree a second
-# time under a different feature set. The image build generates nine contracts from the binaries
-# it has already compiled; that only works while the schema half is always present.
+# `schema` is the exception, and it is on in `crates/config` unconditionally, not behind a
+# feature of ours. Gating it would mean `#[cfg_attr(feature = …, config(nested))]` on every
+# nested field (`config` is the derive's helper attribute, so the attribute has to be gated
+# wherever the derive is), and generating a contract would then compile the whole service tree a
+# second time under a different feature set. The image build generates nine contracts from the
+# binaries it has already compiled; that only works while the schema half is always present.
 terrace-config = { git = "https://github.com/TimSchoenle/terrace-config", tag = "v0.17.0", default-features = false }
 # The operator's legal documents: configuration, validation into a served catalog, and the axum
 # responders (`ETag`/`304`/`Vary`). Every body is a configuration value, so terrace reads, watches
@@ -283,23 +277,20 @@ terrace-legal = { git = "https://github.com/TimSchoenle/terrace-legal", tag = "v
 terrace-legal-axum = { git = "https://github.com/TimSchoenle/terrace-legal", tag = "v0.3.4", features = ["utoipa"] }
 
 # --- auth / security ---
-# Every secret value in this workspace is a `secrecy` type — `SecretString` for text,
-# `SecretSlice<u8>` for key material — rather than a `String` that happens to hold one.
+# Every secret value in this workspace is a `secrecy` type (`SecretString` for text,
+# `SecretSlice<u8>` for key material), never a `String` that happens to hold one.
 #
 # Three properties, in the order they matter here:
 #
 # 1. **`Debug` is redacted by construction.** The workspace derives `Debug` on every config
-#    struct and every `AppState`, and `tracing` records them with `?`. Before this, the only
-#    thing between `TANKOVAULT_DATABASE__URL` and the log stream was that nobody had yet
-#    written `debug!(?cfg)` — and two types (`InternalToken`, the AES sealer) carried
-#    hand-written redacting `Debug` impls precisely because someone had noticed that once. A
-#    hand-written impl protects the one type it is written on; the wrapper protects every
-#    field that uses it, including the field added next year.
+#    struct and every `AppState`, and `tracing` records them with `?`. A hand-written redacting
+#    impl protects the one type it is written on; the wrapper protects every field that uses it,
+#    including the field added next year.
 # 2. **Reading a secret is a visible call.** `expose_secret()` is greppable, so "where is the
-#    pepper actually used" is a search rather than a code review.
-# 3. **Zeroize on drop.** The weakest of the three — `figment` and `serde` both materialise a
-#    plain `String` before the wrapper takes ownership, so the *first* copy is not covered —
-#    but it bounds how long the long-lived copy sits in a core dump or a freed page.
+#    pepper actually used" is a search, not a code review.
+# 3. **Zeroize on drop.** The weakest of the three: `figment` and `serde` both materialise a
+#    plain `String` before the wrapper takes ownership, so the *first* copy is not covered, but
+#    it bounds how long the long-lived copy sits in a core dump or a freed page.
 #
 # No `Serialize`: `SecretBox<T>` serialises only when `T: SerializableSecret`, which nothing
 # here implements. A secret that must go on the wire (`LoginResponse::access_token`) opts in
@@ -316,16 +307,16 @@ base64 = "0.23"
 # not hand-rolled.
 subtle = "2"
 
-# Mutual TLS for the internal tier (`crates/service/src/tls.rs`). All four were already in
+# Mutual TLS for the internal tier (`crates/service/src/tls.rs`). All four are already in
 # `Cargo.lock` as transitive dependencies of reqwest/sqlx, so naming them here promotes existing
-# crates rather than widening the supply chain.
+# crates instead of widening the supply chain.
 #
-# `ring` is named here rather than left to feature unification. rustls only picks a provider by
-# itself when exactly one of `ring` and `aws-lc-rs` is enabled anywhere in the graph, and this
-# one enables both without asking (lettre pulls `ring`, quinn-proto pulls `aws-lc-rs` through
-# `wreq`'s HTTP/3) — so it cannot, and its fallback is a panic at handshake-setup time, not an
-# error. `crates/service/src/crypto.rs` installs the choice process-wide before anything builds
-# a configuration; this feature is what makes that provider nameable.
+# `ring` is named here instead of being left to feature unification. rustls only picks a
+# provider by itself when exactly one of `ring` and `aws-lc-rs` is enabled anywhere in the graph,
+# and this one enables both without asking (lettre pulls `ring`, quinn-proto pulls `aws-lc-rs`
+# through `wreq`'s HTTP/3), so it cannot, and its fallback is a panic at handshake-setup time,
+# not an error. `crates/service/src/crypto.rs` installs the choice process-wide before anything
+# builds a configuration; this feature is what makes that provider nameable.
 rustls = { version = "0.23", default-features = false, features = ["std", "logging", "tls12", "ring"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["logging", "tls12"] }
 # Reads the subject alternative names out of a verified peer certificate; `rustls` verifies a
@@ -333,7 +324,7 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["loggin
 x509-parser = "0.18"
 # Re-encodes a mounted private key as PKCS#8 (`crates/service/src/tls.rs`). rustls and reqwest
 # take PKCS#1 and SEC1 keys too, `wreq` takes PKCS#8 and nothing else, and the operator mounts
-# one file for all three. `sec1` is parsing only — a SEC1 key names its curve inside the
+# one file for all three. `sec1` is parsing only: a SEC1 key names its curve inside the
 # structure, and that OID has to move into the PKCS#8 algorithm identifier.
 pkcs8 = { version = "0.11", features = ["alloc", "pem"] }
 sec1 = { version = "0.8", default-features = false, features = ["der", "alloc"] }
@@ -342,11 +333,11 @@ sec1 = { version = "0.8", default-features = false, features = ["der", "alloc"] 
 ring = "0.17"
 # One lock-free swap of the whole `ServerConfig` on rotation, read once per connection.
 arc-swap = "1.7"
-# TOTP (RFC 6238). Three small crates rather than one `totp-rs`, because all three are already
-# in `Cargo.lock` transitively at these versions — so this adds nothing to the dependency graph
-# — and because the algorithm is ~30 lines that the RFC's own published test vectors pin
-# exactly (`crates/auth/src/totp.rs`). A crate whose job is to concatenate an HMAC and a modulo
-# is a supply-chain edge bought for no work saved.
+# TOTP (RFC 6238). Three small crates instead of one `totp-rs`: all three are already in
+# `Cargo.lock` transitively at these versions, so this adds nothing to the dependency graph, and
+# the algorithm is ~30 lines that the RFC's own published test vectors pin exactly
+# (`crates/auth/src/totp.rs`). A crate whose job is to concatenate an HMAC and a modulo is a
+# supply-chain edge bought for no work saved.
 #
 # `hmac` 0.13 / `sha1` 0.11 are the `digest` 0.11 generation, matching the `sha2` line above;
 # mixing generations would pull a second copy of `digest` into the tree.
@@ -356,83 +347,77 @@ sha1 = "0.11"
 # crate above cannot do base32, and RFC 4648 §6 is what every authenticator reads.
 data-encoding = "2.11"
 # Escaping the issuer and account names in that URI. Already in the tree via `url` (webauthn-rs)
-# and `reqwest`, so this is a declaration rather than an addition — and the label is
-# operator- and user-supplied text going into a `:`-delimited URI path, which is not a thing to
-# hand-roll an escaper for.
+# and `reqwest`, so this is a declaration, not an addition. The label is operator- and
+# user-supplied text going into a `:`-delimited URI path, which is not a thing to hand-roll an
+# escaper for.
 percent-encoding = "2.3"
 # Passkeys: the WebAuthn relying-party half. Two things about this line are deliberate.
 #
 # **`=0.6.1-dev`, an exact pre-release pin.** The stable line is 0.5.x, and it is not usable
 # here: `webauthn-rs-core` 0.5 verifies attestation with the `openssl` crate, and `deny.toml`
-# bans `openssl-sys` outright because the `scratch` runtime images ship no OpenSSL — a
-# transitive link against a library that is not in the image fails at *exec* time in
-# production rather than at build time in CI. The 0.6 line replaced that with RustCrypto
-# (`crypto-glue`) and pulls no OpenSSL at all, which is why it is worth taking upstream's
-# in-development version. `=` rather than `^` because cargo treats pre-release requirements
-# loosely enough to accept a later `-dev` with different semantics; this is a credential
-# verifier, so the version that moves is the one a person chose to move.
+# bans `openssl-sys` outright because the `scratch` runtime images ship no OpenSSL. A transitive
+# link against a library that is not in the image fails at *exec* time in production, not at
+# build time in CI. The 0.6 line verifies with RustCrypto (`crypto-glue`) and pulls no OpenSSL
+# at all, which is why upstream's in-development version is worth taking. `=`, not `^`, because
+# cargo treats pre-release requirements loosely enough to accept a later `-dev` with different
+# semantics; this is a credential verifier, so the version moves only when a person moves it.
 #
-# **`default-features = false`.** The default is `attestation`, which is the enterprise
-# use-case: pinning credentials to an approved hardware model against a CA list. Passkeys here
-# are a consumer sign-in credential — a phone, a laptop, a password manager — and we accept any
-# authenticator, so the attestation machinery would be dead weight in the binary and, worse,
-# would invite a future reviewer to think it was being enforced. `conditional-ui` supplies the
-# discoverable (usernameless) sign-in; `danger-allow-state-serialisation` makes the in-flight
-# ceremony state `Serialize`, which it must be to survive between the two legs of the protocol
-# in Postgres rather than in one replica's memory. The "danger" is storing that state where the
-# *client* can reach it; see `migrations/0022_passkeys.up.sql`.
+# **`default-features = false`.** The default is `attestation`, the enterprise use case:
+# pinning credentials to an approved hardware model against a CA list. Passkeys here are a
+# consumer sign-in credential (a phone, a laptop, a password manager) and any authenticator is
+# accepted, so the attestation machinery would be dead weight in the binary and would invite a
+# future reviewer to think it was enforced. `conditional-ui` supplies the discoverable
+# (usernameless) sign-in; `danger-allow-state-serialisation` makes the in-flight ceremony state
+# `Serialize`, which it must be to survive between the two legs of the protocol in Postgres
+# instead of one replica's memory. The "danger" is storing that state where the *client* can
+# reach it; see `migrations/0022_passkeys.up.sql`.
 webauthn-rs = { version = "=0.6.1-dev", default-features = false, features = [
     "conditional-ui",
     "danger-allow-state-serialisation",
 ] }
 # The frontend tier's Content-Security-Policy: the shell scan that turns the served
 # `index.html` into `'sha256-…'` sources, the typed directive vocabulary underneath it, and the
-# per-response nonce the Cloudflare concessions are built on. It is the extraction of what used
-# to be hand-rolled in `services/frontend/src/main.rs`, and replaces it wholesale.
+# per-response nonce the Cloudflare concessions are built on.
 #
 # Pinned by **tag**, for the same reason `terrace-config` is: `Cargo.lock` records the resolved
 # revision either way, but a branch dependency lets `cargo update` move silently across
 # arbitrary commits. `deny.toml`'s `[sources] allow-git` is the other half.
 #
-# `cloudflare` is `presets` + `nonce` — the two `TANKOVAULT_FRONTEND__CLOUDFLARE__*` flags and
+# `cloudflare` is `presets` and `nonce`: the two `TANKOVAULT_FRONTEND__CLOUDFLARE__*` flags and
 # nothing else; the origins for the other services the crate knows about are compiled out.
 csp-shell = { git = "https://github.com/TimSchoenle/csp-shell", tag = "csp-shell-v0.2.1", features = ["cloudflare"] }
 
 # --- observability ---
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
-# NOTE: the OpenTelemetry stack (`opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp`,
-# `tracing-opentelemetry`) was declared here and used by zero members, while
-# `crates/config` exposed an `otlp_endpoint` knob that only logged "export is pending". A
-# config knob that silently does nothing is worse than an absent one: an operator who sets it
-# believes traces are being exported and finds out during an incident. Both the declarations
-# and the knob are removed. Re-add them together, with an actual `OpenTelemetryLayer` in
+# No OpenTelemetry stack: a config knob that silently does nothing is worse than an absent one,
+# because an operator who sets it believes traces are exported and finds out during an incident.
+# Add the crates together with an `otlp_endpoint` knob and an actual `OpenTelemetryLayer` in
 # `crates/service/src/telemetry.rs`, or not at all.
 metrics = "0.24"
 metrics-exporter-prometheus = { version = "0.18", default-features = false }
 # Error reporting and performance tracing, off unless an operator configures a DSN
-# (`crates/service/src/sentry.rs`). One crate rather than three: `sentry` re-exports
-# `sentry-tracing` and `sentry-tower` under `sentry::integrations::*`, so the three versions
-# cannot drift.
+# (`crates/service/src/sentry.rs`). One crate, not three: `sentry` re-exports `sentry-tracing`
+# and `sentry-tower` under `sentry::integrations::*`, so the three versions cannot drift.
 #
 # `default-features = false` is load-bearing twice over. The default set includes `transport`,
-# which is `reqwest + native-tls` — and `native-tls` links OpenSSL, which `deny.toml` bans
+# which is `reqwest` with `native-tls`, and `native-tls` links OpenSSL, which `deny.toml` bans
 # outright because the `scratch` runtime images ship none: the failure would be at exec time in
 # production, not at build time in CI. `rustls` here routes the transport through the same
 # `reqwest` (0.13) the workspace already builds, so no second HTTP client and no second TLS
-# stack enter the graph. The defaults also include `logs`, `metrics` and `release-health` —
-# three separate Sentry products this deployment does not use, and each one an egress channel
-# that would exist with no knob in `docs/CONFIGURATION.md` describing it.
+# stack enter the graph. The defaults also include `logs`, `metrics` and `release-health`:
+# three separate Sentry products this deployment does not use, each one an egress channel that
+# would exist with no knob in `docs/CONFIGURATION.md` describing it.
 #
 # What is on: `backtrace`/`debug-images` (stack traces and the module list that symbolicates
-# them), `panic` (the hook that turns a panic into an issue — the `catch-panic` layer above
-# turns the same panic into a 500, and neither is a substitute for the other), and the two
-# integrations: `tracing` for the subscriber layer and `tower-axum-matched-path` for one
-# transaction per request named by the matched route rather than by the URI, which is what
-# stops `/v1/series/{id}` becoming one transaction name per series.
+# them), `panic` (the hook that turns a panic into an issue; the `catch-panic` layer above turns
+# the same panic into a 500, and neither substitutes for the other), and the two integrations:
+# `tracing` for the subscriber layer and `tower-axum-matched-path` for one transaction per
+# request named by the matched route, not the URI, which stops `/v1/series/{id}` becoming one
+# transaction name per series.
 #
 # `contexts` is deliberately **off**, and it is a default. It adds an OS/host/runtime tag block
-# by pulling `os_info`, which carries a fifteen-crate `objc2` tree for its macOS support — into
+# by pulling `os_info`, which carries a fifteen-crate `objc2` tree for its macOS support into
 # `Cargo.lock`, and so into `THIRD-PARTY-NOTICES`, for platforms no image here targets. What it
 # would report (kernel version, arch, rustc version) is a constant of the image, which the
 # release tag already names.
@@ -448,17 +433,16 @@ sentry = { version = "0.49", default-features = false, features = [
 
 
 # --- email ---
-# rustls + ring to match the rest of the stack (no native-tls / OpenSSL in the
+# rustls and ring to match the rest of the stack (no native-tls / OpenSSL in the
 # runtime images); webpki-roots for a bundled trust store.
 # No `pool` feature: the pooled builder spawns a background task and so requires a
 # running Tokio reactor at `build()` time; a connection-per-send transport is plenty
 # for the notifier's occasional alerts and keeps construction runtime-independent.
 lettre = { version = "0.11", default-features = false, features = ["builder", "hostname", "smtp-transport", "tokio1", "tokio1-rustls", "ring", "webpki-roots"] }
 
-# The dev profile was entirely untuned (PERFORMANCE §17): only the release profile below
-# existed, so every edit-rebuild cycle paid cargo's defaults across ~600 lockfile entries — a
-# C/asm BoringSSL build, both TLS stacks, `chromiumoxide`, `scraper` and the whole sqlx macro
-# machinery.
+# Tuned because every edit-rebuild cycle otherwise pays cargo's defaults across ~600 lockfile
+# entries: a C/asm BoringSSL build, both TLS stacks, `chromiumoxide`, `scraper` and the whole
+# sqlx macro machinery.
 [profile.dev]
 # Full DWARF across that many crates produces very large object files and dominates *link*
 # time, which is paid on every single rebuild. Line tables keep backtraces resolvable, which is
@@ -481,20 +465,20 @@ opt-level = 3
 opt-level = 3
 lto = "thin"
 # 16, not 1. `codegen-units = 1` serialises each crate's codegen onto one thread, which on a
-# 4-vCPU runner made the image builds 26-43 minutes of mostly idle cores. Thin LTO already
+# 4-vCPU runner makes the image builds 26-43 minutes of mostly idle cores. Thin LTO already
 # optimises across codegen units, so it recovers most of what splitting them gives up.
 # This is the knob to turn back if a benchmark ever shows the difference on a real workload.
 codegen-units = 16
 strip = true
-# `unwind`, not `abort`. With `abort`, a panic anywhere in a handler terminated the whole
-# process — so any single panicking code path (an overflow, an out-of-range slice, an
-# `unwrap` on a `HeaderValue`) let an unauthenticated client restart a replica at will and
-# take every in-flight request with it. Unwinding lets `CatchPanicLayer`
-# (`crates/service/src/http.rs`) turn it into a 500 for the one request that caused it.
+# `unwind`, not `abort`. With `abort`, a panic anywhere in a handler terminates the whole
+# process, so any single panicking code path (an overflow, an out-of-range slice, an `unwrap`
+# on a `HeaderValue`) lets an unauthenticated client restart a replica at will and take every
+# in-flight request with it. Unwinding lets `CatchPanicLayer` (`crates/service/src/http.rs`)
+# turn it into a 500 for the one request that caused it.
 #
 # The cost is landing-pad code in the binary. That is the correct trade for a network
 # service: a panic here is a bug to fix, not a reason to drop everyone else's requests.
 panic = "unwind"
 # Silent wrapping in a pagination offset is worse than a caught error, and this workload is
-# nowhere near arithmetic-bound. Cheap insurance against the class of bug SEC-11 found.
+# nowhere near arithmetic-bound.
 overflow-checks = true

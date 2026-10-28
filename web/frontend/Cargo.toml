@@ -1,8 +1,8 @@
 [package]
 # Not `tankovault-frontend`: `services/frontend` already owns that name in the host workspace,
-# and two packages sharing one name made `cargo <cmd> -p tankovault-frontend` resolve to
-# whichever workspace the cwd happened to be in (OPS-1.6). Legal, because this crate is excluded
-# from the host workspace — but a silent, cwd-dependent target is not something to rely on.
+# and two packages sharing one name make `cargo <cmd> -p tankovault-frontend` resolve to
+# whichever workspace the cwd happens to be in. Legal, because this crate is excluded from the
+# host workspace, but a silent, cwd-dependent target is not something to rely on.
 name = "tankovault-web"
 version = "0.1.0"
 edition = "2021"
@@ -10,15 +10,15 @@ authors = ["TankoVault contributors"]
 publish = false
 description = "TankoVault's reader-facing frontend and operator console, built with Dioxus for the browser and the desktop on the Inkstone design system."
 
-# This target's name — not the package's — decides two user-visible things, which is why it is
-# pinned to the product rather than to the crate:
+# This target's name, not the package's, decides two user-visible things, which is why it is
+# pinned to the product and not to the crate:
 #
 #   * the web bundle's output filenames (`<bin>_bg.wasm`, `<bin>.js`, referenced from the
 #     index.html `dx` generates). Nothing reads them by name: `deploy/docker/Dockerfile` copies
 #     the whole bundle directory and `services/frontend` rewrites whatever `src=` it finds.
-#   * the **desktop installer's product name** — what the `.msi` is called, and what the reader
+#   * the **desktop installer's product name**: what the `.msi` is called, and what the reader
 #     sees in the Start menu and in Program Files. `dx` derives it as `PascalCase(<bin>)` with no
-#     config override (`bundled_app_name`, dioxus-cli 0.7.10), so a generic name here shipped
+#     config override (`bundled_app_name`, dioxus-cli 0.7.10), so a generic name here ships
 #     installers called "App". The casing that yields is "Tankovault"; the window title is set
 #     at runtime by `crate::title` and reads correctly.
 [[bin]]
@@ -27,10 +27,10 @@ path = "src/main.rs"
 
 # This crate is intentionally excluded from the host workspace (see the root
 # Cargo.toml `exclude`) because it targets `wasm32-unknown-unknown` via the `dx`
-# CLI. Dependency versions are therefore pinned here rather than inherited.
+# CLI. Dependency versions are therefore pinned here, not inherited.
 #
 # The empty `[workspace]` table below is load-bearing, not decoration. Without it, cargo walks
-# *up* looking for a workspace root and finds the host one — so `cargo fmt --all` run from this
+# *up* looking for a workspace root and finds the host one, so `cargo fmt --all` run from this
 # directory silently formats the entire backend, and `cargo clippy --all-targets` reaches
 # crates this one has nothing to do with. Declaring this crate its own workspace root stops the
 # walk and keeps every command scoped to the frontend, which is what anyone running it here
@@ -44,7 +44,7 @@ path = "src/main.rs"
 # WASM one as well.
 dioxus = { version = "0.7", features = ["router"] }
 # The design system's components, extracted so they can be lifted into another Dioxus app: it
-# knows nothing about this one — no i18n, no icons, no API client — and ships the `ik-*`
+# knows nothing about this one (no i18n, no icons, no API client) and ships the `ik-*`
 # stylesheet `input.css` imports. A path dependency under this workspace root, so it is a member
 # and every gate run here covers it.
 inkstone-ui = { path = "crates/inkstone-ui" }
@@ -58,24 +58,24 @@ tankovault-api-client = { path = "../../crates/api-client" }
 gloo-timers = { version = "0.4", features = ["futures"], optional = true }
 futures-util = "0.3"
 base64 = "0.23"
-# The TOTP enrolment QR code. Rendered as `<rect>` elements from the module matrix rather than
+# The TOTP enrolment QR code. Rendered as `<rect>` elements from the module matrix instead of
 # as injected markup: the served CSP carries no `'unsafe-eval'` and this crate bans
 # `document::eval`, so anything that reaches for a JS QR library is a non-starter. Default
-# features off — `image` and `svg` would pull an encoder this crate has no use for.
+# features off: `image` and `svg` would pull an encoder this crate has no use for.
 qrcode = { version = "0.14", default-features = false }
 # Live notification stream: read `MessageEvent.data()` from the SSE subscription.
-# `Window`/`Location` let the API client resolve the served page's absolute origin — reqwest
+# `Window`/`Location` let the API client resolve the served page's absolute origin: reqwest
 # (unlike the browser's own fetch) rejects the relative `/v1/...` paths with a "builder error".
 # `Blob`/`Url`/`HtmlAnchorElement` back the personal-data export download: the endpoint is
 # bearer-authenticated, so a plain anchor navigation cannot reach it and the document has to be
-# handed to the browser from memory (see `util::save_text_file`).
-# `Storage`/`HtmlInputElement` back `src/browser.rs`, which replaced every `document::eval`
-# call in the app: Dioxus implements web `eval` as `new Function(...)`, and the served CSP
-# does not (and must not) carry `'unsafe-eval'`.
+# handed to the browser from memory (see `platform::save_text_file`).
+# `Storage`/`HtmlInputElement` back `src/platform/web.rs`, which does what `document::eval` would
+# otherwise do: Dioxus implements web `eval` as `new Function(...)`, and the served CSP does not
+# (and must not) carry `'unsafe-eval'`.
 #
 # `Credential`/`CredentialsContainer` back `src/webauthn.rs`: passkey registration and sign-in
-# are `navigator.credentials.create()` / `.get()`, and there is no other way to reach them —
-# the ceremony is a browser API by construction, not an HTTP call the API client could make.
+# are `navigator.credentials.create()` / `.get()`, and there is no other way to reach them: the
+# ceremony is a browser API by construction, not an HTTP call the API client could make.
 web-sys = { version = "0.3", features = [
     "MessageEvent", "Window", "Location", "Navigator", "History",
     "Blob", "BlobPropertyBag", "Url", "Document", "Element", "HtmlAnchorElement",
@@ -85,26 +85,27 @@ web-sys = { version = "0.3", features = [
 ], optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
 # `navigator.credentials.*` returns a `Promise`; this is what awaits it. Nothing else in the app
-# needed it, because every other async path goes through `reqwest`/`gloo-net`, which own their
+# needs it, because every other async path goes through `reqwest`/`gloo-net`, which own their
 # own bridge.
 wasm-bindgen-futures = { version = "0.4", optional = true }
-# The WebAuthn wire types, and — the reason this dependency exists rather than a hand-written
-# conversion — the four `From` impls between them and `web_sys` that its `wasm` feature carries.
+# The WebAuthn wire types, and the four `From` impls between them and `web_sys` that its `wasm`
+# feature carries, which are the reason this dependency exists instead of a hand-written
+# conversion.
 #
 # This is the same crate the API's `webauthn-rs` is built on, at the same pinned version, which
 # is the whole point. `PublicKeyCredentialCreationOptions` is a deep, base64url-in-JSON structure
 # whose byte fields have to become `ArrayBuffer`s before the browser will look at them; writing
 # that translation by hand on this side would be a second, unverified copy of a specification the
-# server already implements, and it would drift exactly the way the hand-mirrored sync DTOs did
-# (see `crates/contracts`). Instead the API sends these types' own serialisation as opaque JSON
-# and both ends parse it with this crate. `openapi.json` deliberately does not model them.
+# server already implements, and it would drift. Instead the API sends these types' own
+# serialisation as opaque JSON and both ends parse it with this crate. `openapi.json`
+# deliberately does not model them.
 #
 # `=` pins it for the reason the host workspace pins `webauthn-rs`: a `-dev` pre-release, and
 # these two must never disagree about the format on the wire.
 #
-# Not optional, and the `wasm` feature is added by the `web` feature rather than here: the
-# challenge and credential *types* cross both builds — the screens are one code path — while
-# only the browser needs the `web-sys` conversions that feature carries.
+# Not optional, and the `wasm` feature is added by the `web` feature, not here: the challenge
+# and credential *types* cross both builds (the screens are one code path), while only the
+# browser needs the `web-sys` conversions that feature carries.
 webauthn-rs-proto = { version = "=0.6.1-dev" }
 # Relative-time formatting on the console uses the browser's own ISO-8601 date parser
 # (`crate::platform::web`); the desktop build reads `chrono` instead.
@@ -112,13 +113,13 @@ js-sys = { version = "0.3", optional = true }
 # Typed ids in the generated wire types (the progenitor `tankovault-api-client` maps
 # `format: uuid` back to the domain newtypes, which wrap this). The frontend never mints ids
 # itself, but `uuid`'s `v7` feature is switched on transitively (the shared
-# `tankovault-domain` newtypes mint v7 ids), and as of uuid 1.24 `v7` on
+# `tankovault-domain` newtypes mint v7 ids), and since uuid 1.24 `v7` on
 # `wasm32-unknown-unknown` demands an explicit randomness source. `js` supplies the
-# self-contained WebCrypto backend (via `wasm-bindgen`/`js-sys`, already deps) — no
-# `getrandom` wasm cfg required. It is requested per-target below rather than here, so the
-# desktop build does not link `wasm-bindgen` for a backend it could never call.
+# self-contained WebCrypto backend (via `wasm-bindgen`/`js-sys`, already deps), with no
+# `getrandom` wasm cfg required. It is requested per-target below, not here, so the desktop
+# build does not link `wasm-bindgen` for a backend it could never call.
 uuid = { version = "1", features = ["serde"] }
-# Message catalogues + the language switch (`src/i18n.rs`). `dio` is the Dioxus binding; the
+# Message catalogues and the language switch (`src/i18n.rs`). `dio` is the Dioxus binding; the
 # `dio-ssr`/`server` features are fullstack-only and would drag `http` and server functions into
 # a bundle that is a pure client-side SPA.
 i18nrs = { version = "0.1.9", default-features = false, features = ["dio"] }
@@ -134,8 +135,8 @@ i18nrs = { version = "0.1.9", default-features = false, features = ["dio"] }
 terrace-legal-dioxus = { git = "https://github.com/TimSchoenle/terrace-legal", tag = "v0.3.4" }
 terrace-legal-markdown = { git = "https://github.com/TimSchoenle/terrace-legal", tag = "v0.3.4" }
 terrace-legal-model = { git = "https://github.com/TimSchoenle/terrace-legal", tag = "v0.3.4" }
-# The logging facade, on both builds. Already in this graph — `dioxus` logs through it — so this
-# names a crate that is compiled either way rather than adding one. `clippy.toml` bans `dbg!` in
+# The logging facade, on both builds. Already in this graph (`dioxus` logs through it), so this
+# names a crate that is compiled either way instead of adding one. `clippy.toml` bans `dbg!` in
 # favour of it. The *subscriber* that gives the calls somewhere to go is desktop-only, below; on
 # web `dioxus::launch` installs its own, which writes to the browser console.
 tracing = { version = "0.1", default-features = false, features = ["std"] }
@@ -148,8 +149,8 @@ tracing = { version = "0.1", default-features = false, features = ["std"] }
 # `gloo-timers` in the poll loops, and for the oneshot channel that carries a passkey ceremony
 # back off the thread it has to block on.
 tokio = { version = "1", features = ["time", "sync"], optional = true }
-# The clock. `default-features = false` + `clock` drops the localisation tables: this build needs
-# "now", "parse RFC-3339" and "which hour is it here", not formatted month names.
+# The clock. `default-features = false` with `clock` drops the localisation tables: this build
+# needs "now", "parse RFC-3339" and "which hour is it here", not formatted month names.
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"], optional = true }
 # Where the settings document lives, per platform convention (`%APPDATA%`, `$XDG_CONFIG_HOME`).
 directories = { version = "6", optional = true }
@@ -157,16 +158,16 @@ directories = { version = "6", optional = true }
 # bearer-authenticated, so the document is already in memory and only needs a destination.
 #
 # Matched to the version `dioxus-desktop` already depends on. A different minor here is not a
-# second opinion about file dialogs, it is a second *copy* of one — extra compilation, an entry
+# second opinion about file dialogs, it is a second *copy* of one: extra compilation, an entry
 # on `cargo-deny`'s duplicate budget, and two crates whose licence text the notices document has
 # to carry separately.
 rfd = { version = "0.17", optional = true }
 # Hands an OAuth consent URL to the reader's own browser, which is where their provider session
-# already is — and where several providers refuse to run a ceremony in a webview at all.
+# already is, and where several providers refuse to run a ceremony in a webview at all.
 open = { version = "5", optional = true }
 sys-locale = { version = "0.3", optional = true }
 # OS notifications: WinRT toasts on Windows, the freedesktop D-Bus service on Linux, from one
-# call site. `z-with-tokio` picks zbus's tokio integration on Linux rather than the default
+# call site. `z-with-tokio` picks zbus's tokio integration on Linux instead of the default
 # `async-io`, so the desktop build carries one async runtime instead of two.
 notify-rust = { version = "4", default-features = false, features = [
     "z-with-tokio",
@@ -175,18 +176,18 @@ notify-rust = { version = "4", default-features = false, features = [
 # by the single-use ticket in the URL, exactly as on web, so this needs no credential handling.
 eventsource-stream = { version = "0.2", optional = true }
 # The OS credential store behind `platform::credential_*`: the Windows Credential Manager, the
-# freedesktop Secret Service over D-Bus, the macOS Keychain — one call site, no `cfg` at the
-# caller. This is what holds the refresh credential between runs; see `api::session_store` for
-# what is written to it and why a file beside `settings.json` was never an option.
+# freedesktop Secret Service over D-Bus, the macOS Keychain, from one call site with no `cfg` at
+# the caller. This is what holds the refresh credential between runs; see `api::session_store`
+# for what is written to it and why a file beside `settings.json` is not an option.
 #
 # Default features (`v1`) select the native store per platform and add nothing else. On Linux
 # that resolves to `zbus-secret-service`, which reuses the pure-Rust zbus stack `notify-rust`'s
-# `z-with-tokio` already brings in, rather than linking the `libdbus` C library the alternative
+# `z-with-tokio` already brings in, instead of linking the `libdbus` C library the alternative
 # backend would need.
 keyring = { version = "4", optional = true }
 # Reads back the `Set-Cookie` lines `api::session_store` persists. Already in this graph at this
-# exact version — it is what `reqwest`'s own cookie store parses with — so this names a crate that
-# is compiled either way rather than adding one. It has no default features.
+# exact version (it is what `reqwest`'s own cookie store parses with), so this names a crate that
+# is compiled either way instead of adding one. It has no default features.
 #
 # Splitting on `;` and `=` by hand would handle the header this server sends today and quietly
 # mis-read a quoted value. A credential that round-trips wrong signs the reader out on the next
@@ -197,17 +198,17 @@ cookie = { version = "0.18", optional = true }
 # them.
 #
 # **This is the gate on that.** The release workflow signs `desktop-manifest.json` with minisign
-# and the client refuses a manifest that does not verify against an embedded public key — so a
+# and the client refuses a manifest that does not verify against an embedded public key, so a
 # forged manifest cannot name an installer, and the checksums inside a verified one are what every
 # downloaded byte is held to.
 #
 # Chosen over `cosign` deliberately, and the reasoning is worth keeping because the repository
 # signs its *images* with cosign keyless and the mismatch looks like an oversight. Verifying a
 # keyless signature means checking a Fulcio certificate chain and a Rekor inclusion proof, which
-# in Rust is the pre-1.0 `sigstore` crate, plus a TUF trust root that has to be embedded and then
+# in Rust is the pre-1.0 `sigstore` crate, and a TUF trust root that has to be embedded and then
 # goes stale. This crate is ed25519 verification and nothing else: **zero dependencies**, MIT, and
 # small enough to read. The release also carries a keyless `cosign sign-blob` bundle over the same
-# manifest for anyone auditing it with the tooling the images use — see `docs/RELEASING.md`.
+# manifest for anyone auditing it with the tooling the images use; see `docs/RELEASING.md`.
 minisign-verify = { version = "0.3", optional = true }
 # Which release is newer, and whether this build is one. A hand-rolled tuple compare gets
 # pre-release ordering wrong, and this is the comparison that decides whether to replace the
@@ -215,19 +216,19 @@ minisign-verify = { version = "0.3", optional = true }
 semver = { version = "1", optional = true }
 # The digest each staged installer is checked against, from the verified manifest. `0.11` because
 # `crypto-glue` already pulls that line in alongside `0.10`, so naming it unifies with a copy that
-# is here regardless rather than adding a third. Note `digest` 0.11 has no `std` feature and so no
+# is here regardless instead of adding a third. Note `digest` 0.11 has no `std` feature and so no
 # `io::Write` impl on hashers; `update::install` feeds the file to it by hand.
 sha2 = { version = "0.11", optional = true }
 # Renders that digest for comparison against the manifest's lower-case hex. Already in the graph.
 hex = { version = "0.4", optional = true }
 # Where the `tracing` calls above end up on this build: the rolling log file and stderr, wired in
-# `src/diagnostics`. Desktop-only because it is the only build with a filesystem to write to —
-# and the only one that can die without leaving anything in a console.
+# `src/diagnostics`. Desktop-only because it is the only build with a filesystem to write to, and
+# the only one that can die without leaving anything in a console.
 #
 # Every feature named here is already switched on in this lockfile by `dioxus-logger`, which is
-# in the graph regardless, so this adds a dependency edge rather than a dependency. Listed
-# explicitly all the same: relying on another crate's feature selection is how a working build
-# turns into a resolution error on somebody else's `cargo update`.
+# in the graph regardless, so this adds a dependency edge, not a dependency. Listed explicitly
+# all the same: relying on another crate's feature selection is how a working build turns into a
+# resolution error on somebody else's `cargo update`.
 tracing-subscriber = { version = "0.3", default-features = false, features = [
     "std",
     "registry",
@@ -240,13 +241,13 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 uuid = { version = "1", features = ["js"] }
 
-# Windows Hello, through the platform's own `webauthn.dll` — the same API the browsers call.
+# Windows Hello, through the platform's own `webauthn.dll`: the same API the browsers call.
 #
 # Per-target because the `win10` backend exists on Windows and nowhere else; Linux has no OS
 # passkey provider to reach for and `webauthn::is_available()` stays `false` there.
 #
 # `=0.6.1-dev` is the same pin, from the same release train, as the `webauthn-rs-proto` above and
-# the API's `webauthn-rs`. That is the whole reason this is a dependency rather than hand-written
+# the API's `webauthn-rs`. That is the whole reason this is a dependency instead of hand-written
 # FFI: all three agree about the wire types by construction, so a challenge the API minted is
 # handed to the authenticator and the result handed back without a conversion anyone wrote.
 #
@@ -258,29 +259,27 @@ webauthn-authenticator-rs = { version = "=0.6.1-dev", features = [
 ], optional = true }
 # The `HKCU\…\Run` value behind `platform::set_autostart`, which the NSIS installer's "start when
 # I sign in" checkbox writes too. The only alternative Windows offers is a shortcut in the Startup
-# folder, and a `.lnk` is a COM object — unreachable from a crate that `forbid`s unsafe.
+# folder, and a `.lnk` is a COM object, unreachable from a crate that `forbid`s unsafe.
 #
-# Microsoft's own safe wrapper, and it costs one crate rather than a subtree: all three of its
+# Microsoft's own safe wrapper, and it costs one crate, not a subtree: all three of its
 # dependencies (`windows-link`, `windows-result`, `windows-strings`) are already in this graph
-# below `keyring` and `notify-rust`. The dependency-free option was shelling out to `reg.exe` and
+# below `keyring` and `notify-rust`. The dependency-free option is shelling out to `reg.exe` and
 # reading exit codes, which is a parser for output that is not a contract.
 windows-registry = { version = "0.100", optional = true }
-# The monitor's *work area* behind `platform::fit_window_to_display` — what Windows leaves after
-# the taskbar, which `tao` does not expose (`MonitorHandle` offers only the whole monitor). The
-# window used to be sized to a fraction of the monitor and hope; this is the number the OS
-# actually keeps.
+# The monitor's *work area* behind `platform::fit_window_to_display`: what Windows leaves after
+# the taskbar, which `tao` does not expose (`MonitorHandle` offers only the whole monitor). Sizing
+# to a fraction of the monitor would be a guess; this is the number the OS actually keeps.
 #
-# `winsafe` rather than `windows`: reaching `GetMonitorInfo` through the latter means an `unsafe`
-# block, and this crate `forbid`s unsafe. `HMONITOR::MonitorFromRect` and `GetMonitorInfo` are
-# both safe here, and neither needs a raw handle from `tao` — the monitor is identified by the
-# rectangle `tao` already reports, so nothing is transmuted across the two crates' notions of a
-# handle.
+# `winsafe`, not `windows`: reaching `GetMonitorInfo` through the latter means an `unsafe` block,
+# and this crate `forbid`s unsafe. `HMONITOR::MonitorFromRect` and `GetMonitorInfo` are both safe
+# here, and neither needs a raw handle from `tao`: the monitor is identified by the rectangle
+# `tao` already reports, so nothing is transmuted across the two crates' notions of a handle.
 winsafe = { version = "0.0.29", features = ["user"], optional = true }
 
 # The Linux half of the same story: GDK reports the work area a compositor's panels leave, and
-# `tao` hands out the `gdk::Monitor` behind its own `MonitorHandle`. `gdk` rather than `gtk`
-# because the monitor is all that is wanted here, and it is the same crate at the same version
-# `tao` already compiles — a name for something in the graph, not an addition to it.
+# `tao` hands out the `gdk::Monitor` behind its own `MonitorHandle`. `gdk`, not `gtk`, because
+# the monitor is all that is wanted here, and it is the same crate at the same version `tao`
+# already compiles: a name for something in the graph, not an addition to it.
 [target.'cfg(all(unix, not(target_vendor = "apple")))'.dependencies]
 gdk = { version = "0.18", optional = true }
 
@@ -317,7 +316,7 @@ desktop = [
     "dep:sys-locale",
     "dep:tokio",
     "dep:tracing-subscriber",
-    # Both resolve to nothing off Windows — the dependencies are declared per-target — so these
+    # Both resolve to nothing off Windows (the dependencies are declared per-target), so these
     # enable Windows Hello and the `Run`-key autostart where there is one, and change nothing
     # where there is not. Linux gets its autostart entry from `std::fs`.
     "dep:webauthn-authenticator-rs",
@@ -337,9 +336,9 @@ desktop = [
 # are PascalCase by convention, and `rsx!` expands to code that trips several pedantic lints it
 # has no way to satisfy.
 #
-# It is declared on the workspace rather than the package so `crates/inkstone-ui` — a member by
-# virtue of being a path dependency under this root — is held to the same policy from one
-# definition. Both packages opt in with `[lints] workspace = true`.
+# It is declared on the workspace, not the package, so `crates/inkstone-ui` (a member by virtue
+# of being a path dependency under this root) is held to the same policy from one definition.
+# Both packages opt in with `[lints] workspace = true`.
 [lints]
 workspace = true
 
@@ -373,8 +372,8 @@ wildcard_imports = "allow"
 # `rsx!` markup is long, so `clippy.toml` raises the threshold to 250 lines. A component past
 # that holds more than one screen region and is split into one component per region.
 too_many_lines = "warn"
-# Screen-local helpers are deliberately declared next to the handler that uses them rather
-# than hoisted above the hooks, which would separate them from their only caller.
+# Screen-local helpers are deliberately declared next to the handler that uses them instead of
+# hoisted above the hooks, which would separate them from their only caller.
 items_after_statements = "allow"
 
 [workspace.lints.rustdoc]
@@ -383,14 +382,14 @@ unescaped_backticks = "warn"
 
 # Release builds are CDN-bound, so size wins over speed.
 #
-# `opt-level = "z"` was measured against `"s"` here and produced a byte-identical bundle:
-# `dx` runs `wasm-opt -Oz` over the output, and that pass dominates whatever rustc emitted.
-# `"s"` is kept because it compiles faster for the same result.
+# `opt-level = "z"` produces a bundle byte-identical to `"s"` here: `dx` runs `wasm-opt -Oz`
+# over the output, and that pass dominates whatever rustc emitted. `"s"` is kept because it
+# compiles faster for the same result.
 [profile.release]
 opt-level = "s"
 lto = "fat"
 codegen-units = 1
-# A panic in a WASM SPA cannot be caught or recovered from — the runtime just traps — so the
+# A panic in a WASM SPA cannot be caught or recovered from (the runtime just traps), so the
 # unwinding machinery and its landing pads are pure weight. It stays on for the desktop build
 # too: a panicked UI thread has no recovery path there either, and the settings document is
 # written through a rename, so an abort mid-write leaves the previous one intact.

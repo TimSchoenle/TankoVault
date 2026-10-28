@@ -11,7 +11,7 @@ publish = false
 
 [dependencies]
 # `dns` supplies the resolving half of the SSRF guard, which this crate re-exports from
-# `ssrf.rs` — the policy lives in `domain` so a service can apply it without linking wreq.
+# `ssrf.rs`; the policy lives in `domain` so a service can apply it without linking wreq.
 tankovault-domain = { workspace = true, features = ["dns"] }
 tankovault-solver = { workspace = true }
 # `ClientMaterial` only: the PEM bytes the mTLS solver client presents. The crawl stack
@@ -30,7 +30,7 @@ tokio = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 # The crawl tier is the one place a provider's behaviour towards us is observable, and it sits
-# below `tankovault-service` — so it records against the `metrics` facade directly. Names are
+# below `tankovault-service`, so it records against the `metrics` facade directly. Names are
 # literals here for that reason, and `xtask repo-lint` holds them to the catalogue.
 metrics = { workspace = true }
 time = { workspace = true }
@@ -39,8 +39,8 @@ futures = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
-# A scriptable upstream for `HttpChallengeSolver`, which had no test below the `ChallengeSolver`
-# trait at all (TEST F-09).
+# A scriptable upstream for `HttpChallengeSolver`, covering it below the `ChallengeSolver`
+# trait.
 wiremock = { workspace = true }
 serde_json = { workspace = true }
 

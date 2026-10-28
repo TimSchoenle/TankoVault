@@ -1,4 +1,4 @@
-# cargo-deny configuration — license, advisory, and supply-chain gates run in CI. Schema v2.
+# cargo-deny configuration: the license, advisory and supply-chain gates CI runs. Schema v2.
 #
 # An exception must be **explicit, dated and justified**: a permanently red gate is one
 # everyone learns to merge past, and then a genuinely new advisory looks just like the old ones.
@@ -6,16 +6,16 @@
 [advisories]
 version = 2
 # Every entry: why no fix is possible, why it's not exploitable here, a review date. When the
-# reasoning stops being true, delete the entry and let the gate go red — don't extend the date.
+# reasoning stops being true, delete the entry and let the gate go red; do not extend the date.
 ignore = [
-    # RUSTSEC-2023-0071 — timing sidechannel in `rsa` 0.9.x, pulled in transitively by
+    # RUSTSEC-2023-0071: timing sidechannel in `rsa` 0.9.x, pulled in transitively by
     # `jsonwebtoken`'s `rust_crypto` feature with no HMAC-only alternative and no fixed release.
     # Not exploitable here: `crates/auth/src/token.rs` pins `Algorithm::HS256`, test-enforced,
     # so no RSA path is ever entered. Reviewed 2026-07-29; re-review 2026-10-29 or if HS256 stops
     # being the only accepted algorithm.
     "RUSTSEC-2023-0071",
 
-    # RUSTSEC-2026-0387 — timing variability in `crypto-bigint` 0.5.x, reached only through
+    # RUSTSEC-2026-0387: timing variability in `crypto-bigint` 0.5.x, reached only through
     # `elliptic-curve` 0.13 (`jsonwebtoken`'s `rust_crypto` feature and `webauthn-rs`). The fix is
     # 0.7.6, which the 0.13 curve crates cannot take, so no compatible release exists. Not
     # exploitable here: JWTs are HS256-only (see RUSTSEC-2023-0071), and WebAuthn only verifies
@@ -24,7 +24,7 @@ ignore = [
     # `webauthn-rs`, or if the server ever signs with an EC key.
     "RUSTSEC-2026-0387",
 
-    # RUSTSEC-2026-0391, -0398, -0403 — `zstd` 0.13 / `zstd-safe` 7, held there by `wreq-util`
+    # RUSTSEC-2026-0391, -0398, -0403: `zstd` 0.13 / `zstd-safe` 7, held there by `wreq-util`
     # 3.0.0-rc.14 (`^0.13.3`); the fixes are 0.14.3 / 8.2.0 only. Its sole use is decompressing
     # TLS certificates through `zstd::stream::read::Decoder::new`, which none of the three reach:
     # -0391 is only `with_context`, -0398 only the `seekable` feature (not enabled), and -0403 is
@@ -34,12 +34,6 @@ ignore = [
     "RUSTSEC-2026-0391",
     "RUSTSEC-2026-0398",
     "RUSTSEC-2026-0403",
-
-    # RUSTSEC-2025-0111 (`rustls-pemfile`) and RUSTSEC-2025-0134 ("Tarmageddon", `tokio-tar`)
-    # were here until 2026-08-03. Both arrived only through `testcontainers`/`bollard`, which
-    # has since dropped them; cargo-deny reported the entries as `advisory-not-detected`, so
-    # they went per this file's own rule rather than being re-dated. RUSTSEC-2024-0436 (`paste`)
-    # went the same way on 2026-10-26.
 ]
 
 [licenses]
@@ -65,13 +59,13 @@ allow = [
 ]
 
 # ---------------------------------------------------------------------------------
-# GPL-3.0 was here until 2026-08-01, for `wreq-util`. Do not put it back casually.
+# GPL-3.0 and LGPL-3.0 stay out of the allow list above. Do not add either casually.
 # ---------------------------------------------------------------------------------
-# `wreq-util` (load-bearing browser-emulation profiles for the crawl stack) was GPL-3.0 through
-# 2.x, which made publishing Docker images a source-offer obligation over the whole combined
-# work. Upstream relicensed to Apache-2.0 at 3.0.0-rc.12 (requiring `wreq ^6.0.0-rc`), so an
-# accidental downgrade below that is a licensing regression — caught by GPL-3.0/LGPL-3.0 being
-# absent from the allow list above. Adding either back re-opens it silently.
+# `wreq-util` (load-bearing browser-emulation profiles for the crawl stack) is GPL-3.0 through
+# 2.x, which makes publishing Docker images a source-offer obligation over the whole combined
+# work. 3.0.0-rc.12 is Apache-2.0 (requiring `wreq ^6.0.0-rc`), so an accidental downgrade below
+# that is a licensing regression, caught by GPL-3.0/LGPL-3.0 being absent from the allow list.
+# Adding either back re-opens it silently.
 
 confidence-threshold = 0.8
 # Workspace members are `publish = false` with no `license` field; skip the noise of
@@ -98,9 +92,9 @@ deny = [
     { crate = "native-tls", reason = "pulls openssl-sys; use rustls" },
 ]
 
-# Duplicate versions present as of 2026-07-30, all transitive. A record of the current state,
-# not an approval — CI's `-D unnecessary-skip` fails any entry whose duplicate has resolved, so
-# the PR that collapses one deletes its line here.
+# Duplicate versions, all transitive. A record of the current state, not an approval: CI's
+# `-D unnecessary-skip` fails any entry whose duplicate has resolved, so the PR that collapses
+# one deletes its line here.
 #
 #   * `rand` at three majors is not collapsible by bumping our own pin: ours are 2 of 8
 #     dependents of 0.8. Revisit when `jsonwebtoken`/`fred` move, not before.
@@ -167,27 +161,27 @@ skip = [
     # `thiserror` 1.x via `webauthn-rs-core`/`x509-parser`/`asn1-rs`/`der-parser`; we're on 2.
     { crate = "thiserror" },
     { crate = "thiserror-impl" },
-    # `base64`: three copies — ours (0.23), the wide transitive middle (0.22), and
+    # `base64`: three copies: ours (0.23), the wide transitive middle (0.22), and
     # `webauthn-rs-core`/`-proto` (0.21). Nothing on our side pins the older two.
     { crate = "base64" },
     # `const-oid`: 0.10 via `digest` 0.11, 0.9 via the passkey stack's older RustCrypto cohort.
     # Same shape as the AEAD cluster; collapses with the same `crypto-glue` bump.
     { crate = "const-oid" },
-    # The X.509 cluster (added 2026-08-22, when `x509-parser` moved to 0.18): `crates/service`
-    # reads subject alternative names off a verified peer certificate with 0.18, and
-    # `webauthn-rs-core` pins 0.16, which drags its own parser stack — `der-parser` 9,
-    # `asn1-rs` 0.6 and `oid-registry` 0.7 — alongside ours. `webauthn-rs` is an exact `=0.6.1-dev`
-    # pin, so nothing on our side can move the older copy; collapses when it takes 0.18.
+    # The X.509 cluster: `crates/service` reads subject alternative names off a verified peer
+    # certificate with `x509-parser` 0.18, and `webauthn-rs-core` pins 0.16, which drags its own
+    # parser stack (`der-parser` 9, `asn1-rs` 0.6 and `oid-registry` 0.7) alongside ours.
+    # `webauthn-rs` is an exact `=0.6.1-dev` pin, so nothing on our side can move the older copy;
+    # collapses when it takes 0.18.
     { crate = "x509-parser" },
     { crate = "der-parser" },
     { crate = "asn1-rs" },
     { crate = "asn1-rs-derive" },
     { crate = "oid-registry" },
-    # The PKCS#8 cluster (added 2026-08-23, when `pkcs8` moved to 0.11 and `sec1` to 0.8):
-    # `crates/service/src/tls.rs` re-encodes a mounted key with the `der` 0.8 generation, and the
-    # 0.7 generation stays behind it under three roots — `crypto-glue` (the exact `=0.6.1-dev`
-    # `webauthn-rs` pin), `jsonwebtoken` 11 (`rsa` 0.9, `ed25519` 2.2, `p256`/`p384`/`p521` 0.13)
-    # and `nkeys` under `async-nats`. None can move today; collapses when all three take `der` 0.8.
+    # The PKCS#8 cluster: `crates/service/src/tls.rs` re-encodes a mounted key with the `der` 0.8
+    # generation (`pkcs8` 0.11, `sec1` 0.8), and the 0.7 generation stays behind it under three
+    # roots: `crypto-glue` (the exact `=0.6.1-dev` `webauthn-rs` pin), `jsonwebtoken` 11 (`rsa`
+    # 0.9, `ed25519` 2.2, `p256`/`p384`/`p521` 0.13) and `nkeys` under `async-nats`. None can move
+    # yet; collapses when all three take `der` 0.8.
     { crate = "der" },
     { crate = "pem-rfc7468" },
     { crate = "pkcs8" },
@@ -196,11 +190,10 @@ skip = [
 
     # Platform shims, present on any graph touching Windows or macOS bindings.
     { crate = "windows-sys" },
-    # The import-library family behind `windows-sys` (added 2026-08-03). Not a new decision —
-    # `windows-sys` above is already two copies, 0.52.0 under `ring` and 0.60.2 under `notify`,
-    # and these are that split reaching one level down. They became visible only when `notify`
-    # moved to a `windows-sys` new enough to pull `windows-targets` 0.53. Windows-only link
-    # stubs: nothing here is reachable in the Linux images that ship. Collapses when `ring`
+    # The import-library family behind `windows-sys`. Not a new decision: `windows-sys` above is
+    # already two copies, 0.52.0 under `ring` and 0.60.2 under `notify`, and these are that split
+    # reaching one level down (`windows-targets` 0.53 under the newer `windows-sys`). Windows-only
+    # link stubs: nothing here is reachable in the Linux images that ship. Collapses when `ring`
     # bumps its `windows-sys` floor, which is the only pin holding 0.52 in place.
     { crate = "windows-targets" },
     { crate = "windows_aarch64_gnullvm" },
@@ -217,13 +210,13 @@ skip = [
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-# The three git dependencies, all extracted out of this workspace and all pinned by tag in the
-# root manifest: `terrace-config` (the layered config loader and reload supervisor), `csp-shell`
-# (the frontend tier's Content-Security-Policy) and `terrace-legal` (the legal documents, whose
-# Dioxus crates `web/frontend` also uses). Listed here because `unknown-git = "deny"` above is
-# what stops a *fourth* one arriving unnoticed — a git source is
-# a dependency with no registry, no version resolution and no yank mechanism, so each one is a
-# deliberate decision rather than something a transitive bump can introduce.
+# The three git dependencies, all pinned by tag in the root manifest: `terrace-config` (the
+# layered config loader and reload supervisor), `csp-shell` (the frontend tier's
+# Content-Security-Policy) and `terrace-legal` (the legal documents, whose Dioxus crates
+# `web/frontend` also uses). Listed here because `unknown-git = "deny"` above is what stops a
+# *fourth* one arriving unnoticed: a git source is a dependency with no registry, no version
+# resolution and no yank mechanism, so each one is a deliberate decision, not something a
+# transitive bump can introduce.
 allow-git = [
     "https://github.com/TimSchoenle/terrace-config",
     "https://github.com/TimSchoenle/csp-shell",

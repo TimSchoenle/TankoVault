@@ -30,8 +30,8 @@ tankovault-service = { workspace = true, features = ["db"] }
 tokio-util = { workspace = true }
 tankovault-db = { workspace = true }
 tankovault-domain = { workspace = true }
-# One SMTP stack for the whole system. This service used to carry a second, private one
-# with a different envelope-sender policy — see the note on `EmailChannel`.
+# One SMTP stack for the whole system, with one envelope-sender policy; see the note on
+# `EmailChannel`.
 tankovault-email = { workspace = true }
 tankovault-bus = { workspace = true }
 tankovault-contracts = { workspace = true }
@@ -47,9 +47,9 @@ reqwest = { workspace = true }
 async-trait = { workspace = true }
 
 [dev-dependencies]
-# A scriptable upstream for `WebhookChannel`/`DiscordChannel`. Their payload builders were
-# already unit-tested as pure functions; what was untested was `deliver` — that the payload
-# reaches the wire at all, and what a non-2xx becomes (TEST F-09).
+# A scriptable upstream for `WebhookChannel`/`DiscordChannel`. Their payload builders are
+# unit-tested as pure functions; this covers `deliver`: that the payload reaches the wire at
+# all, and what a non-2xx becomes.
 wiremock = { workspace = true }
 
 [lints]

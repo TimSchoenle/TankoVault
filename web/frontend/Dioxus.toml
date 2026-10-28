@@ -1,15 +1,15 @@
 # Cased for people, not for paths. `dx` reads this key in exactly one place (`build/windows.rs`,
 # dioxus-cli 0.7.10): it becomes the Windows executable's `ProductName` resource. Everything else
-# that needs a name — the output directories, the installer's product name — derives from the
+# that needs a name (the output directories, the installer's product name) derives from the
 # `[[bin]]` target instead, so this is free to spell the product the way the product is spelled.
 [application]
 name = "TankoVault"
 
 [web.app]
-# Deliberately empty. `dx` *appends* this into the `<title>` already in `index.html` rather than
-# replacing it, so the shipped bundle read "TankoVault — manga trackerTankoVault — manga tracker";
-# removing the key instead appends `dx`'s own default. `index.html` owns the pre-boot title (see
-# the comment there) and `crate::title` owns it from first render on.
+# Deliberately empty. `dx` *appends* this into the `<title>` already in `index.html` instead of
+# replacing it, so any value here appears twice in the shipped title, and removing the key
+# appends `dx`'s own default. `index.html` owns the pre-boot title (see the comment there) and
+# `crate::title` owns it from first render on.
 title = ""
 # Base path when the SPA is served under a sub-path by the API/CDN.
 base_path = ""
@@ -29,23 +29,22 @@ publisher = "TankoVault contributors"
 copyright = "TankoVault contributors"
 category = "Utility"
 # **The product name, not a sentence, and that is deliberate.** `dx` writes this key into the
-# Windows executable's `FileDescription` resource — which is what Task Manager, the Details tab
+# Windows executable's `FileDescription` resource, which is what Task Manager, the Details tab
 # and the taskbar's tooltip show as the *name of the running program*. A description there reads
-# as a stray process ("Self-hosted manga release tracker" was what the process list said), which
-# is both confusing and the shape of thing people terminate.
+# as a stray process, which is both confusing and the shape of thing people terminate.
 #
-# The sentence it used to hold lives in `long_description` below, which is where the Debian
-# control file's extended description and the NSIS component text take their wording from. The
-# cost of the split is that the `.deb`'s one-line synopsis is now the product name too; the
-# paragraph under it still says what the product does.
+# The sentence lives in `long_description` below, which is where the Debian control file's
+# extended description and the NSIS component text take their wording from. The cost of the
+# split is that the `.deb`'s one-line synopsis is the product name too; the paragraph under it
+# still says what the product does.
 short_description = "TankoVault"
 long_description = """
 Self-hosted manga release tracker. TankoVault tracks manga releases across the sources you \
 follow and keeps your reading progress in one place. This is the desktop client; it talks to a \
 TankoVault server you host, which you are asked for the first time it starts.
 """
-# Every size Windows picks between — the taskbar, alt-tab and the installer each reach for a
-# different one. Generated from the same brand mark the SPA renders (`.ik-brand-tile` +
+# Every size Windows picks between: the taskbar, alt-tab and the installer each reach for a
+# different one. Generated from the same brand mark the SPA renders (`.ik-brand-tile` and
 # `Icon::MenuBook`), so the two clients are recognisably one product.
 icon = [
     "assets/icons/32x32.png",
@@ -55,10 +54,10 @@ icon = [
 ]
 
 # The Windows `.exe` installer. `dx`'s built-in script offers the reader nothing to decide, so
-# this one is a fork of it carrying the three options — desktop shortcut, start with Windows, run
-# now — and its own comments explain each.
+# this one is a fork of it carrying the three options (desktop shortcut, start with Windows, run
+# now), and its own comments explain each.
 #
-# `install_mode` is stated rather than inherited because two other things read it as a decision:
+# `install_mode` is stated, not inherited, because two other things read it as a decision:
 # `src/update/install.rs` tells an NSIS install from an MSI one by whether the running binary
 # sits under `%LOCALAPPDATA%`, and the template's "run after install" checkbox is only safe
 # while the installer is unelevated.
@@ -67,17 +66,17 @@ template = "bundle/windows/installer.nsi.hbs"
 install_mode = "CurrentUser"
 
 # Without this, a machine whose WebView2 runtime is missing launches to a blank window with no
-# explanation — the app *is* a webview. Evergreen ships with Windows 11 and with current 10, so
+# explanation: the app *is* a webview. Evergreen ships with Windows 11 and with current 10, so
 # the bootstrapper is a fallback that usually downloads nothing.
 [bundle.windows.webview_install_mode.DownloadBootstrapper]
 silent = true
 
 [bundle.deb]
-# Runtime halves of the build dependencies. `dpkg` will refuse to install rather than let the
+# Runtime halves of the build dependencies. `dpkg` refuses to install instead of letting the
 # binary fail its first dynamic link, which is the better of the two failures.
 #
-# The appindicator library is the tray's, and it is a dependency of a *feature* rather than of
-# the binary — it is opened with `dlopen` on first use, so a machine without it starts the app
+# The appindicator library is the tray's, and it is a dependency of a *feature*, not of the
+# binary: it is opened with `dlopen` on first use, so a machine without it starts the app
 # perfectly well. It is named here anyway because the failure mode when it is missing is not a
 # missing tray: `libappindicator-sys` panics, and this crate is `panic = "abort"`. Naming it is
 # what makes "installed from the .deb" mean "the tray switch is offered"; every other install

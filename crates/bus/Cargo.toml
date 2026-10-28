@@ -16,7 +16,7 @@ tankovault-contracts = { workspace = true }
 tankovault-config = { workspace = true }
 # `trace_headers` only, for the trace-continuation header this crate writes on publish and
 # reads on delivery. It is the one place a trace can cross the broker, so the knowledge of how
-# a trace is carried stays here rather than at every publisher. No cycle: `tankovault-service`
+# a trace is carried stays here instead of at every publisher. No cycle: `tankovault-service`
 # reaches `config`, `domain` and `db`, none of which reach this crate.
 tankovault-service = { workspace = true }
 async-nats = { workspace = true }

@@ -2,7 +2,7 @@
 # (target `runtime-browser`, --build-arg BIN=render): the musl service binary on a Debian
 # slim base that also provides Chromium for the headless-render tier (`docs/ARCHITECTURE.md` §9).
 #
-# Unlike the `scratch` images this one has a real shell, so the migration to UID:GID 1001:1001 is
+# Unlike the `scratch` images this one has a real shell, so the UID:GID 1001:1001 user is
 # additionally proven at runtime with `id` (not just from image metadata) and the account is
 # checked in /etc/passwd. Run with:
 #   container-structure-test test --image <ref> --config deploy/docker/cst/render.yaml
@@ -14,9 +14,9 @@ metadataTest:
   entrypoint: ["/usr/local/bin/tankovault-service"]
   # What a deployment pipeline discovers this image's configuration contract by, read off the
   # config blob with no layer pull. `.github/scripts/verify-config-contract.sh` is the check that
-  # matters — it compares these against the generator's own output, which is what makes them more
-  # than three strings someone typed — and this restatement is what keeps a `docker save` tarball
-  # and a local build honest too.
+  # matters: it compares these against the generator's own output, which is what makes them more
+  # than three strings someone typed. This restatement is what keeps a `docker save` tarball and
+  # a local build honest too.
   labels:
     - key: "dev.terrace.config.contract.version"
       value: "1"
@@ -64,7 +64,7 @@ fileExistenceTests:
 
 fileContentTests:
   # Existence alone would be satisfied by an empty file. These three are the envelope's own
-  # fields, so a truncated document fails here rather than in the chart repo.
+  # fields, so a truncated document fails here, not in the chart repo.
   - name: "the contract is the generated document, not an empty placeholder"
     path: "/config/contract.json"
     expectedContents: ['"terrace_contract": 1', '"prefix": "TANKOVAULT_"', '"json_schema"']
@@ -91,24 +91,23 @@ commandTests:
   - name: "not running as root"
     command: "id"
     args: ["-un"]
-    # Anchored so it means "the username is not exactly root" — an unanchored "root" would also
+    # Anchored so it means "the username is not exactly root": an unanchored "root" would also
     # match the legitimate "nonroot" account name.
     excludedOutput: ["^root$"]
   # Every shared library the binary names must actually resolve inside this image. This is the
   # one image with a shell, so it is the only one where the contract can be checked by the
-  # loader itself rather than by asserting a hand-written list of file paths.
+  # loader itself instead of by asserting a hand-written list of file paths.
   #
-  # It exists because `wreq` 6 changed the BoringSSL binding to `btls-sys`, which added a
-  # `libstdc++` dependency: the images built, passed every file-existence assertion, and then
-  # died at exec with "Error loading shared library". Only running the loader catches that.
-  # The musl loader is invoked rather than the system `ldd`, which is glibc's and the wrong one
-  # for a musl binary. It reads `/etc/ld-musl-<arch>.path`, so this also proves the private
-  # `/usr/lib/musl` search path is wired up — and on arm64 that the loader was staged somewhere
-  # the merged-`/usr` symlink reaches.
+  # A binary can link a library its stage lacks (`btls-sys` linking `libstdc++` is one), build,
+  # pass every file-existence assertion, and then die at exec with "Error loading shared
+  # library". Only running the loader catches that. The musl loader is invoked instead of the
+  # system `ldd`, which is glibc's and the wrong one for a musl binary. It reads
+  # `/etc/ld-musl-<arch>.path`, so this also proves the private `/usr/lib/musl` search path is
+  # wired up, and on arm64 that the loader was staged somewhere the merged-`/usr` symlink reaches.
   #
-  # Run through `sh -c` with a glob rather than naming the loader: the filename is
+  # Run through `sh -c` with a glob instead of naming the loader: the filename is
   # architecture-specific, and the glob is what keeps one contract file covering both legs.
-  # `set -e` plus the glob means a missing loader fails the step rather than silently matching
+  # `set -e` with the glob means a missing loader fails the step instead of silently matching
   # nothing and reporting success.
   - name: "every shared library the service binary needs resolves"
     command: "sh"

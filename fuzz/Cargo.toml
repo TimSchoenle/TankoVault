@@ -18,26 +18,26 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 tankovault-adapters = { path = "../crates/adapters" }
 tankovault-fetch = { path = "../crates/fetch" }
-# F-T4. Default features only: the `axum` feature exists for the shared `/v1/solve` router
-# (ARCH-15) and would link a web framework into a classifier fuzz target.
+# Default features only: the `axum` feature exists for the shared `/v1/solve` router and would
+# link a web framework into a classifier fuzz target.
 tankovault-solver = { path = "../crates/solver" }
-# F-T5.
+# The `auth_jwt_verify` target.
 tankovault-auth = { path = "../crates/auth" }
-# F-T6.
+# The `config_env_load` target.
 tankovault-config = { path = "../crates/config" }
 tankovault-domain = { path = "../crates/domain" }
 async-trait = "0.1"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 
-# Versions here are the host workspace's, restated rather than inherited: this is a workspace of
-# its own (see the comment at the top), so `workspace = true` has nothing to resolve against.
-# They must not drift *downwards* from the root `Cargo.toml` — a target that verifies a token
-# with an older `jsonwebtoken` than the service does is measuring the wrong parser.
+# Versions here are the host workspace's, restated, not inherited: this is a workspace of its
+# own (see the comment at the top), so `workspace = true` has nothing to resolve against. They
+# must not drift *downwards* from the root `Cargo.toml`: a target that verifies a token with an
+# older `jsonwebtoken` than the service does is measuring the wrong parser.
 #
 # `auth_jwt_verify` reads a token's own header with the same library the verifier uses, so the
-# oracle compares what was validated against what the header says rather than against a
-# hand-rolled base64 decoder. `default-features = false` + `rust_crypto` matches the root
-# manifest; the default feature set pulls a second crypto backend.
+# oracle compares what was validated against what the header says, not against a hand-rolled
+# base64 decoder. `default-features = false` with `rust_crypto` matches the root manifest; the
+# default feature set pulls a second crypto backend.
 jsonwebtoken = { version = "11", default-features = false, features = ["rust_crypto"] }
 # `test` adds `figment::Jail`, which `config_env_load` needs to set and restore `TANKOVAULT_*`
 # around each iteration. `crates/config` already carries the same feature as a dev-dependency.

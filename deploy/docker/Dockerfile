@@ -5,35 +5,34 @@
 
 # `SOURCE_DATE_EPOCH` is deliberately **not** declared here, and it must be a **constant**
 # wherever it is set. The Dockerfile frontend consumes it as a built-in build arg, so its value is
-# part of the cache key of every stage below — and there is no way to keep it out of one: buildx
-# propagates it from the environment into the solve as `build-arg:SOURCE_DATE_EPOCH` whether it is
-# passed as `--build-arg` or exported to the process. A per-commit epoch therefore makes every
-# cross-run `cache-from` a total miss: `chef` re-runs `apk add` and rebuilds `cargo-auditable` on a
-# digest-pinned base, and `cook` recompiles all 549 dependencies, on every run — 24 to 45 minutes
-# a build. Both workflows pin it to `"0"` at workflow level for that reason, which is also what
-# makes `rewrite-timestamp=true` on the publishing legs produce byte-identical images.
-# release-please.yaml documents the same trap for `SERVICE_BINS`.
+# part of the cache key of every stage below, and nothing keeps it out of one: buildx propagates
+# it from the environment into the solve as `build-arg:SOURCE_DATE_EPOCH` whether it is passed
+# as `--build-arg` or exported to the process. A per-commit epoch therefore makes every cross-run
+# `cache-from` a total miss: `chef` re-runs `apk add` and rebuilds `cargo-auditable` on a
+# digest-pinned base, and `cook` recompiles every dependency, on every run. Both workflows pin it
+# to `"0"` at workflow level for that reason, which is also what makes `rewrite-timestamp=true`
+# on the publishing legs produce byte-identical images. release-please.yaml documents the same
+# trap for `SERVICE_BINS`.
 
 # Alpine, not Debian: BoringSSL (wreq's TLS backend) needs a musl C++ toolchain that Debian's
-# musl-tools lacks, so the build is native rather than cross. Pinned by digest.
-# The Rust version is written into both `FROM` tags rather than an `ARG`: Renovate cannot rewrite
+# musl-tools lacks, so the build is native, not cross. Pinned by digest.
+# The Rust version is written into both `FROM` tags instead of an `ARG`: Renovate cannot rewrite
 # a tag through `${…}`, and its `rust toolchain` group moves both tags with `rust-toolchain.toml`.
 FROM lukemathwalker/cargo-chef:latest-rust-1.99.1-alpine@sha256:2c27e67049f17e8b67d882a2cf2f5e1a1d4d71c206ec97f91edf278254688e95 AS chef
 WORKDIR /app
 # Copied alone, first, exactly as `wasm-chef` does below and for a sharper version of the same
-# reason: nothing guarantees the base image's toolchain is the exact patch this file pins.
-# Without it here, `cook` compiled against the image's rustc and `builder` — which receives this
-# file via `COPY . .` — compiled against the pinned one. Cargo's fingerprint carries the rustc
-# identity, so every one of the 523 dependency crates got a different metadata hash and `builder`
-# recompiled the entire graph `cook` had just built, on every single build. Measured: 427 crates
-# rebuilt with this file arriving late, 11 with the two stages agreeing.
+# reason: nothing guarantees the base image's toolchain is the exact patch this file pins. If it
+# arrived later, `cook` would compile against the image's rustc and `builder` (which receives this
+# file via `COPY . .`) against the pinned one. Cargo's fingerprint carries the rustc identity, so
+# every dependency would get a different metadata hash and `builder` would recompile the entire
+# graph `cook` had just built, on every build.
 COPY rust-toolchain.toml ./
 # musl-dev/g++/cmake/nasm/perl build BoringSSL from source; git lets btls-sys patch the vendored
 # tree; clang-dev is bindgen's libclang; ca-certificates goes into the certificate-less scratch image.
 RUN apk add --no-cache musl-dev g++ cmake make nasm perl git clang-dev ca-certificates
 # bindgen dlopens libclang; Alpine doesn't search this path by default.
 ENV LIBCLANG_PATH=/usr/lib
-# Embeds the resolved dependency list into the binary (.dep-v0 ELF section) — the only way to
+# Embeds the resolved dependency list into the binary (.dep-v0 ELF section): the only way to
 # recover a dependency set from `scratch`, which has no package manager to scan. Pinned.
 RUN cargo install cargo-auditable --locked --version 0.7.5
 
@@ -41,10 +40,10 @@ RUN cargo install cargo-auditable --locked --version 0.7.5
 FROM chef AS planner
 COPY . .
 # The recipe lists every auto-discovered test, bench and example target, so adding or renaming a
-# file under `tests/` changed it and `cook` compiled all 593 crates again (18.7 minutes on amd64)
-# although it builds none of those targets. They are deleted here, before `prepare` reads
-# the tree; `builder` copies the context again and still has them. No manifest declares such a
-# target by path, which this relies on: `prepare` fails on a declared path that is missing.
+# file under `tests/` would change it and make `cook` recompile every dependency, although it
+# builds none of those targets. They are deleted here, before `prepare` reads the tree; `builder`
+# copies the context again and still has them. No manifest declares such a target by path, which
+# this relies on: `prepare` fails on a declared path that is missing.
 # `-prune` keeps find out of a directory it has just deleted.
 RUN find . -type d \( -name tests -o -name benches -o -name examples \) -prune \
       -exec sh -ec 'for dir; do if [ -f "$(dirname "$dir")/Cargo.toml" ]; then rm -rf "$dir"; fi; done' sh {} + \
@@ -63,30 +62,30 @@ ENV SQLX_OFFLINE=true
 #
 # `--build-id` is what makes a Sentry stack trace symbolicable at all. The SDK's `debug-images`
 # feature reports each loaded module by its GNU build-id note, and the server looks the debug file
-# up by the same id — so a binary linked without the note reports frames as bare addresses no
-# upload can ever repair. It is set explicitly rather than left to the linker's default because
-# that default is a property of the *base image's* toolchain, and losing it would be silent: the
-# build succeeds, the images ship, and only a production stack trace shows what happened.
+# up by the same id, so a binary linked without the note reports frames as bare addresses no
+# upload can ever repair. It is set explicitly, not left to the linker's default, because that
+# default is a property of the *base image's* toolchain, and losing it would be silent: the build
+# succeeds, the images ship, and only a production stack trace shows what happened.
 # `sha1` is a hash of the linked output, so it stays a function of the input and does not disturb
 # the byte-identical rebuilds `SOURCE_DATE_EPOCH` buys.
 ENV RUSTFLAGS="-C target-feature=-crt-static -C link-arg=-Wl,--build-id=sha1"
 # Debug information for that symbolication, kept out of the shipped binary by `builder`, which
 # splits it into `/debug/` and strips what it copies to `/out/`. So the images do not grow.
 #
-# Environment variables rather than `[profile.release]` in the root `Cargo.toml`, on purpose: a
+# Environment variables, not `[profile.release]` in the root `Cargo.toml`, on purpose: a
 # workspace-wide `debug`/`strip` change would slow every local and CI `--release` build for the
-# benefit of the nine binaries that are actually reported on, and `web/frontend` — its own
-# workspace, its own profiles — would be untouched by it anyway. This is the same shape the wasm
-# half uses below.
+# benefit of the nine binaries that are actually reported on, and `web/frontend` (its own
+# workspace, its own profiles) would be untouched by it anyway. The wasm half below has the same
+# shape.
 #
 # They belong in **`cook`, not `builder`**: the debug level is part of cargo's fingerprint, so
-# cooking the dependency graph without them and building with them recompiles all 523 crates.
+# cooking the dependency graph without them and building with them recompiles the whole graph.
 # `line-tables-only`, not full DWARF: it carries the function names, files and line numbers a
 # stack trace is read for, at a fraction of the object size and link time. Full DWARF is the knob
 # to turn if a report ever needs locals or inlined-frame parameters.
 ENV CARGO_PROFILE_RELEASE_DEBUG=line-tables-only \
     CARGO_PROFILE_RELEASE_STRIP=false
-# CARGO_HOME must cover cargo's own package-cache lock, not just registry/git — otherwise
+# CARGO_HOME must cover cargo's own package-cache lock, not just registry/git; otherwise
 # concurrent builds shred each other's registry (`File exists (os error 17)`).
 ENV CARGO_HOME=/cargo
 COPY --from=planner /recipe-server.json recipe.json
@@ -102,12 +101,12 @@ COPY . .
 ARG SERVICE_BINS="api bootstrap challenge-solver config-contract control-plane frontend notifier render sync worker xtask"
 # `from=cook,source=/app/target` seeds the mount so a cold cache (CI's is always cold) starts from
 # `cook`'s output instead of rebuilding every dependency. `sharing=locked` lets concurrent builds
-# queue on cargo's target-dir lock rather than race it.
+# queue on cargo's target-dir lock instead of racing it.
 # `${flags}` is unquoted so word splitting turns it into separate --bin args.
 #
-# The seed works: this stage compiles the 24 workspace crates and no dependency (CI runs 3641 and
-# 3647). Its 23 to 35 minutes on amd64 are thin-LTO codegen and the link of eleven binaries, which
-# `[profile.release]` in the root `Cargo.toml` decides, not this file.
+# With the seed this stage compiles only the workspace crates and no dependency. Its remaining
+# time is thin-LTO codegen and the link of eleven binaries, which `[profile.release]` in the root
+# `Cargo.toml` decides, not this file.
 RUN --mount=type=cache,id=tankovault-backend-cargo,target=/cargo,sharing=shared \
     --mount=type=cache,id=tankovault-backend-target,target=/app/target,sharing=locked,from=cook,source=/app/target \
     set -eu; \
@@ -127,12 +126,12 @@ RUN --mount=type=cache,id=tankovault-backend-cargo,target=/cargo,sharing=shared 
 # **The build-id is the tie.** Sentry matches a frame to a debug file by it and by nothing else:
 # an upload whose id does not match the running binary is accepted, stored, and never consulted
 # again. A binary with no note at all reports addresses forever. Neither shows up as an error
-# anywhere — the release publishes, the symbolication just never happens — so it is checked here,
-# on every image build, rather than discovered from a production issue.
+# anywhere (the release publishes, the symbolication just never happens), so it is checked here,
+# on every image build, instead of being discovered from a production issue.
 #
 # **`.dep-v0` is checked in the same pass** because it is the section a stripping pass is most
 # likely to take with it: `cargo auditable` writes the resolved dependency list into a
-# non-allocated section, and it is the only thing that makes a `scratch` image scannable — the
+# non-allocated section, and it is the only thing that makes a `scratch` image scannable. The
 # SBOM `release-please.yaml` attests is read out of it and there is no package database to fall
 # back to.
 #
@@ -160,8 +159,8 @@ RUN set -eu; \
     echo "symbol contract: ok"
 
 # Every runtime stage ships a hand-picked set of shared libraries; a binary linking one more than
-# its stage carries still builds and only fails at exec (`wreq` 6 → `btls-sys` added a `libstdc++`
-# dependency and every image shipped broken). This check catches that here instead.
+# its stage carries still builds and only fails at exec (`btls-sys` linking `libstdc++` is one
+# such dependency). This check catches that here instead.
 RUN set -eu; \
     arch="$(uname -m)"; \
     runtime_libs="libstdc++.so.6 libgcc_s.so.1 libc.musl-${arch}.so.1"; \
@@ -182,8 +181,8 @@ RUN set -eu; \
     echo "linkage contract: ok"
 
 # Stages loader/libgcc_s/libstdc++ into fixed, per-arch paths since `COPY` can't run a shell to
-# resolve them — this previously hardcoded x86_64 and was silently wrong on arm64. Debian's `/lib`
-# is a symlink to `/usr/lib`, which BuildKit refuses to copy a directory over, so the browser tree
+# resolve them; a hardcoded x86_64 path would be silently wrong on arm64. Debian's `/lib` is a
+# symlink to `/usr/lib`, which BuildKit refuses to copy a directory over, so the browser tree
 # stages the loader under /usr/lib instead of /lib.
 RUN set -eu; \
     arch="$(uname -m)"; \
@@ -201,11 +200,11 @@ RUN set -eu; \
     echo /usr/lib/musl > "/sysroot-browser/etc/ld-musl-${arch}.path"
 
 # The configuration contract each published image carries: every `TANKOVAULT_*` key the binary
-# inside it actually reads, plus the JSON Schema a chart validates its rendered `config.toml`
+# inside it actually reads, and the JSON Schema a chart validates its rendered `config.toml`
 # against. `TimSchoenle/helm-charts` fetches it by digest and gates its manifests on it.
 #
 # Generated from the binary `builder` has already compiled, by running `config-contract` out of
-# `/out` — so this stage costs one process per service and no compilation at all. It is also why
+# `/out`, so this stage costs one process per service and no compilation at all. It is also why
 # `config-contract` is in `SERVICE_BINS`: it needs the same link of the same config roots the
 # services were built from.
 #
@@ -216,7 +215,7 @@ RUN set -eu; \
 # against the `.labels` file this stage wrote. See `.github/workflows/ci.yml`.
 #
 # Deliberately **no** `--revision` / `--created`. Both are legitimate contract fields and both
-# make the document differ between two builds of one commit — which would break the chain this
+# make the document differ between two builds of one commit, which would break the chain this
 # design rests on: the committed copy under `docs/contracts/`, the copy exported to the host, the
 # copy inside the image and the artifact attached to the digest are all the same bytes, and every
 # one of those equalities is checked. `app.version` already says which release this is.
@@ -229,21 +228,21 @@ RUN set -eu; \
     done; \
     test -s /contract/api.json || { echo "contract generation produced nothing" >&2; exit 1; }
 
-# The documents alone, so `--output type=local` exports a handful of files rather than the
-# builder's whole filesystem — the host needs them for `oras attach` and for the label check.
+# The documents alone, so `--output type=local` exports a handful of files, not the builder's
+# whole filesystem; the host needs them for `oras attach` and for the label check.
 FROM scratch AS contract
 COPY --from=contract-builder /contract/ /
 
-# The split-out debug information, plus the source bundle that turns a symbolicated frame into an
+# The split-out debug information and the source bundle that turns a symbolicated frame into an
 # actual line of code in the Sentry UI. Built only by the `symbols` job in
 # `.github/workflows/release-please.yaml`; no published image contains this stage or anything it
 # produces.
 #
-# **The bundling has to happen in here**, which is the whole reason this stage exists rather than
+# **The bundling has to happen in here**, which is the whole reason this stage exists instead of
 # `sentry-cli debug-files upload --include-sources` on the runner. The paths DWARF records are
-# this container's — `/app/services/api/src/...` for the workspace, `/cargo/registry/src/...` for
-# the 523 dependencies — and neither exists on a GitHub runner, so `--include-sources` there
-# resolves nothing and uploads a debug file with no source attached, successfully and silently.
+# this container's (`/app/services/api/src/...` for the workspace, `/cargo/registry/src/...` for
+# the dependencies), and neither exists on a GitHub runner, so `--include-sources` there resolves
+# nothing and uploads a debug file with no source attached, successfully and silently.
 # `bundle-sources` run next to the sources writes a `.src.zip` keyed by the same debug id, which
 # uploads from anywhere.
 #
@@ -251,7 +250,7 @@ COPY --from=contract-builder /contract/ /
 #
 # sentry-cli is pinned by version **and digest**, and deliberately carries no `renovate:` marker:
 # its releases publish no checksum file, so the two values are one pair a bot cannot update
-# together — a version bumped without its digest would fail this build with a checksum mismatch
+# together. A version bumped without its digest would fail this build with a checksum mismatch
 # that names neither. Move them together, by hand, or not at all; a sentry-cli a few versions
 # behind reads the same DWARF.
 FROM builder AS debug-bundler
@@ -291,7 +290,7 @@ RUN --mount=type=cache,id=tankovault-backend-cargo,target=/cargo,sharing=shared 
 FROM scratch AS debug-symbols
 COPY --from=debug-bundler /debug/ /
 
-# `dx` needs glibc (wasm-bindgen/wasm-opt), so this half stays on Debian rather than Alpine.
+# `dx` needs glibc (wasm-bindgen/wasm-opt), so this half stays on Debian, not Alpine.
 FROM rust:1.99.1-bookworm@sha256:e12566d5abc17a0da741628782cdb504b68b8961f5bfcf677936bf3e8b32de29 AS wasm-chef
 WORKDIR /app
 # Copied alone, before `rustup target add`: nothing guarantees the base image's toolchain is the
@@ -299,10 +298,10 @@ WORKDIR /app
 COPY rust-toolchain.toml ./
 # `cargo-about`'s binary is behind `required-features = ["cli"]`, which is not a default:
 # without `--features cli` the install compiles the library, installs no binary and exits **0**.
-# That is why the version check follows it in the same chain — the failure otherwise surfaces
+# That is why the version check follows it in the same chain: the failure otherwise surfaces
 # eight minutes later in `wasm-builder`, as `error: no such command: about`, with nothing
 # pointing back at the install that silently did nothing.
-# `dx`'s version must match `dioxus` (web/frontend/Cargo.lock) or asset hashing/codegen mismatch —
+# `dx`'s version must match `dioxus` (web/frontend/Cargo.lock) or asset hashing/codegen mismatch:
 # `dx bundle` refuses outright on a mismatch, and `dx build` is not guaranteed to. The desktop
 # release job (`.github/workflows/release-please.yaml`) pins the same version; both track the
 # lockfile.
@@ -325,9 +324,9 @@ RUN cargo chef cook --recipe-path /recipe-server.json --no-build
 WORKDIR /app/web/frontend
 COPY --from=planner /recipe-web.json recipe.json
 # Profile/RUSTFLAGS must exactly match `dx build --release`'s own cargo invocation or this cache
-# buys nothing (fingerprint mismatch). Env vars, not [profile.wasm-release] in Cargo.toml — `dx`
-# parses manifest profiles itself and previously shipped an unoptimised bundle while reporting
-# success when one was declared there. No --locked: the skeleton rewrites local packages to 0.0.1.
+# buys nothing (fingerprint mismatch). Env vars, not [profile.wasm-release] in Cargo.toml: `dx`
+# parses manifest profiles itself and can ship an unoptimised bundle while reporting success when
+# one is declared there. No --locked: the skeleton rewrites local packages to 0.0.1.
 RUN --mount=type=cache,id=tankovault-wasm-cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=tankovault-wasm-cargo-git,target=/usr/local/cargo/git \
     CARGO_PROFILE_WASM_RELEASE_INHERITS=release \
@@ -339,14 +338,14 @@ RUN --mount=type=cache,id=tankovault-wasm-cargo-registry,target=/usr/local/cargo
 
 FROM cook-web AS wasm-builder
 WORKDIR /app
-# The short commit the footer's meta line shows. Empty by default — `build_info::commit()`
-# then omits the segment rather than printing "unknown", and a local build keeps a stable
-# cache key for this stage, which is the expensive one. CI passes the real value.
+# The short commit the footer's meta line shows. Empty by default: `build_info::commit()` then
+# omits the segment instead of printing "unknown", and a local build keeps a stable cache key for
+# this stage, which is the expensive one. CI passes the real value.
 ARG TANKOVAULT_COMMIT=""
 COPY . .
-# Located by path, not app name; requires exactly one `release` hit (a stale debug bundle once
-# shipped). `from=cook-web` seeds the mount so CI's always-cold cache starts from the cooked layer.
-# This id must stay distinct from the Alpine target mount above — different rustc/RUSTFLAGS, so
+# Located by path, not app name; requires exactly one `release` hit, so a stale debug bundle cannot
+# ship. `from=cook-web` seeds the mount so CI's always-cold cache starts from the cooked layer.
+# This id must stay distinct from the Alpine target mount above: different rustc/RUSTFLAGS, so
 # sharing one id would invalidate each other's cache on every alternating build.
 RUN --mount=type=cache,id=tankovault-wasm-cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=tankovault-wasm-cargo-git,target=/usr/local/cargo/git \
@@ -365,7 +364,7 @@ RUN --mount=type=cache,id=tankovault-wasm-cargo-registry,target=/usr/local/cargo
     cp -r "${matches}/." /dist/; \
     test -f /dist/index.html || { echo "bundle missing index.html" >&2; exit 1; }
 
-# The structured licence inventory the SPA's `/licenses` screen renders — the same notices as the
+# The structured licence inventory the SPA's `/licenses` screen renders: the same notices as the
 # committed `THIRD-PARTY-NOTICES`, out of the same merge, in a shape a browser can group and
 # collapse instead of a 500 KB wall of `text/plain`.
 #
@@ -374,7 +373,7 @@ RUN --mount=type=cache,id=tankovault-wasm-cargo-registry,target=/usr/local/cargo
 # `web/frontend`'s, so both are in this stage's registry cache. `builder` has the backend's alone
 # and would have to fetch the other from cold.
 #
-# `--no-default-features` builds `xtask` from `anyhow`/`serde`/`serde_json`/`syn` — `notices` is
+# `--no-default-features` builds `xtask` from `anyhow`/`serde`/`serde_json`/`syn`: `notices` is
 # one of the file-reading commands outside the `full` feature, and the default build would drag
 # in sqlx, progenitor and most of the backend for a command that shells out to `cargo about`.
 #
@@ -399,27 +398,23 @@ RUN --mount=type=cache,id=tankovault-wasm-cargo-registry,target=/usr/local/cargo
 #
 # **A build that imports two registry cache lineages resolves one and drops the other**, and
 # BuildKit then re-runs the dropped lineage's vertices from cold. `frontend` is the only image
-# consuming both — the musl server binary from `builder`, the SPA bundle from `wasm-builder` — so
-# while the wasm half lived in a cache tag of its own it was the only leg that paid, and it paid
-# every run, on every architecture. Measured on the push that released v5.0.0: `ci.yml`'s
-# `docker build (frontend)` took 43 minutes against under a minute for each of its nine siblings,
-# and the release's two `frontend` legs took 39 and 29 against one minute each. All four logs show
-# the same thing — `cook-web` a cache hit, `cook` and `builder` recompiling — against a tag a
-# sibling leg had just read in full.
+# consuming both (the musl server binary from `builder`, the SPA bundle from `wasm-builder`), so
+# with the wasm half in a cache tag of its own, that leg would recompile `cook` and `builder` on
+# every run, on every architecture, against a tag a sibling leg had just read in full.
 #
 # Naming both stages here puts them in one solve, so one `mode=max` export carries both chains
-# under one tag and every consumer imports exactly one. That is the whole fix; the copies below
-# are only what forces the two stages into the graph.
+# under one tag and every consumer imports exactly one. The copies below only force the two
+# stages into the graph.
 #
-# It is also strictly cheaper than the two warm-ups it replaces: `builder` and `wasm-builder`
-# share no edge, so BuildKit runs them concurrently and the warm-up's wall clock is the longer of
-# the two rather than their sum — and `dx build`, five minutes that used to sit on the `frontend`
-# leg's critical path, becomes an import there.
+# It is also cheaper than two warm-ups: `builder` and `wasm-builder` share no edge, so BuildKit
+# runs them concurrently and the warm-up's wall clock is the longer of the two, not their sum,
+# and `dx build` becomes an import on the `frontend` leg instead of sitting on its critical path.
 FROM scratch AS build-cache
 COPY --from=builder /out/ /out/
 COPY --from=wasm-builder /dist/ /dist/
 
-# Debian + Chromium for the render tier (chromiumoxide, `docs/ARCHITECTURE.md` §9); `scratch` can't host a browser.
+# Debian and Chromium for the render tier (chromiumoxide, `docs/ARCHITECTURE.md` §9); `scratch`
+# can't host a browser.
 FROM debian:13-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS runtime-browser
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
@@ -441,7 +436,7 @@ RUN set -eu; \
 ARG BIN=render
 COPY --from=builder /out/${BIN} /usr/local/bin/tankovault-service
 # The offline copy of this image's configuration contract. Read by anything holding the image
-# without a registry — `docker save`, an air-gapped mirror, a future initContainer — and by the
+# without a registry (`docker save`, an air-gapped mirror, a future initContainer), and by the
 # chart repo's refresh when a registry does not implement the referrers API.
 COPY --from=contract-builder /contract/${BIN}.json /config/contract.json
 # PolyForm Noncommercial's Notices clause: the terms travel with every copy of the software, and
@@ -456,21 +451,19 @@ ENV TANKOVAULT_RENDER__CHROME_PATH=/usr/bin/chromium \
     TANKOVAULT_RENDER__NO_SANDBOX=true
 # What makes the document above discoverable without pulling a layer: a registry client reads
 # these three off the image config blob in one request. All three are constants of *this
-# deployment* — the envelope version, where the offline copy is, and the loader prefix every
-# service shares — which is what lets one hand-written block serve nine images.
+# deployment* (the envelope version, where the offline copy is, and the loader prefix every
+# service shares), which is what lets one hand-written block serve nine images.
 #
 # `LABEL` takes no interpolation and `--build-arg` cannot reach a file produced inside a builder
-# stage, so these are written from `config-contract --format dockerfile` — by hand, or by `just
-# dockerfile-labels`, which is the same bytes without the copying — rather than derived.
-# Two things hold them honest, and neither is a source diff: `xtask config-contract` compares
-# every marked region in this file against the generator, and CI compares the **built image**
-# against the `.labels` file the same generator run wrote. A LABEL block with nothing checking it
-# is the failure mode two earlier drafts of this design shipped.
+# stage, so these are written from `config-contract --format dockerfile`, by hand or by `just
+# dockerfile-labels` (the same bytes without the copying), not derived. Two things hold them
+# honest, and neither is a source diff: `xtask config-contract` compares every marked region in
+# this file against the generator, and CI compares the **built image** against the `.labels`
+# file the same generator run wrote. A LABEL block with nothing checking it drifts unnoticed.
 #
-# The markers are `terrace-config`'s own, and they are what the check and the rewrite both cut on.
-# Finding the `LABEL` line and following its continuations — what this repository did before —
-# reads correctly right up until the block is written as one `LABEL` per line, and then compares
-# one line of three and passes.
+# The markers are `terrace-config`'s own, and they are what the check and the rewrite both cut
+# on. Finding the `LABEL` line and following its continuations reads correctly right up until
+# the block is written as one `LABEL` per line, and then compares one line of three and passes.
 # terrace-config:labels:begin
 LABEL dev.terrace.config.contract.version="1" \
       dev.terrace.config.contract.path="/config/contract.json" \
@@ -491,10 +484,10 @@ COPY --from=wasm-builder /dist /srv/www
 # See the `runtime-browser` stage: the licence terms ship with the image, not just the repo.
 COPY --from=builder /app/LICENSE /LICENSE
 # This image owes them twice over: it is a binary distribution itself, and it hands the browser
-# bundle — a second dependency graph, `web/frontend`'s — to every reader who loads the page. The
+# bundle (a second dependency graph, `web/frontend`'s) to every reader who loads the page. The
 # server publishes this file at `/third-party-notices`, and the SPA's `/licenses` screen links it.
 COPY --from=builder /app/THIRD-PARTY-NOTICES /THIRD-PARTY-NOTICES
-# The same notices, structured, for that screen to render — published at
+# The same notices, structured, for that screen to render, published at
 # `/third-party-notices.json`. Only this image carries it: it is the only one that hands
 # anybody a browser; every other image's obligation is discharged by the document above.
 COPY --from=wasm-builder /THIRD-PARTY-NOTICES.json /THIRD-PARTY-NOTICES.json

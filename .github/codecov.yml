@@ -37,8 +37,8 @@ coverage:
     patch:
       default:
         target: 80%
-        # A pull request that changes no measured line, such as a lockfile update, passes rather
-        # than reporting 0% of nothing.
+        # A pull request that changes no measured line, such as a lockfile update, passes instead
+        # of reporting 0% of nothing.
         if_not_found: success
         informational: true
 

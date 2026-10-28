@@ -3,7 +3,7 @@
 # `Cargo.toml`'s `[workspace.lints]`; `web/frontend` is a separate workspace root and does not
 # inherit this file (see `web/frontend/clippy.toml`).
 #
-# A path clippy cannot resolve is silently ignored — no diagnostic, just a rule that never
+# A path clippy cannot resolve is silently ignored: no diagnostic, just a rule that never
 # fires. So every entry here has been proved to fire by temporarily writing the banned call and
 # watching clippy reject it; do the same for anything you add.
 
@@ -18,7 +18,7 @@ disallowed-methods = [
     # A blocking sleep parks the whole tokio worker thread, not just the task.
     { path = "std::thread::sleep", reason = "blocks a tokio worker thread. Use `tokio::time::sleep`, or `spawn_blocking` if the surrounding work is genuinely synchronous" },
 
-    # No timeouts, no pool bound — a hung upstream starves the whole pool. Exempt test code
+    # No timeouts, no pool bound: a hung upstream starves the whole pool. Exempt test code
     # talking to a local `wiremock` via `#[expect(clippy::disallowed_methods, reason = "…")]`.
     { path = "reqwest::Client::new", reason = "no timeouts, no pool bound. Build it with `reqwest::Client::builder()` and set `connect_timeout` + `timeout`; see `services/api/src/upstream.rs`" },
 ]

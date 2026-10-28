@@ -323,8 +323,10 @@ pub async fn progress_mark_unread(
 /// `written` CTE runs whether or not it is referenced, and the outer query reads `targets`, so
 /// the result is "these ids were yours". Untracked ids are absent.
 ///
-/// One statement, so unlike [`progress_mark_read`] it cannot lose a concurrent advance: the
-/// `GREATEST` is evaluated inside the `ON CONFLICT` update against the row it locks.
+/// One statement, so its own update cannot lose a concurrent advance: the `GREATEST` is evaluated
+/// inside the `ON CONFLICT` update against the row it locks. It does not protect what it wrote:
+/// a [`progress_mark_read`] or [`progress_mark_unread`] that read the row before this statement
+/// committed still overwrites the frontier with its stale value.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; ids the user does not track are absent from the result instead of

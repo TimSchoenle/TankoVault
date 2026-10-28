@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use governor::{DefaultDirectRateLimiter, Quota, RateLimiter};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tankovault_domain::{MIN_RPS, Pacer};
+use tankovault_domain::{MAX_RPS, MIN_RPS, Pacer};
 use tokio::sync::Semaphore;
 
 /// Statuses that mean the configured budget is above what the provider will serve.
@@ -38,6 +38,16 @@ pub struct RateLimitedFetcher<F> {
     throttle: Arc<Pacer>,
 }
 
+/// The interval between requests at `rps`, after clamping it to `[MIN_RPS, MAX_RPS]`.
+fn period_for(rps: f64) -> Duration {
+    // The ceiling keeps the period above zero, which `Quota::with_period` refuses.
+    #[expect(
+        clippy::manual_clamp,
+        reason = "`f64::clamp` returns a NaN input unchanged; `f64::max` floors it to MIN_RPS"
+    )]
+    Duration::from_secs_f64(1.0 / rps.max(MIN_RPS).min(MAX_RPS))
+}
+
 impl<F> RateLimitedFetcher<F> {
     /// Build a limiter allowing `rps` requests/second and at most `concurrency` in flight,
     /// with a `crawl_delay_ms` floor between requests, adapting to `throttle` when the
@@ -45,11 +55,12 @@ impl<F> RateLimitedFetcher<F> {
     /// [`tankovault_domain::Politeness::clamped`].
     ///
     /// # Panics
-    /// Never, for any `f64` — including `0.0`, a negative and a `NaN`. The floor below is what
-    /// makes that true, and it deliberately repeats [`tankovault_domain::Politeness::clamped`]
-    /// rather than trusting it: the consequence of an out-of-range rate here is not a wrong
-    /// crawl rate but a **panic** inside `Duration::from_secs_f64`, and a guard one crate away
-    /// is the wrong distance from a panic.
+    /// Never, for any `f64` — including `0.0`, a negative, a `NaN` and infinity. The clamp below
+    /// is what makes that true, and it deliberately repeats
+    /// [`tankovault_domain::Politeness::clamped`] rather than trusting it: the consequence of an
+    /// out-of-range rate here is not a wrong crawl rate but a **panic**, inside
+    /// `Duration::from_secs_f64` below the floor or at the zero-period `expect` above the
+    /// ceiling, and a guard one crate away is the wrong distance from a panic.
     #[must_use]
     pub fn new(
         inner: F,
@@ -58,9 +69,7 @@ impl<F> RateLimitedFetcher<F> {
         crawl_delay_ms: u64,
         throttle: ThrottlePolicy,
     ) -> Self {
-        // `f64::max` returns the non-`NaN` operand, so this floors a `NaN` too.
-        let period = Duration::from_secs_f64(1.0 / rps.max(MIN_RPS));
-        let quota = Quota::with_period(period).expect("rps > 0 yields a positive period");
+        let quota = Quota::with_period(period_for(rps)).expect("rps > 0 yields a positive period");
         Self {
             inner,
             limiter: Arc::new(RateLimiter::direct(quota)),
@@ -168,5 +177,37 @@ mod tests {
         assert!(THROTTLE_STATUSES.contains(&503));
         assert!(!THROTTLE_STATUSES.contains(&403));
         assert!(!THROTTLE_STATUSES.contains(&500));
+    }
+
+    /// An infinite rate panicked: `1.0 / inf` is a zero period, which `Quota::with_period`
+    /// refuses, and the `expect` on it fired while the doc promised no `f64` could panic.
+    #[test]
+    fn no_rate_panics_the_constructor() {
+        for rps in [
+            0.0,
+            -1.0,
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::MAX,
+            1e300,
+        ] {
+            let _ = RateLimitedFetcher::new((), rps, 1, 0, ThrottlePolicy::default());
+        }
+    }
+
+    /// The constructor's clamp has to reach the limiter, not only keep it from panicking: an
+    /// unclamped or unwired period would crawl at the wrong rate with nothing failing.
+    #[test]
+    fn the_limiter_period_is_the_clamped_rate() {
+        let floor = Duration::from_secs_f64(1.0 / MIN_RPS);
+        let ceiling = Duration::from_secs_f64(1.0 / MAX_RPS);
+        for rps in [0.0, -1.0, f64::NAN, f64::NEG_INFINITY] {
+            assert_eq!(period_for(rps), floor, "rps {rps} must floor to MIN_RPS");
+        }
+        for rps in [f64::INFINITY, f64::MAX, 1e300] {
+            assert_eq!(period_for(rps), ceiling, "rps {rps} must cap at MAX_RPS");
+        }
+        assert_eq!(period_for(4.0), Duration::from_millis(250));
     }
 }

@@ -78,8 +78,8 @@ pub struct MergeSweepView {
     /// Pairs re-scored. The shortlist is produced by blocking on the whitespace-insensitive
     /// title key, so this is far smaller than the number of series.
     pub pairs_examined: i64,
-    /// Pairs merged without asking, because a structural identity rule fired and the score
-    /// cleared the automatic-merge threshold.
+    /// Pairs merged without asking, because adjudication returned `Auto`. A corroborated alias
+    /// counts here below the automatic-merge threshold too.
     pub auto_merged: i64,
     /// Pairs the sweep put in the review queue that had never been there.
     ///

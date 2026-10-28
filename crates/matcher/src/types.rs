@@ -178,7 +178,9 @@ pub struct Adjudication {
     pub verdict: MergeVerdict,
     /// Stable slug for the rule that decided it.
     pub reason: &'static str,
-    /// Every veto and enabled guard that fired, a deciding veto first. An entry does not mean the
-    /// pair would otherwise have merged: a fuzzy match with no identity lists its guards too.
+    /// What fired, by branch: a numeric or edition veto alone; otherwise every enabled guard
+    /// that fired, after the external-id or live-timing veto that decided it, if one did (an
+    /// external-id conflict hides a live-timing one). An entry does not mean the pair would
+    /// otherwise have merged: a fuzzy match with no identity lists its guards too.
     pub blocked_by: Vec<&'static str>,
 }

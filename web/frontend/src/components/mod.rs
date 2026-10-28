@@ -77,9 +77,9 @@ mod tests {
     /// No screen may spell a button's classes itself.
     ///
     /// This is the rule the `inkstone_ui::Button` extraction exists to make enforceable, and it is
-    /// a test instead of a convention because the failure it prevents is invisible: `class:
-    /// "ik-btn danger"` compiles, renders, and silently draws an ordinary neutral button, because
-    /// no `.ik-btn.danger` rule exists. `Tone` and `Size` can only name classes the stylesheet
+    /// a test instead of a convention because the failure it prevents is invisible: a raw class
+    /// string whose modifier has no rule in the stylesheet compiles, renders, and silently draws
+    /// an ordinary neutral button. `Tone` and `Size` can only name classes the stylesheet
     /// defines; a raw string cannot, so raw strings are banned. Use `Button`, `ToggleButton`,
     /// `IconButton`, or `inkstone_ui::button_class` where the element has to be an `<a>`.
     #[test]

@@ -8,10 +8,10 @@
 //!
 //! # Why typed variants instead of class strings
 //!
-//! The kit exists because `class: "ik-btn danger"` compiles, renders, and is wrong: no such rule
-//! exists, so the destructive button looks exactly like the neutral one beside it. [`Tone`] and
-//! [`Size`] can only name classes the stylesheet defines, so that failure mode is impossible,
-//! not documented.
+//! A class string compiles and renders whether or not the stylesheet defines its modifier: a
+//! misspelt or missing `danger` rule draws the destructive button exactly like the neutral one
+//! beside it. [`Tone`] and [`Size`] can only name classes the stylesheet defines, so that failure
+//! mode is impossible, not documented.
 
 mod button;
 mod feedback;

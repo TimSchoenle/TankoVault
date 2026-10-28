@@ -45,8 +45,8 @@ pub struct ProviderFetchConfig {
     /// The most attempts when the provider answers `429` or `503`, for server-directed
     /// backoff.
     ///
-    /// Small and separate from `max_attempts`: these waits run to seconds or minutes, and each
-    /// holds a concurrency permit throughout.
+    /// Small and separate from `max_attempts`: these waits run to seconds or minutes. They run
+    /// outside the rate limiter, so they hold no concurrency permit, but they hold the task.
     pub max_backoff_attempts: u32,
     /// The first wait after a `429` or `503` with no usable `Retry-After`; doubles per
     /// attempt.

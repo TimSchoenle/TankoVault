@@ -41,18 +41,20 @@ impl FetchRequest {
     }
 }
 
-/// A response whose `body` is bounded UTF-8 text (HTML or JSON), never binary content.
+/// A response whose `body` is UTF-8 text (HTML or JSON), never binary content.
 #[derive(Debug, Clone)]
 pub struct FetchResponse {
     /// The HTTP status code.
     pub status: u16,
-    /// The final URL after any redirects.
+    /// The final URL after any redirects. For a page the solver rendered it is the request URL,
+    /// because the solver does not report where its browser landed.
     pub url: String,
     /// The response headers.
     pub headers: Vec<(String, String)>,
-    /// The bounded response body as text.
+    /// The response body as text, capped at 16 MiB on the direct fetch.
     pub body: String,
-    /// Whether the conditional body cache served this response.
+    /// Whether a response cache served this response. No layer of the stack caches, so it is
+    /// always `false`.
     pub from_cache: bool,
 }
 
@@ -83,9 +85,8 @@ impl FetchResponse {
     /// assert_eq!(resp.header("Server"), Some("cloudflare"));
     /// assert_eq!(resp.header("x-absent"), None);
     ///
-    /// // `is_success` is strictly 2xx, so a `304` is not success. The stack turns a validated
-    /// // cache hit into the cached `200` with `from_cache` set, so a `304` reaching an adapter
-    /// // means the validation path is broken.
+    /// // `is_success` is strictly 2xx, so a `304` is not success. The stack has no cache that
+    /// // would turn one into a cached `200`, so an adapter sees a `304` as the provider sent it.
     /// assert!(resp.header("retry-after").is_some() && !resp.is_success());
     /// assert!(!FetchResponse { status: 304, ..resp.clone() }.is_success());
     /// assert!(FetchResponse { status: 204, ..resp }.is_success());

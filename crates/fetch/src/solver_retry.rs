@@ -41,11 +41,13 @@ impl RetryingSolver {
         }
     }
 
-    /// Wraps `inner` with the default budget: three tries over at most a few seconds.
+    /// Wraps `inner` with the default budget: three tries, with a few seconds of waits between
+    /// them.
     ///
     /// Sized for a browser slot coming free or a solver replica finishing a restart, at the cost
-    /// of one idle provider permit. Longer outages are the task retry ladder's business: minutes,
-    /// with no permit held.
+    /// of one provider permit held throughout. Each try can run to the solver's own timeout, so
+    /// the whole retry can last far longer than its waits. Longer outages are the task retry
+    /// ladder's business: minutes, with no permit held.
     #[must_use]
     pub fn with_default_budget(inner: Arc<dyn ChallengeSolver>) -> Self {
         Self::new(inner, 3, Duration::from_millis(500), Duration::from_secs(4))

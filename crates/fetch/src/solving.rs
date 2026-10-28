@@ -177,7 +177,8 @@ pub struct SolvingFetcher<F> {
 impl<F> SolvingFetcher<F> {
     /// Wraps `inner`, solving through `solver` and caching sessions in `store`.
     ///
-    /// Requests that meet no challenge touch neither.
+    /// Every request reads `store` for a session to replay; only a challenged one calls
+    /// `solver`.
     #[must_use]
     pub fn new(inner: F, solver: Arc<dyn ChallengeSolver>, store: Arc<dyn SessionStore>) -> Self {
         Self {

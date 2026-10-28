@@ -9,7 +9,14 @@ use async_trait::async_trait;
 /// Sends a single GET through the fetch stack, decorated or not.
 #[async_trait]
 pub trait Fetcher: Send + Sync {
-    /// Performs the request, returning a bounded-text response or a typed error.
+    /// Performs the request, returning the response whatever its status, or a typed error.
+    ///
+    /// # Errors
+    /// [`FetchError::InvalidUrl`] or [`FetchError::Ssrf`] before any request is sent;
+    /// [`FetchError::Timeout`], [`FetchError::Transport`], [`FetchError::TooManyRedirects`] or
+    /// [`FetchError::BodyTooLarge`] from the transport; and [`FetchError::Challenge`],
+    /// [`FetchError::Solver`] or [`FetchError::SolverUnavailable`] from the solving layer. A
+    /// non-success status is a response, not an error.
     async fn get(&self, req: FetchRequest) -> Result<FetchResponse, FetchError>;
 }
 

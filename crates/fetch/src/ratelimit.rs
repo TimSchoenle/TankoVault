@@ -43,9 +43,10 @@ impl<F> RateLimitedFetcher<F> {
     /// Inputs are expected pre-clamped by [`tankovault_domain::Politeness::clamped`].
     ///
     /// # Panics
-    /// Never, for any `f64`, including `0.0`, a negative and `NaN`. The floor below repeats
-    /// [`tankovault_domain::Politeness::clamped`] on purpose: an out-of-range rate here is a
-    /// **panic** in `Duration::from_secs_f64`, and a guard one crate away is too far from it.
+    /// If `rps` is infinite, or so large that its period rounds to zero, which
+    /// [`tankovault_domain::Politeness::clamped`] rules out. `0.0`, a negative and `NaN` are
+    /// floored below on purpose: they would otherwise **panic** in `Duration::from_secs_f64`, and a
+    /// guard one crate away is too far from it.
     #[must_use]
     pub fn new(
         inner: F,

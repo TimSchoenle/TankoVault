@@ -62,8 +62,8 @@ fn known_placeholder(value: &str) -> Option<&'static str> {
 /// weakened, not broken, so it warns instead of blocking boot.
 ///
 /// # Errors
-/// Returns an error in production only, when `jwt_secret` is empty or shorter than
-/// [`MIN_JWT_SECRET_LEN`].
+/// Returns an error in every profile when `jwt_secret` is a known placeholder, and in production
+/// when it is empty or shorter than [`MIN_JWT_SECRET_LEN`].
 fn validate_auth_secrets(auth: &AuthConfig, production: bool) -> anyhow::Result<()> {
     // Checked in every profile: placeholder strings ship in the reference compose file.
     // Length is safe to log; the value never is (`expose_secret` only measures/compares).

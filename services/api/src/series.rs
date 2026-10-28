@@ -197,17 +197,18 @@ pub fn blurb(description: Option<&str>) -> Option<String> {
 }
 
 impl SeriesSummary {
-    /// Builds the summaries for one page, in the order given, with the two batched reads the
+    /// Builds the summaries for one page, in the order given, with the three batched reads the
     /// card needs.
     ///
     /// Batched, not folded into the listing query: the browse statements are the ones the
     /// plan audit budgets, and a reach into `chapters` per candidate row is charged against every
-    /// row of `series` under a generic plan. Keyed on the ids about to be rendered, these two
+    /// row of `series` under a generic plan. Keyed on the ids about to be rendered, these three
     /// touch only those.
     ///
     /// # Errors
-    /// Propagates the two reads. Neither is defaulted away: a card silently claiming zero
-    /// chapters is worse than the page failing and being retried.
+    /// Returns the error of any of the three reads (chapter stats, tags, adult classification).
+    /// None is defaulted away: a card silently claiming zero chapters is worse than the page
+    /// failing and being retried.
     async fn page(
         state: &AppState,
         items: Vec<tankovault_db::repo::catalog::SeriesListItem>,

@@ -37,10 +37,6 @@ pub struct Upstream {
 
 impl Upstream {
     /// Builds a handle to `base`, presenting `token` on every call.
-    ///
-    /// # Errors
-    /// Returns an error when the shared `reqwest::Client` cannot be constructed (a TLS backend
-    /// failure).
     pub fn new(
         http: reqwest::Client,
         base: impl Into<String>,

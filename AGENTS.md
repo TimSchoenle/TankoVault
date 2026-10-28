@@ -36,8 +36,8 @@ database; config surface changed → update `docs/CONFIGURATION.md` (`cargo run 
 config-docs` prints the current surface) **and** run `just regenerate`, which rewrites the nine
 documents every image publishes and the Dockerfile's `dev.terrace.config.*` regions:
 `cargo run -p xtask -- config-contract` is the gate that checks both and does not write; either
-`Cargo.lock` moved → `cargo run -p xtask -- notices`, which needs `cargo-about` installed. The
-gates check these, they do not fix them.
+`Cargo.lock` moved → `cargo run -p xtask -- notices`, which requires `cargo-about` to be
+installed. The gates check these, they do not fix them.
 
 ## What `xtask ci` cannot tell you
 

@@ -101,7 +101,7 @@ edited, no component touched, and the reader's theme and accent still apply on t
 custom properties inherit, the same block scoped to a container restyles one region, not the page.
 
 `tone::tests::every_token_has_a_default` holds every `var(--ik-*)` a rule reads to a default in
-that block, so the kit still renders correctly on a host that overrides none of them: and a
+that block, so the kit still renders correctly on a host that overrides none of them. A
 typo'd token, which would otherwise silently drop a control's padding, fails the build instead.
 
 ### Adding a tone or a size

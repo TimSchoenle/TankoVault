@@ -72,8 +72,8 @@ On Linux the desktop build links WebKitGTK:
 sudo apt-get install -y libwebkit2gtk-4.1-dev libsoup-3.0-dev libxdo-dev libayatana-appindicator3-dev
 ```
 
-Gates this crate has to pass. It is outside the workspace, so run them here: and **both feature
-sets**, or a `#[cfg]` that stops compiling on the other side is first noticed by a release:
+Gates this crate has to pass. It is outside the workspace, so run them here, for **both feature
+sets**; otherwise a `#[cfg]` that stops compiling on the other side is first noticed by a release:
 
 ```bash
 cargo fmt --check

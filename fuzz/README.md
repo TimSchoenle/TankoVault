@@ -135,8 +135,8 @@ $env:PATH = "$($vc.FullName);$($cmake.FullName);$env:PATH"
 
 The first BoringSSL build is a few minutes; after that it is cached in `fuzz/target/`. Note that
 this crate's lockfile is **not** committed (see `.gitignore`), so adding a dependency here
-re-resolves the whole graph and can invalidate that cache: which is exactly when somebody meets
-the cmake error for the first time and reads it as a fuzzing problem.
+re-resolves the whole graph and can invalidate that cache, which is when somebody meets the
+cmake error for the first time and reads it as a fuzzing problem.
 
 ## The targets
 
@@ -192,8 +192,8 @@ three-order-of-magnitude spread is harness cost, not code under test: see the no
   `HS384`, signature stripped, payload edited without re-signing, `sub` made non-UUID. Their `exp`
   is deliberately in the year 2286: an expiry baked into a committed file would eventually pass,
   every "this one verifies" seed would silently become a rejection seed, and three of that
-  target's four oracles would stop being reachable with nothing to say so. `config_env_load`'s are
-  plain `KEY=VALUE` lines: `arbitrary::Arbitrary` over `Vec<(String, String)>` would make every
+  target's four oracles would stop being reachable with nothing to say so. The `config_env_load`
+  seeds are plain `KEY=VALUE` lines: `arbitrary::Arbitrary` over `Vec<(String, String)>` would make every
   seed an opaque blob in a directory whose whole convention is that seeds are readable.
 - `corpus/`: git-ignored working corpus; only the per-target directories are tracked, via
   `.gitkeep`, because libFuzzer errors out on a corpus directory that does not exist.

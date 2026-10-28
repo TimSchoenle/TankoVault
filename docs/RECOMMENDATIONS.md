@@ -1443,15 +1443,15 @@ Not optional, and each one has bitten this repo before:
 | `recsys_build_duration_seconds` | histogram (`WORK_BUCKETS`) | `stage` |
 | `recsys_build_series_total` | counter | `stage`, `result` (`built`/`skipped`/`failed`) |
 | `recsys_model_series` | gauge | `table` |
-| `recsys_model_age_seconds` | gauge |: (staleness alert: model older than 2× the full interval) |
+| `recsys_model_age_seconds` | gauge | none (staleness alert: model older than 2× the full interval) |
 | `recsys_serve_duration_seconds` | histogram | `path` (`cached`/`computed`) |
-| `recsys_shelf_size` | histogram |: (an empty-shelf rate is the earliest symptom of a broken model) |
+| `recsys_shelf_size` | histogram | none (an empty-shelf rate is the earliest symptom of a broken model) |
 | `recsys_candidates` | histogram | `retrieval` (`knn`/`profile`/`cf`/`prior`) |
-| `recsys_build_peak_rss_bytes` | gauge |: (the §6.4 promise, kept in production and not only in a bench) |
-| `recsys_ann_recall` | gauge |: (measured ANN recall against exact cosine on a sample; the only way to know `ef_search` is set right, §6.4) |
-| `recsys_repair_queue_depth` | gauge |: (a queue that only grows means the drain is not keeping up with the merge rate) |
+| `recsys_build_peak_rss_bytes` | gauge | none (the §6.4 promise, kept in production and not only in a bench) |
+| `recsys_ann_recall` | gauge | none (measured ANN recall against exact cosine on a sample; the only way to know `ef_search` is set right, §6.4) |
+| `recsys_repair_queue_depth` | gauge | none (a queue that only grows means the drain is not keeping up with the merge rate) |
 | `recsys_merge_repairs_total` | counter | `reason` (`merged`/`inbound_merge`/`features_changed`) |
-| `recsys_tunable_overrides` | gauge |: (how far this deployment has drifted from the shipped defaults; the first question to ask about a bad shelf) |
+| `recsys_tunable_overrides` | gauge | none (how far this deployment has drifted from the shipped defaults; the first question to ask about a bad shelf) |
 
 ---
 

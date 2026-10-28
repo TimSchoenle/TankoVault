@@ -183,7 +183,7 @@ stops:
 
 | From | Carried on | To | Transaction there |
 |---|---|---|---|
-| browser → `frontend` |: (the trace starts here) | proxy | request |
+| browser → `frontend` | none (the trace starts here) | proxy | request |
 | `frontend` | HTTP header | `api` | request |
 | `api` | HTTP header | `control-plane`, `sync`, `worker` | request |
 | `control-plane` sweep | **NATS header** | `worker` | `scan_task` |

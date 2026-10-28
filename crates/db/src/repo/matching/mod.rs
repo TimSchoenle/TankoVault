@@ -1,38 +1,32 @@
-//! Candidate lookup for series canonicalisation (`docs/ARCHITECTURE.md` §10, step 2), plus the merge-candidate
-//! queue an ambiguous match feeds and the duplicate sweep that keeps it honest.
+//! Candidate lookup for series canonicalisation (`docs/ARCHITECTURE.md` §10, step 2), the
+//! merge-candidate queue an ambiguous match feeds, and the duplicate sweep.
 //!
 //! This layer returns raw trigram candidates and performs whatever the caller's
-//! [`Canonicaliser`](tankovault_domain::matching::Canonicaliser) decides; the scoring and the
-//! thresholds live above it (`tankovault_matcher` and `tankovault_config::MatchingConfig`), so
-//! it is unit-testable without a database and this crate links no scorer.
+//! [`Canonicaliser`](tankovault_domain::matching::Canonicaliser) decides. Scoring and thresholds
+//! live in `tankovault_matcher` and `tankovault_config::MatchingConfig`, so this crate links no
+//! scorer.
 //!
-//! The candidate type is [`tankovault_domain::matching::Candidate`] itself rather than a row
-//! struct plus a `From` impl: a hand-written conversion duplicated across the worker's ingest
-//! canonicalisation and `services/sync`'s remote-entry resolution would let adding a field
-//! silently drop that signal from one of the two paths deciding whether two series are the
-//! same.
+//! The candidate type is [`tankovault_domain::matching::Candidate`] itself, not a row struct
+//! with a `From` impl: a conversion duplicated across the worker's ingest and `services/sync`'s
+//! remote-entry resolution would let a new field silently drop out of one of the two paths.
 //!
 //! # Two ways a duplicate is found
 //!
-//! [`find_candidates`] is the *create-time* path: it runs while a scanned source is being filed
-//! and answers "does this already exist?". It is necessarily blind to anything the catalogue
-//! learns later — a series acquires its authors, its release year and its alternative titles
-//! from a subsequent enrichment pass, and by then the decision has been taken.
+//! [`find_candidates`] is the *create-time* path: it runs while a scanned source is filed and
+//! asks whether the series exists. It cannot see what enrichment adds later: authors, release
+//! year and alternative titles.
 //!
-//! [`find_duplicate_pairs`] is the *standing* path, and exists because the first one is not
-//! enough. It blocks the whole catalogue on the whitespace-insensitive title key (canonical
-//! against canonical, canonical against alias, alias against alias) and hands back every pair
-//! worth re-scoring with everything now known about both sides. On a 26k-series catalogue it
-//! surfaced 59 pairs with byte-identical compact titles that the create-time path had never
-//! queued at all.
+//! [`find_duplicate_pairs`] is the *standing* path. It blocks the whole catalogue on the
+//! whitespace-insensitive title key (canonical against canonical, canonical against alias,
+//! alias against alias) and returns every pair worth re-scoring with everything now known
+//! about both sides.
 //!
-//! One module per stage: `candidates` and `pairs` find them, `queue` holds the ambiguous
-//! ones for an operator, `merge` executes the decision, and `keys` maintains the normalized
-//! title keys the first two read. `full_sweep` holds the claim and the progress of the
-//! operator-triggered run that walks all three shortlists to the end. `timing` measures when two
-//! series' sources first saw the chapters they share. `undo` takes a merge back
-//! and `disentangle` takes back the shared names that caused it, which is the half a pure
-//! inverse cannot reach.
+//! `candidates` and `pairs` find duplicates, `queue` holds the ambiguous ones for an operator,
+//! `merge` executes the decision, and `keys` maintains the title keys the first two read.
+//! `full_sweep` holds the claim and progress of the operator-triggered run that walks every
+//! shortlist to the end. `timing` measures when two series' sources first saw the chapters they
+//! share. `undo` takes a merge back, and `disentangle` takes back the shared names that caused
+//! it, which a pure inverse cannot reach.
 
 mod candidates;
 mod decisions;
@@ -47,19 +41,17 @@ mod undo;
 
 /// How many distinct series may hold one title key before it stops identifying anything.
 ///
-/// Two stages read it, for the same reason. In [`find_duplicate_pairs`] a key held by `n` series
-/// contributes `n·(n-1)/2` pairs, so it is the only thing standing between a shortlist and a
-/// quadratic one. In [`find_candidates`] it is what stops a runaway: a source attaches to a
-/// series on an alias hit, its own aliases are then filed under that series, and the next source
-/// that shares any of them attaches too — one live row absorbed 281 unrelated sources that way.
-/// A key that many works answer to is not evidence about any of them, whatever produced it.
+/// Two stages read it. In [`find_duplicate_pairs`] a key held by `n` series contributes
+/// `n·(n-1)/2` pairs, so it keeps the shortlist from going quadratic. In [`find_candidates`] it
+/// stops a runaway: a source attaches on an alias hit, its aliases are filed under that series,
+/// and the next source sharing any of them attaches too. A key that many works answer to is no
+/// evidence about any of them.
 ///
-/// Sixteen is far above any real duplicate cluster (the largest legitimate one observed is a
-/// single work listed by every provider at once) and far below the thousands a mis-scraped label
-/// produces, so the two cases do not overlap and the exact value is not load-bearing.
+/// Sixteen is far above any real duplicate cluster, one work listed by every provider, and far
+/// below the thousands a mis-scraped label produces, so the exact value is not load-bearing.
 ///
 /// Kept in step with the `HAVING count(*) > 16` in `migrations/0025_merge_sweep_progress.up.sql`,
-/// which applies the same rule once, destructively, to repair what a past adapter wrote.
+/// which applies the same rule once, destructively.
 pub(super) const MAX_KEY_FANOUT: i64 = 16;
 
 pub use candidates::{find_candidates, find_candidates_multi};

@@ -8,18 +8,21 @@ use tankovault_domain::matching::LiveTiming;
 /// Fewest shared live chapters a source pair needs before its median gap says anything.
 const MIN_SHARED_LIVE_CHAPTERS: i64 = 3;
 
-/// How the live chapters of `left` and `right` line up, for the source pair that agrees best.
+/// Returns how the live chapters of `left` and `right` line up, for the source pair that agrees
+/// best.
 ///
 /// A chapter is live on a source when that source discovered it more than a day after the later
-/// of the two sources' first discoveries: before then it is back catalogue, discovered in bulk by
-/// the first scan, and its timing measures when scanning started rather than when the chapter
-/// appeared. Chapters join on their whole number, so `10` and `10.5` both count as chapter 10.
+/// of the two sources' first discoveries. Before then it is back catalogue, found in bulk by the
+/// first scan, and its timing measures when scanning started. Chapters join on their whole
+/// number, so `10` and `10.5` both count as chapter 10.
 ///
 /// Only `discovered_at`: provider publication dates are mirror upload dates and say nothing.
 ///
+/// No source pair with enough live chapters is the default [`LiveTiming`], whose `median_gap_hours`
+/// is `None`.
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; no source pair with enough live chapters is the default
-/// [`LiveTiming`], whose `median_gap_hours` is `None`.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn live_timing<'e, E: PgExecutor<'e>>(
     exec: E,
     left: SeriesId,

@@ -19,7 +19,7 @@ pub struct BuildState {
     pub finished_at: Option<OffsetDateTime>,
     /// Series the running stage has finished.
     pub series_built: i32,
-    /// What the running stage is counting towards. Display only — nothing branches on it, and a
+    /// What the running stage is counting towards. Display only: nothing branches on it, and a
     /// stage that cannot cheaply know its own size leaves it at zero.
     pub stage_total: i32,
     /// Distinct features interned in this generation.
@@ -43,10 +43,12 @@ pub struct BuildClaim {
     pub claim_id: Uuid,
 }
 
-/// Read the current build state.
+/// Reads the current build state.
+///
+/// The row is created by migration 0028 and cannot be absent.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; the row is created by migration 0028 and cannot be absent.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn read_build_state<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<BuildState> {
     let state = sqlx::query_as!(
         BuildState,
@@ -77,11 +79,10 @@ pub struct ModelCoverage {
     pub recommendable: i64,
 }
 
-/// Read the model's coverage of the catalogue.
+/// Reads the model's coverage of the catalogue.
 ///
-/// One statement rather than four round trips, so the numbers the console compares against each
-/// other are read at one point in time — mid-build they would otherwise disagree by however long
-/// the calls took.
+/// One statement, not four round trips, so the numbers the console compares are read at one
+/// point in time and agree mid-build.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -98,21 +99,18 @@ pub async fn read_model_coverage<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Mod
     Ok(coverage)
 }
 
-/// Claim the build, advancing the generation, and return the claim granted.
+/// Claims the build, advancing the generation, and returns the claim granted.
 ///
-/// The claim is a **lease**, not a flag. `WHERE stage = 'idle'` alone was the mutual exclusion
-/// and it was released in exactly one place — the `finish_build` at the end of a run — so a
-/// build that died without reaching that line held the claim forever and every later run
-/// declined to start, silently. A claim whose `heartbeat_at` is older than `lease_secs` (or
-/// absent, which is a claim taken before the column existed) is therefore breakable.
+/// The claim is a **lease**, not a flag: released only by `finish_build`, a flag would stay held
+/// forever by a build that died first, and every later run would silently decline to start. A
+/// claim whose `heartbeat_at` is older than `lease_secs`, or absent, is breakable.
 ///
-/// `lease_secs` must be comfortably larger than the caller's heartbeat interval; the two are
-/// defined together in `services/control-plane/src/recsys.rs` for that reason. Too short and a
-/// live build gets its claim stolen mid-run; too long and a dead one blocks that much of the
-/// schedule.
+/// `lease_secs` must be comfortably larger than the caller's heartbeat interval, which is why
+/// both are defined in `services/control-plane/src/recsys.rs`. Too short and a live build loses
+/// its claim mid-run; too long and a dead one blocks that much of the schedule.
 ///
-/// A caller that gets `None` was beaten to it by a *live* build and must do nothing — not wait,
-/// not retry, because the other build is already doing this one's work.
+/// `None` means a *live* build holds the claim, and the caller does nothing: the other build is
+/// doing this one's work.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -122,9 +120,8 @@ pub async fn start_build<'e, E: PgExecutor<'e>>(
     lease_secs: f64,
 ) -> DbResult<Option<BuildClaim>> {
     let claim_id = Uuid::new_v4();
-    // A full build takes the next generation so its rows can be swapped in wholesale; an
-    // incremental one writes under the live generation, because it is patching that model
-    // rather than replacing it.
+    // A full build takes the next generation so its rows swap in wholesale; an incremental one
+    // patches the live generation.
     let generation = sqlx::query_scalar!(
         "UPDATE rec_build_state \
             SET generation  = CASE WHEN $1 THEN generation + 1 ELSE generation END, \
@@ -153,7 +150,7 @@ pub async fn start_build<'e, E: PgExecutor<'e>>(
     }))
 }
 
-/// Record progress within a running build.
+/// Records progress within a running build.
 ///
 /// `stage_total` is what `series_built` is counting towards; pass `0` from a stage whose size is
 /// not known without doing the work twice. The console shows a bare count in that case rather
@@ -185,16 +182,14 @@ pub async fn update_build_stage<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Stamp the running build's lease so it is not reclaimed under it.
+/// Stamps the running build's lease so it is not reclaimed under it.
 ///
-/// Driven by a timer for the life of the build rather than by its progress: `full:basis` and
-/// `full:index` are single database statements that can run for minutes with nothing to report,
-/// and a heartbeat that only rode along with progress writes would expire during them. The
-/// stamp therefore means "the process running this build is alive", which is exactly what the
-/// lease needs to know.
+/// Driven by a timer, not by progress: `full:basis` and `full:index` are single statements that
+/// can run for minutes with nothing to report. The stamp means the process running the build is
+/// alive, which is what the lease needs to know.
 ///
-/// `claim_id` makes a superseded build's heartbeat a no-op, so it cannot keep a claim it no
-/// longer holds alive.
+/// `claim_id` makes a superseded build's heartbeat a no-op, so it cannot keep alive a claim it
+/// lost.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -208,15 +203,13 @@ pub async fn touch_build<'e, E: PgExecutor<'e>>(exec: E, claim: BuildClaim) -> D
     Ok(())
 }
 
-/// Release the build, recording how it ended.
+/// Releases the build, recording how it ended.
 ///
-/// **Must run on the failure path too.** This is where a run's own claim is released, so a build
-/// that dies without calling it leaves the claim held until its lease expires — which is what
-/// the lease exists for, but the operator still sees a run that is going nowhere until then.
+/// **Must run on the failure path too.** A build that dies without calling it holds the claim
+/// until its lease expires, and the operator sees a run going nowhere until then.
 ///
-/// Fenced by `claim_id`, and that fence is the load-bearing half: a build whose lease was
-/// broken while it was still running would otherwise release the claim of the run that replaced
-/// it, and write that run's `stage = 'idle'` over a build still in progress.
+/// Fenced by `claim_id`: a build whose lease was broken while it ran would otherwise release
+/// its replacement's claim and write `stage = 'idle'` over a build in progress.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -272,12 +265,14 @@ pub async fn write_basis<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// The stored projection basis, if a full build has ever solved one.
+/// Returns the stored projection basis, if a full build has ever solved one.
+///
+/// `None` before the first full build, which tells an incremental build not to proceed: there is
+/// no space to project into yet.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; a deployment that has never run a full build gets `None`,
-/// which is the signal an incremental build must not proceed — there is no space to project
-/// into yet.
+/// [`crate::DbError::Sqlx`] only; a deployment that has never run a full build gets `None`, which
+/// is the signal an incremental build must not proceed.
 pub async fn read_basis<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Option<(Vec<u8>, i32, i32)>> {
     #[derive(FromRow)]
     struct Row {
@@ -296,11 +291,11 @@ pub async fn read_basis<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Option<(Vec<
         .map(|basis| (basis, row.basis_input_dim, row.dense_dims)))
 }
 
-/// Drop model rows left behind by an earlier generation.
+/// Drops model rows left behind by an earlier generation.
 ///
-/// The generation counter is what makes a full rebuild atomic-ish without a table swap: rows are
-/// upserted under the new one while readers keep querying the old, and this is the sweep that
-/// removes whatever the new build did not touch — series deleted since, most often.
+/// A full build upserts each series' rows in place by `series_id`, stamped with the new
+/// generation, so readers see each row as it is rewritten. This sweep then removes the rows the
+/// build did not touch, which still carry an older generation, most often series deleted since.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -326,7 +321,7 @@ pub async fn delete_stale_generations<'e, E: PgExecutor<'e> + Copy>(
     Ok(())
 }
 
-/// Mark a series' model as stale.
+/// Marks a series' model as stale.
 ///
 /// Idempotent by primary key, which is what makes it safe to call from the merge path: a popular
 /// series absorbed forty times in an hour is one row, not forty.
@@ -360,7 +355,7 @@ pub async fn repair_depth<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<i64> {
     Ok(depth)
 }
 
-/// Take a batch off the repair queue, deleting the rows in the same statement.
+/// Takes a batch off the repair queue, deleting the rows in the same statement.
 ///
 /// Delete-on-claim, not claim-then-delete: the work is idempotent (re-extracting a series is a
 /// pure function of its facts), so losing a row to a crash costs one stale embedding until the
@@ -384,11 +379,11 @@ pub async fn claim_repair_batch<'e, E: PgExecutor<'e>>(
     Ok(rows.into_iter().map(SeriesId::from_uuid).collect())
 }
 
-/// Series whose stored model predates the live generation, or which have none at all.
+/// Returns the series whose stored model predates the live generation, or which have none.
 ///
 /// The incremental build's work list after the repair queue is drained. `series_features` is
-/// left-joined rather than filtered, so a series that has never been extracted is included —
-/// that is the case a `WHERE generation < $1` alone would silently skip forever.
+/// left-joined, so a series never extracted is included, which `WHERE generation < $1` alone
+/// would skip forever.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.

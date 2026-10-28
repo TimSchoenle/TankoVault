@@ -96,9 +96,10 @@ pub struct Resolution {
 /// its predecessors just created; concurrent cross-provider creation can still race and produce
 /// two series, converged later by the merge queue.
 ///
+/// Always yields a series id, creating one if nothing matches.
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; always yields a series id (creates one if nothing matches),
-/// never [`crate::DbError::NotFound`].
+/// [`crate::DbError::Sqlx`] only; never [`crate::DbError::NotFound`].
 pub async fn resolve_canonical_series(
     conn: &mut sqlx::PgConnection,
     meta: &SeriesUpsert,
@@ -154,7 +155,7 @@ pub async fn resolve_canonical_series(
     }
 }
 
-/// Insert a fresh canonical series from scanned metadata, returning its new id.
+/// Inserts a fresh canonical series from scanned metadata, returning its new id.
 async fn create_series(conn: &mut sqlx::PgConnection, meta: &SeriesUpsert) -> DbResult<SeriesId> {
     let id = SeriesId::new();
     // Provenance is stamped only where the adapter actually said something: a stub carries a
@@ -194,7 +195,7 @@ async fn create_series(conn: &mut sqlx::PgConnection, meta: &SeriesUpsert) -> Db
     Ok(id)
 }
 
-/// Fetch one canonical series by id.
+/// Fetches one canonical series by id.
 ///
 /// # Errors
 /// [`crate::DbError::NotFound`] if no series has this id; otherwise [`crate::DbError::Sqlx`].
@@ -212,17 +213,14 @@ pub async fn get_series<'e, E: PgExecutor<'e>>(exec: E, id: SeriesId) -> DbResul
     row.ok_or(DbError::NotFound)?.try_into()
 }
 
-/// One series, but only if the adult gate lets this reader see it.
+/// Returns one series, but only if the adult gate lets this reader see it.
 ///
-/// A gated series a reader has not opted into is [`DbError::NotFound`], deliberately
-/// indistinguishable from an id that never existed. The alternative — a distinct "exists but
-/// forbidden" answer — turns the detail route into an oracle that confirms which ids in the
-/// catalogue are adult, to anyone willing to enumerate.
+/// A gated series a reader has not opted into is [`DbError::NotFound`], the same as an id that
+/// never existed. A distinct "exists but forbidden" answer would turn the detail route into an
+/// oracle confirming which ids are adult to anyone willing to enumerate.
 ///
-/// Separate from [`get_series`] rather than replacing it, because most callers of that are not
-/// serving a reader at all: the scan worker, the sync engine and the notification decorator all
-/// need the row regardless of who may look at it. Gating there would break ingest, not protect
-/// anyone.
+/// Separate from [`get_series`], whose other callers serve no reader: the scan worker, the sync
+/// engine and the notification decorator need the row whoever may look at it.
 ///
 /// # Errors
 /// [`DbError::NotFound`] when no such series exists *or* it is gated for this reader;
@@ -246,10 +244,10 @@ pub async fn get_series_visible<'e, E: PgExecutor<'e>>(
     row.ok_or(DbError::NotFound)?.try_into()
 }
 
-/// Which of `ids` are adult-gated, for the badge on rows a reader can already see.
+/// Returns which of `ids` are adult-gated, for the badge on rows a reader can already see.
 ///
-/// Only ever asked about series that survived the gate, so this labels what is on screen — it
-/// is not itself a gate and must not be used as one.
+/// Only asked about series that passed the gate, so this labels what is on screen. It is not a
+/// gate and must not be used as one.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; an empty `ids` is an empty set.
@@ -278,11 +276,8 @@ pub struct SeriesDisplay {
     pub cover_url: Option<String>,
 }
 
-/// Title and cover for each of `ids`, in one lookup. Ids that match no row are absent from the map.
-///
-/// Exists so a page of rows that reference series by id can be named in one query instead of one
-/// per row — see `services/api`'s notification list, where it decorates rows written before the
-/// payload carried a title.
+/// Returns the title and cover of each of `ids` in one lookup, so a page of rows that reference
+/// series by id is named in one query. Ids that match no row are absent from the map.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; an empty `ids` is an empty map.

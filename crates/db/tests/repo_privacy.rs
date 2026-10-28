@@ -17,10 +17,9 @@ const EXPORTED: &[(&str, &str)] = &[
     ("users", "profile"),
     ("refresh_tokens", "sessions"),
     // Passkeys and second-factor security keys share a table; the export keeps them in one key
-    // with their `purpose`, rather than splitting them into two, so the document says what the
-    // schema says.
+    // with their `purpose`, so the document says what the schema says.
     ("user_webauthn_credentials", "webauthn_credentials"),
-    // Metadata only — the shared secret is withheld. See the key's comment in `privacy.rs`.
+    // Metadata only: the shared secret is withheld. See the key's comment in `privacy.rs`.
     ("user_totp", "two_factor"),
     // Which codes remain and when they were spent; never the hashes.
     ("user_recovery_codes", "recovery_codes"),
@@ -44,25 +43,25 @@ const EXPORTED: &[(&str, &str)] = &[
     ("user_permissions", "permissions"),
     ("gdpr_requests", "privacy_requests"),
     // The recommendation profile. Derived from the watchlist, but disclosed on its own because
-    // it is a *profile* in the GDPR sense — an inference about the subject rather than a copy of
-    // what they entered — and Art. 15(1)(h) asks about exactly that.
+    // it is a *profile* in the GDPR sense, an inference about the subject instead of a copy of
+    // what they entered, and Art. 15(1)(h) asks about exactly that.
     ("user_series_affinity", "recommendation_affinity"),
     ("user_taste_profile", "recommendation_profile"),
     ("recommendation_feedback", "recommendation_feedback"),
-    // What the subject was actually shown, not merely what could be inferred about them. It is a
-    // cache and regenerates itself, which is an argument for leaving it out of an *export* — but
-    // not an argument for leaving it out of a subject access request, where "which
-    // recommendations did this system put in front of me" is the question being asked.
+    // What the subject was shown, not merely what could be inferred about them. It is a
+    // regenerating cache, which argues for leaving it out of an *export*, but not out of a
+    // subject access request, where "which recommendations did this system put in front of me"
+    // is the question being asked.
     ("user_recommendations", "recommendation_shelf"),
-    // The reader's global source order — which providers they prefer a series to open on, and in
-    // what sequence. A preference they entered, not an inference, and the export resolves each
-    // row to its provider slug so it says which *sites* rather than which uuids. The per-series
-    // half of the same preference is a column on `watchlist_entries`, exported with those rows.
+    // The reader's global source order: which providers they prefer a series to open on, in
+    // what sequence. A preference they entered, not an inference; the export resolves each row
+    // to its provider slug, so it names *sites*, not uuids. The per-series half is a column on
+    // `watchlist_entries`, exported with those rows.
     ("user_provider_priority", "source_preferences"),
-    // Which providers the subject said they pay for early access to. Exported rather than
-    // excluded because it is a statement about their spending that they entered themselves, and
-    // because it is the only thing that makes paywalled chapters count towards their unread
-    // totals — a subject asking what we hold about them is entitled to both facts.
+    // Which providers the subject said they pay for early access to. Exported because it is a
+    // statement about their spending that they entered themselves, and the only thing that makes
+    // paywalled chapters count towards their unread totals; a subject asking what we hold is
+    // entitled to both facts.
     ("user_provider_early_access", "early_access_sources"),
 ];
 
@@ -122,11 +121,9 @@ const NOT_EXPORTED: &[(&str, &str)] = &[
 
 /// Every `(table, column)` in the live schema that names a user: `user_id` or `actor_id`.
 ///
-/// The column travels with the table rather than being re-derived from its name at each use. A
-/// heuristic that assumed `user_id` for everything but `audit_log` looked right for years and
-/// then failed on the first *other* table to name its column `actor_id` — reporting a schema
-/// error, but only because the column was missing; had that table happened to hold a `user_id`
-/// as well, it would have silently checked the wrong one.
+/// The column travels with the table instead of being re-derived from its name. A heuristic
+/// assuming `user_id` for everything but `audit_log` fails on any *other* table naming its column
+/// `actor_id`, and if that table also held a `user_id` it would silently check the wrong one.
 async fn columns_referencing_a_user(db: &TestDb) -> BTreeSet<(String, String)> {
     let rows: Vec<(String, String)> = sqlx::query_as(
         "SELECT table_name::text, column_name::text FROM information_schema.columns \
@@ -251,7 +248,7 @@ async fn the_export_carries_no_credential_material() {
 
     // A second factor, so its redaction is exercised too. The TOTP secret is the worst thing in
     // this schema to leak: it is symmetric, so a reader of the export can mint the subject's
-    // codes — unlike `password_hash`, which is only a cracking target.
+    // codes, unlike `password_hash`, which is only a cracking target.
     users::mfa::begin_totp_enrolment(
         &db.pool,
         subject,
@@ -316,8 +313,8 @@ async fn the_export_carries_no_credential_material() {
 
 #[tokio::test]
 async fn the_export_names_no_third_party_from_the_subjects_own_audit_trail() {
-    // Whole `audit_log` rows would name other subjects (e.g. an edited account's username and
-    // email in `detail`) — Art. 15(4) forbids that.
+    // Whole `audit_log` rows would name other subjects (an edited account's username and email
+    // in `detail`), which Art. 15(4) forbids.
     let db = TestDb::spawn().await;
     let operator = seed_subject(&db, "operator").await;
     let bystander = db.seed_user("bystander", &[], AccountStatus::Active).await;

@@ -2,22 +2,18 @@
 //! series list an operator triages from, the deployment-wide totals, bulk deletion, and the
 //! purge.
 //!
-//! Everything here deletes through `series`/`chapters` rather than truncating, so the declared
-//! `ON DELETE` action decides what happens to each dependant. That is the whole reason this
-//! module does not use `TRUNCATE … CASCADE`: cascade ignores the action and would also empty
-//! `sync_decisions`, `sync_history` and `sync_remote_entries`, which are journals of what the
-//! system *did* and are meant to outlive the rows they mention — their `series_id` is
-//! `ON DELETE SET NULL` precisely so they can.
+//! Everything here deletes through `series` and `chapters`, never `TRUNCATE … CASCADE`, so the
+//! declared `ON DELETE` action decides each dependant's fate. A cascade would ignore it and
+//! empty `sync_decisions`, `sync_history` and `sync_remote_entries`, journals that are
+//! `ON DELETE SET NULL` so they outlive the rows they mention.
 //!
-//! A purge empties the *catalogue*; it deliberately leaves the `tags` and `authors`
-//! vocabularies standing. Neither is reachable from `series` by a foreign key, both are small,
-//! and the next scan reuses their slugs — so deleting them would be extra destruction for no
-//! operator benefit. Nothing here reports their size, for the same reason.
+//! A purge empties the *catalogue* and leaves the `tags` and `authors` vocabularies standing:
+//! no foreign key reaches them from `series`, both are small, and the next scan reuses their
+//! slugs.
 //!
-//! "How many chapters does this series have" is answered by `series_sources.chapter_count`
-//! throughout, never by counting `chapters` rows. That is the counter the browse filters and the
-//! series page already read, and a maintenance filter that disagreed with the number in the
-//! column beside it would be worse than one built on a denormalised value.
+//! A series' chapter count here is the sum of `series_sources.chapter_count` over its sources,
+//! never a count of `chapters` rows. The browse filters use the largest single source's count
+//! and the series page counts distinct whole chapters, so the three figures can differ.
 
 use crate::error::DbResult;
 use sqlx::{Connection as _, FromRow, PgConnection, PgExecutor, PgPool};
@@ -26,9 +22,8 @@ use uuid::Uuid;
 
 /// Which rows a maintenance listing is narrowed to.
 ///
-/// Named states rather than free-form predicates: these are what an operator actually hunts for
-/// when they open this panel, and each is a shape that produces junk — a series no provider
-/// carries any more, or one carried but never populated.
+/// Named states, not free-form predicates: each is a shape of junk an operator hunts for here,
+/// such as a series no provider carries or one carried but never populated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SeriesHealth {
     /// No health constraint.
@@ -75,7 +70,8 @@ pub struct MaintenanceRow {
     pub source_count: i64,
     /// Chapter links under those pages.
     pub chapter_count: i64,
-    /// Readers with this series on a watchlist — the blast radius that is not re-scannable.
+    /// Readers with this series on a watchlist: the part of the blast radius a rescan cannot
+    /// restore.
     pub watcher_count: i64,
     /// When the series was created.
     pub created_at: OffsetDateTime,
@@ -112,8 +108,8 @@ pub struct CatalogueTotals {
 
 /// What a deletion actually removed, per table.
 ///
-/// Counted before the delete rather than derived from `rows_affected`, which only ever reports
-/// the rows the statement named and says nothing about what cascaded.
+/// Counted before the delete, since `rows_affected` reports only the rows the statement named
+/// and nothing about what cascaded.
 #[derive(Debug, Clone, Copy, Default, FromRow)]
 pub struct DeletionReport {
     /// Series rows removed.
@@ -138,11 +134,10 @@ impl std::ops::AddAssign for DeletionReport {
     }
 }
 
-/// List the catalogue for maintenance, newest first.
+/// Lists the catalogue for maintenance, newest first.
 ///
-/// Ordered by `created_at DESC` and deliberately not sortable: the panel narrows with the health
-/// filter rather than by sorting a fifty-thousand-row list, and a bound sort key would put a
-/// `CASE` in the `ORDER BY` that no index can serve.
+/// Ordered by `created_at DESC` and not sortable: the panel narrows with the health filter, and
+/// a bound sort key would put a `CASE` in the `ORDER BY` that no index can serve.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; a filter matching nothing is `{items: [], total: 0}`.
@@ -170,9 +165,9 @@ pub async fn list_for_maintenance(
     let orphaned = filter.health == SeriesHealth::Orphaned;
     let empty = filter.health == SeriesHealth::Empty;
 
-    // One aggregate pass over `series_sources` rather than a correlated `EXISTS` per predicate:
-    // the three filters and the three display columns all want the same per-series rollup, and
-    // asking for it six times charges six semi-joins against every row of `series`.
+    // One aggregate pass over `series_sources`, not a correlated `EXISTS` per predicate: the
+    // three filters and three display columns want the same per-series rollup, and six
+    // semi-joins would each be charged against every row of `series`.
     //
     // `matched` then carries the predicate once, so the page and the total cannot disagree about
     // what "matching" means. Same shape as `repo::user_admin::directory`.
@@ -244,14 +239,14 @@ pub async fn list_for_maintenance(
     })
 }
 
-/// Deployment-wide catalogue totals, for the purge panel's stated blast radius.
+/// Returns the deployment-wide catalogue totals, for the purge panel's stated blast radius.
 ///
-/// The two junk counts share one rollup, so the whole answer costs one pass over
-/// `series_sources` and one join rather than a full `series` scan per count.
+/// The two junk counts share one rollup, so the answer costs one pass over `series_sources` and
+/// one join. Every column is a scalar subquery, so an empty catalogue yields zeros.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — every column is a scalar subquery, so an empty catalogue
-/// yields zeros rather than [`crate::DbError::NotFound`].
+/// [`crate::DbError::Sqlx`] only; every column is a scalar subquery, so an empty catalogue yields
+/// zeros instead of [`crate::DbError::NotFound`].
 pub async fn totals<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<CatalogueTotals> {
     let totals = sqlx::query_as!(
         CatalogueTotals,
@@ -277,11 +272,10 @@ pub async fn totals<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<CatalogueTotals>
     Ok(totals)
 }
 
-/// Delete the named series, and everything the schema hangs off them.
+/// Deletes the named series, and everything the schema hangs off them.
 ///
-/// One transaction: a bulk delete that half-applied would leave the operator no way to tell
-/// which half. Ids naming nothing are silently skipped — a bulk delete racing a merge must not
-/// fail wholesale because one row it listed has already gone.
+/// One transaction, since a half-applied bulk delete would leave no way to tell which half. Ids
+/// naming nothing are skipped, so a bulk delete racing a merge does not fail wholesale.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -298,12 +292,12 @@ pub async fn delete_series(conn: &mut PgConnection, ids: &[Uuid]) -> DbResult<De
     Ok(report)
 }
 
-/// Delete up to `batch` series, oldest first, and report how many are left.
+/// Deletes up to `batch` series, oldest first, and reports how many are left.
 ///
-/// Batched rather than one `DELETE FROM series`: a full catalogue cascades into a dozen tables,
-/// and one transaction over all of it would hold row locks against every running scan for
-/// minutes. Each call is its own transaction, so the purge is resumable — the caller repeats
-/// until `remaining` reaches zero.
+/// Batched, not one `DELETE FROM series`: a full catalogue cascades into a dozen tables, and one
+/// transaction over all of it would hold row locks against every running scan for minutes. Each
+/// call is its own transaction, so the purge is resumable; the caller repeats until `remaining`
+/// reaches zero.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -325,7 +319,7 @@ pub async fn purge_series_batch(
     Ok((report, remaining))
 }
 
-/// Delete up to `batch` chapters and report how many are left.
+/// Deletes up to `batch` chapters and reports how many are left.
 ///
 /// Series and their sources survive, so the next scan refills them. Batched for the same reason
 /// as [`purge_series_batch`].
@@ -337,10 +331,9 @@ pub async fn purge_chapters_batch(
     batch: i64,
 ) -> DbResult<(DeletionReport, i64)> {
     let deleted = sqlx::query!(
-        // `ctid`, not a key: migration 0055 dropped the surrogate `id`, and the primary key is now
-        // the two-column `(series_source_id, number_milli)`, which cannot be fed back through an
-        // `IN` as a single scalar. `ctid` is what this always wanted anyway — a physical-order
-        // batch, which is the cheapest thing to delete.
+        // `ctid`, not a key: the primary key is the two-column `(series_source_id, number_milli)`,
+        // which cannot go through an `IN` as one scalar, and a physical-order batch is the
+        // cheapest thing to delete.
         "DELETE FROM chapters WHERE ctid IN (SELECT ctid FROM chapters LIMIT $1)",
         batch.max(1)
     )
@@ -362,7 +355,7 @@ pub async fn purge_chapters_batch(
     ))
 }
 
-/// Count what deleting `ids` will take with it, from inside the deleting transaction.
+/// Counts what deleting `ids` will take with it, from inside the deleting transaction.
 async fn measure(conn: &mut PgConnection, ids: &[Uuid]) -> DbResult<DeletionReport> {
     let report = sqlx::query_as!(
         DeletionReport,
@@ -383,24 +376,20 @@ async fn measure(conn: &mut PgConnection, ids: &[Uuid]) -> DbResult<DeletionRepo
     Ok(report)
 }
 
-/// Delete up to `batch` series that nothing refers to. Returns how many.
+/// Deletes up to `batch` series that nothing refers to. Returns how many.
 ///
 /// Nothing means no source, no reader's watchlist entry or progress, no tracker mapping, sync
 /// override, conflict, match block or sync history, and no merge forwarding to it: deleting a
 /// merge survivor would cascade away the row that resolves the absorbed id.
 ///
-/// These are leftovers of the registration race fixed in `register_chunk` and of the copy bug
-/// fixed in `f686b3b`: nothing will ever scan them, and no reader can lose anything with them.
-/// A series with any of the references above is kept, because deleting it would cascade that
-/// reference away.
+/// Nothing will ever scan such a series, and no reader loses anything with it. A series with
+/// any of the references above is kept, because deleting it would cascade that reference away.
 ///
-/// # Why lock, then re-check
-///
-/// An orphan is still a candidate for a scan to attach to. The candidates are locked first
-/// (`SKIP LOCKED`, so one a scan is attaching to right now is left alone), and the delete
-/// re-checks the predicate in a statement of its own: under read committed that statement sees
-/// any source committed in between, and from the lock onward a new source's foreign-key check
-/// waits for this transaction rather than racing it.
+/// An orphan is still a candidate for a scan to attach to, so the candidates are locked first
+/// with `SKIP LOCKED`, leaving one a scan is attaching to alone, and the delete re-checks the
+/// predicate in its own statement. Under read committed that statement sees any source committed
+/// in between, and from the lock on a new source's foreign-key check waits for this
+/// transaction.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.

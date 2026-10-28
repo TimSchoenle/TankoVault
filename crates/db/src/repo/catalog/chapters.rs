@@ -1,15 +1,15 @@
 //! Chapters: idempotent upserts that report which rows were genuinely new, plus the counts
 //! and listings the reading surfaces read back.
 //!
-//! # The storage form, and why the SQL here looks the way it does
+//! # The storage form
 //!
-//! Migration 0055 stores the chapter number as `number_milli int` — the number scaled by
-//! [`tankovault_domain::chapter_number::MILLI_SCALE`] — and the path relative to the source's own
-//! path. Both are storage details that
-//! stop at this module's boundary: [`Chapter`] carries an `f64` number and an expanded path, and
-//! nothing above the repo layer knows otherwise.
+//! Migration 0055 stores the chapter number as `number_milli int`, the number scaled by
+//! [`tankovault_domain::chapter_number::MILLI_SCALE`], and the path relative to the source's own
+//! path. Both stop at this module's boundary: [`Chapter`] carries an `f64` number and an
+//! expanded path.
 //!
-//! The translations, which every chapter query in the crate uses and none may spell differently:
+//! Every chapter query in the crate uses these translations, and none may spell them
+//! differently:
 //!
 //! | Domain question | SQL |
 //! |---|---|
@@ -19,15 +19,11 @@
 //! | `number <= p` | `number_milli <= (p * 10000)::bigint` |
 //! | the absolute path | `chapter_url_path(ss.source_path, c.path)` |
 //!
-//! The bigint on the third row is not decoration, though not for the obvious reason: an in-range
-//! bound, `(200000 + 1) * 10000`, fits `int` comfortably. `w` comes from
-//! `read_progress.last_read_whole_number`, which is still `numeric(10,4)` and was never
-//! range-checked before the chapter ceiling existed — a row holding a date-shaped value from that
-//! era yields a bound two orders of magnitude past `i32::MAX`, and that is an error raised on a
-//! read path rather than a wrong answer. Postgres has an `int4 >= int8` operator in the default
-//! btree opfamily, so widening the bound costs nothing: the comparison stays an **index cond**
-//! rather than a filter, which is the whole point of the storage change and is verified by
-//! `repo_query_plans`.
+//! The bigint on the third row matters. An in-range bound fits `int`, but `w` comes from
+//! `read_progress.last_read_whole_number`, a `numeric(10,4)` with no range check, and a
+//! date-shaped value there yields a bound past `i32::MAX`, which would raise an error on a read
+//! path. Postgres has an `int4 >= int8` operator in the default btree opfamily, so the
+//! comparison stays an **index cond**, which `repo_query_plans` verifies.
 
 use crate::error::DbResult;
 use sqlx::{FromRow, PgExecutor};
@@ -42,7 +38,7 @@ pub struct ChapterUpsert {
     pub number: f64,
     /// Title as the provider gives it, `None` when it publishes only a number.
     pub title: Option<String>,
-    /// RELATIVE link to the chapter page, as the adapter emitted it — site-relative and whole.
+    /// Relative link to the chapter page, site-relative and whole, as the adapter emitted it.
     /// [`upsert_chapters`] compresses it against the source path; callers do not.
     pub path: String,
     /// When the provider says it went up, `None` when it publishes no date.
@@ -77,33 +73,29 @@ impl From<ChapterRow> for Chapter {
     }
 }
 
-/// Upsert a whole chapter list in one statement, returning the numbers that were **new**.
+/// Upserts a whole chapter list in one statement, returning the numbers that were **new**.
 ///
-/// One statement, not a per-chapter loop — the ingest transaction holds row locks on shared
-/// `tags`/`authors` rows, so per-chapter round trips there stall other ingests. `DISTINCT ON`
-/// avoids `ON CONFLICT DO UPDATE` aborting when a page lists one chapter number twice.
-///
+/// One statement, not a per-chapter loop: the ingest transaction holds row locks on shared
+/// `tags` and `authors` rows, so per-chapter round trips stall other ingests. `DISTINCT ON`
+/// keeps `ON CONFLICT DO UPDATE` from aborting when a page lists one chapter number twice.
 /// `source_path` is the source's own path, which the stored `path` is compressed against.
 ///
 /// A chapter whose number is outside the storable range is **skipped**, not an error: the worker
-/// already drops those (`drop_unstorable`), and a second one reaching here must not be able to
-/// fail the whole per-source transaction — which is the failure the range check exists to prevent.
+/// already drops those (`drop_unstorable`), and one reaching here must not fail the whole
+/// per-source transaction. The result holds only newly inserted chapters, so it is empty whenever
+/// none was inserted: no input, a converged rescan, a batch that only updated existing chapters,
+/// or every row skipped.
 ///
-/// # The `WHERE` on the `DO UPDATE`, which is not optional
+/// The `WHERE` on the `DO UPDATE` is required: without it a converged rescan, where every value
+/// is identical, still writes a new version of every row. On 1.2 M rows one no-op rescan grew
+/// the relation from 456 MB to 1046 MB. The `published_at` arm mirrors the `COALESCE` above it;
+/// a plain `IS DISTINCT FROM` would rewrite a row with a stored date and a NULL incoming one on
+/// every scan.
 ///
-/// Without it, a *converged* rescan — one where the provider published nothing and every value is
-/// byte-identical to what is stored — still writes a new version of every row, because an `UPDATE`
-/// that assigns the same value is still an `UPDATE`. Measured on 1.2 M rows: the relation went
-/// from 456 MB to **1046 MB after a single no-op rescan**, and to 1465 MB after three. With this
-/// clause, three converged rescans leave it at 456 MB.
-///
-/// The `published_at` arm has to mirror the `COALESCE` above it. Written as a plain
-/// `IS DISTINCT FROM`, a row whose stored `published_at` is set and whose incoming one is NULL
-/// would compare as differing forever and be rewritten on every scan — the same bug, quieter.
+/// One bad chapter fails the whole batch.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; one bad chapter fails the whole batch. An empty `Vec` means
-/// no input, a fully-converged re-scan, or every row skipped — only `Err` means a write failed.
+/// [`crate::DbError::Sqlx`] only; an empty `Vec` means no chapter was newly inserted.
 pub async fn upsert_chapters<'e, E: PgExecutor<'e>>(
     exec: E,
     source_id: SeriesSourceId,
@@ -136,16 +128,12 @@ pub async fn upsert_chapters<'e, E: PgExecutor<'e>>(
     let unlocks: Vec<Option<OffsetDateTime>> = storable.iter().map(|(c, _)| c.unlocks_at).collect();
 
     let rows = sqlx::query!(
-        // `access`/`unlocks_at` are overwritten, not coalesced: they are the provider's current
-        // verdict, and the whole point is that a chapter which has since unlocked stops being
-        // reported as locked. Coalescing would freeze the first answer forever.
+        // `access` and `unlocks_at` are overwritten, not coalesced: they are the provider's
+        // current verdict, and a chapter that has unlocked must stop being reported as locked.
         //
-        // `DISTINCT ON (u.number_milli)` with `u.ord DESC` behind it makes the last listing of a
-        // repeated number win. It no longer needs a cast: the dedup key and the unique index are
-        // now the same `int`, where under `numeric(10,4)` they were two different types and two
-        // `float8` values differing past the fourth decimal deduped as distinct but collided in
-        // the constraint — aborting the batch with "ON CONFLICT DO UPDATE command cannot affect
-        // row a second time".
+        // `DISTINCT ON (u.number_milli)` with `u.ord DESC` makes the last listing of a repeated
+        // number win. The dedup key and the unique index must be the same `int`, or two values
+        // that dedup as distinct can collide in the constraint and abort the batch.
         "INSERT INTO chapters (series_source_id, number_milli, title, path, published_at, \
                                access, unlocks_at) \
          SELECT DISTINCT ON (u.number_milli) \
@@ -184,11 +172,14 @@ pub async fn upsert_chapters<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// The highest chapter number stored for a source (fast-scan comparison key).
+/// Returns the highest chapter number stored for a source (fast-scan comparison key).
+///
+/// No chapters, or an unknown source, is `None`, never `Some(0.0)`, which would read as
+/// chapter 0 existing.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; no chapters or unknown source is `Ok(None)`, never
-/// `Ok(Some(0.0))` — a zero would be read as chapter 0 existing.
+/// `Ok(Some(0.0))`.
 pub async fn max_chapter_number<'e, E: PgExecutor<'e>>(
     exec: E,
     source_id: SeriesSourceId,
@@ -202,14 +193,15 @@ pub async fn max_chapter_number<'e, E: PgExecutor<'e>>(
     Ok(max.map(from_milli))
 }
 
-/// Distinct whole chapters a source has, with part releases folded into their whole.
+/// Returns the distinct whole chapters a source has, with part releases folded into their
+/// whole.
 ///
 /// `152.1` through `152.6` count once, as chapter 152. Not the same figure as
-/// `series_sources.chapter_count`, which is a raw scanned-row count.
+/// `series_sources.chapter_count`, a raw scanned-row count. No chapters, or an unknown source,
+/// is `0`, and the count saturates at `i32::MAX`.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; no chapters or unknown source is `Ok(0)`. Saturates at
-/// `i32::MAX` rather than erroring or wrapping.
+/// [`crate::DbError::Sqlx`] only; no chapters or unknown source is `Ok(0)`.
 pub async fn count_full_chapters<'e, E: PgExecutor<'e>>(
     exec: E,
     source_id: SeriesSourceId,
@@ -224,11 +216,10 @@ pub async fn count_full_chapters<'e, E: PgExecutor<'e>>(
     Ok(i32::try_from(count).unwrap_or(i32::MAX))
 }
 
-/// List chapters of a source, newest first (resolved to absolute links by the caller).
+/// Lists chapters of a source, newest first (resolved to absolute links by the caller).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; unknown source or a not-yet-scanned stub is the same empty
-/// `Vec`.
+/// [`crate::DbError::Sqlx`] only; unknown source or a not-yet-scanned stub is the same empty `Vec`.
 pub async fn list_chapters<'e, E: PgExecutor<'e>>(
     exec: E,
     source_id: SeriesSourceId,
@@ -248,12 +239,14 @@ pub async fn list_chapters<'e, E: PgExecutor<'e>>(
     Ok(rows.into_iter().map(Chapter::from).collect())
 }
 
-/// Distinct whole-chapter counts for a series, one row per provider — the batched counterpart
-/// to [`count_full_chapters_across`].
+/// Returns a series' distinct whole-chapter counts, one row per provider; the batched
+/// counterpart to [`count_full_chapters_across`].
+///
+/// An inner join, so a provider with no chapters has no row and a caller treats a missing key
+/// as zero.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. Inner join: a provider with no chapters has no row, not a row
-/// of `0` — callers must treat a missing key as zero.
+/// [`crate::DbError::Sqlx`] only; a provider with no chapters has no row, not a row of `0`.
 pub async fn count_full_chapters_by_provider<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -284,13 +277,16 @@ pub async fn count_full_chapters_by_provider<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Distinct whole chapters across a set of sources, counted once each (`docs/ARCHITECTURE.md` §10).
+/// Counts the distinct whole chapters across a set of sources, each once
+/// (`docs/ARCHITECTURE.md` §10).
 ///
 /// The union-aware counterpart to [`count_full_chapters`]: summing per-source counts would
 /// double every chapter two sources both carry. An empty slice yields `0`.
 ///
+/// Saturates at `i32::MAX` like [`count_full_chapters`].
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; saturates at `i32::MAX` like [`count_full_chapters`].
+/// [`crate::DbError::Sqlx`] only.
 pub async fn count_full_chapters_across<'e, E: PgExecutor<'e>>(
     exec: E,
     source_ids: &[SeriesSourceId],
@@ -306,17 +302,16 @@ pub async fn count_full_chapters_across<'e, E: PgExecutor<'e>>(
     Ok(i32::try_from(count).unwrap_or(i32::MAX))
 }
 
-/// Chapters across a set of sources, de-duplicated by number and newest first.
+/// Returns the chapters across a set of sources, de-duplicated by number and newest first.
 ///
 /// The merge-aware counterpart to [`list_chapters`]. Where two sources carry one number, the
 /// earliest-discovered row wins. Every source must belong to one provider: nothing checks it,
 /// and a mixed set produces links resolved against the wrong `base_url`.
 ///
-/// `viewer` is who is asking, and it decides whether the provider's paid early-access chapters
-/// are in the list at all. They are omitted unless that reader has opted the provider in — a row
-/// nobody can open is a link to a paywall, and listing it next to readable ones is what put a
-/// locked chapter under the series screen's "next up" marker. `None` (an anonymous request) sees
-/// only what is free, which is also what an anonymous visitor sees on the provider's own site.
+/// `viewer` decides whether the provider's paid early-access chapters are listed. They are
+/// omitted unless that reader has opted the provider in, since a row nobody can open is a link
+/// to a paywall and would land under the series screen's "next up" marker. `None`, an anonymous
+/// request, sees only what is free, as on the provider's own site.
 ///
 /// A chapter whose stated unlock time has passed is free to everyone without a rescan, the same
 /// rule the unread predicate applies; a locked one with no stated time stays hidden, because a
@@ -360,16 +355,16 @@ pub struct SeriesChapterStats {
     pub latest_number: Option<f64>,
 }
 
-/// [`SeriesChapterStats`] for a set of series, in one statement.
+/// Returns the [`SeriesChapterStats`] of a set of series, in one statement.
 ///
-/// Batched rather than folded into the browse projection as a correlated subquery: the browse
-/// statements are the ones the plan audit budgets, and a `chapters` reach per candidate row is
-/// charged against every row of `series` under a generic plan. Keyed on the page's ids, this
-/// touches only the rows about to be rendered.
+/// Batched, not a correlated subquery in the browse projection: under a generic plan a
+/// `chapters` reach per candidate row is charged against every row of `series`. Keyed on the
+/// page's ids, this touches only the rows about to be rendered. An inner join, so a series
+/// whose sources hold no chapters is absent and a caller treats a missing key as zero.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. Inner join: a series whose sources hold no chapters is absent
-/// from the map rather than present as zero — callers must treat a missing key as zero.
+/// [`crate::DbError::Sqlx`] only; a series whose sources hold no chapters is absent from the map
+/// instead of present as zero.
 pub async fn chapter_stats_for_series<'e, E: PgExecutor<'e>>(
     exec: E,
     series_ids: &[SeriesId],

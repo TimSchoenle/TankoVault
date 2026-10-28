@@ -8,12 +8,12 @@ use uuid::Uuid;
 
 /// How long a claim survives without a round completing before another run may break it.
 ///
-/// Sized against a round, which is one budgeted sweep and takes seconds: five minutes without
-/// one means the process holding the claim is gone rather than busy.
+/// Sized against a round, one budgeted sweep that takes seconds: five minutes without one means
+/// the process holding the claim is gone, not busy.
 ///
-/// Not a parameter. Both the service that takes the claim and the API that reports whether one
-/// is held resolve staleness against it, and a lease they disagreed about would have the console
-/// offering a button no claim could be granted for — or withholding one that could.
+/// Not a parameter: the service that takes the claim and the API that reports it both resolve
+/// staleness against it, and if they disagreed the console would offer a button no claim could
+/// be granted for, or withhold one that could.
 const LEASE_SECS: f64 = 300.0;
 
 /// A granted claim on the exhaustive sweep.
@@ -68,22 +68,21 @@ pub struct FullSweepState {
     pub rounds: i32,
     /// What those rounds did, summed.
     pub counters: FullSweepCounters,
-    /// Why the last run stopped — `exhausted` or `failed`. A run has no limit it can stop at,
-    /// so anything but a failure means the catalogue was walked to the end. Control planes
-    /// before the limits were lifted also wrote `merge_ceiling` and `round_cap`.
+    /// Why the last run stopped: `exhausted` or `failed`. A run has no limit to stop at, so
+    /// anything but a failure means the catalogue was walked to the end. Older rows may also
+    /// hold `merge_ceiling` or `round_cap`.
     pub stopped: Option<String>,
     /// Why the last run failed, `None` when it did not.
     pub error: Option<String>,
 }
 
-/// Claim the exhaustive sweep and reset the row to the start of a run.
+/// Claims the exhaustive sweep and resets the row to the start of a run.
 ///
-/// Returns `None` when a live run already holds the claim — the correct response to which is to
-/// report that, not to queue behind it: the other run is doing this one's work.
+/// Returns `None` when a live run holds the claim; the caller reports that and does not queue
+/// behind it, since the other run is doing this one's work.
 ///
-/// A claim whose `heartbeat_at` is older than `LEASE_SECS` is broken and re-granted. Without
-/// that, a run killed between two rounds would hold the claim forever and no operator could
-/// start another.
+/// A claim whose `heartbeat_at` is older than `LEASE_SECS` is broken and re-granted, or a run
+/// killed between two rounds would hold the claim forever.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -121,10 +120,10 @@ pub async fn claim_full_sweep<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Option
     Ok(granted.map(|claim_id| FullSweepClaim { claim_id }))
 }
 
-/// Record what the run has done after `rounds` rounds, and stamp the lease.
+/// Records what the run has done after `rounds` rounds, and stamps the lease.
 ///
 /// The counters are the run's running totals, not one round's delta, so a write lost to a
-/// transient failure costs a refresh of the console rather than a permanent undercount.
+/// transient failure is corrected by the next one instead of undercounting for good.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -165,7 +164,7 @@ pub async fn advance_full_sweep<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Release the claim, recording why the run stopped.
+/// Releases the claim, recording why the run stopped.
 ///
 /// Called however the run ends. A run that returned early on an error without reaching here
 /// would leave the claim held until its lease expired, and the console showing a sweep that is
@@ -196,11 +195,13 @@ pub async fn finish_full_sweep<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Read the exhaustive sweep's state, resolving `running` against the same `LEASE_SECS` the
-/// claim is granted under.
+/// Reads the exhaustive sweep's state, resolving `running` against the same `LEASE_SECS` the claim
+/// is granted under.
+///
+/// The row is created by migration 0056 and cannot be absent.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; the row is created by migration 0056 and cannot be absent.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn read_full_sweep_state<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<FullSweepState> {
     let row = sqlx::query!(
         "SELECT running \

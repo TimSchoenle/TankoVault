@@ -62,7 +62,7 @@ impl UnreadDrift {
     }
 }
 
-/// Compare the `limit` least recently verified stored rows with the live computation, repair any
+/// Compares the `limit` least recently verified stored rows with the live computation, repair any
 /// that disagree, and create rows for up to `limit` watchlist entries that have none.
 ///
 /// A row whose unlock deadline has already passed is repaired but not counted: it is due for

@@ -47,7 +47,7 @@ struct CardRow {
 }
 
 impl CardRow {
-    /// The cursor that resumes immediately after this row.
+    /// Returns the cursor that resumes immediately after this row.
     fn cursor(&self) -> WatchlistCursor {
         WatchlistCursor {
             num: self.sort_num,
@@ -92,7 +92,7 @@ impl From<CardRow> for WatchlistCard {
     }
 }
 
-/// List a user's watchlist, filtered, sorted and paginated in SQL, with the tab counts and the
+/// Lists a user's watchlist, filtered, sorted and paginated in SQL, with the tab counts and the
 /// group-header aggregates.
 ///
 /// `unread` counts distinct whole chapters (`floor(number)`), so part releases do not inflate
@@ -100,32 +100,30 @@ impl From<CardRow> for WatchlistCard {
 ///
 /// The unread count is the stored one, and the next-unread probe is a copy of the predicate
 /// documented on [`dashboard`](crate::repo::tracking::dashboard); both must stay the negation of
-/// [`ReadProgress::covers`](crate::repo::tracking::ReadProgress::covers), or this badge disagrees with the feed
-/// that links to the same chapters. `repo_tracking`'s differential test is what holds them together.
+/// [`ReadProgress::covers`](crate::repo::tracking::ReadProgress::covers), or this badge
+/// disagrees with the feed linking to the same chapters. `repo_tracking`'s differential test
+/// holds them together.
+///
+/// A series with no progress row has `last_read_number: None` and is read from the zero frontier,
+/// so `unread` counts its accessible chapters above chapter 0; one with no chapters has
+/// `total_chapters: 0` and `latest_chapter_at: None`, and bands as
+/// [`ReleaseBucket::Earlier`](super::ReleaseBucket::Earlier).
 ///
 /// # Why three statements
 ///
-/// The page, the per-status counts and the group aggregates answer three different questions
-/// over three different predicate sets — the counts deliberately drop the `status` filter, the
-/// groups keep it — so no single statement produces all three without a `GROUPING SETS`
-/// construction that would be harder to read than the three it replaced. They are issued
-/// concurrently on separate pool connections, so the trio costs one round trip, exactly as
+/// The page, the per-status counts and the group aggregates use three predicate sets (the counts
+/// drop the `status` filter, the groups keep it), and one statement would need a `GROUPING SETS`
+/// construction harder to read than three. They run concurrently on separate pool connections,
+/// which is why this takes `&PgPool`, so the trio costs one round trip, as
 /// [`list_series_filtered`](crate::repo::catalog::list_series_filtered) does.
 ///
-/// `total` is **derived** from the group aggregates rather than counted a fourth time: the
-/// grouping query carries the identical predicate list, every row lands in exactly one band,
-/// and a separate `count(*)` could only ever disagree with the sum by racing it.
-///
-/// Takes `&PgPool` rather than a generic executor precisely so the three can overlap.
+/// `total` is **derived** from the group aggregates: the grouping query carries the identical
+/// predicate list, every row lands in exactly one band, and a separate `count(*)` could only
+/// disagree by racing it.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A user tracking nothing, and
-/// a filter matching nothing, are both an empty page with zeroed counts rather than
-/// [`crate::DbError::NotFound`]. A tracked series with no progress row comes back through the
-/// `LEFT JOIN` with `last_read_number: None` and its full chapter count as `unread`, which is a
-/// valid row rather than a missing one; a tracked series with no chapters at all comes back
-/// with `total_chapters: 0` and `latest_chapter_at: None`, and bands as
-/// [`ReleaseBucket::Earlier`](super::ReleaseBucket::Earlier).
+/// [`crate::DbError::Sqlx`] only; a user tracking nothing, and a filter matching nothing, are both
+/// an empty page with zeroed counts instead of [`crate::DbError::NotFound`].
 pub async fn watchlist_page(
     pool: &PgPool,
     user_id: UserId,
@@ -164,10 +162,10 @@ pub async fn watchlist_page(
     })
 }
 
-/// Turn page rows into cards with their [`WatchlistCard::sources`] filled in.
+/// Turns page rows into cards with their [`WatchlistCard::sources`] filled in.
 ///
-/// The one place a `WatchlistCard` is built for a caller, so no path can hand out a card whose
-/// empty `sources` means "not loaded" rather than "no sources".
+/// The one place a `WatchlistCard` is built for a caller, so an empty `sources` always means "no
+/// sources", never "not loaded".
 async fn attach_sources(pool: &PgPool, rows: Vec<CardRow>) -> DbResult<Vec<WatchlistCard>> {
     let ids: Vec<Uuid> = rows.iter().map(|r| r.series_id).collect();
     let mut by_series = fetch_sources(pool, &ids).await?;
@@ -181,7 +179,7 @@ async fn attach_sources(pool: &PgPool, rows: Vec<CardRow>) -> DbResult<Vec<Watch
         .collect())
 }
 
-/// One page of matching rows, in the requested order.
+/// Returns one page of matching rows, in the requested order.
 ///
 /// `pattern` is already wrapped and escaped by [`search_pattern`]; binding a raw term instead
 /// would let a typed `%` or `_` act as a wildcard.
@@ -203,10 +201,9 @@ async fn attach_sources(pool: &PgPool, rows: Vec<CardRow>) -> DbResult<Vec<Watch
 /// arm for each. Written flat, that means repeating the five-branch key expression twice, and
 /// the two copies drifting is a list silently ordered by the wrong thing under one direction.
 /// Naming the key once in the subquery and ordering the outer query by it costs a nesting
-/// level Postgres flattens anyway.
+/// level Postgres flattens.
 ///
-/// The final `series_id` tiebreaker is not decoration: without it rows sharing a leading key —
-/// and with `unread` over 600 entries there are hundreds of ties — have no defined order, so
+/// The final `series_id` tiebreaker gives rows sharing a leading key a defined order; without it,
 /// two adjacent `OFFSET` pages can repeat one row and skip another.
 #[expect(
     clippy::too_many_lines,
@@ -344,8 +341,8 @@ async fn fetch_page(
         filter.sort.as_token(),
         filter.order.as_token(),
         filter.limit,
-        // A cursor replaces the offset rather than adding to it: seeking past the row the
-        // caller named and *then* skipping N more would drop rows nobody asked to skip.
+        // A cursor replaces the offset: seeking past the named row and *then* skipping N more
+        // would drop rows nobody asked to skip.
         if cursor.is_some() { 0 } else { filter.offset },
         filter.series_id.map(SeriesId::as_uuid),
         cursor.is_some(),
@@ -359,30 +356,27 @@ async fn fetch_page(
     Ok(rows)
 }
 
-/// Every provider carrying each of `series_ids`, preferred first — **one row per provider**.
+/// Returns every provider carrying each of `series_ids`, preferred first, **one row per
+/// provider**.
 ///
-/// A second statement keyed on the page's ids rather than an aggregate folded into
-/// [`fetch_page`]: the ledger only renders this column above 1500px, and four more `array_agg`
-/// columns per row are paid on every page whether or not anything reads them. Empty in, empty
-/// out — no statement is issued for an empty page.
+/// A second statement keyed on the page's ids, not an aggregate in [`fetch_page`]: the ledger
+/// renders this column only above 1500px, and four more `array_agg` columns would be paid on
+/// every page. An empty page issues no statement; a series with no sources is absent.
 ///
 /// The `preferred` flag repeats [`fetch_page`]'s ranking (`chapter_count`, then the most recent
-/// scan, then the slug) because the two must name the same source; a `Sources` column whose
-/// tinted tile disagrees with the row's own submeta is worse than an untinted one.
+/// scan, then the slug), since a tinted tile disagreeing with the row's submeta is worse than
+/// none.
 ///
 /// # Why the `DISTINCT ON`
 ///
-/// `series_sources` is unique on `(provider_id, source_path)`, not on `(series_id,
-/// provider_id)`: one provider can legitimately carry the same series under several paths, and
-/// a mis-matched scan can attach hundreds. Emitting a row each made the column repeat one
-/// carrier's monogram and overflow into a `+n` counting paths rather than providers — and it
-/// disagreed with `source_count`, which has always been `count(DISTINCT provider_id)`. The
-/// per-provider survivor is picked by the same key the ranking uses, so it is the row
-/// `preferred_source_name` would have named.
+/// `series_sources` is unique on `(provider_id, source_path)`, not `(series_id, provider_id)`:
+/// one provider can carry a series under several paths, and a mis-matched scan can attach
+/// hundreds. A row each would repeat one carrier's monogram, count paths in the `+n` overflow,
+/// and disagree with `source_count`, which is `count(DISTINCT provider_id)`. The survivor is
+/// picked by the ranking key, so it is the row `preferred_source_name` names.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A series with no sources is
-/// simply absent from the map.
+/// [`crate::DbError::Sqlx`] only; a series with no sources is simply absent from the map.
 async fn fetch_sources(
     pool: &PgPool,
     series_ids: &[Uuid],
@@ -437,18 +431,15 @@ async fn fetch_sources(
     Ok(out)
 }
 
-/// One series' watchlist row, enriched exactly as the list's rows are — or `None` when the
-/// user does not track it.
+/// Returns one series' watchlist row, enriched as the list's rows are, or `None` when the user
+/// does not track it.
 ///
-/// The Series page needs the same card the list renders (status, notify, progress, sync
-/// exclusion). Fetching the whole watchlist to find one row breaks once the list paginates:
-/// past the first page the entry simply is not in the response, so the page would render
-/// "not tracked" for a series the user tracks.
+/// The Series page needs the card the list renders. Searching a paginated watchlist for it would
+/// miss entries past the first page and render "not tracked" for a tracked series.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An untracked series is
-/// `Ok(None)` rather than [`crate::DbError::NotFound`]: "do you track this" is a question with
-/// a negative answer, not a missing resource.
+/// [`crate::DbError::Sqlx`] only; an untracked series is `Ok(None)` instead of
+/// [`crate::DbError::NotFound`].
 pub async fn watchlist_card(
     pool: &PgPool,
     user_id: UserId,

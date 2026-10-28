@@ -44,10 +44,9 @@ pub async fn list_series<'e, E: PgExecutor<'e>>(
 
     let rows = if let Some(q) = query {
         // Matches canonical title, FTS vector, and alternative titles; ranks by best trigram
-        // similarity across all three. The three predicates are a UNION of index-driven scans
-        // rather than an `OR` chain: an `EXISTS` under `OR` cannot become a semi-join, which
-        // costs the planner every index on `series` and leaves it scanning all of it (see
-        // `crate::repo::matching::find_candidates`).
+        // similarity across all three. The three predicates are a UNION of index-driven scans,
+        // not an `OR` chain: an `EXISTS` under `OR` cannot become a semi-join, which costs the
+        // planner every index on `series` (see `crate::repo::matching::find_candidates`).
         sqlx::query_as!(
             ListRow,
             "WITH matched AS ( \
@@ -132,8 +131,8 @@ pub enum SeriesSort {
     /// Default, and the order the recency statement walks an index for.
     #[default]
     Updated,
-    /// Best match for the search term. Meaningless without one, and degrades to [`Self::Updated`]
-    /// when there is none rather than refusing — the sort control is shared with the browse grid.
+    /// Best match for the search term. With no term it degrades to [`Self::Updated`] instead of
+    /// refusing, since the sort control is shared with the browse grid.
     Relevance,
     /// Canonical title, A to Z.
     Title,
@@ -143,13 +142,14 @@ pub enum SeriesSort {
     Sources,
     /// Newest release year first.
     Year,
-    /// No rating column yet; falls back to recency rather than refusing a token the frontend
-    /// already offers.
+    /// There is no rating column, so this falls back to recency instead of refusing a token the
+    /// frontend offers.
     Rating,
 }
 
 impl SeriesSort {
-    /// The wire token, which is also the value bound into the `ORDER BY` `CASE` expressions.
+    /// Returns the wire token, which is also the value bound into the `ORDER BY` `CASE`
+    /// expressions.
     #[must_use]
     pub fn as_token(self) -> &'static str {
         match self {
@@ -163,10 +163,10 @@ impl SeriesSort {
         }
     }
 
-    /// Whether this order is served by the dedicated recency statement.
+    /// Returns whether this order is served by the dedicated recency statement.
     ///
-    /// [`Self::Relevance`] is in the list because this is only consulted once the relevance
-    /// branch has already declined — which it does when there is no search term to rank by.
+    /// [`Self::Relevance`] is in the list because this is consulted only after the relevance
+    /// branch declined, which it does when there is no search term to rank by.
     fn is_recency(self) -> bool {
         matches!(self, Self::Updated | Self::Rating | Self::Relevance)
     }
@@ -196,10 +196,10 @@ pub struct ParseSeriesSortError(pub String);
 
 /// Server-side filter/sort/paginate criteria for the Discover grid (frontend §9.1).
 ///
-/// Every field is optional; `None`/empty means "no constraint". Enum filters bind as native
-/// Postgres types, not text — text binding both loses the index and lets an unparseable token
-/// match nothing instead of being refused. `tags` requires all listed slugs; `exclude_tags`
-/// excludes any.
+/// Every field is optional, and `None` or empty means no constraint. Enum filters bind as native
+/// Postgres types, since a text binding loses the index and lets an unparseable token match
+/// nothing instead of being refused. `tags` requires all listed slugs; `exclude_tags` excludes
+/// any.
 #[derive(Debug, Default, Clone)]
 pub struct SeriesFilter {
     /// Free text over the search vector and the title trigrams.
@@ -220,16 +220,16 @@ pub struct SeriesFilter {
     pub year_max: Option<i32>,
     /// Inclusive lower bound on the summed chapter count.
     pub min_chapters: Option<i32>,
-    /// Whether adult-gated series may appear. `false` — the `Default` — is the safe value, and
-    /// the only correct one for a caller with no authenticated reader to ask.
+    /// Whether adult-gated series may appear. `false`, the `Default`, is the safe value and the
+    /// only correct one for a caller with no authenticated reader.
     ///
     /// Not a filter the client picks: the API resolves it from the caller's stored opt-in and
     /// the deployment flag. A request parameter here would be an age gate anybody could open by
     /// editing a query string.
     pub include_adult: bool,
-    /// The reader whose watchlist [`Self::tracked`] is about. `None` — the `Default` — switches
-    /// the tracking filter off entirely, which is the only correct value for a caller with no
-    /// authenticated reader behind it.
+    /// The reader whose watchlist [`Self::tracked`] is about. `None`, the `Default`, switches
+    /// the tracking filter off, which is the only correct value for a caller with no
+    /// authenticated reader.
     pub tracked_by: Option<uuid::Uuid>,
     /// `Some(true)` keeps only series that reader tracks, `Some(false)` only ones they do not,
     /// `None` neither. Ignored without [`Self::tracked_by`].
@@ -287,34 +287,28 @@ struct CountRow {
 /// Every filtered-browse statement, built from one copy of the shared filter predicate.
 ///
 /// The `sqlx` macros need their SQL as literal tokens at the call site, so a `const` or a
-/// `concat!` is invisible to them — but `sqlx` 0.9 accepts a `"a" + "b"` chain of literals, and a
-/// macro can hand it one. That is what keeps the predicate and the row projection written once
-/// across the statements below; `crates/db/tests/repo_browse.rs` is the differential over what
-/// still differs.
+/// `concat!` is invisible to them, but `sqlx` 0.9 accepts a `"a" + "b"` chain of literals and a
+/// macro can hand it one. That keeps the predicate and the row projection written once across
+/// the statements below; `crates/db/tests/repo_browse.rs` is the differential over what still
+/// differs.
 ///
 /// The predicate reads `series_browse` (migration 0060), the narrow projection holding every
-/// filter and sort key, and binds `$1`–`$11`, so a call site numbers its own parameters from `$12`
-/// up. `$cte` and `$join` carry the search branch's matched-id set.
+/// filter and sort key, and binds `$1` to `$11`, so a call site numbers its own parameters from
+/// `$12` up. `$cte` and `$join` carry the search branch's matched-id set.
 ///
-/// `$9` is the adult gate, and it lives in the shared predicate rather than at the call sites
-/// precisely because there are several: a gate that has to be remembered at every call site is a
-/// gate that will be missing from the next statement somebody adds. `$10`/`$11` are the tracking
-/// filter, there for the same reason and for one more: the count and the page have to agree about
-/// it, or the pager offers a page that comes back empty.
+/// `$9` is the adult gate. It lives in the shared predicate because a gate that has to be
+/// remembered at every call site will be missing from the next statement somebody adds.
+/// `$10` and `$11` are the tracking filter, there for the same reason and because the count and
+/// the page must agree on it, or the pager offers a page that comes back empty.
 ///
-/// # Why the include-tags filter maps slugs to ids with a placeholder
+/// `tag_ids @> ARRAY(SELECT id FROM tags WHERE slug = ANY($7))` would silently drop a slug no
+/// tag has, so `tag=romance&tag=typo` would return every romance series instead of none. Each
+/// requested slug maps to its id or to the all-zero UUID, which no row carries.
 ///
-/// `tag_ids @> ARRAY(SELECT id FROM tags WHERE slug = ANY($7))` silently drops a slug no tag has,
-/// so `tag=romance&tag=typo` would return every romance series instead of none. Each requested
-/// slug maps to its id or to the all-zero UUID, which no row carries.
-///
-/// # Why `max_chapters` is a `max`, not a `sum`
-///
-/// `series_sources.chapter_count` is *one source's* scanned-row count, and a series carried by
-/// several sources — which is what every merge leaves behind — has one row per carrier. Summed,
-/// a 200-chapter work mirrored on three sites filtered and sorted as a 600-chapter one while the
-/// card beside it read 200. `max` is the richest carrier's count: exact whenever one source's
-/// catalogue covers the others', and never an over-claim.
+/// `max_chapters` is a `max`, not a `sum`: `series_sources.chapter_count` is one source's
+/// count, and a series every merge leaves on several sources has one row per carrier. A sum
+/// would filter a 200-chapter work on three sites as 600 chapters. The richest carrier's count
+/// is exact when one catalogue covers the others, and never an over-claim.
 macro_rules! browse_statement {
     // Order and limit on the projection alone, then read only the page's rows from `series`.
     (narrow $cte:literal, $join:literal, $window:literal, $keys:literal, $order:literal,
@@ -386,9 +380,8 @@ macro_rules! browse_statement {
     };
 }
 
-/// Query the browse list with server-side filtering, sorting and offset pagination
-/// (frontend §9.1). Returns the page, whether another follows, and the total under
-/// [`Total::Count`].
+/// Queries the browse list with server-side filtering, sorting and offset pagination, returning
+/// the page, whether another follows, and the total under [`Total::Count`].
 ///
 /// A page reads `limit + 1` rows, so whether another page follows never depends on a count. A
 /// search page carries its total as a window count over the matched set, which it has to build
@@ -396,10 +389,11 @@ macro_rules! browse_statement {
 /// Without a search the count is its own statement, concurrent with the page: a window there would
 /// materialise every matching row before the recency index's `LIMIT` could stop the scan.
 ///
+/// A filter matching nothing is an empty page with total `0`. The count can drift from the page
+/// under concurrent writes, which the pager tolerates.
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; a filter matching nothing is an empty page with total `0`.
-/// `try_join!` fails the pair if either statement fails; the count can drift from the page
-/// under concurrent writes, which the pager tolerates by design.
+/// [`crate::DbError::Sqlx`] when either statement fails.
 pub async fn list_series_filtered(
     pool: &PgPool,
     filter: &SeriesFilter,
@@ -459,18 +453,16 @@ pub async fn list_series_filtered(
     })
 }
 
-/// One page of matching rows plus one, in the requested order.
+/// Returns one page of matching rows plus one, in the requested order.
 ///
 /// Three branches, not one statement: the order picks the statement, and a search term picks
-/// whether the matched-id set is joined in. The term cannot be folded back into a single
-/// statement as `$1::text IS NULL OR … OR EXISTS (…)` — an `EXISTS` under `OR` cannot be pulled
-/// up into a semi-join, so no index is usable and the planner scans everything (see
-/// [`crate::repo::matching::find_candidates`]). The `UNION` of index-driven scans that fixes
-/// that has nothing to union when there is no term, which is why this branches rather than
-/// rewrites.
+/// whether the matched-id set is joined in. The term cannot fold into one statement as
+/// `$1::text IS NULL OR … OR EXISTS (…)`, because an `EXISTS` under `OR` cannot become a
+/// semi-join and no index is usable (see [`crate::repo::matching::find_candidates`]). The
+/// `UNION` of index-driven scans has nothing to union without a term.
 ///
-/// Every page statement ends with the series id as a tiebreaker — without it, ties in the sort key
-/// give adjacent `OFFSET` pages no stable order.
+/// Every page statement ends with the series id as a tiebreaker, so ties in the sort key give
+/// adjacent `OFFSET` pages a stable order.
 async fn fetch_filtered_page(
     pool: &PgPool,
     filter: &SeriesFilter,
@@ -486,25 +478,22 @@ async fn fetch_filtered_page(
 
 /// Best-match order for a search term.
 ///
-/// Its own statement rather than another `ORDER BY CASE` arm on [`fetch_page_by_sort_token`],
-/// because the ranking needs the term itself and that statement's tail is shared with the
-/// no-search branch, which has no term to bind.
+/// Its own statement, not an `ORDER BY CASE` arm on [`fetch_page_by_sort_token`], because the
+/// ranking needs the term and that statement's tail is shared with the no-search branch.
 ///
-/// The tiers exist because trigram similarity alone does not put an exact title first: a short
-/// query is a large fraction of a short unrelated title, so `similarity()` happily ranks
-/// "Berserk of Gluttony" above "Berserk". Exactness is therefore decided *before* similarity is
-/// consulted — the canonical title first, then any alternative title, then a prefix. Prefix is
-/// tested with `left(…)` rather than `LIKE $n || '%'` so a `%` or `_` surviving normalization
-/// cannot turn the reader's query into a wildcard.
+/// Trigram similarity alone does not put an exact title first: a short query is a large
+/// fraction of a short unrelated title, so `similarity()` ranks "Berserk of Gluttony" above
+/// "Berserk". Exactness is decided first: the canonical title, then any alternative title, then
+/// a prefix. The prefix test uses `left(…)`, not `LIKE $n || '%'`, so a `%` or `_` surviving
+/// normalization cannot turn the reader's query into a wildcard.
 async fn fetch_page_by_relevance(
     pool: &PgPool,
     filter: &SeriesFilter,
     fetch: i64,
     query: &str,
 ) -> DbResult<Vec<FilteredRow>> {
-    // The exactness tiers compare against `normalized_title`, so the term has to be reduced by
-    // the same function that produced that column — otherwise "SPY×FAMILY" never equals the row
-    // it is stored as.
+    // The exactness tiers compare against `normalized_title`, so the term is reduced by the
+    // function that produced that column, or "SPY×FAMILY" never equals the row it is stored as.
     let key = tankovault_domain::normalize_title(query);
     let rows = browse_statement!(
         wide "WITH matched AS ( \
@@ -549,7 +538,7 @@ async fn fetch_page_by_relevance(
     Ok(rows)
 }
 
-/// The default order: newest-updated first, straight down `series_browse_updated_idx`.
+/// Returns the default order: newest-updated first, straight down `series_browse_updated_idx`.
 async fn fetch_page_by_recency(
     pool: &PgPool,
     filter: &SeriesFilter,
@@ -616,7 +605,7 @@ async fn fetch_page_by_recency(
     Ok(rows)
 }
 
-/// Every other order, selected by the bound sort token.
+/// Returns every other order, selected by the bound sort token.
 ///
 /// A custom plan folds the inactive `CASE` arms away, so the requested order is a plain key the
 /// matching `series_browse_*_idx` index serves. The keys are selected so the outer lookup can
@@ -789,8 +778,9 @@ impl ProjectionCheck {
     }
 }
 
-/// Compare the `series_browse` rows of up to `limit` series after `after` (in id order) with a
-/// recomputation from the base tables, rebuild the ones that disagree, and report what was found.
+/// Compares the `series_browse` rows of up to `limit` series after `after` (in id order) with a
+/// recomputation from the base tables, rebuilds the ones that disagree, and reports what was
+/// found.
 ///
 /// A row a concurrent write changes between the comparison and the rebuild is recomputed under its
 /// row lock, so the rebuild never stores an older answer than the trigger did.
@@ -863,7 +853,8 @@ pub async fn verify_projection(
     Ok(check)
 }
 
-/// Alternative titles of a series (`docs/ARCHITECTURE.md` §9.2 enrichment). Empty when none are recorded.
+/// Returns the alternative titles of a series (`docs/ARCHITECTURE.md` §9.2 enrichment), empty
+/// when none are recorded.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; unknown id or no synonyms is the same empty `Vec`.
@@ -944,15 +935,15 @@ pub async fn list_series_tags<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Tag names for a set of series, alphabetically within each — the batched counterpart to
-/// [`list_series_tags`], for card grids that would otherwise issue one query per cover.
+/// Returns the tag names of a set of series, alphabetically within each.
 ///
-/// Names, not [`tankovault_domain::Tag`]s: a card labels a series, it does not link the facet,
-/// and shipping ids and slugs a caller cannot use is payload nobody reads.
+/// The batched counterpart to [`list_series_tags`], for card grids that would otherwise issue
+/// one query per cover. Names, not [`tankovault_domain::Tag`]s, since a card labels a series and
+/// does not link the facet. An untagged series is absent from the map.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. An untagged series is absent from the map rather than present
-/// as an empty `Vec`.
+/// [`crate::DbError::Sqlx`] only; an untagged series is absent from the map instead of present as
+/// an empty `Vec`.
 pub async fn tags_for_series<'e, E: PgExecutor<'e>>(
     exec: E,
     series_ids: &[SeriesId],
@@ -981,11 +972,12 @@ pub async fn tags_for_series<'e, E: PgExecutor<'e>>(
     Ok(out)
 }
 
-/// List all tags/genres, alphabetically (`docs/ARCHITECTURE.md` §11 `GET /v1/tags`).
+/// Lists all tags/genres, alphabetically (`docs/ARCHITECTURE.md` §11 `GET /v1/tags`).
+///
+/// A caller must not default an error to empty, which reads as "no tags".
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; must not be defaulted to empty — that reads as "no tags"
-/// rather than a failed fetch.
+/// [`crate::DbError::Sqlx`] only; must not be defaulted to empty.
 pub async fn list_tags<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<tankovault_domain::Tag>> {
     #[derive(FromRow)]
     struct Row {
@@ -1014,16 +1006,15 @@ pub struct TagFacet {
     pub series_count: i64,
 }
 
-/// Every tag with its series count, commonest first.
+/// Returns every tag with its series count, commonest first.
 ///
-/// Popularity order, not alphabetical: a facet panel can only render so many chips, and an
-/// alphabetical truncation cuts the list at whatever letter the cap lands on — which is how a
-/// panel ends mid-alphabet and hides the genres most of the catalogue is actually tagged with.
-/// Ties break on name so the order is stable between requests.
+/// Popularity order, not alphabetical: a facet panel renders only so many chips, and an
+/// alphabetical cut would end mid-alphabet and hide the genres most of the catalogue carries.
+/// Ties break on name, so the order is stable between requests. A caller must not default an
+/// error to empty, which reads as "no tags".
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; must not be defaulted to empty — that reads as "no tags"
-/// rather than a failed fetch.
+/// [`crate::DbError::Sqlx`] only; must not be defaulted to empty.
 pub async fn list_tag_facets<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<TagFacet>> {
     #[derive(FromRow)]
     struct Row {
@@ -1032,11 +1023,9 @@ pub async fn list_tag_facets<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<Tag
         name: String,
         series_count: i64,
     }
-    // One aggregate over `series_tags` joined in, not a correlated `count(*)` per tag. The
-    // correlated form is charged once per row of `tags` and estimated at 262 000 on the plan
-    // audit's fixture — the whole vocabulary re-counted for a facet the panel loads on every
-    // visit. This groups `series_tags` once and hash-joins it, which is the same answer for a
-    // fraction of the work.
+    // One aggregate over `series_tags`, hash-joined, not a correlated `count(*)` per tag: the
+    // correlated form re-counts the whole vocabulary for a facet the panel loads on every
+    // visit.
     let rows = sqlx::query_as!(
         Row,
         "SELECT t.id, t.slug, t.name, COALESCE(c.n, 0) AS \"series_count!\" \
@@ -1064,9 +1053,9 @@ mod sort_tests {
     use super::SeriesSort;
     use std::str::FromStr as _;
 
-    /// Pins: `sort` used to be a passed-through string with a `_ =>` fallback, so
-    /// `?sort=titel` silently returned recency order instead of 400. Also pins the token
-    /// strings bound into the `ORDER BY CASE`.
+    /// An unknown `sort` is refused: passed through with a `_ =>` fallback, `?sort=titel`
+    /// returned recency order instead of 400. Also pins the token strings bound into the
+    /// `ORDER BY CASE`.
     #[test]
     fn every_sort_token_round_trips_and_unknown_is_refused() {
         for sort in [
@@ -1087,10 +1076,10 @@ mod sort_tests {
     /// Pins which orders route to the indexed recency statement; a wrong answer here silently
     /// reorders results with no error.
     ///
-    /// `Relevance` belongs to that set: the relevance statement is chosen ahead of this check and
-    /// only when a search term exists, so what this pins is the *fallback* — a relevance request
-    /// with nothing to rank must land on recency, not on the sort-token statement whose `CASE`
-    /// arms all miss and which would then order by `updated_at` the slow way.
+    /// `Relevance` belongs to that set: the relevance statement is chosen ahead of this check,
+    /// and only with a search term, so this pins the fallback. A relevance request with nothing
+    /// to rank must land on recency, not on the sort-token statement, whose `CASE` arms all miss
+    /// and which would order by `updated_at` the slow way.
     #[test]
     fn only_recency_orders_use_the_indexed_statement() {
         assert!(SeriesSort::Updated.is_recency());

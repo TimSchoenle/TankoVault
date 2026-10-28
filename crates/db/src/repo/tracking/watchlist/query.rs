@@ -1,5 +1,5 @@
-//! The query vocabulary the Watchlist board is driven by — sort, order, filter, cursor —
-//! and the view types a page is assembled into.
+//! The query vocabulary that drives the Watchlist board (sort, order, filter, cursor) and the
+//! view types a page is assembled into.
 
 use tankovault_domain::{ProviderState, SeriesId, SeriesSourceId, WatchStatus};
 use time::OffsetDateTime;
@@ -27,17 +27,15 @@ pub struct WatchlistCard {
     pub last_read_number: Option<f64>,
     /// Distinct chapters strictly above the user's progress, across all sources.
     pub unread: i64,
-    /// Distinct whole chapters at or below the user's progress — the progress bar's numerator.
+    /// Distinct whole chapters at or below the user's progress, the progress bar's numerator.
     ///
-    /// Not [`Self::last_read_number`]: a catalogue with gaps (no chapter 5) makes the frontier
-    /// larger than the number of chapters that actually exist below it, so a bar drawn from the
-    /// frontier over [`Self::total_chapters`] reads past 100%. Counted with the same
-    /// `floor(number)` `DISTINCT` as the denominator, so the two are commensurable by
-    /// construction.
+    /// Not [`Self::last_read_number`]: in a catalogue with gaps the frontier exceeds the chapters
+    /// that exist below it, and a bar over [`Self::total_chapters`] would read past 100%. Counted
+    /// with the denominator's `floor(number)` `DISTINCT`, so the two are commensurable.
     pub read_count: i64,
     /// The lowest unread chapter, or `None` when the reader is caught up.
     pub next_unread: Option<NextUnread>,
-    /// Distinct whole chapters known across all sources — the progress denominator.
+    /// Distinct whole chapters known across all sources, the progress denominator.
     ///
     /// Counted with the same `floor(number)` as [`Self::unread`], so a source publishing part
     /// releases cannot push `last_read / total` above 1.
@@ -53,29 +51,24 @@ pub struct WatchlistCard {
     /// When the newest chapter was discovered, across all sources.
     ///
     /// `discovered_at`, not `published_at`: [`feed`](crate::repo::tracking::dashboard::feed) and
-    /// [`continue_reading`](crate::repo::tracking::dashboard::continue_reading) both order on `discovered_at`,
-    /// and `published_at` is null for every provider that does not print a date. Ordering the
-    /// watchlist on anything else would put a row at the top of "Today" that the feed — one
-    /// click away, over the same chapters — dates to last year.
+    /// [`continue_reading`](crate::repo::tracking::dashboard::continue_reading) order on it, and
+    /// `published_at` is null for every provider that does not print a date. Anything else would
+    /// top "Today" with a row the feed dates to last year.
     pub latest_chapter_at: Option<OffsetDateTime>,
     /// Display name of the provider this series is primarily carried by, for the row submeta.
     ///
-    /// Derived, and deliberately still user-agnostic: the source with the most chapters,
-    /// tie-broken by the most recent scan and then the provider slug so the choice is stable
-    /// between requests rather than whatever the planner emitted first. The reader's own
-    /// preference — [`Self::pinned_source_id`] and their global provider order — is resolved
-    /// where a source is *opened*, not here; folding it into this statement would put a
-    /// per-user join on the ledger's hot path for a column that only labels a row.
+    /// Derived and user-agnostic: the source with the most chapters, tie-broken by the most recent
+    /// scan and then the provider slug, so the choice is stable between requests. The reader's
+    /// preference ([`Self::pinned_source_id`] and their provider order) is resolved where a
+    /// source is *opened*, keeping a per-user join off the ledger's hot path for a label.
     pub preferred_source_name: Option<String>,
     /// Distinct providers carrying this series.
     pub source_count: i64,
-    /// Whether the preferred source — or the provider behind it — is in a non-`active` state.
+    /// Whether the preferred source, or the provider behind it, is in a non-`active` state.
     ///
-    /// Read off the existing `series_sources.state` / `providers.state` health rather than
-    /// derived from the last scan run: those columns are what the scan pipeline already
-    /// maintains, and a row that says "source offline" has to agree with the Providers console
-    /// that shows the same state. Scoped to the *preferred* source deliberately: a series with
-    /// three sources where a secondary is blocked is not a series the reader is blocked on.
+    /// Read off `series_sources.state` and `providers.state`, which the scan pipeline maintains,
+    /// so "source offline" agrees with the Providers console. Scoped to the *preferred* source:
+    /// a blocked secondary source does not block the reader.
     pub source_degraded: bool,
     /// Whether this series is opted out of external sync (design v2 §A.5).
     pub sync_excluded: bool,
@@ -88,17 +81,16 @@ pub struct WatchlistCard {
     pub pinned_source_id: Option<SeriesSourceId>,
     /// Every provider carrying this series, preferred first.
     ///
-    /// Empty on [`watchlist_page`](super::watchlist_page) until `attach_sources` has run — it is a second statement
-    /// keyed on the page's ids rather than an aggregate folded into the row, because an
-    /// `array_agg` of four columns per row is paid for every row of every page whether or not
-    /// the viewport is wide enough to render it.
+    /// Empty on [`watchlist_page`](super::watchlist_page) until `attach_sources` runs: a second
+    /// statement keyed on the page's ids, since an `array_agg` of four columns would be paid on
+    /// every row whether or not the viewport renders it.
     pub sources: Vec<WatchlistSource>,
 }
 
 /// The next chapter the reader has not read, for the ledger's `Next unread` column.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NextUnread {
-    /// The chapter number, parts included — `152.5` is a legitimate next read.
+    /// The chapter number, parts included: `152.5` is a legitimate next read.
     pub number: f64,
     /// The provider's chapter title, when it publishes one.
     pub title: Option<String>,
@@ -109,14 +101,14 @@ pub struct NextUnread {
 /// One provider carrying a series, for the ledger's `Sources` column.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WatchlistSource {
-    /// The provider slug — the monogram tile's letters and a stable key for the client.
+    /// The provider slug: the monogram tile's letters and a stable key for the client.
     pub code: String,
     /// The provider's display name.
     pub name: String,
     /// The *effective* state: the series-source's own, unless the provider behind it is worse.
     ///
-    /// One value rather than two, because the reader's question is "can I read this here?" and
-    /// a healthy listing on a blocked provider answers it no.
+    /// One value, because the reader's question is "can I read this here?", and a healthy
+    /// listing on a blocked provider answers no.
     pub state: ProviderState,
     /// Whether this is the source [`WatchlistCard::preferred_source_name`] names.
     pub preferred: bool,
@@ -124,14 +116,13 @@ pub struct WatchlistSource {
 
 /// How the watchlist list is ordered.
 ///
-/// A closed enum rather than a passed-through string, for the reason
-/// [`SeriesSort`](crate::repo::catalog::SeriesSort) is: an unrecognised token that silently
-/// falls back to the default produces a page that looks right and is ordered wrong. The
+/// A closed enum, as [`SeriesSort`](crate::repo::catalog::SeriesSort) is: an unrecognised token
+/// silently falling back to the default gives a page that looks right and is ordered wrong. The
 /// handler parses this and answers `400`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum WatchlistSort {
-    /// Newest release first — the default, and the order the Today/This week/Earlier grouping
-    /// is meaningful under.
+    /// Newest release first: the default, and the order the Today, This week and Earlier
+    /// grouping is meaningful under.
     #[default]
     Released,
     /// Most unread chapters first.
@@ -145,7 +136,7 @@ pub enum WatchlistSort {
 }
 
 impl WatchlistSort {
-    /// The wire token, which is also the value bound into the `ORDER BY` `CASE`.
+    /// Returns the wire token, which is also the value bound into the `ORDER BY` `CASE`.
     #[must_use]
     pub fn as_token(self) -> &'static str {
         match self {
@@ -157,7 +148,7 @@ impl WatchlistSort {
         }
     }
 
-    /// The direction that reads as "most interesting first" for this key.
+    /// Returns the direction that reads as "most interesting first" for this key.
     ///
     /// Every order except `title` is a magnitude the reader wants the largest of; `title` is
     /// the one people expect A→Z. Without this the sort control had to ship a second control
@@ -202,7 +193,7 @@ pub enum WatchlistOrder {
 }
 
 impl WatchlistOrder {
-    /// The wire token, which is also the value bound into the `ORDER BY` `CASE`.
+    /// Returns the wire token, which is also the value bound into the `ORDER BY` `CASE`.
     #[must_use]
     pub fn as_token(self) -> &'static str {
         match self {
@@ -234,9 +225,9 @@ impl std::str::FromStr for WatchlistOrder {
 pub struct WatchlistFilter {
     /// Narrow to a single series.
     ///
-    /// Not a list filter — it exists so [`watchlist_card`](super::watchlist_card) can reuse this statement instead of
-    /// growing a fifth hand-written copy of the unread predicate, which is the drift the
-    /// `unread_predicate_agrees_everywhere` test exists to catch.
+    /// Not a list filter: it lets [`watchlist_card`](super::watchlist_card) reuse this statement
+    /// instead of a fifth copy of the unread predicate, the drift the
+    /// `unread_predicate_agrees_everywhere` test catches.
     pub series_id: Option<SeriesId>,
     /// Narrow to one watch status, which is what the tab strip selects.
     pub status: Option<WatchStatus>,
@@ -247,11 +238,10 @@ pub struct WatchlistFilter {
     pub unread_only: bool,
     /// Only rows whose newest chapter was discovered at or after this instant.
     ///
-    /// An instant rather than a window, computed at the edge: the group buckets below use
-    /// rolling windows off the database clock, and taking the cutoff as an instant keeps the
-    /// filter honest about being evaluated once per request rather than per row.
+    /// An instant computed at the edge, not a window: the group buckets use rolling windows off
+    /// the database clock, and an instant makes the filter evaluate once per request.
     pub released_since: Option<OffsetDateTime>,
-    /// Only rows whose preferred source is degraded — see [`WatchlistCard::source_degraded`].
+    /// Only rows whose preferred source is degraded; see [`WatchlistCard::source_degraded`].
     pub source_issues: bool,
     /// Which key to order on.
     pub sort: WatchlistSort,
@@ -285,7 +275,7 @@ impl Default for WatchlistFilter {
     }
 }
 
-/// Wrap a trimmed search term as the `ILIKE` pattern the watchlist statements bind.
+/// Wraps a trimmed search term as the `ILIKE` pattern the watchlist statements bind.
 ///
 /// The three statements search four columns each, so escaping in SQL would mean twelve copies of
 /// a nested `replace(replace(replace(…)))`; doing it once here keeps the predicate readable and
@@ -310,14 +300,11 @@ pub(super) fn search_pattern(term: &str) -> String {
 /// Where a keyset page resumes: the sort key of the previous page's last row, plus its id.
 ///
 /// **Read out of the row the database ordered on, never recomputed.** `progress` orders on
-/// `last_read_whole_number / total_chapters`, and a Rust copy of that expression would be a
-/// second definition of the sort order free to drift from the `ORDER BY` — which produces a page
-/// that silently repeats or skips rows rather than failing. `fetch_page` therefore selects the
-/// key it sorted by and hands it back.
+/// `last_read_whole_number / total_chapters`, and a Rust copy of that expression could drift from
+/// the `ORDER BY` and silently repeat or skip rows. `fetch_page` selects the key it sorted by.
 ///
-/// The id is not decoration. Hundreds of rows tie on `unread` in a 600-entry list, and without
-/// a unique tiebreaker in both the order and the seek predicate a keyset page has the same
-/// repeat-and-skip defect as `OFFSET`.
+/// The id is the unique tiebreaker in both the order and the seek predicate; without it, rows
+/// tied on `unread` give a keyset page the repeat-and-skip defect of `OFFSET`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WatchlistCursor {
     /// The numeric sort key, for every order but `title`.
@@ -329,8 +316,8 @@ pub struct WatchlistCursor {
 }
 
 impl WatchlistCursor {
-    /// Whether the row this cursor names had no sort key at all — a series with no chapters
-    /// under `released`, say. Such rows order last in **both** directions (`NULLS LAST`), so
+    /// Returns whether the row this cursor names had no sort key, such as a series with no
+    /// chapters under `released`. Such rows order last in **both** directions (`NULLS LAST`), so
     /// only other keyless rows can follow one.
     pub(super) fn key_is_null(&self) -> bool {
         self.num.is_none() && self.text.is_none()
@@ -358,16 +345,14 @@ pub struct WatchlistCounts {
     pub all: i64,
     /// How many of those rows have a degraded preferred source, for the `Source issues` chip.
     ///
-    /// It lives here rather than being derived from the page because the chip has to answer
-    /// "how many across the whole filtered list", and the page is sixty rows of it. Counted
-    /// under the same filters as the tab counts — including `source_issues` itself, which is
-    /// harmless: with that filter on, every remaining row is degraded and the chip correctly
-    /// reads the size of what you are looking at.
+    /// Not derived from the page, since the chip answers for the whole filtered list. Counted
+    /// under the tab counts' filters, `source_issues` included, which is harmless: with it on,
+    /// every remaining row is degraded and the chip reads the size of the list.
     pub source_issues: i64,
 }
 
 impl WatchlistCounts {
-    /// Add one status group's tallies.
+    /// Adds one status group's tallies.
     pub(super) fn add(&mut self, status: WatchStatus, n: i64, degraded: i64) {
         match status {
             WatchStatus::Reading => self.reading += n,
@@ -383,24 +368,24 @@ impl WatchlistCounts {
 
 /// Which release-recency band a row falls into, i.e. which group header it renders under.
 ///
-/// **Rolling windows, not calendar days.** The server has no idea what timezone the reader is
-/// in, so a `date_trunc('day', now())` bucket labelled "Today" is wrong by up to a day for
-/// anyone not on UTC. "Within the last 24 hours" cannot disagree with the reader's clock, and
-/// it is also exactly what [`WatchlistFilter::released_since`] means — so the `Released: 24h`
-/// filter and the `Today` group always contain the same rows.
+/// **Rolling windows, not calendar days.** The server does not know the reader's timezone, so a
+/// `date_trunc('day', now())` "Today" is wrong by up to a day off UTC. "Within the last 24
+/// hours" cannot disagree with the reader's clock, and it is what
+/// [`WatchlistFilter::released_since`] means, so the `Released: 24h` filter and the `Today` group
+/// contain the same rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReleaseBucket {
     /// Discovered within the last 24 hours.
     Today,
     /// Discovered within the last 7 days, but not the last 24 hours.
     ThisWeek,
-    /// Everything older — including rows with no chapters at all, which have no release
-    /// instant to band and would otherwise vanish from the grouped list.
+    /// Everything older, including rows with no chapters, which have no release instant to band
+    /// and would otherwise vanish from the grouped list.
     Earlier,
 }
 
 impl ReleaseBucket {
-    /// The wire token, which is also what the grouping `CASE` emits.
+    /// Returns the wire token, which is also what the grouping `CASE` emits.
     #[must_use]
     pub fn as_token(self) -> &'static str {
         match self {
@@ -410,7 +395,7 @@ impl ReleaseBucket {
         }
     }
 
-    /// Parse the token the grouping `CASE` emitted.
+    /// Parses the token the grouping `CASE` emitted.
     pub(super) fn from_token(token: &str) -> Self {
         match token {
             "today" => Self::Today,
@@ -419,7 +404,7 @@ impl ReleaseBucket {
         }
     }
 
-    /// Newest band first — the order the group headers render in.
+    /// Newest band first, the order the group headers render in.
     pub(super) fn rank(self) -> u8 {
         match self {
             Self::Today => 0,
@@ -447,7 +432,7 @@ pub struct ReleaseGroup {
 pub struct WatchlistPage {
     /// The page, in the filter's order.
     pub items: Vec<WatchlistCard>,
-    /// Rows matching the *whole* filter, `status` included — the pager's denominator.
+    /// Rows matching the *whole* filter, `status` included: the pager's denominator.
     pub total: i64,
     /// What each tab would show, so the strip needs no second request.
     pub counts: WatchlistCounts,
@@ -457,7 +442,7 @@ pub struct WatchlistPage {
     /// Where the next keyset page resumes, or `None` at the end of the list.
     ///
     /// `None` when the page came back short of `limit`. A full page is not proof more rows
-    /// exist, so the last page of an exactly-divisible list costs one empty follow-up — which
-    /// is the cheap side of the trade against claiming the list ended when it had not.
+    /// exist, so the last page of an exactly divisible list costs one empty follow-up, the cheap
+    /// side of the trade against claiming the list ended early.
     pub next_cursor: Option<WatchlistCursor>,
 }

@@ -7,12 +7,10 @@ use tankovault_domain::TaskState;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-/// What the scan panel's filter actually matched, as figures rather than rows.
+/// What the scan panel's filter matched, as figures instead of rows.
 ///
-/// The console's filter used to change only which rows were listed, which answers "what
-/// happened" and never "how is it going". These are the counts the same predicate produces over
-/// the whole window, so a narrowed filter reports its own success rate rather than the
-/// deployment's.
+/// The counts the same predicate produces over the whole window, so a narrowed filter reports
+/// its own success rate, not the deployment's.
 #[derive(Debug, Clone)]
 pub struct ScanSummary {
     /// Runs the filter matched.
@@ -34,8 +32,8 @@ pub struct ScanSummary {
     pub tasks_done: i64,
     /// Of those, settled as failures.
     pub tasks_failed: i64,
-    /// Failures still in the triage feed — what an operator has left to look at, as opposed to
-    /// `tasks_failed`, which counts everything that ever failed in the window.
+    /// Failures still in the triage feed, which an operator has left to look at, by task
+    /// completion time. `tasks_failed` counts the failures of runs created in the window.
     pub failures_open: i64,
     /// Summed run wall-clock in seconds. A run still in flight counts up to `now()`, which is
     /// what makes throughput derived from this move while a scan is running.
@@ -46,15 +44,14 @@ pub struct ScanSummary {
     pub last_run_at: Option<OffsetDateTime>,
 }
 
-/// The window rollup for the scan panel's health bar.
+/// Returns the window rollup for the scan panel's health bar.
 ///
-/// The failure count is bounded by `finished_at` while the run counts are bounded by
-/// `created_at`, deliberately: they are the columns each of those things actually happened at,
-/// and it keeps this consistent with the failure feed, which windows on `finished_at` too.
+/// Failures are bounded by `finished_at` and runs by `created_at`, the columns each happened at,
+/// which matches the failure feed's window. A window matching nothing is a zeroed summary.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. A window matching nothing is a zeroed summary, never
-/// [`crate::DbError::NotFound`] — an idle deployment is a legitimate answer here.
+/// [`crate::DbError::Sqlx`] only; a window matching nothing is a zeroed summary, never
+/// [`crate::DbError::NotFound`].
 pub async fn scan_summary<'e, E: PgExecutor<'e>>(
     exec: E,
     provider: Option<&str>,
@@ -126,16 +123,14 @@ pub struct ProviderScanHealth {
     pub last_failure_at: Option<OffsetDateTime>,
 }
 
-/// Per-provider scan health, worst first.
+/// Returns per-provider scan health, worst first.
 ///
-/// Providers with neither a run in the window nor an open failure are omitted rather than listed
-/// as zeroes: the table is a place to look when something is wrong, and a deployment's full
-/// provider list is what the Providers panel is for.
+/// Providers with neither a run in the window nor an open failure are omitted: the table is
+/// where to look when something is wrong, and the Providers panel lists them all.
 ///
-/// Two grouped passes joined to `providers`, not a lateral per provider: the lateral re-joined
-/// the failure history to `scan_runs` once for every provider, which production logged at
-/// 19.8–29.4 s. On 102 providers and 274 000 failed tasks it measured 70 ms warm and 423 ms cold
-/// (174 ms of that JIT, estimated cost 1.53 M); grouped, 35 ms and 54 ms at a cost of 17 800.
+/// Two grouped passes joined to `providers`, not a lateral per provider: a lateral re-joins the
+/// failure history to `scan_runs` once per provider, which runs to tens of seconds on a large
+/// failure history.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; a quiet window is an empty `Vec`.
@@ -208,10 +203,10 @@ pub struct RunActivity {
     pub kinds: Vec<String>,
     /// Distinct workers holding a task right now.
     pub workers: i64,
-    /// The stage of the run's **oldest** held task — the one deciding how long the run takes.
+    /// The stage of the run's **oldest** held task, the one deciding how long the run takes.
     ///
-    /// Picked by claim order rather than, say, the most common stage: a run's wall clock is set by
-    /// whatever has been running longest, and that is the task an operator is asking about.
+    /// Picked by claim order, not the most common stage: a run's wall clock is set by whatever
+    /// has been running longest, which is the task an operator is asking about.
     pub stage: Option<String>,
     /// When that task entered the stage above, which is what makes "stuck in `series_chapters`
     /// for nine minutes" readable at all.
@@ -220,15 +215,13 @@ pub struct RunActivity {
     pub stage_done: Option<i32>,
     /// What that progress counts up to.
     pub stage_total: Option<i32>,
-    /// What that stage is working against — a series path, a catalogue page.
+    /// What that stage is working against: a series path or a catalogue page.
     pub stage_detail: Option<String>,
     /// When the run's oldest still-queued task was created.
     ///
-    /// Read together with `running_tasks = 0`, this is the answer to the console's worst
-    /// ambiguity: a run in `running` with nothing claimed is not working, it is **waiting for a
-    /// worker slot** — a worker serves one task per provider, so a provider's second run queues
-    /// behind its first. Both look identical through `scan_runs.state` alone, and the second one
-    /// reads as a run that has hung.
+    /// With `running_tasks = 0`, a `running` run is **waiting for a worker slot**, not hung: a
+    /// worker serves one task per provider, so a provider's second run queues behind its first.
+    /// `scan_runs.state` alone cannot tell the two apart.
     pub waiting_since: Option<OffsetDateTime>,
 }
 
@@ -280,7 +273,7 @@ pub struct TaskEvent {
     pub kind: String,
     /// How it settled: `done`, `failed` or `skipped`.
     pub state: TaskState,
-    /// What the task was pointed at — the page or series path, as the planner wrote it.
+    /// What the task was pointed at: the page or series path, as the planner wrote it.
     pub target: Json,
     /// Why it failed, `None` unless it did.
     pub error: Option<String>,
@@ -290,12 +283,11 @@ pub struct TaskEvent {
     pub finished_at: Option<OffsetDateTime>,
 }
 
-/// The most recently settled tasks belonging to runs still in flight, newest first.
+/// Returns the most recently settled tasks belonging to runs still in flight, newest first.
 ///
-/// Scoped to in-flight runs on purpose: this is the "what is happening right now" tail, so it
-/// must go quiet when nothing is running rather than replaying the last scan forever. It is also
-/// what keeps the statement cheap — the alternative, ordering every task ever settled by
-/// `finished_at`, would need an index on a column written once per task per scan.
+/// Scoped to in-flight runs: this is the "what is happening now" tail, so it goes quiet when
+/// nothing runs. That also keeps it cheap, since ordering every settled task by `finished_at`
+/// would need an index on a column written once per task per scan.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; an idle deployment is an empty `Vec`.

@@ -17,29 +17,29 @@ use uuid::Uuid;
 #[sqlx(type_name = "gdpr_request_kind", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum RequestKind {
-    /// Art. 15 — what do you hold about me.
+    /// Art. 15: what is held about the subject.
     Access,
-    /// Art. 20 — give it to me in a machine-readable form.
+    /// Art. 20: the subject's data in a machine-readable form.
     Portability,
-    /// Art. 16 — correct it.
+    /// Art. 16: correct it.
     Rectification,
-    /// Art. 17 — delete it.
+    /// Art. 17: delete it.
     Erasure,
-    /// Art. 18 — stop processing it, but keep it.
+    /// Art. 18: stop processing it, but keep it.
     Restriction,
-    /// Art. 21 — stop processing it on legitimate-interest grounds.
+    /// Art. 21: stop processing it on legitimate-interest grounds.
     Objection,
 }
 
 impl RequestKind {
-    /// Whether fulfilling this request runs the erasure cascade — decides which operator
-    /// action a queue entry offers.
+    /// Returns whether fulfilling this request runs the erasure cascade, which decides the
+    /// operator action a queue entry offers.
     #[must_use]
     pub fn is_erasure(self) -> bool {
         matches!(self, Self::Erasure)
     }
 
-    /// Whether fulfilling this request means disclosing the subject's data export.
+    /// Returns whether fulfilling this request means disclosing the subject's data export.
     #[must_use]
     pub fn needs_export(self) -> bool {
         matches!(self, Self::Access | Self::Portability)
@@ -64,7 +64,7 @@ pub enum RequestStatus {
 }
 
 impl RequestStatus {
-    /// Whether the request is still open — the states the Art. 12(3) clock runs against.
+    /// Returns whether the request is still open, which is when the Art. 12(3) clock runs.
     #[must_use]
     pub fn is_open(self) -> bool {
         matches!(self, Self::Pending | Self::InProgress)
@@ -91,7 +91,7 @@ pub struct RequestRow {
     /// When it settled, `None` while it is still open.
     #[serde(with = "time::serde::rfc3339::option")]
     pub resolved_at: Option<OffsetDateTime>,
-    /// How it was resolved, or — for a rejection — why (Art. 12(4) requires reasons).
+    /// How it was resolved, or for a rejection why, since Art. 12(4) requires reasons.
     pub resolution_note: Option<String>,
 }
 
@@ -105,7 +105,7 @@ pub struct AdminRequestRow {
     pub request: RequestRow,
     /// The subject's id, or `None` once erased.
     pub user_id: Option<Uuid>,
-    /// `None` once the account is gone — expected for a completed erasure, not missing data.
+    /// `None` once the account is gone, which is expected after a completed erasure.
     pub username: Option<String>,
     /// The subject's address, `None` once they have been erased.
     pub email: Option<String>,
@@ -117,12 +117,13 @@ pub struct AdminRequestRow {
     pub overdue: bool,
 }
 
-/// File a request on behalf of `user_id`. Returns the created row so the caller can show the
-/// subject their due date immediately (Art. 12(3)).
+/// Files a request on behalf of `user_id`, returning the row so the subject sees the due date
+/// at once (Art. 12(3)).
+///
+/// [`has_open_of_kind`] is the duplicate guard; this does not refuse a second request.
 ///
 /// # Errors
-/// `Sqlx` only; a second request of the same kind is not [`DbError::Conflict`] — the duplicate
-/// guard is [`has_open_of_kind`], called separately.
+/// `Sqlx` only; a second request of the same kind is not [`DbError::Conflict`].
 pub async fn create<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -172,7 +173,7 @@ impl From<RawRequest> for RequestRow {
     }
 }
 
-/// A subject's own requests, newest first.
+/// Returns a subject's own requests, newest first.
 ///
 /// # Errors
 /// `Sqlx` only; nothing filed is `Ok(vec![])`.
@@ -192,12 +193,13 @@ pub async fn list_for_user<'e, E: PgExecutor<'e>>(
     Ok(rows.into_iter().map(Into::into).collect())
 }
 
-/// Whether the subject already has an unresolved request of this kind — the duplicate guard;
-/// a second filing would start its own Art. 12(3) clock.
+/// Returns whether the subject already has an unresolved request of this kind.
+///
+/// The duplicate guard: a second filing would start its own Art. 12(3) clock. A caller must
+/// propagate an error, since defaulting to `false` admits the duplicate.
 ///
 /// # Errors
-/// `Sqlx` only; `EXISTS` always returns a row, so "none open" is `Ok(false)`. Must propagate
-/// rather than default to `false` on error — that would admit the duplicate this guards against.
+/// `Sqlx` only; `EXISTS` always returns a row, so "none open" is `Ok(false)`.
 pub async fn has_open_of_kind<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -215,7 +217,7 @@ pub async fn has_open_of_kind<'e, E: PgExecutor<'e>>(
     Ok(exists)
 }
 
-/// The operator queue. `only_open` restricts it to what still needs work; the full list is
+/// Returns the operator queue. `only_open` restricts it to what still needs work; the full list is
 /// the compliance record.
 ///
 /// # Errors
@@ -246,10 +248,9 @@ pub async fn list_admin<'e, E: PgExecutor<'e>>(
     let rows = sqlx::query_as!(
         Row,
         // The `!` overrides name `gdpr_requests`' own `NOT NULL` columns. sqlx derives nullability
-        // from the *plan* Postgres returns, so with outer joins in the statement it is
-        // data-dependent — against a populated database this one comes back nullable to the last
-        // column, which types the row as `Option` everywhere and does not compile. Pinning what
-        // the schema already guarantees makes the type the same whichever plan the planner picks.
+        // from the plan, and with outer joins a populated database can make every column
+        // nullable, which does not compile. Pinning what the schema guarantees makes the type
+        // the same whichever plan the planner picks.
         "SELECT r.id AS \"id!\", r.kind AS \"kind!: RequestKind\", \
                 r.status AS \"status!: RequestStatus\", \
                 r.detail, r.requested_at AS \"requested_at!\", r.due_at AS \"due_at!\", \
@@ -295,8 +296,8 @@ pub async fn list_admin<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// One request by id, with its subject — read first to check an action is legal for its
-/// kind/status.
+/// Returns one request by id, with its subject, so a caller can check an action is legal for
+/// its kind and status.
 ///
 /// # Errors
 /// [`DbError::NotFound`] (404) when no request has that id; otherwise `Sqlx`.
@@ -329,10 +330,9 @@ async fn list_admin_by_id<'e, E: PgExecutor<'e>>(
     let rows = sqlx::query_as!(
         Row,
         // The `!` overrides name `gdpr_requests`' own `NOT NULL` columns. sqlx derives nullability
-        // from the *plan* Postgres returns, so with outer joins in the statement it is
-        // data-dependent — against a populated database this one comes back nullable to the last
-        // column, which types the row as `Option` everywhere and does not compile. Pinning what
-        // the schema already guarantees makes the type the same whichever plan the planner picks.
+        // from the plan, and with outer joins a populated database can make every column
+        // nullable, which does not compile. Pinning what the schema guarantees makes the type
+        // the same whichever plan the planner picks.
         "SELECT r.id AS \"id!\", r.kind AS \"kind!: RequestKind\", \
                 r.status AS \"status!: RequestStatus\", \
                 r.detail, r.requested_at AS \"requested_at!\", r.due_at AS \"due_at!\", \
@@ -373,12 +373,15 @@ async fn list_admin_by_id<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Take ownership of a pending request. The `status = 'pending'` guard stops two operators
+/// Takes ownership of a pending request. The `status = 'pending'` guard stops two operators
 /// claiming the same request at once.
 ///
+/// Losing the race, an unknown id and an already-claimed request all return `false`; the
+/// caller decides between 404 and 409.
+///
 /// # Errors
-/// `Sqlx` only; losing the race, an unknown id, and an already-claimed request are all
-/// `Ok(false)`, not [`DbError::Conflict`] — caller decides 404 vs 409.
+/// `Sqlx` only; losing the race, an unknown id, and an already-claimed request are all `Ok(false)`,
+/// not [`DbError::Conflict`].
 pub async fn claim<'e, E: PgExecutor<'e>>(exec: E, id: Uuid, operator: UserId) -> DbResult<bool> {
     let result = sqlx::query!(
         "UPDATE gdpr_requests SET status = 'in_progress', claimed_by = $2, claimed_at = now() \
@@ -391,12 +394,13 @@ pub async fn claim<'e, E: PgExecutor<'e>>(exec: E, id: Uuid, operator: UserId) -
     Ok(result.rows_affected() > 0)
 }
 
-/// Resolve a request as completed, rejected, or cancelled. Only transitions *out of* an open
-/// state, so a resolution can't be recorded twice.
+/// Resolves a request as completed, rejected or cancelled.
+///
+/// Only an open request moves, so a resolution cannot be recorded twice. `false` means this
+/// call did **not** record the resolution the caller believes it made.
 ///
 /// # Errors
-/// `Sqlx` only; an already-resolved request is `Ok(false)` — it means this call did **not**
-/// record the resolution the caller believes it just made.
+/// `Sqlx` only; an already-resolved request is `Ok(false)`.
 pub async fn resolve<'e, E: PgExecutor<'e>>(
     exec: E,
     id: Uuid,
@@ -418,12 +422,13 @@ pub async fn resolve<'e, E: PgExecutor<'e>>(
     Ok(result.rows_affected() > 0)
 }
 
-/// Withdraw one's own open request; scoped to the owner so an id alone can't cancel
-/// someone else's.
+/// Withdraws the caller's own open request.
+///
+/// Scoped to the owner, so an id alone cannot cancel someone else's. Another user's request
+/// returns `false`, the same as an unknown or resolved one, so ids cannot be enumerated.
 ///
 /// # Errors
-/// `Sqlx` only; another user's request is `Ok(false)`, indistinguishable from unknown/resolved
-/// — prevents id enumeration.
+/// `Sqlx` only; another user's request is `Ok(false)`, indistinguishable from unknown/resolved.
 pub async fn cancel_own<'e, E: PgExecutor<'e>>(
     exec: E,
     id: Uuid,
@@ -440,12 +445,14 @@ pub async fn cancel_own<'e, E: PgExecutor<'e>>(
     Ok(result.rows_affected() > 0)
 }
 
-/// Extend a request's deadline (Art. 12(3) allows two further months). Refuses to move it
-/// *earlier* — the subject has already been told a date.
+/// Extends a request's deadline, which Art. 12(3) allows by two further months.
+///
+/// Returns `false` for a deadline earlier than the current one, since the subject has been
+/// told a date, and for an unknown or resolved id.
 ///
 /// # Errors
-/// `Sqlx` only; moving the deadline earlier, or an unknown/resolved id, is `Ok(false)` not
-/// an error.
+/// `Sqlx` only; moving the deadline earlier, or an unknown/resolved id, is `Ok(false)` not an
+/// error.
 pub async fn extend_due<'e, E: PgExecutor<'e>>(
     exec: E,
     id: Uuid,
@@ -462,12 +469,14 @@ pub async fn extend_due<'e, E: PgExecutor<'e>>(
     Ok(result.rows_affected() > 0)
 }
 
-/// How many open requests there are, and how many are past their deadline — surfaced on the
-/// console overview.
+/// Returns how many requests are open and how many are past their deadline, for the console
+/// overview.
+///
+/// A caller must render an error as unknown, not zero, or "no overdue requests" and "could not
+/// tell" look the same.
 ///
 /// # Errors
-/// `Sqlx` only; a clean queue is `Ok((0, 0))`. Must render a failure as unknown, not zero —
-/// otherwise "no overdue requests" and "could not tell" look identical.
+/// `Sqlx` only; a clean queue is `Ok((0, 0))`.
 pub async fn open_counts<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<(i64, i64)> {
     #[derive(FromRow)]
     struct Row {
@@ -510,7 +519,7 @@ mod tests {
             assert!(disclosing.needs_export());
             assert!(!disclosing.is_erasure());
         }
-        // Decisions, not data movements — neither export nor erasure applies.
+        // Decisions, not data movements: neither export nor erasure applies.
         for manual in [
             RequestKind::Rectification,
             RequestKind::Restriction,

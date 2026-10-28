@@ -1,10 +1,9 @@
 //! Reconciliation between the task table and `JetStream`.
 //!
-//! `JetStream` is the truth for dispatch and this table is the truth for progress, and nothing
-//! keeps the two in step: a publish that never landed, a stream that was purged or recreated, a
-//! message acked by a worker that then died — each leaves a task row that is open forever and a
-//! run that can never settle. Nothing retries them, because from the database's side there is no
-//! failure to see. These four queries are what the reconciler compares and repairs against.
+//! `JetStream` is the truth for dispatch and this table the truth for progress, and nothing keeps
+//! them in step: a lost publish, a purged stream, or a message acked by a worker that then died
+//! leaves a task open forever and a run that never settles, with no failure the database can see.
+//! The reconciler compares and repairs against these queries.
 
 use super::runs::FAILURE_STREAK_WINDOW;
 use crate::error::DbResult;
@@ -23,9 +22,9 @@ pub struct OpenLane {
     pub mode: ScanMode,
     /// Tasks still open (`queued`/`claimed`/`running`) in runs that have not settled.
     pub open_tasks: i64,
-    /// Of those, the ones old enough that a lost publish explains them better than a race with
-    /// one — a task row is committed before its message is published, so a fresh row with no
-    /// message is the ordinary intermediate state, not a fault.
+    /// Of those, the ones old enough that a lost publish explains them better than a race: a task
+    /// row is committed before its message is published, so a fresh row with no message is
+    /// ordinary.
     pub aged_tasks: i64,
 }
 
@@ -43,15 +42,15 @@ pub struct StrandedTask {
     pub target: Json,
 }
 
-/// Every provider lane that has open work, with how much of it is old enough to be repaired.
+/// Returns every provider lane that has open work, with how much of it is old enough to be
+/// repaired.
 ///
-/// Driven from `scan_runs` rather than from `scan_tasks`: the active runs are a handful of rows
-/// behind `scan_runs_active_provider_mode`, and each one's task count is an index lookup on
-/// `scan_tasks_run_state`. The natural spelling — filter `scan_tasks` by state and group up —
-/// reads a table that grows by a row per series per scan, on a schedule.
+/// Driven from `scan_runs`, not `scan_tasks`: the active runs are a handful of rows behind
+/// `scan_runs_active_provider_mode`, each task count an index lookup on `scan_tasks_run_state`.
+/// Grouping `scan_tasks` would read a table that grows by a row per series per scan.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. No open lanes is an empty `Vec`, which is the steady state.
+/// [`crate::DbError::Sqlx`] only; no open lanes is an empty `Vec`, which is the steady state.
 pub async fn open_task_lanes<'e, E: PgExecutor<'e>>(
     exec: E,
     aged_after: std::time::Duration,
@@ -91,11 +90,12 @@ pub async fn open_task_lanes<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// The oldest open tasks in one lane, which are the ones a short broker backlog has stranded.
+/// Returns the oldest open tasks in one lane, which are the ones a short broker backlog has
+/// stranded.
 ///
 /// Oldest first because the deficit is counted, not identified: the broker says how many
 /// messages it holds for the lane, not which. The oldest rows are the ones a message is least
-/// likely to still exist for, and republishing one that does exist is harmless — the second
+/// likely to still exist for, and republishing one that does exist is harmless: the second
 /// delivery finds the task claimed or settled and is declined.
 ///
 /// # Errors
@@ -135,12 +135,11 @@ pub async fn stranded_tasks<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Runs whose tasks have all settled but which are still `running`.
+/// Returns the runs whose tasks have all settled but which are still `running`.
 ///
-/// Finalisation rides on a progress event, and that event is best-effort: one lost publish
-/// leaves a run that is finished in every respect sitting open forever, counted as active by the
-/// console and — until it goes stale — suppressing the provider's next run of the same mode.
-/// Nothing else ever revisits such a run, because no further task will settle on it.
+/// Finalisation rides on a best-effort progress event: one lost publish leaves a finished run
+/// open forever, counted as active and, until it goes stale, suppressing the provider's next run
+/// of the same mode. No further task will settle on it to revisit it.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -161,11 +160,11 @@ pub async fn runs_awaiting_finalisation<'e, E: PgExecutor<'e>>(
     Ok(rows.into_iter().map(ScanRunId::from_uuid).collect())
 }
 
-/// Fail runs that were opened but never planned a single task, and return the ones failed.
+/// Fails runs that were opened but never planned a single task, and returns the ones failed.
 ///
 /// The planner creates the run row, then the task, then publishes. A process killed between the
-/// first two steps leaves a run with no tasks at all — nothing to republish and nothing that can
-/// ever settle it, so it is neither a lane this reconciler sees nor a run
+/// first two steps leaves a run with no tasks: nothing to republish and nothing that can settle
+/// it, so it is neither a lane this reconciler sees nor a run
 /// [`runs_awaiting_finalisation`] can close. `older_than` is what separates it from a plan that
 /// is merely a few milliseconds into that same sequence.
 ///
@@ -205,24 +204,23 @@ pub struct HistoryPrune {
 }
 
 impl HistoryPrune {
-    /// Whether the pass found nothing left to remove.
+    /// Returns whether the pass found nothing left to remove.
     #[must_use]
     pub const fn is_empty(self) -> bool {
         self.tasks == 0 && self.runs == 0
     }
 }
 
-/// Delete one bounded batch of settled scan history older than `retention_days`.
+/// Deletes one bounded batch of settled scan history older than `retention_days`.
 ///
-/// A run goes only once it is terminal and past the cutoff, its tasks first and in batches of
-/// `task_batch`, the run row once none are left — so a run with fifty thousand tasks takes
-/// several passes rather than one long `DELETE`. Call it until [`HistoryPrune::is_empty`].
+/// A run goes once it is terminal and past the cutoff: its tasks first, in batches of
+/// `task_batch`, then the run row once none are left, so a large run takes several passes instead
+/// of one long `DELETE`. Call it until [`HistoryPrune::is_empty`].
 ///
-/// **The newest 32 finished runs of each provider and mode are kept,
-/// however old.** [`failure_streak`] reads exactly that window; pruning into it would shorten a
-/// failing provider's streak and cut its backoff, which is the only thing keeping the scheduler
-/// from hammering a site that answers nothing. It also keeps every provider's latest run, which
-/// the provider table reports.
+/// **The newest 32 finished runs of each provider and mode are kept, however old.**
+/// [`failure_streak`] reads exactly that window; pruning into it would cut a failing provider's
+/// backoff, the only thing keeping the scheduler from hammering a site that answers nothing. It
+/// also keeps every provider's latest run, which the provider table reports.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; nothing to prune is an empty [`HistoryPrune`].

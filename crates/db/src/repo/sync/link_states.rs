@@ -5,7 +5,7 @@ use sqlx::PgExecutor;
 use tankovault_domain::UserId;
 use time::OffsetDateTime;
 
-/// Record a link `state` for `user_id` at `provider`, storing only its handle's digest.
+/// Records a link `state` for `user_id` at `provider`, storing only its handle's digest.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -55,7 +55,7 @@ pub async fn consume_link_state<'e, E: PgExecutor<'e>>(
     Ok(result.rows_affected() == 1)
 }
 
-/// Delete expired link states; returns how many were removed.
+/// Deletes expired link states; returns how many were removed.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.

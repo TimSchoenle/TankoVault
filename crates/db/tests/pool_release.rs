@@ -132,10 +132,9 @@ async fn a_raised_ceiling_applies_to_its_transaction_only() {
 
 /// A pool asked for custom plans keeps them past the fifth execution of a prepared statement.
 ///
-/// The console's merge-decision journal, filtered to flagged decisions, returned nothing in
-/// 1–30 s in production: after five executions the connection's prepared statement switched to a
-/// generic plan, which cannot use the partial index its `NOT $6 OR flagged_at IS NOT NULL` arm
-/// needs and walked the whole journal instead.
+/// The bug: after five executions a prepared statement switches to a generic plan, which cannot
+/// use the partial index the merge-decision journal's `NOT $6 OR flagged_at IS NOT NULL` arm
+/// needs, so the flagged-decisions filter walked the whole journal for seconds.
 #[tokio::test]
 async fn a_custom_plan_pool_never_switches_to_the_generic_plan() {
     let db = TestDb::spawn().await;

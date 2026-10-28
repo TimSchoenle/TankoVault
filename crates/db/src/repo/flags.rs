@@ -1,4 +1,4 @@
-//! Feature-flag overrides — the persistence behind [`tankovault_domain::Feature`]. Holds only
+//! Feature-flag overrides, the persistence behind [`tankovault_domain::Feature`]. Holds only
 //! deviations from shipped defaults, so an empty table is a fully working deployment.
 //!
 //! Resolution against the compiled default happens in `tankovault_service::flags`, not here.
@@ -25,9 +25,9 @@ pub struct OverrideRow {
     pub updated_by: Option<String>,
 }
 
-/// Every stored override, keyed by feature.
+/// Returns every stored override, keyed by feature.
 ///
-/// Raw rows, not a resolved map — pairing with the compiled registry is the caller's job.
+/// Raw rows, not a resolved map: pairing them with the compiled registry is the caller's job.
 ///
 /// # Errors
 /// `Sqlx` only; an empty table is `Ok(vec![])`.
@@ -63,15 +63,16 @@ pub async fn list_overrides<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<Over
         .collect())
 }
 
-/// The minimal `(key, enabled)` pairs the runtime gate needs.
+/// Returns the minimal `(key, enabled)` pairs the runtime gate needs.
 ///
 /// Narrower than [`list_overrides`]: no provenance or `users` join, since this is refreshed on
 /// a timer in every service.
 ///
+/// A caller must keep its previous snapshot on `Err`: read as an empty list, it would silently
+/// reset every flag to its compiled default.
+///
 /// # Errors
-/// `Sqlx` only. Callers must not collapse `Err` into `Ok(vec![])` — that reads as "no
-/// overrides" and would silently reset every flag to its compiled default; treat failure as
-/// keep-previous-snapshot.
+/// `Sqlx` only.
 pub async fn effective_overrides<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<(String, bool)>> {
     #[derive(FromRow)]
     struct Row {
@@ -90,14 +91,16 @@ pub async fn effective_overrides<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec
         .collect())
 }
 
-/// Record an explicit operator decision for `feature_key`.
+/// Records an explicit operator decision for `feature_key`.
 ///
 /// Always writes, even at the value it already has, so `updated_at`/`updated_by` show who
 /// last confirmed it.
 ///
+/// A repeat write overwrites; an erased `updated_by` is a foreign-key violation (500).
+///
 /// # Errors
-/// `Sqlx` only; a repeat write is not [`crate::DbError::Conflict`], an erased `updated_by` is
-/// a foreign-key violation (500).
+/// `Sqlx` only; a repeat write is not [`crate::DbError::Conflict`], an erased `updated_by` is a
+/// foreign-key violation (500).
 pub async fn set_override<'e, E: PgExecutor<'e>>(
     exec: E,
     feature_key: &str,
@@ -123,14 +126,16 @@ pub async fn set_override<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Drop the override for `feature_key`, returning the feature to its compiled default.
+/// Drops the override for `feature_key`, returning the feature to its compiled default.
 ///
-/// Returns `false` when there was nothing to clear, so the caller can answer "reset" honestly
-/// rather than reporting a change that did not happen.
+/// Returns `false` when there was nothing to clear, so the caller does not report a change
+/// that did not happen.
+///
+/// "Nothing to clear" is `false`, deliberately indistinguishable from an unknown `feature_key`.
 ///
 /// # Errors
-/// `Sqlx` only; "nothing to clear" is `Ok(false)`, deliberately indistinguishable from an
-/// unknown `feature_key`.
+/// `Sqlx` only; "nothing to clear" is `Ok(false)`, deliberately indistinguishable from an unknown
+/// `feature_key`.
 pub async fn clear_override<'e, E: PgExecutor<'e>>(exec: E, feature_key: &str) -> DbResult<bool> {
     let result = sqlx::query!(
         "DELETE FROM feature_flag_overrides WHERE feature_key = $1",

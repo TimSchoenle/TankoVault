@@ -1,5 +1,5 @@
-//! Discover/browse read-model tests: six statements — the recency page, the sort-token page and
-//! the count, each in a search and a no-search form — must select the same rows for the same
+//! Discover and browse read-model tests: six statements (the recency page, the sort-token page
+//! and the count, each in a search and a no-search form) must select the same rows for the same
 //! filter. They share their filter predicate (one literal, spliced by `browse_statement!`), so
 //! what can drift is the rest: the search branch's `matched` CTE and join, the ordering, and the
 //! parameter numbering each statement chooses.
@@ -235,7 +235,7 @@ fn plain_filter_matrix() -> Vec<(&'static str, SeriesFilter)> {
     ]
 }
 
-/// Filter shapes carrying a search term — the arm that unions the trigram and FTS index scans.
+/// Filter shapes carrying a search term, the arm that unions the trigram and FTS index scans.
 fn search_filter_matrix() -> Vec<(&'static str, SeriesFilter)> {
     vec![
         ("unfiltered", SeriesFilter::default()),
@@ -284,9 +284,9 @@ fn filter_matrix() -> Vec<(&'static str, SeriesFilter)> {
 
 // The differential test
 
-/// Every page and count statement must select the same rows for the same filter — the recency
+/// Every page and count statement must select the same rows for the same filter: the recency
 /// page, the sort-token page, the relevance page and the count, each in the search and no-search
-/// form the filter's `query` picks. Asserted as a set, not a sequence — ordering is
+/// form the filter's `query` picks. Asserted as a set, not a sequence; ordering is
 /// [`every_sort_order_orders_by_its_own_key`]'s and
 /// [`an_exact_title_match_leads_the_relevance_order`]'s job.
 ///
@@ -364,8 +364,8 @@ async fn every_page_and_count_statement_selects_the_same_rows() {
 
 // Filtering
 
-/// Each filter narrows to exactly its rows — the differential test above only proves the
-/// three statements agree, not that they're right.
+/// Each filter narrows to exactly its rows; the differential test above only proves the
+/// statements agree, not that they are right.
 #[tokio::test]
 async fn each_filter_narrows_to_exactly_its_rows() {
     let db = TestDb::spawn().await;
@@ -386,7 +386,7 @@ async fn each_filter_narrows_to_exactly_its_rows() {
         ("content_type", &["Solo Leveling"]),
         ("status", &["Berserk", "Oyasumi Punpun", "Solo Leveling"]),
         // Only Solo Leveling has a second source, so this is also the assertion that
-        // provider scoping reaches through `series_sources` rather than matching the series.
+        // provider scoping reaches through `series_sources` instead of matching the series.
         ("provider_slug", &["Solo Leveling"]),
         ("year_min", &["Frieren", "Solo Leveling"]),
         ("year_max", &["Berserk"]),
@@ -422,7 +422,7 @@ async fn each_filter_narrows_to_exactly_its_rows() {
 /// column is *one carrier's* scanned-row count. A merge leaves the survivor holding every
 /// absorbed source, so a work mirrored on two sites filtered and sorted as though it had both
 /// catalogues end to end. Solo Leveling is 200 chapters on `alpha` and 20 on `beta`: it passed a
-/// 220-chapter floor and outranked everything shorter than that phantom — while the card beside
+/// 220-chapter floor and outranked everything shorter than that phantom, while the card beside
 /// it read 200, because `chapter_stats_for_series` counts the union.
 #[tokio::test]
 async fn a_series_on_two_sources_is_not_as_long_as_its_carriers_added_up() {
@@ -464,7 +464,7 @@ async fn a_series_on_two_sources_is_not_as_long_as_its_carriers_added_up() {
 }
 
 /// A year bound must not swallow a series with no year: `release_year <= $5` is NULL for it,
-/// so it drops out — `COALESCE(release_year, 0)` would wrongly make it sort as 1 BC.
+/// so it drops out; `COALESCE(release_year, 0)` would wrongly make it sort as 1 BC.
 #[tokio::test]
 async fn a_series_without_a_year_is_outside_every_year_bound() {
     let db = TestDb::spawn().await;
@@ -491,8 +491,8 @@ async fn a_series_without_a_year_is_outside_every_year_bound() {
     }
 }
 
-/// `tags` is an AND over slugs and `exclude_tags` is an OR — the two are written with
-/// different SQL shapes (`EXCEPT` versus `= ANY`) and are easy to transpose.
+/// `tags` is an AND over slugs and `exclude_tags` is an OR. The two are written with different
+/// SQL shapes (`EXCEPT` versus `= ANY`) and are easy to transpose.
 #[tokio::test]
 async fn tags_require_all_and_exclude_tags_remove_any() {
     let db = TestDb::spawn().await;
@@ -592,8 +592,8 @@ async fn every_sort_order_orders_by_its_own_key() {
             ],
         ),
         (
-            // No rating column yet; served by recency — diverging from Updated above means
-            // `is_recency` no longer routes this here.
+            // No rating column, so served by recency: diverging from Updated above means
+            // `is_recency` stopped routing this here.
             SeriesSort::Rating,
             &[
                 "Oyasumi Punpun",
@@ -669,7 +669,7 @@ async fn paging_a_tied_sort_key_neither_repeats_nor_skips() {
 
 // Search
 
-/// A work searched under a non-primary name must be found — only the `series_titles`
+/// A work searched under a non-primary name must be found. Only the `series_titles`
 /// alternative-title branch can return this row, so dropping that branch fails only here.
 #[tokio::test]
 async fn search_finds_a_series_by_its_alternative_title() {
@@ -703,13 +703,11 @@ async fn search_finds_a_series_by_its_alternative_title() {
 
 /// A title that *is* the query must come first, however stale it is.
 ///
-/// This pins the defect the relevance order exists for. Search used to inherit the browse
-/// grid's default, `updated`, so results came back in last-scanned order and the term played no
-/// part in ranking at all: a reader typing an exact title got it wherever its most recent crawl
-/// happened to put it — below every longer title that merely contains the word and was scanned
-/// more recently. Trigram similarity alone does not fix that either, which is why the order has
-/// explicit tiers: a short query is a large fraction of a short unrelated title, so
-/// `similarity()` ranks "Berserk of Gluttony" above "Berserk" on its own.
+/// The bug: search inheriting the browse grid's default, `updated`, returns results in
+/// last-scanned order, so an exact title lands below every longer title containing the word that
+/// was scanned more recently. Trigram similarity alone does not fix it, hence explicit tiers: a
+/// short query is a large fraction of a short unrelated title, so `similarity()` ranks "Berserk
+/// of Gluttony" above "Berserk".
 ///
 /// The fixture is built so the two failure modes are distinguishable. Both series match the
 /// term; the exact one is deliberately the *older* row, so an order that fell through to
@@ -749,8 +747,8 @@ async fn an_exact_title_match_leads_the_relevance_order() {
         titles(&relevance)
     );
 
-    // And the order this replaced still behaves as it did, so the fix is the new statement
-    // rather than a change to what `updated` means.
+    // And `updated` still orders by recency, so the relevance order is its own statement, not a
+    // change to what `updated` means.
     let recency = list_series_filtered(
         &db.pool,
         &all_of(SeriesFilter {
@@ -769,7 +767,7 @@ async fn an_exact_title_match_leads_the_relevance_order() {
     );
 }
 
-/// An alternative title that is the query must lead too — a work is just as exactly named by a
+/// An alternative title that is the query must lead too: a work is just as exactly named by a
 /// synonym, and only the `series_titles` tier of the relevance order can put it first.
 #[tokio::test]
 async fn an_exact_alternative_title_leads_as_well() {
@@ -800,7 +798,7 @@ async fn an_exact_alternative_title_leads_as_well() {
     );
 }
 
-/// A blank/whitespace query is no search, not a search for nothing — binding `''` would match
+/// A blank or whitespace query is no search, not a search for nothing: binding `''` would match
 /// no row via the trigram predicate and render Discover empty.
 #[tokio::test]
 async fn a_blank_query_is_not_a_filter() {
@@ -825,7 +823,7 @@ async fn a_blank_query_is_not_a_filter() {
 // Per-series reads
 
 /// The per-series enrichment reads return what was ingested, alphabetically, and an empty
-/// vector — never an error — for a series that has none.
+/// vector, never an error, for a series that has none.
 #[tokio::test]
 async fn the_per_series_reads_are_alphabetical_and_empty_when_unset() {
     let db = TestDb::spawn().await;
@@ -889,8 +887,8 @@ async fn the_per_series_reads_are_alphabetical_and_empty_when_unset() {
         Vec::<String>::new()
     );
 
-    // An unknown id is an empty list rather than an error, which is what lets the series
-    // detail handler answer 404 from the series read alone.
+    // An unknown id is an empty list, not an error, which lets the series detail handler answer
+    // 404 from the series read alone.
     let missing = SeriesId::from_uuid(uuid::Uuid::nil());
     assert!(
         list_series_tags(&db.pool, missing)
@@ -1015,9 +1013,9 @@ async fn a_chapter_floor_at_or_below_zero_keeps_a_series_with_no_sources() {
 
 /// **Whether another page follows is known without counting, at every page boundary.**
 ///
-/// `X-Next-Cursor` used to be `offset + returned < total`, so skipping the count would have ended
-/// the list one page early, or offered an empty page when the matches were an exact multiple of the
-/// page size. A page now reads one row more than it returns.
+/// The bug: deriving `X-Next-Cursor` from `offset + returned < total` without the count ends the
+/// list one page early, or offers an empty page when the matches are an exact multiple of the
+/// page size. A page reads one row more than it returns.
 #[tokio::test]
 async fn whether_another_page_follows_is_known_without_counting() {
     let db = TestDb::spawn().await;

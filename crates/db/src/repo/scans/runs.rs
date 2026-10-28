@@ -37,12 +37,13 @@ impl From<RunRow> for ScanRun {
     }
 }
 
-/// Create a queued scan run.
+/// Creates a queued scan run.
+///
+/// A `provider_id` of `None` means all providers.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A `provider_id` that does not
-/// exist is a foreign-key violation and so a 500, not [`crate::DbError::NotFound`]; `None` is a
-/// legitimate value meaning "all providers" rather than a missing one.
+/// [`crate::DbError::Sqlx`] only, including the foreign-key violation of an unknown `provider_id`
+/// (a 500, not [`crate::DbError::NotFound`]).
 pub async fn create_run<'e, E: PgExecutor<'e>>(
     exec: E,
     provider_id: Option<ProviderId>,
@@ -60,13 +61,13 @@ pub async fn create_run<'e, E: PgExecutor<'e>>(
     Ok(id)
 }
 
-/// Fetch a run by id.
+/// Fetches a run by id.
+///
+/// Raises [`crate::DbError::NotFound`] instead of answering `None`, since every caller serves a
+/// "show me this run" request where the miss is the 404.
 ///
 /// # Errors
-/// - [`crate::DbError::NotFound`] if no run carries this id — one of the few functions here that
-///   raises it rather than answering `Ok(None)`, because every caller is serving a "show me this
-///   run" request where the miss *is* the 404.
-/// - [`crate::DbError::Sqlx`] for any driver or connection failure.
+/// [`crate::DbError::NotFound`] for an unknown id, [`crate::DbError::Sqlx`] otherwise.
 pub async fn get_run<'e, E: PgExecutor<'e>>(exec: E, id: ScanRunId) -> DbResult<ScanRun> {
     let row = sqlx::query_as!(
         RunRow,
@@ -82,10 +83,9 @@ pub async fn get_run<'e, E: PgExecutor<'e>>(exec: E, id: ScanRunId) -> DbResult<
 
 /// A scan run with the slug of the provider it was scoped to.
 ///
-/// The slug is not decoration. The console labels and narrows runs by it, and a bare
-/// `provider_id` renders as an opaque uuid an operator cannot match to anything they typed — so
-/// a pushed list carrying only the id cannot be filtered client-side at all, which is what made
-/// the panel's provider filter look broken.
+/// The console labels and narrows runs by the slug; a bare `provider_id` is an opaque uuid an
+/// operator cannot match to anything they typed, so a pushed list carrying only the id cannot be
+/// filtered client-side.
 #[derive(Debug, Clone)]
 pub struct RunListing {
     /// The run row as stored.
@@ -129,11 +129,11 @@ impl From<ListingRow> for RunListing {
     }
 }
 
-/// List recent runs (console overview and the live push).
+/// Lists recent runs, for the console overview and the live push.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A deployment that has never
-/// scanned is an empty `Vec`, not [`crate::DbError::NotFound`].
+/// [`crate::DbError::Sqlx`] only; a deployment that has never scanned is an empty `Vec`, not
+/// [`crate::DbError::NotFound`].
 pub async fn list_recent_runs<'e, E: PgExecutor<'e>>(
     exec: E,
     limit: i64,
@@ -156,9 +156,8 @@ pub async fn list_recent_runs<'e, E: PgExecutor<'e>>(
 
 /// How a page of runs is ordered.
 ///
-/// A *server-side* choice rather than a sort of the page already fetched: the history is capped
-/// at 200 rows and "the runs that failed most" is a question about the whole window, not about
-/// whichever 30 rows arrived first.
+/// A *server-side* choice, not a sort of the fetched page: the history is capped at 200 rows,
+/// and "the runs that failed most" is a question about the whole window.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum RunSort {
     /// Newest first.
@@ -173,7 +172,8 @@ pub enum RunSort {
 }
 
 impl RunSort {
-    /// The token this ordering is selected by, and what the statement below compares against.
+    /// Returns the token this ordering is selected by, and what the statement below compares
+    /// against.
     #[must_use]
     pub const fn token(self) -> &'static str {
         match self {
@@ -197,7 +197,7 @@ pub struct RunFilter<'a> {
     pub state: Option<RunState>,
     /// Inclusive lower bound on the run's creation time.
     pub since: Option<OffsetDateTime>,
-    /// Ordering, applied over the whole matched window rather than over the page.
+    /// Ordering, applied over the whole matched window, not the page.
     pub sort: RunSort,
 }
 
@@ -210,11 +210,12 @@ pub struct RunPage {
     pub total: i64,
 }
 
-/// A filtered, paged, ordered window on the run history.
+/// Returns a filtered, paged, ordered window on the run history.
+///
+/// `total` is read off the first row, so an offset past the end reports `0`.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. A filter matching nothing is an empty page with `total: 0`;
-/// as elsewhere, `total` is read off the first row, so an offset past the end reports `0`.
+/// [`crate::DbError::Sqlx`] only; a filter matching nothing is an empty page with `total: 0`.
 pub async fn list_runs_filtered<'e, E: PgExecutor<'e>>(
     exec: E,
     filter: &RunFilter<'_>,
@@ -236,8 +237,8 @@ pub async fn list_runs_filtered<'e, E: PgExecutor<'e>>(
         total: i64,
     }
     // Every ordering branch collapses to NULL unless its token is the one asked for, so the
-    // trailing `created_at DESC` is both the default and the tie-break — one statement rather
-    // than four near-identical ones the offline cache would have to carry separately.
+    // trailing `created_at DESC` is both the default and the tie-break, and the offline cache
+    // carries one statement instead of four.
     let rows = sqlx::query_as!(
         Row,
         "WITH matched AS ( \
@@ -313,18 +314,18 @@ pub struct FailureStreak {
 /// table that grows by a run per provider per sweep.
 pub(super) const FAILURE_STREAK_WINDOW: i64 = 32;
 
-/// The provider's current run of consecutive failures in `mode`.
+/// Returns the provider's current run of consecutive failures in `mode`.
 ///
-/// Derived from `scan_runs` rather than tracked in a column of its own, deliberately: the runs
-/// *are* the record of what happened, and a second copy of it would be one more thing to keep
-/// true. A provider that has never finished a run of this mode has no streak.
+/// Derived from `scan_runs`, not tracked in a column: the runs are the record, and a second copy
+/// would be one more thing to keep true. A provider that has never finished a run of this mode
+/// has a zero streak.
 ///
-/// Only finished runs count. One in flight is not evidence of anything yet, and letting it end
-/// the streak would clear the backoff every time a run was queued — which is every sweep.
+/// Only finished runs count. Letting one in flight end the streak would clear the backoff every
+/// time a run was queued, which is every sweep.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. A provider with no history is a zero streak, not
-/// [`crate::DbError::NotFound`]: "nothing has failed" is the ordinary answer.
+/// [`crate::DbError::Sqlx`] only; a provider with no history is a zero streak, not
+/// [`crate::DbError::NotFound`].
 pub async fn failure_streak<'e, E: PgExecutor<'e>>(
     exec: E,
     provider_id: ProviderId,
@@ -359,13 +360,13 @@ pub async fn failure_streak<'e, E: PgExecutor<'e>>(
     })
 }
 
-/// The newest run of `mode` this provider still has in flight, if any — the planner's guard
+/// Returns the newest run of `mode` this provider still has in flight, the planner's guard
 /// against queueing a second one behind it.
 ///
 /// "In flight" is narrower than the run state alone, because two states look identical in
 /// `scan_runs` and must not be treated alike:
 ///
-/// - A run whose tasks have all settled but which was never finalised — the terminal progress
+/// - A run whose tasks have all settled but which was never finalised: the terminal progress
 ///   event is best-effort, and a lost one leaves the row `running` with nothing left to do.
 ///   Such a run is **not** in flight; the `EXISTS` excludes it. `total_tasks = 0` is the
 ///   converse: a run whose planner has not created its first task yet, which *is* in flight.
@@ -374,10 +375,11 @@ pub async fn failure_streak<'e, E: PgExecutor<'e>>(
 ///   `stale_after` is for: past it a run stops suppressing new ones, or one lost publish would
 ///   retire the provider from scanning permanently.
 ///
+/// `None` is the caller's cue to plan.
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. No in-flight run is `Ok(None)`, never
-/// [`crate::DbError::NotFound`] — the absence is the ordinary answer and the caller's cue to
-/// plan.
+/// [`crate::DbError::Sqlx`] only; no in-flight run is `Ok(None)`, never
+/// [`crate::DbError::NotFound`].
 pub async fn in_flight_run<'e, E: PgExecutor<'e>>(
     exec: E,
     provider_id: ProviderId,
@@ -405,15 +407,16 @@ pub async fn in_flight_run<'e, E: PgExecutor<'e>>(
     Ok(row.map(ScanRunId::from_uuid))
 }
 
-/// Transition a run to `running` and stamp `started_at`.
+/// Transitions a run to `running` and stamps `started_at`.
+///
+/// An unknown `id` writes nothing. There is no state guard: this would move a `completed` run
+/// back to `running`, which is safe only because the planner is the sole caller and calls it
+/// once, before any task settles. The `COALESCE` keeps the first `started_at`, so a redelivered
+/// plan cannot reset a run's duration.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown `id` matches nothing
-/// and is still `Ok(())`, not [`crate::DbError::NotFound`]. There is no state guard either: this
-/// will move a `completed` run back to `running`, which is safe only because the planner is the
-/// sole caller and calls it once, before any task settles. The `COALESCE` protects the one thing
-/// a repeat would otherwise corrupt — `started_at` keeps the first start, so a run's duration
-/// cannot be reset by a redelivered plan.
+/// [`crate::DbError::Sqlx`] only; an unknown `id` matches nothing and is still `Ok(())`, not
+/// [`crate::DbError::NotFound`].
 pub async fn start_run<'e, E: PgExecutor<'e>>(exec: E, id: ScanRunId) -> DbResult<()> {
     sqlx::query!(
         "UPDATE scan_runs SET state = 'running', started_at = COALESCE(started_at, now()) \
@@ -425,15 +428,15 @@ pub async fn start_run<'e, E: PgExecutor<'e>>(exec: E, id: ScanRunId) -> DbResul
     Ok(())
 }
 
-/// Set a run's final state and stamp `finished_at`.
+/// Sets a run's final state and stamps `finished_at`.
+///
+/// The **unconditional** counterpart to [`finalize_if_complete`]: with no `state = 'running'`
+/// guard it re-stamps a finished run and cannot say whether it performed the transition. Use it
+/// for the operator-forced and plan-failed paths, and `finalize_if_complete` wherever exactly one
+/// terminal event must be emitted. An unknown `id` writes nothing.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown `id` is `Ok(())`
-/// with nothing written. This is the **unconditional** counterpart to
-/// [`finalize_if_complete`]: it has no `state = 'running'` guard, so it will re-stamp an
-/// already-finished run and cannot tell a caller whether it performed the transition. Use it for
-/// the operator-forced and plan-failed paths; use `finalize_if_complete` wherever exactly one
-/// terminal event must be emitted.
+/// [`crate::DbError::Sqlx`] only; an unknown `id` is `Ok(())` with nothing written.
 pub async fn finish_run<'e, E: PgExecutor<'e>>(
     exec: E,
     id: ScanRunId,
@@ -455,21 +458,17 @@ pub async fn finish_run<'e, E: PgExecutor<'e>>(
 /// The terminal state is [`RunState::Failed`] only when every task failed; a partially failed
 /// run still completed.
 ///
-/// Answers `Some` only for the call that performed the transition, and `None` when the run was
-/// not yet complete or another actor got there first. That is what lets the progress aggregator
-/// emit exactly one terminal event per run rather than looping (`docs/ARCHITECTURE.md` §8, §12).
+/// Answers `Some` only for the call that performed the transition, which lets the progress
+/// aggregator emit exactly one terminal event per run (`docs/ARCHITECTURE.md` §8, §12). `None`
+/// covers every case where the caller emits nothing: the run is incomplete, another actor
+/// finalised it, `total_tasks` is still `0`, or the id names no run.
+///
+/// Never default a failure to `None`: the terminal event is emitted once, so a swallowed error
+/// leaves a completed run in `running` forever with nothing to retry it.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. `Ok(None)` carries four
-/// distinct situations deliberately collapsed into one, because the caller's response to all of
-/// them is the same — emit nothing: the run is not yet complete, another actor finalised it
-/// first, `total_tasks` is still `0` (a plan that has not fanned out yet), or the id names no
-/// run at all. It is never [`crate::DbError::NotFound`]; a missing run must not fail the
-/// aggregator, which reaches this on every task settle.
-///
-/// Do not default a failure to `Ok(None)`: the terminal event is emitted exactly once, so
-/// swallowing the error leaves a run that has genuinely completed sitting in `running` forever
-/// with nothing to retry it.
+/// [`crate::DbError::Sqlx`] only; `Ok(None)` whenever this call did not perform the transition,
+/// never [`crate::DbError::NotFound`].
 pub async fn finalize_if_complete<'e, E: PgExecutor<'e>>(
     exec: E,
     id: ScanRunId,
@@ -491,18 +490,19 @@ pub async fn finalize_if_complete<'e, E: PgExecutor<'e>>(
     Ok(row.map(ScanRun::from))
 }
 
-/// Add to a run's planned task total (as the planner fans out).
+/// Adds to a run's planned task total as the planner fans out.
+///
+/// An unknown `id` writes nothing. The arithmetic is plain `+`, so an `int4` overflow is a driver
+/// error: a wrapped `total_tasks` would make [`finalize_if_complete`]'s `>=` end the run before
+/// its tasks ran.
+///
+/// Never swallow the error: the total decides when a run is over, so a lost increment finalises
+/// the run early and its remaining tasks settle into a run that already emitted its terminal
+/// event.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown `id` is `Ok(())`
-/// with nothing written, not [`crate::DbError::NotFound`]. The arithmetic is plain `+`, so a
-/// `delta` large enough to overflow `int4` is a driver error rather than a wrapped total —
-/// which is the answer that matters, since a wrapped `total_tasks` would make
-/// [`finalize_if_complete`]'s `>=` fire immediately and end the run before its tasks ran.
-///
-/// This must not be swallowed: the total is one half of the comparison that decides a run is
-/// over, so a lost increment finalises the run early and the tasks it forgot settle into a run
-/// that has already emitted its terminal event.
+/// [`crate::DbError::Sqlx`] only; an unknown `id` is `Ok(())` with nothing written, not
+/// [`crate::DbError::NotFound`].
 pub async fn add_total_tasks<'e, E: PgExecutor<'e>>(
     exec: E,
     id: ScanRunId,
@@ -536,8 +536,8 @@ mod tests {
         assert_eq!(RunSort::Duration.token(), "duration");
     }
 
-    /// Two orderings sharing a token would make one of them unreachable — the statement would
-    /// take whichever branch the shared literal names, for both.
+    /// Two orderings sharing a token would make one unreachable: the statement would take
+    /// whichever branch the shared literal names, for both.
     #[test]
     fn no_two_orderings_share_a_token() {
         let tokens = [

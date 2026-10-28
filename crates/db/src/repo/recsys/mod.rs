@@ -1,17 +1,15 @@
 //! Persistence for the recommendation model (`docs/RECOMMENDATIONS.md` §5.2, §6).
 //!
-//! Everything here is *derived*: drop it all and a rebuild reproduces it from `series` and its
-//! link tables. That is what makes `generation` sufficient for an atomic-ish swap, and why none
-//! of it appears in the GDPR export — it holds no personal data.
+//! The catalogue model (features, embeddings, priors, build state) is *derived*: a rebuild
+//! reproduces it from `series` and its link tables, and it holds no personal data. The reader
+//! records (affinity, taste profiles, feedback, shelves) are per user and are part of the GDPR
+//! export, through [`crate::repo::privacy::export_user_data`].
 //!
-//! # Where the idf lives
-//!
-//! `series_features.weights` holds **term weights**, not the final TF-IDF vector. Extraction runs
-//! before the vocabulary has been counted, so idf is not known yet; a second pass to fold it in
-//! would rewrite every row in the catalogue for a number that is one small join away. Callers
-//! that need the weighted vector — the projection, and scoring a candidate pair — multiply by
-//! `rec_features.idf` themselves and normalise. [`features::weighted_vectors`] is that join for
-//! the request path; the builder does it in memory while streaming.
+//! `series_features.weights` holds **term weights**, not the final TF-IDF vector: extraction runs
+//! before the vocabulary is counted, and folding idf in would rewrite every row for a number one
+//! join away. The projection and pair scoring multiply by `rec_features.idf` and normalise;
+//! [`features::weighted_vectors`] is that join for the request path, and the builder does it in
+//! memory.
 
 mod build;
 mod embedding;

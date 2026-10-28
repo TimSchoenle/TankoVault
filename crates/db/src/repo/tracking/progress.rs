@@ -23,7 +23,7 @@ pub struct ReadProgress {
 }
 
 impl ReadProgress {
-    /// Whether chapter `number` counts as read (design v2 §A.3).
+    /// Returns whether chapter `number` counts as read (design v2 §A.3).
     ///
     /// A part release belongs to the whole chapter it floors to; hand-rolling `number <= whole`
     /// instead of calling this reports already-read parts as unread forever. SQL read models
@@ -35,22 +35,23 @@ impl ReadProgress {
     }
 }
 
-/// Whether `number` denotes a whole chapter (integer-valued) rather than a part release.
+/// Returns whether `number` denotes a whole chapter (integer-valued), not a part release.
 #[must_use]
 fn is_whole(number: f64) -> bool {
     number.fract() == 0.0
 }
 
-/// Set a user's whole-chapter frontier for a series outright, clearing any now-stale part
-/// frontier (design v2 §A.3 / §B.5).
+/// Sets a user's whole-chapter frontier for a series outright, clearing any now-stale part frontier
+/// (design v2 §A.3 / §B.5).
 ///
 /// Serves `PUT /v1/me/progress/{series_id}`, which keeps its "set progress to N" meaning, and
 /// external-sync pulls that adopt a remote integer progress.
 ///
+/// Progress on an untracked series is inserted, not refused.
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Progress on an untracked
-/// series is inserted rather than refused, so this is not [`crate::DbError::NotFound`]; a
-/// `series_id` that does not exist is a foreign-key violation and so a 500.
+/// [`crate::DbError::Sqlx`] only, including the foreign-key violation of an unknown `series_id`;
+/// progress on an untracked series is inserted, not [`crate::DbError::NotFound`].
 pub async fn progress_set<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -102,13 +103,15 @@ async fn progress_write<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Get both of a user's read frontiers for a series, if tracked (design v2 §A.6
-/// `GET /v1/me/progress/:series_id`).
+/// Gets both of a user's read frontiers for a series, if tracked (design v2 §A.6 `GET
+/// /v1/me/progress/:series_id`).
+///
+/// `None` means nothing read yet, which callers read as [`ReadProgress::default`](Default).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A series with no progress
-/// row is `Ok(None)`, which callers read as "nothing read yet" via
-/// [`ReadProgress::default`](Default) rather than as [`crate::DbError::NotFound`].
+/// [`crate::DbError::Sqlx`] only; a series with no progress row is `Ok(None)`, which callers read
+/// as "nothing read yet" via [`ReadProgress::default`](Default) instead of as
+/// [`crate::DbError::NotFound`].
 pub async fn progress_get_full<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -135,13 +138,16 @@ pub async fn progress_get_full<'e, E: PgExecutor<'e>>(
     }))
 }
 
-/// Get a user's whole-chapter frontier together with when it last changed, if tracked. Used
-/// by external sync to reconcile progress under a `NewestWins` conflict policy (`docs/ARCHITECTURE.md` §B.3).
+/// Gets a user's whole-chapter frontier together with when it last changed, if tracked. Used by
+/// external sync to reconcile progress under a `NewestWins` conflict policy (`docs/ARCHITECTURE.md`
+/// §B.3).
+///
+/// The merge keeps `None` distinct from progress of `0` with a timestamp: under `NewestWins` a
+/// fabricated timestamp would let a never-read series outrank the remote.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. No progress row is
-/// `Ok(None)`, and the merge must keep that distinct from progress of `0` with a timestamp:
-/// under `NewestWins` a fabricated timestamp would let a never-read series outrank the remote.
+/// [`crate::DbError::Sqlx`] only; no progress row is `Ok(None)`, and the merge must keep that
+/// distinct from progress of `0` with a timestamp.
 pub async fn progress_state<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -164,7 +170,7 @@ pub async fn progress_state<'e, E: PgExecutor<'e>>(
     Ok(row.map(|r| (r.last, r.updated_at)))
 }
 
-/// Apply the §A.3 "mark chapter read" rule for a single chapter `number`, advancing whichever
+/// Applies the §A.3 "mark chapter read" rule for a single chapter `number`, advancing whichever
 /// frontier is appropriate and never letting a part release corrupt whole-chapter progress.
 ///
 /// A part release ahead of the whole frontier moves *both*: the part frontier to `number`, and
@@ -172,12 +178,17 @@ pub async fn progress_state<'e, E: PgExecutor<'e>>(
 /// half is "the part cannot corrupt whole-chapter progress"; the second half is what keeps the
 /// frontier self-consistent, and it is what external sync sees (§B.5 pushes the whole frontier).
 ///
+/// Marking a whole chapter at or below the whole frontier, or a part of a chapter at or below it,
+/// leaves both frontiers unchanged. A part only the part frontier covers can still pull the whole
+/// frontier up: at whole `1` and part `4.75` with chapter `3` in the catalogue, marking `4.5`
+/// moves it to `3`.
+///
+/// Every call rewrites the row and its `updated_at`, which [`progress_state`] reads for
+/// `NewestWins`. The read and the write are two statements without a transaction: two concurrent
+/// marks can interleave, and the loser's advance is lost unreported.
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable, from either the read or the
-/// write. Marking a chapter already covered by the frontier is a deliberate no-op that still
-/// returns `Ok(())`, so success does not mean anything changed. Note that the read and the
-/// write are two statements without a surrounding transaction: two concurrent marks can
-/// interleave, and the loser's advance is lost rather than reported.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn progress_mark_read(
     pool: &sqlx::PgPool,
     user_id: UserId,
@@ -198,25 +209,21 @@ pub async fn progress_mark_read(
             part = None; // now stale, superseded by whole-chapter progress
         }
     } else if number.floor() > whole {
-        // Ahead of the whole frontier: the part release itself can only ever be recorded by the
-        // part frontier — `number` is fractional and the whole frontier is integer-valued.
+        // Ahead of the whole frontier: only the part frontier can record the part release, since
+        // `number` is fractional and the whole frontier is integer-valued.
         part = Some(part.map_or(number, |p| p.max(number)));
-        // But "mark read" is a *frontier* operation (§A.1: marking a chapter read always means
-        // "read through here"), so marking `46.1` also asserts every chapter below chapter 46.
-        // Leaving the whole frontier behind produced a frontier that contradicts itself: with
-        // the frontier at `40`, marking `46.1` reported `41`..`45` unread while `46.1` read, and
-        // the AniList push — which reads the whole frontier, the only thing a provider without
-        // parts can be told — kept sending `40`.
+        // "Mark read" is a *frontier* operation (§A.1: "read through here"), so marking `46.1`
+        // also asserts every chapter below 46. Leaving the whole frontier at `40` would report
+        // `41`..`45` unread with `46.1` read, and the AniList push, which reads only the whole
+        // frontier, would keep sending `40`.
         //
-        // The catch-up target comes from the catalogue, exactly as un-reading's does: the
-        // highest chapter number below `floor(number)`, so gaps and chapters that exist only as
-        // parts are honoured (with `5` missing and `4.5`/`4.75` present, marking `6.1` lands the
-        // whole frontier on `4`, not `5`). `floor(number)` itself is excluded — `46.1` is a
-        // fragment shipped *ahead of* chapter 46, so it says nothing about the rest of 46.
+        // The catch-up target comes from the catalogue, as un-reading's does: the highest chapter
+        // below `floor(number)`, honouring gaps and part-only chapters (with `5` missing and
+        // `4.5`/`4.75` present, marking `6.1` lands on `4`). `floor(number)` itself is excluded:
+        // `46.1` ships *ahead of* chapter 46 and says nothing about the rest of it.
         //
-        // Skipped when `floor(number) <= whole + 1`: every chapter below `floor(number)` then
-        // floors to at most `whole`, so the query cannot move the frontier. That keeps the
-        // sequential case (frontier `45`, marking `46.1`) at the one round-trip it had before.
+        // Skipped when `floor(number) <= whole + 1`, where the query cannot move the frontier, so
+        // the sequential case stays at one round trip.
         if number.floor() > whole + 1.0 {
             whole = whole.max(prev_whole_below(pool, series_id, number.floor()).await?);
         }
@@ -226,16 +233,18 @@ pub async fn progress_mark_read(
     progress_write(pool, user_id, series_id, whole, part).await
 }
 
-/// Apply the §A.3 "mark chapter unread" rule for a single chapter `number`, retreating the
+/// Applies the §A.3 "mark chapter unread" rule for a single chapter `number`, retreating the
 /// relevant frontier to just before it.
 ///
-/// Retreating the whole frontier also clears any part frontier: everything after `number` is
-/// unread.
+/// Un-reading a whole chapter at or below the whole frontier retreats it to the catalogue's
+/// chapter before `number` and clears the part frontier. Un-reading a part of a read whole chapter
+/// retreats the whole frontier below that chapter and keeps the parts still read under `number`.
+/// Above the whole frontier only a part frontier at or past `number` retreats, to the part release
+/// before it; anything else is already unread and nothing moves. Every call rewrites the row, and
+/// the read-then-write interleaving of [`progress_mark_read`] applies.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable, from the read, either
-/// retreat-target lookup, or the write. Un-reading a chapter that was never read is `Ok(())`,
-/// and the same read-then-write interleaving noted on [`progress_mark_read`] applies.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn progress_mark_unread(
     pool: &sqlx::PgPool,
     user_id: UserId,
@@ -270,17 +279,14 @@ pub async fn progress_mark_unread(
         // Ahead of the whole frontier: the part frontier is the only thing that can move, and
         // it may only move **backwards**. Both halves of that are load-bearing.
         part = match part {
-            // Nothing ahead of the whole frontier was read, so there is nothing to un-read.
-            // Retreating from here would *advance* the frontier onto a part release the user
-            // has not read — un-reading one chapter would mark another read.
+            // Nothing ahead of the whole frontier was read. Retreating from here would *advance*
+            // the frontier onto an unread part release, marking another chapter read.
             None => None,
-            // The frontier already sits below `number`: it is unread, and saying so again is a
-            // no-op rather than a reason to move.
+            // The frontier already sits below `number`, so it is unread and nothing moves.
             Some(p) if p < number => Some(p),
-            // `number` is at or below the frontier, so the frontier retreats to the highest
-            // part release the catalogue holds below it — clearing it outright here would
-            // throw away every earlier part of the same chapter (e.g. un-reading `152.6` of
-            // `152.1`..`152.6` read would report the other five unread too).
+            // `number` is at or below the frontier, which retreats to the highest part release
+            // the catalogue holds below it. Clearing it would discard every earlier part of the
+            // chapter: un-reading `152.6` would report `152.1`..`152.5` unread too.
             Some(_) => prev_part_below(pool, series_id, number, whole).await?,
         };
     }
@@ -288,43 +294,43 @@ pub async fn progress_mark_unread(
     progress_write(pool, user_id, series_id, whole, part).await
 }
 
-/// Advance many series' progress to "everything read", returning the ids that were on the
-/// user's watchlist and therefore acted on. Backs the Watchlist's `Mark group read`.
+/// Advances many series' progress to "everything read", returning the ids that were on the user's
+/// watchlist and therefore acted on. Backs the Watchlist's `Mark group read`.
 ///
 /// # Why the frontier stops at what the reader can open
 ///
-/// The maximum is taken over the chapters this reader may read, not every chapter stored. A
-/// paywalled chapter they have not bought is not something "Mark group read" can have read, and
-/// swallowing it into the frontier would mean it never appears as unread once its timer expires
-/// — the reader would silently lose the chapter they were waiting for.
+/// The maximum is taken over the chapters this reader may read. Swallowing an unbought paywalled
+/// chapter into the frontier would hide it once its timer expires, and the reader would silently
+/// lose the chapter they were waiting for.
 ///
-/// # Why the part frontier is cleared rather than advanced
+/// # Why the part frontier is cleared
 ///
 /// The whole frontier is set to `max(floor(number))` across every source, and
 /// [`ReadProgress::covers`] reports `number` read as soon as `floor(number) <= whole`. Since
 /// `max(floor(…))` is by construction at least `floor(x)` for every chapter `x` in the series,
-/// that single value covers the part releases too, and any surviving part frontier would be
-/// stale — exactly the state the §A.1 invariant forbids.
+/// that single value covers the part releases too, and a surviving part frontier would be
+/// stale, the state the §A.1 invariant forbids.
 ///
 /// # Why `GREATEST`
 ///
-/// The frontier only ever moves forward. Without it, a catalogue that *lost* chapters (a source
-/// delisted, a merge undone) would silently rewind a reader's progress the next time they
-/// pressed the button — and `progress_mark_read` never does that, so this must not either.
+/// The frontier only moves forward, as in `progress_mark_read`. Without it, a catalogue that
+/// *lost* chapters (a source delisted, a merge undone) would rewind a reader's progress.
 ///
-/// # Why every watchlisted id comes back, including ones nothing was written for
+/// # Why every watchlisted id comes back
 ///
-/// A tracked series with no chapters yet has nothing to mark; that is a no-op, not a failure,
-/// and reporting it as one would make "Mark group read" claim a partial failure on a perfectly
-/// healthy group. The `written` CTE is data-modifying, so Postgres executes it whether or not
-/// the outer query references it; the outer query deliberately reads `targets` instead, so the
-/// result is "these ids were yours" rather than "these ids had rows written".
+/// A tracked series with no chapters has nothing to mark, which is not a failure; reporting it
+/// would make "Mark group read" claim a partial failure on a healthy group. The data-modifying
+/// `written` CTE runs whether or not it is referenced, and the outer query reads `targets`, so
+/// the result is "these ids were yours". Untracked ids are absent.
+///
+/// One statement, so its own update cannot lose a concurrent advance: the `GREATEST` is evaluated
+/// inside the `ON CONFLICT` update against the row it locks. It does not protect what it wrote:
+/// a [`progress_mark_read`] or [`progress_mark_unread`] that read the row before this statement
+/// committed still overwrites the frontier with its stale value.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Ids the user does not track
-/// are absent from the result rather than [`crate::DbError::NotFound`]. Note this is one
-/// statement, so unlike [`progress_mark_read`] it cannot lose a concurrent advance: the
-/// `GREATEST` is evaluated inside the `ON CONFLICT` update against the row it locks.
+/// [`crate::DbError::Sqlx`] only; ids the user does not track are absent from the result instead of
+/// [`crate::DbError::NotFound`].
 pub async fn progress_bulk_mark_all_read<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -364,22 +370,20 @@ pub async fn progress_bulk_mark_all_read<'e, E: PgExecutor<'e>>(
     Ok(acted.into_iter().map(SeriesId::from_uuid).collect())
 }
 
-/// The highest whole chapter that exists for this series strictly below `number`, or `0.0`
-/// when there is none (§A.3). Two callers, both of which must land on a chapter the catalogue
-/// actually holds rather than on `number - 1`: the retreat target for un-reading a whole
-/// chapter, and the catch-up target for the whole frontier when a part release ahead of it is
-/// marked read.
+/// Returns the highest whole chapter that exists for this series strictly below `number`, or `0.0`
+/// when there is none (§A.3). Both callers must land on a chapter the catalogue holds, not on
+/// `number - 1`: the retreat target for un-reading a whole chapter, and the catch-up target for
+/// the whole frontier when a part release ahead of it is marked read.
 ///
 /// "Whole chapter" here means `floor(c.number)`, so a chapter that only ever shipped as parts
 /// counts: reading past `46.1` credits chapter `45` even when the catalogue holds only
-/// `45.1`..`45.6`, which is right — every part of `45` that exists has been read.
+/// `45.1`..`45.6`, since every part of `45` that exists has been read.
 async fn prev_whole_below(pool: &sqlx::PgPool, series_id: SeriesId, number: f64) -> DbResult<f64> {
     // `floor(c.number) < number` in the stored domain. For any real `number`, an integer whole
     // chapter `w` satisfies `w < number` exactly when `w <= ceil(number) - 1`, so the bound on the
-    // scaled column is `ceil(number) * 10000` with a strict `<`. Computed here rather than in SQL
-    // so the column itself stays untouched on the left of the comparison — an expression over
-    // `number_milli` would not match `chapters_source_number_key`, which is the mistake the old
-    // `::numeric`-vs-`::float8` comment beside this query was warning about.
+    // scaled column is `ceil(number) * 10000` with a strict `<`. Computed here, not in SQL, so
+    // the column stays bare on the left of the comparison: an expression over `number_milli`
+    // would not match `chapters_source_number_key`.
     let bound = milli_of_whole(whole_ceil(number));
     Ok(sqlx::query_scalar!(
         "SELECT max(c.number_milli / 10000) \
@@ -393,15 +397,13 @@ async fn prev_whole_below(pool: &sqlx::PgPool, series_id: SeriesId, number: f64)
     .map_or(0.0, f64::from))
 }
 
-/// The highest part release that exists for this series strictly below `number` and belonging to
-/// a chapter strictly **ahead** of the whole frontier `whole` — the retreat target for un-reading
-/// a part (§A.3).
+/// Returns the highest part release that exists for this series strictly below `number` and
+/// belonging to a chapter strictly **ahead** of the whole frontier `whole`, the retreat target for
+/// un-reading a part (§A.3).
 ///
 /// The lower bound is `floor(c.number) > whole`, not `c.number > whole`: a part of the whole
-/// frontier's own chapter (`152.5` with the frontier at `152`) is already covered by that
-/// frontier, so making it the part frontier records nothing and is the one shape §A.1 does not
-/// need. Every other write site produces `floor(part) > whole`; this one used to be able to
-/// produce `floor(part) == whole`.
+/// frontier's own chapter (`152.5` with the frontier at `152`) is already covered, so making it
+/// the part frontier records nothing. Every write site produces `floor(part) > whole`.
 async fn prev_part_below(
     pool: &sqlx::PgPool,
     series_id: SeriesId,
@@ -428,22 +430,17 @@ async fn prev_part_below(
     .map(from_milli))
 }
 
-/// Set (or clear) the blanket per-series sync-exclusion flag on a watchlist entry. The entry
-/// must already exist; a series can only be excluded from sync once it is being tracked.
+/// Sets (or clears) the blanket per-series sync-exclusion flag on a watchlist entry. The entry must
+/// already exist; a series can only be excluded from sync once it is being tracked.
 ///
 /// Returns `true` when the flag was written, `false` when the user tracks no such series.
 ///
-/// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. The precondition above is not
-/// enforced *here*: an absent watchlist entry matches nothing and is `Ok(false)`, not
-/// [`crate::DbError::NotFound`], so the caller decides the status code — `PUT
-/// /v1/me/watchlist/{series_id}/sync` turns it into a 404.
+/// The caller decides the status code for `false`: `PUT /v1/me/watchlist/{series_id}/sync`
+/// turns it into a 404. This is a privacy setting, so a user opting an untracked series out of
+/// sync must not be told the opt-out was saved when nothing was written.
 ///
-/// The count is returned rather than discarded because this is a privacy-relevant setting
-/// (OPS-2.2d): it used to answer `Ok(())` unconditionally and the handler answered
-/// `{"ok": true}`, so a user opting a series out of external sync *before* tracking it was told
-/// the opt-out was saved when nothing had been written, and the next sync pushed their progress
-/// to the provider anyway.
+/// # Errors
+/// [`crate::DbError::Sqlx`] only; the precondition above is not enforced *here*.
 pub async fn set_sync_excluded<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -462,14 +459,15 @@ pub async fn set_sync_excluded<'e, E: PgExecutor<'e>>(
     Ok(result.rows_affected() > 0)
 }
 
-/// Upsert a per-provider override of the blanket exclusion flag (design v2 §A.5): a specific
-/// provider's inclusion/exclusion, taking precedence over `watchlist_entries.sync_excluded`.
+/// Upserts a per-provider override of the blanket exclusion flag (design v2 §A.5): a specific
+/// provider's inclusion or exclusion, taking precedence over `watchlist_entries.sync_excluded`.
+///
+/// Unlike [`set_sync_excluded`] this writes its own table, so it takes effect whether or not the
+/// series is on the watchlist.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Re-setting an existing
-/// override updates it rather than raising [`crate::DbError::Conflict`]. Unlike
-/// [`set_sync_excluded`] this writes its own table, so it takes effect whether or not the
-/// series is on the watchlist.
+/// [`crate::DbError::Sqlx`] only; re-setting an existing override updates it instead of raising
+/// [`crate::DbError::Conflict`].
 pub async fn set_sync_override<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -491,18 +489,18 @@ pub async fn set_sync_override<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// The single choke point every sync path calls before touching a series (design v2 §A.5).
+/// Returns the single choke point every sync path calls before touching a series (design v2 §A.5).
 ///
-/// Precedence: a per-provider override wins outright, then the blanket `sync_excluded` flag,
-/// then included. A series not on the watchlist at all counts as included, since there is
-/// nothing to exclude yet.
+/// Precedence: a per-provider override wins outright, even for a series not on the watchlist,
+/// then the blanket `sync_excluded` flag, then included.
+///
+/// Callers **must** propagate the error, never default it to `false`: this choke point honours a
+/// user's opt-out, and treating an unavailable database as "included" syncs data they asked to
+/// keep out of a third-party service.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable; the `COALESCE` chain always
-/// yields a row, so every "not configured" case is `Ok(false)`. Callers **must** propagate
-/// rather than defaulting to `false` on failure: this is the choke point that honours a user's
-/// opt-out, and treating an unavailable database as "included" syncs data they asked to keep
-/// out of a third-party service.
+/// [`crate::DbError::Sqlx`] only; the `COALESCE` chain always yields a row, so every "not
+/// configured" case is `Ok(false)`.
 pub async fn is_sync_excluded<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -525,20 +523,18 @@ pub async fn is_sync_excluded<'e, E: PgExecutor<'e>>(
     Ok(excluded)
 }
 
-/// Every series `user_id` has excluded from syncing with `provider`, in one query.
+/// Returns every series `user_id` has excluded from syncing with `provider`, in one query.
 ///
-/// The whole-account reconciliation used to call [`is_sync_excluded`] per series (PERF-13); the
-/// tables are keyed on `user_id`, so one pass over both is enough for a run. The precedence is
-/// reproduced exactly: a per-provider override wins outright, otherwise the blanket
-/// `watchlist_entries.sync_excluded` flag, otherwise included.
+/// The batched form of [`is_sync_excluded`] for a whole-account reconciliation, with the same
+/// precedence: a per-provider override, then the blanket `watchlist_entries.sync_excluded` flag,
+/// then included. A series absent from the set is included; an untracked series is in the set
+/// only when its override excludes it.
 ///
-/// A series absent from the returned set is included — which is also the answer for a series
-/// not on the watchlist at all, matching [`is_sync_excluded`]'s `COALESCE(..., false)` tail.
+/// Propagate the error: an empty set means nothing is excluded, so a swallowed error pushes every
+/// series the user excluded.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. The same caution as
-/// [`is_sync_excluded`] applies with more force: an empty set means "nothing is excluded", so
-/// a caller that swallows the error and proceeds pushes every series the user excluded.
+/// [`crate::DbError::Sqlx`] only; the same caution as [`is_sync_excluded`] applies with more force.
 pub async fn sync_excluded_series<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -568,15 +564,16 @@ pub async fn sync_excluded_series<'e, E: PgExecutor<'e>>(
     Ok(rows.into_iter().map(SeriesId::from_uuid).collect())
 }
 
-/// Every whole-chapter frontier `user_id` holds, with when it last changed, keyed by series.
+/// Returns every whole-chapter frontier `user_id` holds, with when it last changed, keyed by
+/// series.
 ///
-/// The batched form of [`progress_state`], prefetched once per reconciliation run rather than
-/// queried per remote entry (PERF-13).
+/// The batched form of [`progress_state`], prefetched once per reconciliation run. Series with
+/// no progress row are **absent**, which the merge keeps distinct from progress of `0`, as on
+/// [`progress_state`].
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Series with no progress row
-/// are **absent** from the map, which the merge must keep distinct from progress of `0` for
-/// the reason given on [`progress_state`].
+/// [`crate::DbError::Sqlx`] only; series with no progress row are **absent** from the map, which
+/// the merge must keep distinct from progress of `0` for the reason given on [`progress_state`].
 pub async fn progress_states_for_user<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -634,8 +631,8 @@ mod tests {
     #[test]
     fn parts_of_an_already_read_whole_chapter_are_read() {
         // Parts are fragments shipped ahead of the compiled chapter, so reading whole 152
-        // covers every 152.x — the same reason `progress_mark_read` treats marking one a
-        // no-op. Disagreeing here would leave that no-op behind a live "mark read" button.
+        // covers every 152.x, the reason `progress_mark_read` treats marking one a no-op.
+        // Disagreeing here would leave that no-op behind a live "mark read" button.
         let p = progress(152.0, None);
         assert!(p.covers(152.1));
         assert!(p.covers(152.9));

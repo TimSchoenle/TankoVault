@@ -1,14 +1,12 @@
 //! Read models for the Home surfaces: unread feed, continue-reading cards and lifetime stats.
-//!
-//! Recommendations used to live here as a tag-overlap query that scored the whole catalogue on
-//! every request. They are now a model — see `repo::recsys` and `docs/RECOMMENDATIONS.md`.
+//! Recommendations live in `repo::recsys`; see `docs/RECOMMENDATIONS.md`.
 //!
 //! The unread predicate is spelled out as the negation of
-//! [`ReadProgress::covers`](super::ReadProgress::covers) in three places: [`feed`] here, the page's
-//! next-unread probe in [`watchlist`](super::watchlist), and the `watchlist_unread_live` SQL function
-//! (migration 0058) that every stored count in `watchlist_unread` is computed from. `sqlx` macros need
-//! a string literal and cannot share it via `concat!`; `crates/db/tests/repo_tracking.rs` is what
-//! catches a copy drifting:
+//! [`ReadProgress::covers`](super::ReadProgress::covers) in three places: [`feed`] here, the
+//! page's next-unread probe in [`watchlist`](super::watchlist), and the `watchlist_unread_live`
+//! SQL function (migration 0058) that every stored count in `watchlist_unread` is computed from.
+//! `sqlx` macros need a string literal and cannot share it via `concat!`;
+//! `crates/db/tests/repo_tracking.rs` catches a copy drifting:
 //!
 //! ```text
 //! c.number_milli >= (floor(COALESCE(rp.last_read_whole_number, 0))::bigint + 1) * 10000
@@ -21,36 +19,27 @@
 //!             WHERE e.user_id = $1)))
 //! ```
 //!
-//! The first two clauses read oddly and are not free-hand: migration 0055 stores the number as
-//! `number_milli int` (the number × 10 000), and these are the mechanical translations of
-//! `floor(c.number) > w` and `c.number <= p`. `repo::catalog::chapters` holds the table of them.
-//! Two details that are load-bearing:
+//! The first two clauses are the mechanical translations of `floor(c.number) > w` and
+//! `c.number <= p` onto `number_milli int` (the number × 10 000, migration 0055);
+//! `repo::catalog::chapters` holds the table of them. Two details are load-bearing:
 //!
 //! - **`floor(…)` before the `::bigint`.** A `numeric::bigint` cast *rounds*, so
 //!   `last_read_whole_number = 5.5` would become 6 and hide chapter 6 as already read.
-//! - **`bigint`, not `int`.** Not for an in-range bound — `(200000 + 1) * 10000` fits `int`. For
-//!   a `read_progress` row written before the chapter ceiling existed, which was never
-//!   range-checked and can still hold a date-shaped value; that bound lands two orders of
-//!   magnitude past `i32::MAX`. Postgres has an `int4 >= int8` operator in the default btree
-//!   opfamily, so widening costs nothing: the comparison stays an *index cond* on
-//!   `chapters_source_number_key` rather than degrading to a filter.
+//! - **`bigint`, not `int`.** An in-range bound fits `int`, but a `read_progress` row that was
+//!   never range-checked can hold a date-shaped value, two orders of magnitude past `i32::MAX`.
+//!   Postgres has an `int4 >= int8` operator in the default btree opfamily, so the comparison
+//!   stays an *index cond* on `chapters_source_number_key`.
 //!
-//! The third clause is the early-access gate. A chapter a provider has published behind a
-//! paywall is stored like any other — it has to be, or the row would be re-discovered and
-//! re-dated when the timer expires — but counting it as unread tells a reader they are behind
-//! on something they cannot open. It becomes readable in one of two ways: its stated unlock
-//! time passes, or the reader has told this provider's row in `user_provider_early_access` that
-//! they pay for it.
+//! The third clause is the early-access gate. A paywalled chapter is stored like any other, or it
+//! would be re-discovered and re-dated when the timer expires, but counting it as unread tells a
+//! reader they are behind on something they cannot open. It becomes readable when its unlock
+//! time passes, or when the reader has a row in `user_provider_early_access` for its provider.
 //!
-//! **The opt-in set is read from the bind parameter, never from the outer row.** Written as an
-//! `EXISTS` correlated to `w.user_id` it is a subplan the planner charges per chapter row: the
-//! per-source scans went from an estimated 4.88 to 114.36 and `continue_reading` as a whole from
-//! 14 762 to 177 925 — past `jit_above_cost`, so every request additionally paid to JIT-compile
-//! 59 functions it had no use for. `w.user_id` *is* `$1` in all eight statements, and written
-//! that way the sublink is uncorrelated: one `InitPlan` per execution, then an array membership
-//! test per row. Keeping it a bound array instead would change the signature of every one of
-//! these queries and their callers, which is how the predicate's history says the bind numbering
-//! gets broken.
+//! **The opt-in set is read from the bind parameter, never from the outer row.** An `EXISTS`
+//! correlated to `w.user_id` is a subplan charged per chapter row, which multiplies the estimated
+//! cost past `jit_above_cost` so every request pays to JIT-compile. `w.user_id` *is* `$1` in all
+//! eight statements, and written that way the sublink is uncorrelated: one `InitPlan` per
+//! execution, then an array membership test per row.
 
 use crate::error::DbResult;
 use sqlx::{FromRow, PgExecutor};
@@ -80,45 +69,40 @@ pub struct FeedItem {
     pub discovered_at: OffsetDateTime,
 }
 
-/// The reader's new-chapter feed: what is unread on their watchlist (`docs/ARCHITECTURE.md` §11).
+/// Returns the reader's new-chapter feed: what is unread on their watchlist (`docs/ARCHITECTURE.md`
+/// §11).
 ///
 /// Chapters strictly above their progress marker on a watched series, most recently discovered
-/// first — **one row per chapter, not per source**.
+/// first, **one row per chapter, not per source**.
 ///
-/// # Why the dedupe is here and not left to the caller
+/// # Why the dedupe is here
 ///
-/// A merge unions the absorbed series' sources onto the survivor, so from then on one chapter
-/// legitimately exists as two or three `chapters` rows carrying the same number. Emitted per
-/// source, that chapter was two or three rows of the reader's Home feed, counted two or three
-/// times in the "N new chapters" a row claims — and contradicted by every other surface, because
-/// [`continue_reading`], [`me_stats`] and the watchlist badge have always counted
-/// `DISTINCT number_milli / 10000`, and the notifier claims one announcement per
-/// `(user, series, chapter)`. It also spent the `limit` on duplicates: a reader whose watchlist
-/// is mostly merged series saw half a feed.
+/// A merge unions the absorbed series' sources onto the survivor, so one chapter exists as
+/// several `chapters` rows with the same number. Emitted per source, it would appear several
+/// times in the feed, inflate the "N new chapters" count, and spend the `limit` on duplicates,
+/// contradicting [`continue_reading`], [`me_stats`] and the watchlist badge, which count
+/// `DISTINCT number_milli / 10000`, and the notifier, which claims one announcement per
+/// `(user, series, chapter)`.
 ///
 /// The survivor of each duplicate set is the source the watchlist ledger's
-/// `preferred_source_name` would name — most chapters, then the most recent scan, then the slug —
-/// so the row's link opens the same carrier the rest of the product calls this series' best one.
-/// `ss.id` closes the ordering because one provider may hold a series under several paths.
+/// `preferred_source_name` would name (most chapters, then the most recent scan, then the slug),
+/// so the link opens the carrier the rest of the product calls best. `ss.id` closes the ordering,
+/// since one provider may hold a series under several paths.
 ///
-/// `discovered_at` is the **earliest** sighting across those sources, which is what the field has
-/// always claimed to be. Taking the surviving row's own value instead would re-date a chapter to
-/// the day the preferred source happened to pick it up, resurfacing weeks-old chapters as today's
-/// news whenever a merge attaches a slower carrier.
+/// `discovered_at` is the **earliest** sighting across those sources. The surviving row's own
+/// value would re-date a chapter to when the preferred source picked it up, resurfacing old
+/// chapters as news whenever a merge attaches a slower carrier.
 ///
 /// # Why three stages
 ///
 /// `sightings` reads each watched source's unread tail with the predicate in the lateral's
-/// `WHERE`, so it is an index condition on `chapters_source_number_key` rather than a filter over
-/// every chapter. `newest` takes each chapter's earliest sighting and keeps the top `limit`, over
-/// three narrow columns. Only those rows then look up their carrier — the row with the title and
-/// path — by primary key. The single statement this replaced joined `read_progress` above a scan
-/// of every watched chapter and window-sorted all unread rows to disk: 362 ms warm on an
-/// 859-series watchlist with 97 000 unread rows, against 126 ms, identical output.
+/// `WHERE`, an index condition on `chapters_source_number_key`. `newest` takes each chapter's
+/// earliest sighting and keeps the top `limit` over three narrow columns. Only those rows look up
+/// their carrier, the row with the title and path, by primary key. A single statement would
+/// window-sort every unread row.
 ///
-/// The carrier lookup must apply the same early-access gate as `sightings`: the carrier is chosen
-/// among the sightings the reader can open, and a locked one with a higher `chapter_count` would
-/// otherwise win and link to a paywall.
+/// The carrier lookup applies the same early-access gate as `sightings`, or a locked carrier with
+/// a higher `chapter_count` would win and link to a paywall.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; empty is never evidence the account is gone.
@@ -225,12 +209,11 @@ pub struct ContinueCard {
     pub unread: i64,
 }
 
-/// Continue-reading cards: watched series with at least one unread chapter, freshest activity
-/// first (no cap, for a stable rail). `unread` counts distinct whole chapters.
+/// Returns the continue-reading cards: watched series with at least one unread chapter, freshest
+/// activity first, uncapped for a stable rail. `unread` counts distinct whole chapters.
 ///
 /// Read from `watchlist_unread`, which migration 0058's triggers keep equal to the unread
-/// predicate documented above; "freshest activity" is the newest sighting of a chapter the reader
-/// can open. This used to be two laterals over every watched source's chapters on every request.
+/// predicate above; "freshest activity" is the newest sighting of a chapter the reader can open.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; nothing left is an empty `Vec`.
@@ -279,8 +262,8 @@ pub async fn continue_reading<'e, E: PgExecutor<'e>>(
 
 /// Lifetime reading figures for the Home and Profile headline.
 ///
-/// Derived from stored progress markers. There is no per-chapter read-event log, so a daily
-/// streak is omitted rather than fabricated from what is left.
+/// Derived from stored progress markers. There is no per-chapter read-event log, so there is no
+/// daily streak.
 #[derive(Debug, Clone, Default, serde::Serialize, FromRow)]
 pub struct MeStats {
     /// Series on the watchlist at any status.
@@ -295,12 +278,11 @@ pub struct MeStats {
     pub unread: i64,
 }
 
-/// Compute a user's lifetime tracking stats in one round trip; both counts are floored to whole
+/// Computes a user's lifetime tracking stats in one round trip; both counts are floored to whole
 /// chapters.
 ///
-/// The three watchlist counts share one `count(…) FILTER` pass, held in a CTE that is referenced
-/// more than once and therefore materialised — three scalar subqueries over the same rows were
-/// three scans of them.
+/// The three watchlist counts share one `count(…) FILTER` pass in a CTE referenced more than
+/// once, and therefore materialised, so the rows are scanned once.
 ///
 /// `unread` sums the stored per-series counts in `watchlist_unread`. Summing per series equals a
 /// distinct count over the whole watchlist only because `watchlist_entries` is keyed on

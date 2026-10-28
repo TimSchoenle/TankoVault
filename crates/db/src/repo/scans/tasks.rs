@@ -38,21 +38,17 @@ impl From<TaskRow> for ScanTask {
     }
 }
 
-/// Create a queued task and return its id, or `None` when an identical task
-/// (`run_id`, `kind`, `target`) already exists.
+/// Creates a queued task and returns its id, or `None` when an identical task (`run_id`, `kind`,
+/// `target`) already exists.
 ///
-/// The `ON CONFLICT DO NOTHING` makes fan-out idempotent under at-least-once delivery: a
-/// redelivered `catalog_page` re-attempts the same child inserts and simply gets `None`
-/// back, so the caller skips the duplicate `add_total_tasks` + publish instead of
-/// re-enqueuing every series (`docs/ARCHITECTURE.md` §12). Relies on the `scan_tasks_run_kind_target`
-/// unique index.
+/// The `ON CONFLICT DO NOTHING` on the `scan_tasks_run_kind_target` unique index makes fan-out
+/// idempotent under at-least-once delivery: a redelivered `catalog_page` gets `None` back, and the
+/// caller skips the duplicate `add_total_tasks` and publish (`docs/ARCHITECTURE.md` §12). `None`
+/// is the expected outcome of a redelivery, not a conflict.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable; an unknown `run_id` is a
-/// foreign-key violation. `Ok(None)` means "already present", never
-/// [`crate::DbError::Conflict`] — the duplicate is the expected outcome of a redelivery rather
-/// than a client error, and the caller's correct response is to skip the publish, not to
-/// surface a 409.
+/// [`crate::DbError::Sqlx`] only, including the foreign-key violation of an unknown `run_id`.
+/// `Ok(None)` means "already present", never [`crate::DbError::Conflict`].
 pub async fn create_task<'e, E: PgExecutor<'e>>(
     exec: E,
     run_id: ScanRunId,
@@ -73,25 +69,20 @@ pub async fn create_task<'e, E: PgExecutor<'e>>(
     Ok(inserted.map(ScanTaskId::from_uuid))
 }
 
-/// Create many queued tasks of the same `kind` in one statement, returning the
-/// `(id, target)` pairs that were **actually inserted**.
+/// Creates many queued tasks of the same `kind` in one statement, returning the `(id, target)`
+/// pairs that were **actually inserted**.
 ///
-/// Semantically identical to calling [`create_task`] per target — including the
-/// `ON CONFLICT DO NOTHING` idempotency — but collapses N round-trips into one. Targets
-/// already present (a redelivered parent re-attempting its fan-out) are simply absent from
-/// the result, so the caller publishes only genuinely new tasks. Duplicates *within* one
-/// batch are also resolved by the conflict clause, which `DO NOTHING` handles safely.
+/// Behaves as [`create_task`] per target, idempotency included, in one round trip. Targets
+/// already present, and duplicates within the batch, are absent from the result, so the caller
+/// publishes only new tasks. Callers chunk large fan-outs; see `CATALOG_FANOUT_CHUNK` in the
+/// worker.
 ///
-/// Callers are expected to chunk large fan-outs; see `CATALOG_FANOUT_CHUNK` in the worker.
+/// An empty result is not a failure: it is also what a fully redelivered fan-out returns. An
+/// empty `targets` issues no statement.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable, with the same foreign-key
-/// shape as [`create_task`]. An empty `targets` returns an empty `Vec` without issuing a
-/// statement.
-///
-/// The empty `Vec` is doing double duty and must not be read as failure: it is also what a fully
-/// redelivered fan-out returns — every target already present, nothing to publish — which is the
-/// ordinary result of a retry. Only the `Err` says nothing was written.
+/// [`crate::DbError::Sqlx`] only, including the foreign-key violation of an unknown `run_id`. An
+/// empty `targets` returns an empty `Vec` without issuing a statement.
 pub async fn create_tasks<'e, E: PgExecutor<'e>>(
     exec: E,
     run_id: ScanRunId,
@@ -123,33 +114,24 @@ pub async fn create_tasks<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Mark a task claimed by a worker, returning whether the work should actually be done.
+/// Marks a task claimed by a worker, returning whether the work should actually be done.
 ///
-/// A task that has already **settled** is not re-claimed. That guard is what makes the run
-/// counters honest under at-least-once delivery: without it a redelivery of a task the worker
-/// already completed put the row back into `claimed`, which re-opened
-/// [`complete_task`]'s `state <> 'done'` guard and incremented `done_tasks` a second time for
-/// one task. `finalize_if_complete` fires on `done_tasks + failed_tasks >= total_tasks`, so two
-/// counts for one task finalise the run — and emit its single terminal event — while other
-/// tasks are still running.
+/// A task that has already **settled** is not re-claimed, which keeps the run counters honest
+/// under at-least-once delivery. Re-claiming would reopen the settle guard and count one task
+/// twice, and `finalize_if_complete` would finalise the run while other tasks still run.
+/// `crates/db/tests/repo_scans.rs` pins this.
 ///
-/// A task whose **run has been cancelled** is not claimed either, and this is the one thing the
-/// caller must act on. `JetStream` holds the message independently of the database, so cancelling
-/// a run cannot unpublish its tasks; the only place the cancellation can be honoured is here,
-/// immediately before the work would start. `false` therefore means "settle this message and do
-/// nothing" — a worker that ignored it would keep crawling a provider an operator has told it to
-/// stop crawling.
+/// A task whose **run has been cancelled** is not claimed either. `JetStream` holds the message
+/// independently, so this is the only place a cancellation can be honoured. `false` means
+/// "settle this message and do nothing"; a worker that ignored it would keep crawling a provider
+/// an operator told it to stop. An unknown task is `false` too.
 ///
-/// Claiming also opens the task's stage at [`tankovault_domain::ScanStage::Starting`] and clears
-/// any stage a previous delivery left behind, so a redelivered task never shows the progress of
-/// its abandoned attempt.
+/// Claiming also opens the stage at [`tankovault_domain::ScanStage::Starting`] and clears any
+/// stage a previous delivery left, so a redelivered task never shows its abandoned progress.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. `Ok(false)` collapses three
-/// situations the caller responds to identically by not doing the work: an unknown task, a task
-/// that has already settled, and a task whose run was cancelled. It is never
-/// [`crate::DbError::NotFound`]. `crates/db/tests/repo_scans.rs` pins the counter behaviour that
-/// depends on the settle-once half.
+/// [`crate::DbError::Sqlx`] only; `Ok(false)` collapses three situations the caller responds to
+/// identically by not doing the work.
 pub async fn claim_task<'e, E: PgExecutor<'e>>(
     exec: E,
     task_id: ScanTaskId,
@@ -173,16 +155,14 @@ pub async fn claim_task<'e, E: PgExecutor<'e>>(
     Ok(claimed.is_some())
 }
 
-/// Durable fallback claim: atomically grab the oldest queued task for a run using
-/// `FOR UPDATE SKIP LOCKED`, used when the broker is unavailable.
+/// Claims the oldest queued task of a run with `FOR UPDATE SKIP LOCKED`, the durable fallback
+/// when the broker is unavailable.
+///
+/// `None` means no claimable task *right now*: nothing queued, every queued row locked by another
+/// worker, or an unknown `run_id`. The caller polls and must not read `None` as a finished run.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. `Ok(None)` means the run has
-/// no claimable task *right now* — nothing queued, or every queued row locked by another worker,
-/// which `SKIP LOCKED` makes indistinguishable on purpose — and never
-/// [`crate::DbError::NotFound`], so an unknown `run_id` looks the same as a drained one. The
-/// caller polls; it must not read `None` as "the run is finished", since a task another worker
-/// is about to release is also `None`.
+/// [`crate::DbError::Sqlx`] only; `Ok(None)` means the run has no claimable task *right now*.
 pub async fn claim_next_queued<'e, E: PgExecutor<'e>>(
     exec: E,
     run_id: ScanRunId,
@@ -206,20 +186,18 @@ pub async fn claim_next_queued<'e, E: PgExecutor<'e>>(
     Ok(row.map(ScanTask::from))
 }
 
-/// Record which stage a claimed task is in, how far through it is, and against what.
+/// Records which stage a claimed task is in, how far through it is, and against what.
 ///
-/// `stage_at` only moves when the stage itself changes, so "in this stage since" stays stable
-/// while a stage reports progress — a timer that reset on every counter tick would never show the
-/// one thing it exists for, a stage that has stopped advancing.
+/// `stage_at` moves only when the stage changes, so "in this stage since" stays stable while a
+/// stage reports progress and can show a stage that has stopped advancing.
 ///
-/// Guarded on `state = 'claimed'`: a stage write that lost a race with the task settling would
-/// otherwise reopen a live stage on a finished row, and the console would show a completed run
-/// still fetching.
+/// Guarded on `state = 'claimed'`: a stage write that lost a race with the settle would reopen a
+/// live stage on a finished row. An unknown or settled task writes nothing; this is diagnostic,
+/// and a caller must never fail a scan over it.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. An unknown or already-settled task is `Ok(())` with nothing
-/// written — this is diagnostic, and a caller must never fail a scan because a progress update
-/// did not land.
+/// [`crate::DbError::Sqlx`] only; an unknown or already-settled task is `Ok(())` with nothing
+/// written.
 pub async fn set_task_stage<'e, E: PgExecutor<'e>>(
     exec: E,
     task_id: ScanTaskId,
@@ -258,34 +236,29 @@ pub struct TaskOutcome<'a> {
 }
 
 impl TaskOutcome<'_> {
-    /// The telemetry blob as the column stores it, or `None` when it cannot be encoded — which
-    /// this type's shape makes unreachable, and which must never fail a settle if it happens.
+    /// Returns the telemetry blob as the column stores it, or `None` when it cannot be encoded,
+    /// which this type's shape makes unreachable and which must never fail a settle.
     fn payload(this: Option<&Self>) -> Option<Json> {
         this.and_then(|outcome| serde_json::to_value(outcome.timings).ok())
     }
 }
 
-/// Mark a task done and increment the run's done counter, atomically per statement, recording
-/// what the work cost.
+/// Marks a task done and increments the run's done counter in one statement, recording what the
+/// work cost.
 ///
-/// The guard excludes **every** terminal state, not just `done`: a task is counted once, on the
-/// first settle that reaches it. Guarding only `state <> 'done'` let a redelivery that failed
-/// after an earlier success add a `failed_tasks` count on top of the `done_tasks` one, taking
-/// `done_tasks + failed_tasks` above `total_tasks` — see [`claim_task`].
+/// The guard excludes **every** terminal state, not just `done`, so a task is counted once, on the
+/// first settle. Otherwise a redelivery failing after an earlier success would add a
+/// `failed_tasks` count on top, taking the sum above `total_tasks`; see [`claim_task`]. An unknown
+/// or settled task touches nothing, which is the settle-once property.
 ///
-/// `wait_ms` keeps the **first** value it was given, so a retried task reports how long it
-/// originally waited for a worker rather than the near-zero wait of its redelivery.
+/// `wait_ms` keeps its **first** value, so a retried task reports how long it originally waited.
+///
+/// Always propagate the error: a failure leaves the task unsettled and the run one count short,
+/// and only a redelivery recovers it, which needs the worker to decline the ack.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown task, and a task
-/// that has already settled, are both `Ok(())` with neither the row nor the counter touched —
-/// that silence *is* the settle-once property, not an oversight, and it is why a redelivery is
-/// safe to run to completion.
-///
-/// This is the error most worth propagating in the module: the task row and the run counter move
-/// in one statement, so a failure leaves the task unsettled and the run one count short of
-/// finalising. `JetStream` redelivery is what recovers it, which only happens if the worker
-/// declines to ack — so swallowing this error strands the run.
+/// [`crate::DbError::Sqlx`] only; an unknown task, and a task that has already settled, are both
+/// `Ok(())` with neither the row nor the counter touched.
 pub async fn complete_task<'e, E: PgExecutor<'e>>(
     exec: E,
     task_id: ScanTaskId,
@@ -314,20 +287,18 @@ pub async fn complete_task<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Mark a task failed with an error, incrementing the run's failed counter and recording what the
+/// Marks a task failed with an error, incrementing the run's failed counter and recording what the
 /// attempt cost before it failed.
 ///
-/// Same settle-once guard as [`complete_task`]: an already-settled task keeps the state and the
-/// count it first reached, so a redelivery cannot turn a completed task into a failed one and
-/// have the run count it twice. The stage the row is carrying is deliberately left alone — the
-/// stage a task died in is the most useful single field on a failure.
+/// The settle-once guard of [`complete_task`]: a settled task keeps its first state and count,
+/// so a redelivery cannot turn a completed task into a failed one. The row's stage is left alone,
+/// since the stage a task died in is the most useful field on a failure.
+///
+/// Propagate the error as for [`complete_task`]: a caller that only logs it loses both the reason
+/// the task failed and the count that ends the run, which move in this one statement.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable, with the same silent-no-op and
-/// stranded-run notes as [`complete_task`]. One difference is worth stating: this runs on a path
-/// that is *already* handling a failure, so a caller that logs rather than propagates loses the
-/// record of why the task failed **and** the count that ends the run. Both halves are in this one
-/// statement precisely so neither can be lost without the other.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn fail_task<'e, E: PgExecutor<'e>>(
     exec: E,
     task_id: ScanTaskId,
@@ -381,18 +352,15 @@ pub struct FailedTaskView {
     pub acknowledged_at: Option<OffsetDateTime>,
 }
 
-/// Recent failed tasks, narrowed by provider and time window — the operator's triage feed for
-/// stuck providers and broken selectors (`docs/ARCHITECTURE.md` §17.2.7).
+/// Returns recent failed tasks, narrowed by provider and time window: the operator's triage feed
+/// for stuck providers and broken selectors (`docs/ARCHITECTURE.md` §17.2.7).
 ///
-/// `include_cleared` reopens the failures an operator has acknowledged. They are excluded by
-/// default, which is the whole point of clearing; they are never deleted, so the window can
-/// always be re-read in full.
+/// `include_cleared` reopens acknowledged failures, which are excluded by default but never
+/// deleted. The join to `providers` is `LEFT`, so a run whose provider was deleted still appears
+/// with `provider_slug: None`.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; no failures is an empty `Vec`, which is the feed's goal state.
-/// The join to `providers` is a `LEFT` join on purpose — a run whose provider has since been
-/// deleted still appears, with `provider_slug: None`, rather than dropping out of the triage feed
-/// exactly when an operator deleted the thing that was failing.
 pub async fn failed_tasks_filtered<'e, E: PgExecutor<'e>>(
     exec: E,
     provider: Option<&str>,
@@ -435,18 +403,17 @@ pub struct FailureGroup {
     pub cleared: i64,
     /// Provider slugs affected, sorted. A provider deleted since is omitted, not `null`.
     pub providers: Vec<String>,
-    /// Task kinds this error struck, sorted — a `series` failure and a `catalog_page` failure
+    /// Task kinds this error struck, sorted: a `series` failure and a `catalog_page` failure
     /// with the same message are different problems.
     pub kinds: Vec<String>,
     /// The most recent of them.
     pub latest_at: Option<OffsetDateTime>,
 }
 
-/// Failed tasks collapsed by their error text, worst first.
+/// Returns failed tasks collapsed by their error text, worst first.
 ///
-/// Twelve rows of one broken selector is one problem; the flat feed presents it as twelve, and
-/// on a bad day it is the whole feed. Grouping is what makes the panel answer "what is wrong"
-/// rather than "what happened most recently".
+/// Twelve rows of one broken selector are one problem, so grouping lets the panel answer "what
+/// is wrong", not "what happened most recently".
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; no failures is an empty `Vec`.
@@ -487,9 +454,8 @@ pub async fn failure_groups<'e, E: PgExecutor<'e>>(
 
 /// Which error group a clear selects.
 ///
-/// Three-way on purpose. A plain `Option<&str>` cannot say "the failures that recorded no error
-/// at all" — that reads identically to "any error", and conflating the two would turn a request
-/// to clear one quiet group into a request to clear the whole feed.
+/// Three-way: an `Option<&str>` cannot say "the failures that recorded no error", which would
+/// read as "any error" and turn clearing one quiet group into clearing the whole feed.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ErrorSelector<'a> {
     /// Every group.
@@ -502,12 +468,12 @@ pub enum ErrorSelector<'a> {
 }
 
 impl<'a> ErrorSelector<'a> {
-    /// Whether the statement should compare on the error at all.
+    /// Returns whether the statement should compare on the error at all.
     const fn is_narrowing(self) -> bool {
         !matches!(self, Self::Any)
     }
 
-    /// The text to compare against; `None` both for [`Self::Any`], where the comparison is
+    /// Returns the text to compare against; `None` both for [`Self::Any`], where the comparison is
     /// switched off, and for [`Self::Absent`], where `IS NOT DISTINCT FROM NULL` is the match.
     const fn text(self) -> Option<&'a str> {
         match self {
@@ -531,11 +497,10 @@ pub struct FailureSelector<'a> {
     pub error: ErrorSelector<'a>,
 }
 
-/// Clear the selected failures out of the triage feed.
+/// Clears the selected failures out of the triage feed.
 ///
 /// Returns how many rows this call acknowledged. Already-cleared rows are excluded, so the count
-/// is what *this* operator hid rather than what matches the selector — two operators clearing the
-/// same feed do not both claim it.
+/// is what *this* operator hid, and two operators clearing the same feed do not both claim it.
 ///
 /// This never deletes: the task keeps its `failed` state, its error and its counter contribution,
 /// so a cleared feed still reconciles against the run history and the audit trail. An operator
@@ -547,8 +512,8 @@ pub async fn clear_failures<'e, E: PgExecutor<'e>>(
     exec: E,
     selector: &FailureSelector<'_>,
 ) -> DbResult<u64> {
-    // `IS NOT DISTINCT FROM` rather than `=`, because the group an operator is clearing may be
-    // the one whose error is NULL, and `= NULL` matches nothing.
+    // `IS NOT DISTINCT FROM`, since the group being cleared may be the one whose error is NULL,
+    // and `= NULL` matches nothing.
     let result = sqlx::query!(
         "UPDATE scan_tasks t SET acknowledged_at = now() \
          FROM scan_runs r LEFT JOIN providers p ON p.id = r.provider_id \
@@ -570,16 +535,15 @@ pub async fn clear_failures<'e, E: PgExecutor<'e>>(
     Ok(result.rows_affected())
 }
 
-/// Mark a task skipped (unchanged content, no work needed) and count it as done.
+/// Marks a task skipped (unchanged content, no work needed) and counts it as done.
 ///
-/// Same settle-once guard as [`complete_task`]; excluding `failed` here too stops a failed task
-/// from later being skipped and adding a `done_tasks` count next to its `failed_tasks` one.
+/// The settle-once guard of [`complete_task`], which stops a failed task from later being
+/// skipped and counted as done too. A skip increments `done_tasks`, so an unchanged-content
+/// re-scan can finalise its run. The notes on [`complete_task`] apply unchanged.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable; the silent-no-op and
-/// stranded-run notes on [`complete_task`] apply unchanged. Note that a skip increments
-/// `done_tasks`, not a counter of its own: "nothing to do" settles a task as successfully as
-/// doing the work, which is what lets an unchanged-content re-scan finalise its run at all.
+/// [`crate::DbError::Sqlx`] only; the silent-no-op and stranded-run notes on [`complete_task`]
+/// apply unchanged.
 pub async fn skip_task<'e, E: PgExecutor<'e>>(exec: E, task_id: ScanTaskId) -> DbResult<()> {
     sqlx::query!(
         "WITH skipped AS ( \
@@ -602,7 +566,7 @@ mod tests {
     /// The two binds the clear statement derives from an [`ErrorSelector`], and the one pairing
     /// that must never happen: `Any` switching the comparison *on* would compare every failure
     /// against NULL and clear nothing, while `Absent` switching it *off* would clear the whole
-    /// feed. Both are silent — the statement runs, the count is just wrong.
+    /// feed. Both are silent: the statement runs, and only the count is wrong.
     #[test]
     fn each_error_selector_produces_its_own_pair_of_binds() {
         assert_eq!(

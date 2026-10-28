@@ -14,23 +14,18 @@ pub struct Cancelled {
     pub tasks: i64,
 }
 
-/// Cancel one in-flight run and abandon every task it still had outstanding.
+/// Cancels one in-flight run and abandons every task it still had outstanding.
 ///
-/// Returns `None` when the run was already terminal or does not exist — cancelling a finished run
-/// is a no-op, not an error, because two operators pressing the same button is ordinary.
+/// Returns `None` when the run was already terminal or does not exist, since two operators
+/// pressing the same button is ordinary.
 ///
-/// ## What cancellation can and cannot reach
+/// The queued **messages** belong to `JetStream` and cannot be unpublished. A worker that pulls
+/// one after this call gets `false` from [`claim_task`], which is where cancellation is honoured:
+/// the provider stops at its next task boundary, and a task already in flight runs to its end
+/// with a no-op settle.
 ///
-/// The run row and its task rows are ours; the queued **messages** are `JetStream`'s, and nothing
-/// here can unpublish them. A worker that pulls one of those messages after this call finds the
-/// task abandoned and its run cancelled, and [`claim_task`] answers `false` — that is where the
-/// cancellation is actually honoured. So a cancelled provider stops being crawled at its next task
-/// boundary, not mid-request: a task already in flight runs to its end, and its settle is a no-op
-/// against the terminal counters.
-///
-/// Abandoned tasks are `skipped`, and — unlike [`skip_task`] — they do **not** bump `done_tasks`.
-/// A skip means "nothing to do"; this means "told to stop", and counting it as done would render
-/// a cancelled run as a completed one on the progress bar.
+/// Abandoned tasks are `skipped` but, unlike [`skip_task`], do **not** bump `done_tasks`:
+/// counting "told to stop" as done would show a cancelled run as completed.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -64,14 +59,14 @@ pub async fn cancel_run<'e, E: PgExecutor<'e>>(
     }))
 }
 
-/// Cancel every in-flight run, optionally narrowed to one provider slug and/or one mode.
+/// Cancels every in-flight run, optionally narrowed to one provider slug, one mode, or both.
 ///
-/// The bulk counterpart to [`cancel_run`], with the same semantics per run — including that the
-/// abandoned tasks do not count as done. Both narrowings are `NULL`-tolerant, so an unnarrowed
-/// call is "stop everything", which is what an operator draining the queue is asking for.
+/// The bulk counterpart to [`cancel_run`], with the same semantics per run. Both narrowings are
+/// `NULL`-tolerant, so an unnarrowed call stops everything. Nothing in flight is
+/// `Cancelled::default()`.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. Nothing in flight is `Cancelled::default()`, not an error.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn cancel_active_runs<'e, E: PgExecutor<'e>>(
     exec: E,
     provider: Option<&str>,

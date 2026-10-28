@@ -21,19 +21,19 @@ pub struct WatchlistSummary {
     pub unread_total: i64,
 }
 
-/// The unfiltered shape of a user's watchlist.
+/// Returns the unfiltered shape of a user's watchlist.
 ///
-/// Distinct from [`WatchlistPage::counts`](super::WatchlistPage::counts), which drops only the `status` arm and keeps the
-/// search, recency and source filters: those answer "how many would this tab show *given what
-/// I have typed*", while this answers "how big is my library" for surfaces with no filter state
-/// of their own — a tab badge, a More sheet, a signed-in header.
+/// Distinct from [`WatchlistPage::counts`](super::WatchlistPage::counts), which keeps the search,
+/// recency and source filters to answer "how many would this tab show *given what I typed*".
+/// This answers "how big is my library" for surfaces with no filter state: a tab badge, a More
+/// sheet, a signed-in header.
 ///
-/// One statement rather than the filtered count with an empty filter: with no free-text arm there
-/// is no reason to join `series` at all, and the unread sum rides along in the same scan.
+/// Its own statement: with no free-text arm there is no reason to join `series`, and the unread
+/// sum rides along in the same scan.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A user tracking nothing is a
-/// zeroed summary, not [`crate::DbError::NotFound`].
+/// [`crate::DbError::Sqlx`] only; a user tracking nothing is a zeroed summary, not
+/// [`crate::DbError::NotFound`].
 pub async fn watchlist_summary<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -77,10 +77,9 @@ pub async fn watchlist_summary<'e, E: PgExecutor<'e>>(
 
 /// How many entries sit at each status under every filter *but* `status`.
 ///
-/// The predicate list is [`fetch_page`]'s minus the status arm and must stay that way — a tab
-/// whose count disagrees with the list it opens is worse than one with no count at all. That
-/// includes `pattern`, which arrives pre-escaped from
-/// [`search_pattern`](super::query::search_pattern).
+/// The predicate list is `page::fetch_page`'s minus the status arm and must stay that way: a tab
+/// whose count disagrees with the list it opens is worse than no count. That includes `pattern`,
+/// which arrives pre-escaped from [`search_pattern`](super::query::search_pattern).
 pub(super) async fn fetch_counts(
     pool: &PgPool,
     user_id: UserId,
@@ -140,13 +139,13 @@ pub(super) async fn fetch_counts(
         .collect())
 }
 
-/// The group-header aggregates, over the *whole* filter — `status` included, since the groups
-/// band the list the user is actually looking at.
+/// Returns the group-header aggregates over the *whole* filter, `status` included, since the
+/// groups band the list the user is looking at.
 ///
 /// The bands are rolling windows off the database clock; see [`ReleaseBucket`] for why they are
 /// not calendar days. A row with no chapters has no `latest_chapter_at`, both comparisons are
-/// `NULL`, and it falls to the `ELSE` arm — which is what keeps `total` (the sum of the bands)
-/// equal to the number of rows the page query can return.
+/// `NULL`, and it falls to the `ELSE` arm, which keeps `total` (the sum of the bands) equal to the
+/// number of rows the page query can return.
 pub(super) async fn fetch_groups(
     pool: &PgPool,
     user_id: UserId,

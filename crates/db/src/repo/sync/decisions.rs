@@ -1,10 +1,9 @@
 //! The sync decision journal, and the blocklist an operator's "this match is wrong" writes to.
 //!
-//! Distinct from `sync_history`, which is the *reader's* log of what changed on their shelf. This
-//! is the operator-facing record of what the engine considered and why, including the three
-//! things history never carried: the series a remote entry failed to match, the fields both sides
-//! already agreed on, and — the one that matters most — the title match that produced a mapping,
-//! which used to be written with no score, no signals and no record of which title matched.
+//! Distinct from `sync_history`, the *reader's* log of what changed on their shelf. This is the
+//! operator-facing record of what the engine considered and why: the series a remote entry failed
+//! to match, the fields both sides already agreed on, and the title match behind a mapping, with
+//! its score, its signals and the title that matched.
 
 use serde_json::Value as Json;
 use sqlx::PgExecutor;
@@ -19,7 +18,7 @@ use tankovault_domain::{SeriesId, UserId};
 pub struct NewSyncDecision {
     /// Whose account was being reconciled.
     pub user_id: UserId,
-    /// `None` when a remote entry matched no local series — the case worth recording.
+    /// `None` when a remote entry matched no local series, the case worth recording.
     pub series_id: Option<SeriesId>,
     /// Which external tracker, as a slug.
     pub provider: String,
@@ -61,7 +60,7 @@ pub struct NewSyncDecision {
 }
 
 impl NewSyncDecision {
-    /// A decision with only the identifying half filled in; the caller sets what applies.
+    /// Returns a decision with only the identifying half filled in; the caller sets what applies.
     #[must_use]
     pub fn new(user_id: UserId, provider: &str, scope: &str, action: &str, reason: &str) -> Self {
         Self {
@@ -87,13 +86,13 @@ impl NewSyncDecision {
     }
 }
 
-/// Record a run's decisions in one statement.
+/// Records a run's decisions in one statement.
 ///
-/// Set-based rather than one insert per decision: a reconciliation of a 900-entry library takes
-/// a decision per entry per field, and a round trip each would cost more than the reconciliation.
+/// Set-based: a reconciliation of a 900-entry library takes a decision per entry per field, and
+/// a round trip each would cost more than the reconciliation. An empty slice is a no-op.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only. An empty slice is a no-op, not an error.
+/// [`DbError::Sqlx`] only; an empty slice is a no-op, not an error.
 pub async fn record_sync_decisions<'e, E: PgExecutor<'e>>(
     exec: E,
     run_id: Uuid,
@@ -347,7 +346,7 @@ impl From<Row> for SyncDecisionRow {
     }
 }
 
-/// A page of the journal, newest first.
+/// Returns a page of the journal, newest first.
 ///
 /// # Errors
 /// [`DbError::Sqlx`] only; no match is an empty `Vec`.
@@ -395,7 +394,7 @@ pub async fn list_sync_decisions<'e, E: PgExecutor<'e>>(
     Ok(rows.into_iter().map(SyncDecisionRow::from).collect())
 }
 
-/// One decision by id, for the service that has to undo it.
+/// Returns one decision by id, for the service that has to undo it.
 ///
 /// # Errors
 /// [`DbError::NotFound`] when no such decision exists; otherwise [`DbError::Sqlx`].
@@ -403,12 +402,10 @@ pub async fn get_sync_decision<'e, E: PgExecutor<'e>>(
     exec: E,
     id: Uuid,
 ) -> DbResult<SyncDecisionRow> {
-    // The `!` overrides are on `sync_decisions`' own columns, every one of them `NOT NULL`.
-    // They are not decoration: sqlx derives nullability from the *plan* Postgres returns, so with
-    // outer joins in the statement it is data-dependent — against a populated database this one
-    // comes back nullable to the last column, which types the row as `Option` everywhere and does
-    // not compile. Pinning what the schema already guarantees makes the type the same whichever
-    // plan the planner picks; a `?` would push a fact nobody can violate out into every caller.
+    // The `!` overrides are on `sync_decisions`' own columns, all `NOT NULL`. sqlx derives
+    // nullability from the *plan*, so with outer joins it is data-dependent: against a populated
+    // database every column comes back nullable and the row does not compile. Pinning what the
+    // schema guarantees keeps the type stable whichever plan is picked.
     let row = sqlx::query_as!(
         Row,
         "SELECT d.id AS \"id!\", d.run_id AS \"run_id!\", d.decided_at AS \"decided_at!\", \
@@ -480,16 +477,18 @@ pub async fn flag_sync_decision<'e, E: PgExecutor<'e>>(
     Ok(result.rows_affected() > 0)
 }
 
-/// Refuse a title match permanently, and drop the mapping it produced.
+/// Refuses a title match permanently, and drops the mapping it produced.
 ///
 /// Both halves are needed and neither is sufficient. Dropping the mapping alone leaves the next
 /// reconciliation to run the same title match against the same catalogue and write the same row
 /// back; recording the block alone leaves the wrong mapping in place, and the resolver never
 /// re-derives a mapping it can look up.
 ///
+/// Blocking an already-blocked pair is a no-op, so an operator clicking twice does not see a
+/// failure.
+///
 /// # Errors
-/// [`DbError::Sqlx`] only. Blocking an already-blocked pair is a no-op, so an operator clicking
-/// twice does not see a failure.
+/// [`DbError::Sqlx`] only.
 pub async fn block_sync_match(
     pool: &sqlx::PgPool,
     provider: &str,
@@ -551,10 +550,10 @@ pub(crate) async fn block_sync_match_in(
     Ok(())
 }
 
-/// The (external id, series) pairs this provider must never match again.
+/// Returns the (external id, series) pairs this provider must never match again.
 ///
-/// Read once per reconciliation rather than per entry: a blocklist is small and the alternative
-/// is a query inside the resolver's per-entry loop.
+/// Read once per reconciliation, not per entry: a blocklist is small, and per entry would put a
+/// query inside the resolver's loop.
 ///
 /// # Errors
 /// [`DbError::Sqlx`] only.

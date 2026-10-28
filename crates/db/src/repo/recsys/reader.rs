@@ -22,7 +22,7 @@ pub struct ReaderInteraction {
     pub observed_at: OffsetDateTime,
 }
 
-/// Every series the reader has any relationship with, with the depth and recency of it.
+/// Returns every series the reader has any relationship with, with the depth and recency of it.
 ///
 /// The whole list, not a page: affinity is recomputed wholesale because it is cheap (one indexed
 /// read of the reader's own rows) and because a partial recompute would leave the profile built
@@ -77,24 +77,20 @@ pub async fn reader_interactions<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Replace the reader's affinity rows wholesale.
+/// Replaces the reader's affinity rows wholesale.
 ///
-/// Upsert-then-prune, in one transaction, and both halves of that are load-bearing.
+/// Upsert, then prune, in one transaction.
 ///
-/// *Prune*, because a series the reader removed from their watchlist has no row to update, and
-/// leaving the stale one behind would keep it seeding recommendations after they said they were
-/// done with it.
+/// The prune removes series the reader dropped from their watchlist, which would otherwise keep
+/// seeding recommendations.
 ///
-/// *Upsert first, and never delete-then-insert*, because the SPA opens several recommendation
-/// surfaces at once and each one rebuilds a stale profile: two rebuilds for the same reader run
-/// concurrently as a matter of course. Deleting first would give the second one a primary-key
-/// collision on every row it re-inserted — and, in the window before it committed, would show a
-/// concurrent reader an empty affinity table, which is indistinguishable from a reader who tracks
-/// nothing and caches as an empty shelf.
+/// Never delete-then-insert: the SPA opens several recommendation surfaces at once and each
+/// rebuilds a stale profile, so two rebuilds for one reader run concurrently. Deleting first
+/// would give the second a primary-key collision on every row and show a concurrent reader an
+/// empty affinity table, which caches as an empty shelf.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; a failure rolls back, so the reader keeps the affinity they had
-/// rather than losing it to a half-applied rebuild.
+/// [`crate::DbError::Sqlx`], rolling back so the reader keeps the affinity they had.
 pub async fn replace_affinity(
     pool: &sqlx::PgPool,
     user_id: UserId,
@@ -140,7 +136,7 @@ pub async fn replace_affinity(
     Ok(())
 }
 
-/// The reader's strongest relationships, by absolute affinity.
+/// Returns the reader's strongest relationships, by absolute affinity.
 ///
 /// Absolute, not signed: the series someone rejected shape the profile as much as the ones they
 /// finished, and taking only the positives would discard the whole negative vector.
@@ -192,10 +188,12 @@ pub struct TasteProfile {
     pub built_at: OffsetDateTime,
 }
 
-/// Read the reader's profile.
+/// Reads the reader's profile.
+///
+/// A reader who has never had one gets `None`.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; a reader who has never had one gets `None`.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn read_profile<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -233,7 +231,7 @@ pub async fn read_profile<'e, E: PgExecutor<'e>>(
     }))
 }
 
-/// Store a freshly built profile, clearing the stale flag.
+/// Stores a freshly built profile, clearing the stale flag.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -281,15 +279,14 @@ pub async fn write_profile<'e, E: PgExecutor<'e>>(
     Ok(built_at)
 }
 
-/// Mark a reader's profile as needing a rebuild.
+/// Marks a reader's profile as needing a rebuild.
 ///
-/// Called from the watchlist and progress write paths. Deliberately a flag rather than a
-/// recompute: the write path must stay fast, and the profile is only needed when a shelf is
-/// actually asked for.
+/// Called from the watchlist and progress write paths. A flag, not a recompute: the write path
+/// must stay fast, and the profile is needed only when a shelf is asked for. A reader with no
+/// profile row needs no flag, since the absence already means build one.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. A reader with no profile row yet needs no flag — the absence
-/// already means "build one".
+/// [`crate::DbError::Sqlx`] only.
 pub async fn mark_profile_stale<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<()> {
     sqlx::query!(
         "UPDATE user_taste_profile SET stale = true WHERE user_id = $1",
@@ -300,14 +297,12 @@ pub async fn mark_profile_stale<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId)
     Ok(())
 }
 
-/// Mark every profile that tracks any of these series as stale.
+/// Marks every profile that tracks any of these series as stale.
 ///
-/// Called by the incremental build once it has re-extracted a set: those readers' profiles are
-/// weighted against feature ids the series may no longer carry. The merge and undo paths do the
-/// same thing inline instead, because they must do it inside their own transaction and key it on
-/// `user_series_affinity` rather than the watchlist — the loser's watchlist rows have already
-/// been folded into the survivor's by the time they get there, while the affinity rows naming it
-/// have not.
+/// Called by the incremental build after re-extracting a set, since those readers' profiles are
+/// weighted against feature ids the series may have lost. The merge and undo paths do this
+/// inline in their own transaction, keyed on `user_series_affinity`: by then the loser's
+/// watchlist rows are folded into the survivor's, but the affinity rows naming it are not.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -327,7 +322,7 @@ pub async fn mark_profiles_stale_for_series<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Record a reader's verdict on a recommendation.
+/// Records a reader's verdict on a recommendation.
 ///
 /// `hide_forever` outranks `not_interested`: a stronger refusal must not be softened by a later
 /// weaker one, which is what a plain overwrite would allow.
@@ -357,11 +352,11 @@ pub async fn record_feedback<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Series the reader must not be shown: already tracked, or refused.
+/// Returns the series the reader must not be shown: already tracked, or refused.
 ///
-/// `not_interested` expires after `decay_days` (whole days — `make_interval` takes an integer,
-/// and a fractional suppression window is not a policy anyone needs); `hide_forever` does not. One statement rather
-/// than two so the request path has a single set to subtract.
+/// `not_interested` expires after `decay_days`, whole days since `make_interval` takes an
+/// integer; `hide_forever` does not. One statement, so the request path has a single set to
+/// subtract.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -387,7 +382,7 @@ pub async fn suppressed_series<'e, E: PgExecutor<'e>>(
     Ok(rows.into_iter().map(SeriesId::from_uuid).collect())
 }
 
-/// The cached shelf, if it was built from the profile the caller holds.
+/// Returns the cached shelf, if it was built from the profile the caller holds.
 ///
 /// The freshness key is `profile_at`, not age: a shelf is only valid for the profile it was
 /// computed from, and a rebuild must invalidate it even if the clock has barely moved.
@@ -413,15 +408,13 @@ pub async fn read_shelf<'e, E: PgExecutor<'e>>(
     Ok(items)
 }
 
-/// Drop a reader's cached shelf, forcing the next request to recompute it.
+/// Drops a reader's cached shelf, forcing the next request to recompute it.
 ///
-/// The cache is keyed on `(user_id, profile_at)` and expires on age, so nothing about it
-/// notices a change to *who the reader is allowed to see*. Their taste profile has not moved,
-/// the entry has not aged out, and the shelf they get back is the one built under the old
-/// answer. That is how an opt-out keeps serving adult recommendations until the TTL runs down.
+/// The cache is keyed on `(user_id, profile_at)` and expires on age, so it cannot notice a
+/// change to what the reader may see: without this, an opt-out keeps serving adult
+/// recommendations until the TTL runs down.
 ///
-/// Called by whatever changes the adult gate for this reader. Idempotent; a reader with no
-/// cached shelf is `Ok(())`.
+/// Called by whatever changes the reader's adult gate. Idempotent.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -435,7 +428,7 @@ pub async fn clear_shelf<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbR
     Ok(())
 }
 
-/// Cache a freshly computed shelf.
+/// Caches a freshly computed shelf.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.

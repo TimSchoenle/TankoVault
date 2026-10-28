@@ -18,13 +18,13 @@ use tankovault_domain::{ProviderId, SeriesId, SeriesSourceId, UserId, WatchStatu
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-/// Every entry on `user_id`'s watchlist as a portable, validated entry, oldest first.
+/// Returns every entry on `user_id`'s watchlist as a portable, validated entry, oldest first.
 ///
 /// Sources are listed pinned-first, then by provider slug and path; each entry is passed through
 /// [`PortableEntry::sanitized`], so the result always re-imports.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. An empty watchlist is an empty `Vec`.
+/// [`crate::DbError::Sqlx`] only; an empty watchlist is an empty `Vec`.
 pub async fn watchlist_export<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -161,16 +161,17 @@ pub enum ImportRefusal {
     PendingLimit,
 }
 
-/// Import `entries` into `user_id`'s watchlist in one transaction, queueing whatever matches no
+/// Imports `entries` into `user_id`'s watchlist in one transaction, queueing whatever matches no
 /// series yet.
 ///
 /// All or nothing: a failure part-way leaves the watchlist, the progress and the pending queue as
 /// they were. A dry run takes the same path and rolls back, so its answer is the one the real
 /// import would give against the same data.
 ///
+/// A refused import is `Ok(Err(ImportRefusal))`, with nothing written.
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. A refused import is `Ok(Err(ImportRefusal))`, with nothing
-/// written.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn watchlist_import(
     pool: &PgPool,
     user_id: UserId,
@@ -249,7 +250,7 @@ struct Wanted {
     titles: HashSet<String>,
 }
 
-/// Match every entry against the catalogue in at most four queries, however many entries there
+/// Matches every entry against the catalogue in at most four queries, however many entries there
 /// are.
 async fn resolve_entries(
     conn: &mut PgConnection,
@@ -373,8 +374,8 @@ async fn lookup_titles(
         return Ok(HashMap::new());
     }
     let keys: Vec<String> = wanted.into_iter().collect();
-    // Two arms rather than an `OR` across the tables, so each can use its own
-    // `replace(…, ' ', '')` index.
+    // Two arms, not an `OR` across the tables, so each can use its own `replace(…, ' ', '')`
+    // index.
     let rows = sqlx::query!(
         r#"SELECT k.key AS "key!", s.id AS "series_id!"
              FROM unnest($1::text[]) AS k(key)
@@ -454,7 +455,7 @@ async fn load_local(conn: &mut PgConnection, user_id: UserId) -> DbResult<LocalS
     })
 }
 
-/// Plan the import against the reader's current watchlist and write the plan.
+/// Plans the import against the reader's current watchlist and writes the plan.
 async fn plan_and_apply(
     conn: &mut PgConnection,
     user_id: UserId,
@@ -600,7 +601,7 @@ struct PendingInsert<'a> {
     part: Option<f64>,
 }
 
-/// Queue `entries` as pending, replacing an earlier queued copy of the same entry.
+/// Queues `entries` as pending, replacing an earlier queued copy of the same entry.
 async fn queue_pending(
     conn: &mut PgConnection,
     user_id: UserId,
@@ -829,7 +830,7 @@ struct SweepGroup {
     include_adult: bool,
 }
 
-/// Retry the `limit` least recently attempted pending entries, attaching each one whose series
+/// Retries the `limit` least recently attempted pending entries, attaching each one whose series
 /// the catalogue now has.
 ///
 /// Rows are claimed `FOR UPDATE SKIP LOCKED` in the same transaction as the writes they cause, so

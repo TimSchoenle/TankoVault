@@ -2,8 +2,7 @@
 //! to become rows in the two shared vocabularies, across the two writers that both fill them.
 //!
 //! The guard itself is unit-tested in `crates/domain/src/term_filter.rs`. What is only observable
-//! here is whether each writer actually *consults* it — the bug these pin is a writer that had no
-//! guard at all.
+//! here is whether each writer *consults* it; the bug these pin is a writer with no guard at all.
 //!
 //! Gated behind the `integration` feature (requires Docker).
 #![cfg(feature = "integration")]
@@ -48,8 +47,8 @@ fn scan(provider_id: ProviderId) -> ScannedSeries {
 
 /// The display names actually linked to a series, per vocabulary.
 ///
-/// Runtime queries rather than `query!`: a read that exists only to inspect the mechanism has no
-/// business growing the committed offline cache.
+/// Runtime queries, not `query!`: a read that only inspects the mechanism should not grow the
+/// committed offline cache.
 async fn credits(db: &TestDb, series: SeriesId) -> Vec<String> {
     sqlx::query_scalar(
         "SELECT a.name FROM series_authors sa JOIN authors a ON a.id = sa.author_id \
@@ -74,12 +73,11 @@ async fn genres(db: &TestDb, series: SeriesId) -> Vec<String> {
 
 /// The reported bug: a taste profile whose strongest term was `Updating`.
 ///
-/// The guard was applied where a tag is interned and nowhere else, so the `Author: Updating` row
-/// — rendered by the same template, directly under `Genres: Updating` — reached `authors`
-/// unfiltered. Author is the recommender's heaviest axis and its one *exact* retrieval path, so a
-/// placeholder credit shared by a large part of the catalogue went to the top of every profile
-/// and pulled unrelated series onto every shelf. Discover looked clean throughout, because
-/// Discover renders tags.
+/// With the guard applied only where a tag is interned, the `Author: Updating` row, rendered by
+/// the same template directly under `Genres: Updating`, reaches `authors` unfiltered. Author is
+/// the recommender's heaviest axis and its one *exact* retrieval path, so a placeholder credit
+/// shared by much of the catalogue tops every profile and pulls unrelated series onto every
+/// shelf, while Discover, which renders tags, looks clean.
 #[tokio::test]
 async fn a_refused_term_becomes_neither_a_tag_nor_a_credit_on_a_scan() {
     let db = TestDb::spawn().await;
@@ -166,8 +164,8 @@ async fn a_refused_term_becomes_neither_a_tag_nor_a_credit_on_an_enrichment() {
     );
 }
 
-/// An operator who switches the guard off must get what their catalogue actually publishes, in
-/// both vocabularies — the empty list is the guard disabled, not a guard that blocks everything.
+/// An operator who switches the guard off must get what their catalogue publishes, in both
+/// vocabularies: the empty list is the guard disabled, not a guard that blocks everything.
 #[tokio::test]
 async fn an_empty_guard_admits_the_terms_it_would_otherwise_refuse() {
     let db = TestDb::spawn().await;

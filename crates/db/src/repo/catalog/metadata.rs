@@ -13,8 +13,8 @@ use tankovault_domain::{
     normalize_title,
 };
 
-/// What one source offers for the prioritised series fields. `None` is "no opinion", and so is
-/// an `Unknown` enum variant or a blank string — see `MetadataValue`.
+/// What one source offers for the prioritised series fields. `None` is no opinion, and so is an
+/// `Unknown` enum variant or a blank string; see `MetadataValue`.
 #[derive(Debug, Default, Clone)]
 pub struct MetadataCandidate<'a> {
     /// The title this source offers.
@@ -71,7 +71,7 @@ struct Winners<'a> {
     release_year: Option<(MetadataSource, i32)>,
 }
 
-/// Run every field through the priority, offering the incoming value against the stored one.
+/// Runs every field through the priority, offering the incoming value against the stored one.
 ///
 /// The incoming candidate is listed first within a source, so re-scanning a series this source
 /// already owns picks up the fresh value instead of pinning the first one it ever wrote.
@@ -142,16 +142,16 @@ fn resolve_all<'a>(
     }
 }
 
-/// Fold one source's metadata into `series_id` under the configured priority, recording which
+/// Folds one source's metadata into `series_id` under the configured priority, recording which
 /// source won each field.
 ///
-/// Runs on the caller's connection so it can join an ingest or enrichment transaction, and
-/// takes the row's lock before reading: resolving against a value read outside the transaction
-/// would decide against a value a concurrent scan has already replaced.
+/// Runs on the caller's connection, so it can join an ingest or enrichment transaction, and
+/// takes the row's lock before reading, since a value read outside the transaction may already
+/// be replaced by a concurrent scan.
 ///
-/// Title candidates that lose are kept as alternative titles rather than dropped — a name the
-/// work is published under is matching evidence whoever supplied it, and `series_titles` is
-/// what a later cross-provider scan looks the series up by.
+/// Losing title candidates are kept as alternative titles: a name the work is published under
+/// is matching evidence whoever supplied it, and `series_titles` is what a later cross-provider
+/// scan looks the series up by. A `series_id` erased mid-transaction is a no-op.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; a `series_id` erased mid-transaction is a no-op `Ok(())`.

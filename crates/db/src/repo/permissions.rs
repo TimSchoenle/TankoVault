@@ -1,9 +1,9 @@
 //! Permission grants: the persistence behind [`tankovault_domain::Permission`].
 //!
-//! Resolved from here on every authenticated request rather than cached in an access token, so a
-//! revocation takes effect on the next request rather than at the token's expiry.
+//! Resolved from here on every authenticated request, not cached in an access token, so a
+//! revocation takes effect on the next request and not at the token's expiry.
 //!
-//! Unrecognised stored tokens are dropped, not rejected — see
+//! Unrecognised stored tokens are dropped, not rejected; see
 //! [`tankovault_domain::PermissionSet::from_tokens`].
 
 use crate::error::DbResult;
@@ -21,33 +21,32 @@ pub struct Principal {
     pub permissions: PermissionSet,
     /// Whether this account has opted into adult content *and* attested its age.
     ///
-    /// Resolved here rather than read separately because it is consulted on catalogue reads —
-    /// the hottest authenticated path there is — and a second round trip per browse request to
-    /// answer one boolean is not worth it when this query already has the row open.
+    /// Resolved here because catalogue reads, the hottest authenticated path, consult it, and
+    /// this query already has the row open.
     ///
     /// Only half the answer: the deployment flag is the other half, and both must be true. See
     /// `services/api/src/content_gate.rs`.
     pub adult_opt_in: bool,
-    /// Whether this account holds a usable second factor — a *confirmed* TOTP enrolment or at
+    /// Whether this account holds a usable second factor: a *confirmed* TOTP enrolment or at
     /// least one security key.
     ///
-    /// Resolved here for the same reason [`Self::adult_opt_in`] is: it is consulted by
-    /// `AuthUser::require`, which every privileged handler funnels through, and a second round
-    /// trip per privileged request to answer one boolean is not worth it when this query already
-    /// has the row open.
+    /// Resolved here because `AuthUser::require`, which every privileged handler goes through,
+    /// consults it, and this query already has the row open.
     ///
-    /// An *unconfirmed* TOTP row does not count. It means the secret was issued and the user
-    /// never proved they stored it; counting it would let a half-finished enrolment satisfy the
-    /// requirement and then fail every sign-in.
+    /// An *unconfirmed* TOTP row does not count. The secret was issued and the user never proved
+    /// they stored it; counting it would let a half-finished enrolment satisfy the requirement
+    /// and then fail every sign-in.
     pub mfa_enrolled: bool,
 }
 
-/// Resolve a principal's account status and permission grants in one round trip (`LEFT JOIN`,
-/// so a no-grants account still yields a row).
+/// Resolves a principal's account status and permission grants in one round trip.
+///
+/// A `LEFT JOIN`, so an account with no grants still yields a row. `None` means the account is
+/// gone: a caller must fail closed on it and on an error, never treat it as a principal with no
+/// permissions.
 ///
 /// # Errors
-/// `Sqlx` only. `Ok(None)` means the account is gone — callers must fail closed on both `Err`
-/// and `Ok(None)`, not treat a deleted account as a principal with no permissions.
+/// `Sqlx` only; `Ok(None)` means the account is gone.
 pub async fn resolve<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -61,15 +60,12 @@ pub async fn resolve<'e, E: PgExecutor<'e>>(
     }
     let row = sqlx::query_as!(
         Row,
-        // The attestation is folded in here, not compared by the caller: `adult_opt_in` alone is
-        // the preference, and the pair is the entitlement. A caller reading only the preference
-        // would be right today — a schema constraint keeps them consistent — and wrong the first
-        // time attestation gains an expiry.
+        // The attestation is folded in here: `adult_opt_in` alone is the preference, and the
+        // pair is the entitlement. A schema constraint keeps them consistent today; a caller
+        // reading only the preference would be wrong the first time attestation gains an expiry.
         //
-        // `GROUP BY u.id` rather than the projected columns: the id is the table's primary key,
-        // so Postgres derives the rest by functional dependency, and a column added to the
-        // projection later does not have to be added here too — which is how the grouped list
-        // and the projected list drift apart.
+        // `GROUP BY u.id` alone: the id is the primary key, so Postgres derives the rest by
+        // functional dependency, and a column added to the projection needs no second edit.
         "SELECT u.status AS \"status: AccountStatus\", \
                 coalesce(array_agg(p.permission) FILTER (WHERE p.permission IS NOT NULL), \
                          '{}'::text[]) AS \"permissions!\", \
@@ -91,7 +87,7 @@ pub async fn resolve<'e, E: PgExecutor<'e>>(
     Ok(row.map(|r| Principal {
         status: r.status,
         permissions: PermissionSet::from_tokens(&r.permissions, |token| {
-            // Logged, not silently dropped — surfaces schema/binary drift.
+            // Logged, not silently dropped, so drift between schema and binary shows.
             tracing::warn!(%token, user_id = %user_id.as_uuid(), "ignoring unknown permission grant");
         }),
         adult_opt_in: r.adult_opt_in,
@@ -102,7 +98,7 @@ pub async fn resolve<'e, E: PgExecutor<'e>>(
 /// A single grant, with its provenance, for the user-detail view.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct GrantRow {
-    /// String, not the enum — a grant from a build with a capability this one lacks must stay
+    /// A string, not the enum, so a grant from a build with a capability this one lacks stays
     /// visible to an admin.
     pub permission: String,
     /// Whether this build recognises the token. `false` means the grant is inert.
@@ -114,11 +110,10 @@ pub struct GrantRow {
     pub granted_by: Option<String>,
 }
 
-/// List a user's grants with provenance, newest first.
+/// Lists a user's grants with provenance, newest first.
 ///
 /// # Errors
-/// `Sqlx` only; unknown user or no grants is `Ok(vec![])`. An unparseable token comes back
-/// `known: false`, not an error.
+/// `Sqlx` only; unknown user or no grants is `Ok(vec![])`.
 pub async fn list_for_user<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -152,15 +147,16 @@ pub async fn list_for_user<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Replace a user's entire grant set in one transaction, returning what changed.
+/// Replaces a user's entire grant set in one transaction, returning what changed.
 ///
-/// Whole-set diff, not add/remove calls, so a UI checklist submit can't interleave with
-/// itself, and the user row is locked first, so two submits for one user serialise. Unchanged grants keep their `granted_at`. [`Permission::SuperUser`] is inert here in
-/// both directions — see the comment on the diff.
+/// A whole-set diff, so a checklist submit cannot interleave with itself, and the user row is
+/// locked first, so two submits for one user serialise. Unchanged grants keep their
+/// `granted_at`, a concurrent identical grant is absorbed, and [`Permission::SuperUser`] is
+/// inert in both directions.
 ///
 /// # Errors
-/// `Sqlx` only; rolls back on first failure. A concurrent identical grant is absorbed
-/// (`ON CONFLICT DO NOTHING`), not Conflict; an unknown `user_id` fails the insert's FK (500).
+/// `Sqlx`, rolling back on the first failure; an unknown `user_id` fails the insert's foreign
+/// key.
 pub async fn replace(
     conn: &mut sqlx::PgConnection,
     user_id: UserId,
@@ -189,15 +185,14 @@ pub async fn replace(
 
     let desired_tokens: Vec<&str> = desired.tokens();
 
-    // The super user grant belongs to the installer, not to this path: it is filtered out of
-    // both sides of the diff, so an edit can neither mint one nor strip one. Stripping is the
-    // case that matters — the editor's catalogue does not list it, so *every* checklist submit
-    // omits it, and without this the first save against the deployment owner's account would
-    // silently demote them.
+    // The super user grant belongs to the installer: it is filtered out of both sides of the
+    // diff, so an edit can neither mint nor strip one. The editor's catalogue does not list it,
+    // so every checklist submit omits it, and without this the first save on the owner's
+    // account would silently demote them.
     let super_user = Permission::SuperUser.as_str();
 
-    // Removes stored tokens the desired set lacks, including unrecognised ones — clears
-    // inert grants instead of letting them accumulate.
+    // Removes stored tokens the desired set lacks, unrecognised ones included, so inert grants
+    // do not accumulate.
     let removed: Vec<String> = existing
         .iter()
         .filter(|token| token.as_str() != super_user && !desired_tokens.contains(&token.as_str()))
@@ -247,19 +242,21 @@ pub struct GrantDiff {
 }
 
 impl GrantDiff {
-    /// Whether the call changed nothing, in which case there is no audit record worth writing.
+    /// Returns whether the call changed nothing, in which case there is no audit record worth
+    /// writing.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.added.is_empty() && self.removed.is_empty()
     }
 }
 
-/// Grant a single permission idempotently — for seeding/bootstrap, where [`replace`]'s
-/// read-current-set-first cost is unneeded.
+/// Grants a single permission idempotently, for seeding, where [`replace`]'s read of the
+/// current set is unneeded.
+///
+/// Re-granting succeeds, so seeding is safe to re-run.
 ///
 /// # Errors
-/// `Sqlx` only; re-granting is `Ok(())` (`ON CONFLICT DO NOTHING`), so seeding is safe to
-/// re-run.
+/// `Sqlx` only; re-granting is `Ok(())` (`ON CONFLICT DO NOTHING`), so seeding is safe to re-run.
 pub async fn grant<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -278,7 +275,7 @@ pub async fn grant<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// How many active accounts hold `permission`, not counting `ignoring`.
+/// Returns how many active accounts hold `permission`, not counting `ignoring`.
 ///
 /// The lockout guard behind every refusal on this surface: revoking, suspending or erasing the
 /// last holder of a capability leaves no way to grant anything back short of editing the
@@ -286,10 +283,11 @@ pub async fn grant<'e, E: PgExecutor<'e>>(
 ///
 /// A super user counts as a holder of everything, matching [`PermissionSet::has`]. Counting
 /// only the exact token would refuse a revocation the deployment owner could undo in a click.
+/// A caller must propagate an error, since defaulting to zero permits the revocation this
+/// guards against.
 ///
 /// # Errors
-/// `Sqlx` only; `count(*)` always returns a row, so `Ok(0)` means nobody else holds it. Must
-/// propagate, not default to zero — that would permit the exact revocation this guards against.
+/// `Sqlx` only; `count(*)` always returns a row, so `Ok(0)` means nobody else holds it.
 pub async fn other_active_holders<'e, E: PgExecutor<'e>>(
     exec: E,
     permission: Permission,
@@ -309,16 +307,19 @@ pub async fn other_active_holders<'e, E: PgExecutor<'e>>(
     Ok(count)
 }
 
-/// Grant [`Permission::SuperUser`] to `user_id`, and only if it is the deployment's *first*
-/// account — the one the bootstrap migrator has just created.
+/// Grants [`Permission::SuperUser`] to `user_id`, and only if it is the deployment's *first*
+/// account, the one the bootstrap migrator has just created.
 ///
 /// The two conditions that make the grant unforgeable live in the database, not in the caller:
 /// this insert is a no-op unless no other account exists, and a partial unique index refuses a
 /// second super user however the row is written.
 ///
+/// `false` means the conditions did not hold and nothing was written, the normal outcome of
+/// re-running an install job.
+///
 /// # Errors
-/// `Sqlx` only. `Ok(false)` means the conditions did not hold and nothing was written, which is
-/// the normal outcome of re-running an install job.
+/// `Sqlx` only; `Ok(false)` means the conditions did not hold and nothing was written, which is the
+/// normal outcome of re-running an install job.
 pub async fn claim_super_user<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<bool> {
     let result = sqlx::query!(
         "INSERT INTO user_permissions (user_id, permission) \
@@ -338,27 +339,23 @@ pub async fn claim_super_user<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -
 /// Answers who was promoted, and `None` both when one already exists, which is the normal case,
 /// and when there is no candidate to promote.
 ///
-/// [`claim_super_user`] covers the install: the first account of an empty database takes
-/// ownership. It cannot cover everything after that, and the gap is not theoretical — a
-/// deployment whose users registered before the seed job ran never had a first account to
-/// promote, and erasing the owner drops the only row the grant can live in. Neither state is
-/// recoverable by hand, because nothing in the API can mint the grant; the deployment would keep
-/// serving with no account that outlives the next capability the codebase gains.
+/// [`claim_super_user`] covers the install. A deployment whose users registered before the
+/// seed job ran has no first account to promote, and erasing the owner drops the only row the
+/// grant can live in. Nothing in the API can mint the grant, so neither state is recoverable by
+/// hand.
 ///
-/// The candidate is migration `0042`'s rule, kept identical on purpose so a reconciled
-/// deployment and a freshly migrated one name the same account: the **earliest account that
-/// still administers permissions**. `users.permissions` is documented as equivalent to full
-/// control, so this promotes nobody who could not already grant themselves everything
-/// enumerable. Suspended accounts are skipped — they cannot sign in, and the grant is
-/// single-slot, so promoting one would spend the deployment's only ownership on an account that
-/// can do nothing with it.
+/// The candidate is the **earliest active account that administers permissions**, the same
+/// rule as migration `0042`, so a reconciled deployment and a freshly migrated one name the same
+/// account. `users.permissions` is equivalent to full control, so this promotes nobody who
+/// could not already grant themselves everything enumerable. Suspended accounts are skipped:
+/// the grant is single-slot, and one that cannot sign in can do nothing with it.
 ///
 /// Safe to call from every replica at boot: the `NOT EXISTS` decides, and the partial unique
-/// index settles a race by turning the loser's insert into a no-op.
+/// index turns a racing loser's insert into a no-op. A caller must propagate an error, since
+/// reading it as "already owned" leaves the deployment silently unowned.
 ///
 /// # Errors
-/// `Sqlx` only. Must propagate — treating a failed reconciliation as "already owned" is what
-/// would leave the deployment unowned silently.
+/// `Sqlx` only.
 pub async fn ensure_super_user<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Option<UserId>> {
     let promoted: Option<Uuid> = sqlx::query_scalar!(
         "INSERT INTO user_permissions (user_id, permission) \
@@ -379,21 +376,17 @@ pub async fn ensure_super_user<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Optio
     Ok(promoted.map(UserId::from_uuid))
 }
 
-/// Write an explicit row for every grantable capability the deployment's super user is missing,
+/// Writes an explicit row for every grantable capability the deployment's super user is missing,
 /// returning the tokens newly stored.
 ///
-/// This changes no authorization outcome: [`PermissionSet::has`] already answers true to
-/// everything for the grant, and it keeps doing so for capabilities added after this ran. What
-/// it fixes is everything that reads the stored set *literally* rather than through that
-/// implication — the permission editor renders the owner's checklist from these rows, the
-/// directory counts them, and an operator auditing "who can do what" reads rows too. Without it
-/// the owner is displayed holding a set that silently falls further behind the codebase every
-/// release: the seed is create-only, so nothing ever tops up an account created before a
-/// capability existed, and the console gives no sign that the gap is cosmetic.
+/// No authorization outcome changes: [`PermissionSet::has`] already answers true to everything
+/// for the grant. The rows are for what reads the stored set literally: the permission editor's
+/// checklist, the directory's count, and an operator auditing who can do what. The seed is
+/// create-only, so without this the owner shows a set that falls further behind every release.
 ///
 /// [`Permission::grantable`] is the source list, so [`Permission::SuperUser`] is excluded and
 /// the single-super-user index is never contended. A deployment with no super user writes
-/// nothing — [`ensure_super_user`] runs first for that reason.
+/// nothing, which is why [`ensure_super_user`] runs first.
 ///
 /// Safe to call from every replica at boot, and a no-op on every boot after the first:
 /// `ON CONFLICT DO NOTHING` absorbs both the re-run and a concurrent identical insert.
@@ -421,12 +414,12 @@ pub async fn grant_all_to_super_user<'e, E: PgExecutor<'e>>(exec: E) -> DbResult
     Ok(added)
 }
 
-/// Grant counts for a batch of users (avoids an N+1 per-row subquery), for the directory's
-/// "permissions" column.
+/// Returns the grant count of each user in a batch, for the directory's "permissions" column.
+///
+/// A user with no grants is absent from the result, so a caller defaults a missing id to `0`.
 ///
 /// # Errors
-/// `Sqlx` only; users with no grants are absent from the result, not `0` — callers must
-/// default a missing id themselves.
+/// `Sqlx` only; users with no grants are absent from the result, not `0`.
 pub async fn counts_for<'e, E: PgExecutor<'e>>(
     exec: E,
     user_ids: &[Uuid],

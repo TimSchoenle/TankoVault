@@ -8,16 +8,17 @@ use sqlx::PgExecutor;
 use tankovault_domain::{AccountStatus, NotificationPrefs, User, UserId};
 use time::OffsetDateTime;
 
-/// Apply a username and/or email change.
+/// Applies a username change, an email change, or both.
 ///
-/// A changed email clears `email_verified_at` — prevents an attacker with a short-lived token
-/// re-pointing the account to an already-"verified"-looking address. `$3 <> email` compares
-/// through [`CiText`] so re-capitalising your own address isn't treated as a change.
+/// A changed email clears `email_verified_at`, so an attacker with a short-lived token cannot
+/// re-point the account to an address that looks verified. `$3 <> email` compares through
+/// [`CiText`], so re-capitalising one's own address is not a change.
+///
+/// An unknown `id` arrives as `RowNotFound` inside [`DbError::Sqlx`]: every caller holds an
+/// authenticated id, so a miss means erasure mid-request.
 ///
 /// # Errors
-/// [`DbError::Conflict`] if the new email or username is taken. An unknown `id` is **not**
-/// [`DbError::NotFound`] (arrives as `RowNotFound` inside [`DbError::Sqlx`]) — every caller
-/// holds an authenticated id, so a miss means erasure mid-request.
+/// [`DbError::Conflict`] if the new email or username is taken, [`DbError::Sqlx`] otherwise.
 pub async fn update_profile<'e, E: PgExecutor<'e>>(
     exec: E,
     id: UserId,
@@ -55,8 +56,8 @@ pub async fn update_profile<'e, E: PgExecutor<'e>>(
 /// A reader's stored answer on adult content.
 #[derive(Debug, Clone, Copy)]
 pub struct ContentPrefs {
-    /// The preference itself. Meaningless without [`Self::age_attested_at`] — a schema
-    /// constraint refuses the pair, so this cannot be true while that is `None`.
+    /// The preference itself. A schema constraint keeps it false while
+    /// [`Self::age_attested_at`] is `None`.
     pub adult_opt_in: bool,
     /// When the account confirmed it is of age, or `None` if it never has.
     ///
@@ -66,10 +67,10 @@ pub struct ContentPrefs {
     pub age_attested_at: Option<OffsetDateTime>,
 }
 
-/// Read a user's content preferences.
+/// Reads a user's content preferences.
 ///
-/// An unknown id yields the closed default rather than an error: every caller is deciding what
-/// to *show*, and the safe answer to "who is this?" is "nothing gated".
+/// An unknown id yields the closed default: every caller is deciding what to *show*, and the
+/// safe answer to "who is this?" is "nothing gated".
 ///
 /// # Errors
 /// [`DbError::Sqlx`] only.
@@ -95,20 +96,19 @@ pub async fn get_content_prefs<'e, E: PgExecutor<'e>>(
     ))
 }
 
-/// Record a reader's adult-content decision, stamping the attestation on the way in.
+/// Records a reader's adult-content decision, stamping the attestation on the way in.
 ///
 /// `attesting` is the caller's confirmation *in this request* that they are of age. Opting in
 /// requires either that or a stamp from a previous one; `age_attested_at` is written once and
-/// never moved, so the record says when the account first attested rather than when it last
-/// toggled a switch.
+/// never moved, so it records when the account first attested.
 ///
-/// Opting *out* never needs an attestation and never clears one.
+/// Opting *out* never needs an attestation and never clears one. Opting in without one is the
+/// condition `users_adult_opt_in_requires_attestation` refuses, checked here so the caller gets
+/// a meaningful status instead of a constraint violation.
 ///
 /// # Errors
-/// [`DbError::NotFound`] when `id` matches no row. [`DbError::Conflict`] when opting in without
-/// an attestation, either in this request or on record — the same condition the schema's
-/// `users_adult_opt_in_requires_attestation` refuses, checked here so the caller gets a
-/// meaningful status rather than a constraint violation. Otherwise [`DbError::Sqlx`].
+/// [`DbError::NotFound`] for an unknown `id`, [`DbError::Conflict`] when opting in without an
+/// attestation, [`DbError::Sqlx`] otherwise.
 pub async fn set_content_prefs<'e, E: PgExecutor<'e>>(
     exec: E,
     id: UserId,
@@ -133,9 +133,8 @@ pub async fn set_content_prefs<'e, E: PgExecutor<'e>>(
     .await?
     .ok_or(DbError::NotFound)?;
 
-    // Asked to opt in, and the row says otherwise: the only way that happens is a missing
-    // attestation. Reported rather than returned quietly, or the caller shows a switch that
-    // silently springs back.
+    // Asked to opt in, and the row says otherwise: only a missing attestation does that.
+    // Reported, or the caller shows a switch that silently springs back.
     if adult_opt_in && !row.adult_opt_in {
         return Err(DbError::Conflict(
             "opting into adult content requires an age attestation".to_owned(),
@@ -147,7 +146,7 @@ pub async fn set_content_prefs<'e, E: PgExecutor<'e>>(
     })
 }
 
-/// Read a user's notification preferences.
+/// Reads a user's notification preferences.
 ///
 /// An unknown id, an empty document and a document this build cannot parse all yield
 /// [`NotificationPrefs::default`]. Failing here would cost the reader the notification the
@@ -170,11 +169,11 @@ pub async fn get_notification_prefs<'e, E: PgExecutor<'e>>(
         .unwrap_or_default())
 }
 
-/// Replace a user's notification preferences.
+/// Replaces a user's notification preferences.
 ///
 /// # Errors
-/// [`DbError::NotFound`] — a 404 — when `id` matches no row. [`DbError::Serialization`] if the
-/// document cannot be encoded. Otherwise [`DbError::Sqlx`].
+/// [`DbError::NotFound`] for an unknown `id`, [`DbError::Serialization`] for an unencodable
+/// document, [`DbError::Sqlx`] otherwise.
 pub async fn set_notification_prefs<'e, E: PgExecutor<'e>>(
     exec: E,
     id: UserId,

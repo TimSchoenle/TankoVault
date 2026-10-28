@@ -4,13 +4,12 @@
 //!
 //! Postgres runs a foreign key's `ON DELETE` action once per deleted parent row, as
 //! `… WHERE fk_column = $1` against the referencing table. Without an index leading on that
-//! column, each run is a sequential scan of the whole table. The console's catalogue purge
-//! deletes 500 series per batch, and twelve tables referenced `series`/`series_sources` on
-//! unindexed columns — `series_cooccurrence.other_id` and `merge_candidates.candidate_id` among
-//! them — so one batch took longer than the 30 s request timeout, was cancelled and rolled
-//! back, and "Wipe the entire catalogue" failed with a `408` on every attempt. Raising the
-//! statement timeout could not help: the request, not the statement, was what expired.
-//! Account erasure and provider deletion had the same shape against `users` and `providers`.
+//! column, each run is a sequential scan of the whole table. With the tables referencing
+//! `series` and `series_sources` on unindexed columns, one batch of the console's catalogue
+//! purge outlasts the request timeout and rolls back, so "Wipe the entire catalogue" fails with
+//! a `408` on every attempt; raising the statement timeout cannot help, since the request
+//! expires. Account erasure and provider deletion have the same shape against `users` and
+//! `providers`.
 //!
 //! Nothing in the plan audit (`repo_query_plans`) can see this: the cascade queries are issued by
 //! Postgres itself and never appear in the `.sqlx` cache.

@@ -23,7 +23,7 @@ pub enum PurgeTarget {
 }
 
 impl PurgeTarget {
-    /// The token stored in `catalogue_purge_state.scope`.
+    /// Returns the token stored in `catalogue_purge_state.scope`.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -57,7 +57,7 @@ pub enum PurgeStop {
 }
 
 impl PurgeStop {
-    /// The token stored in `catalogue_purge_state.stopped`.
+    /// Returns the token stored in `catalogue_purge_state.stopped`.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -113,7 +113,7 @@ pub struct PurgeState {
     pub error: Option<String>,
 }
 
-/// Claim the purge and reset the row to the start of a run.
+/// Claims the purge and resets the row to the start of a run.
 ///
 /// `None` when a live run already holds the claim. A claim whose heartbeat is older than the
 /// lease is broken and re-granted, which is how a purge interrupted by a restart is resumed.
@@ -158,7 +158,7 @@ pub async fn claim_purge<'e, E: PgExecutor<'e>>(
     Ok(granted.map(|claim_id| PurgeClaim { claim_id }))
 }
 
-/// Record the run's running totals and stamp the lease.
+/// Records the run's running totals and stamps the lease.
 ///
 /// Returns whether the run should carry on: `false` once a cancel has been asked, or once the
 /// claim has been superseded and this run no longer owns the row.
@@ -195,7 +195,7 @@ pub async fn advance_purge<'e, E: PgExecutor<'e>>(
     Ok(cancel == Some(false))
 }
 
-/// Release the claim, recording the run's final totals and why it stopped.
+/// Releases the claim, recording the run's final totals and why it stopped.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -253,10 +253,12 @@ pub async fn request_purge_cancel<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<bo
     Ok(hit > 0)
 }
 
-/// Read the purge's state, resolving `running` against the lease the claim is granted under.
+/// Reads the purge's state, resolving `running` against the lease the claim is granted under.
+///
+/// The row is created by migration 0065 and cannot be absent.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; the row is created by migration 0065 and cannot be absent.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn read_purge_state<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<PurgeState> {
     let row = sqlx::query!(
         "SELECT running \

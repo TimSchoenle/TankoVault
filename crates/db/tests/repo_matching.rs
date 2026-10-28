@@ -1,33 +1,32 @@
 //! Series canonicalisation: the candidate queries and what the repository *persists* once the
-//! policy has decided (`crates/db/src/repo/matching.rs`, TEST F-05).
+//! policy has decided (`crates/db/src/repo/matching/`).
 //!
-//! # The split, and what is left here to test
+//! # What is tested here
 //!
-//! ARCH-16 step 3 moved the *decision* out of this crate: `crates/db` reads trigram candidates,
-//! asks a [`Canonicaliser`](tankovault_domain::matching::Canonicaliser), and performs the answer.
-//! The decision has four unit tests of its own in `crates/config/src/matching.rs`. What has none
-//! — and cannot have any without a database, because the whole of it is SQL — is the half that
-//! remains:
+//! The *decision* lives outside this crate: `crates/db` reads trigram candidates, asks a
+//! [`Canonicaliser`](tankovault_domain::matching::Canonicaliser), and performs the answer, and
+//! `crates/config/src/matching.rs` unit-tests the decision. The half that is all SQL, and so
+//! needs a database, is tested here:
 //!
 //! - **What the scorer is given.** `find_candidates` decides which existing series are even
-//!   *considered*, and supplies the similarity, the medium, the year, the tags and the authors that
-//!   every bonus in `tankovault_matcher::score` is computed from. A dropped `array_agg` subquery
-//!   compiles, returns an empty array, and silently turns off the tag and author signals — so the
-//!   matcher gets quieter and more duplicate series appear, with nothing to point at.
+//!   *considered*, and supplies the similarity, the medium, the year, the tags and the authors
+//!   every bonus in `tankovault_matcher` is computed from. A dropped `array_agg` subquery
+//!   compiles, returns an empty array, and silently turns off the tag and author signals, so more
+//!   duplicate series appear with nothing to point at.
 //! - **What the repository writes.** The ambiguous band is the only outcome with a side effect
 //!   beyond the series row: a `merge_candidates` row is the *only* record that two series might be
 //!   one, and if it is not written the pair is silently split forever.
-//! - **`merge_series`.** Eleven statements that move one series' entire footprint onto another and
-//!   then delete it. It is irreversible, it touches user data (`watchlist_entries`,
-//!   `read_progress`), and a dropped statement loses whatever that table held.
+//! - **`merge_series`.** A statement per table that moves one series' entire footprint onto
+//!   another, then deletes it. It touches user data (`watchlist_entries`, `read_progress`), and
+//!   a dropped statement loses whatever that table held.
 //!
-//! # Where the thresholds come from in these tests
+//! # Where the thresholds come from
 //!
-//! `MatchingConfig` *is* the policy object, so the tests configure it rather than substituting a
-//! stub — which is also what makes the ambiguous band reachable without depending on the exact
-//! trigram similarity Postgres computes for a chosen pair of titles. `high` and `low` are set to
-//! bracket whatever score the real scorer produces, so the test asserts the *outcome* the band
-//! produces rather than the score, and does not become brittle to a `pg_trgm` version change.
+//! `MatchingConfig` *is* the policy object, so the tests configure it instead of substituting a
+//! stub, which makes the ambiguous band reachable without depending on the exact trigram
+//! similarity Postgres computes. `high` and `low` bracket whatever score the real scorer
+//! produces, so the tests assert the band's *outcome*, not the score, and survive a `pg_trgm`
+//! version change.
 //!
 //! Opt-in: gated behind the `integration` feature because it requires Docker.
 #![cfg(feature = "integration")]
@@ -58,8 +57,8 @@ use tankovault_test_support::{TestDb, seed};
 // Fixture
 // ---------------------------------------------------------------------------
 
-/// Every candidate row this suite asks about, so the assertions can name a title rather than
-/// carrying a similarity number that a `pg_trgm` upgrade could move.
+/// Every candidate row this suite asks about, so the assertions can name a title instead of a
+/// similarity number that a `pg_trgm` upgrade could move.
 struct Seed {
     title: &'static str,
     content_type: ContentType,
@@ -137,12 +136,13 @@ fn always_ambiguous() -> MatchingConfig {
 /// `ON CONFLICT DO UPDATE` arm of the read-progress merge runs at all.
 ///
 /// `part` is marked read on the *absorbed* series, so it is reached through the real
-/// [`progress_mark_read`] rule rather than planted — the fixture must not be able to produce a pair
-/// of frontiers that no write path can.
+/// [`progress_mark_read`] rule, not planted: the fixture must not produce a pair of frontiers no
+/// write path can.
+///
 /// The two arguments are `(surviving series, its whole frontier)` and
-/// `(absorbed series, its whole frontier, a part release read on it)` — grouped per series rather
-/// than as six positional scalars, because adjacent same-typed arguments transpose silently and
-/// getting the two sides the wrong way round is precisely what this test exists to detect.
+/// `(absorbed series, its whole frontier, a part release read on it)`, grouped per series because
+/// adjacent same-typed arguments transpose silently, and swapping the two sides is what this test
+/// exists to detect.
 async fn a_reader(
     db: &TestDb,
     name: &str,
@@ -164,8 +164,8 @@ async fn a_reader(
     user
 }
 
-/// How many merge candidates exist, resolved or not — `list_open_merge_candidates` filters, so a
-/// count of everything is needed to tell "not written" from "written and resolved".
+/// Counts the merge candidates, resolved or not: `list_open_merge_candidates` filters, so telling
+/// "not written" from "written and resolved" needs a count of everything.
 async fn merge_candidate_count(db: &TestDb) -> i64 {
     sqlx::query_scalar("SELECT count(*) FROM merge_candidates")
         .fetch_one(&db.pool)
@@ -174,16 +174,16 @@ async fn merge_candidate_count(db: &TestDb) -> i64 {
 }
 
 // ---------------------------------------------------------------------------
-// find_candidates — what the scorer is given
+// find_candidates: what the scorer is given
 // ---------------------------------------------------------------------------
 
 /// A candidate is found through its **alternative** titles as well as its canonical one, and the
 /// similarity reported is the best across all of them.
 ///
 /// The `GREATEST(similarity(canonical), MAX(similarity(alt)))` is the difference between matching a
-/// series by its romaji title and not matching it at all. Losing the `series_titles` half compiles,
-/// still returns rows, and simply makes every non-English spelling of a work a new series — the
-/// exact duplicate-series problem canonicalisation exists to prevent.
+/// series by its romaji title and not matching it at all. Losing the `series_titles` half
+/// compiles, still returns rows, and makes every non-English spelling of a work a new series, the
+/// duplicate-series problem canonicalisation exists to prevent.
 #[tokio::test]
 async fn a_candidate_is_found_through_its_alternative_titles() {
     let db = TestDb::spawn().await;
@@ -225,13 +225,11 @@ async fn a_candidate_is_found_through_its_alternative_titles() {
 
 /// Every candidate carries the medium, the year, the tags and the authors the scorer needs.
 ///
-/// These four fields are not decoration: `tankovault_matcher::score` adds `+0.08` for an agreeing
-/// medium, up to `+0.05` for tag overlap and `+0.1` for a shared author credit, and subtracts for
-/// disagreement. All four arrive through correlated subqueries with `COALESCE(..., '{}')`, so
-/// dropping one yields an empty set rather than an error and turns its signal permanently off —
-/// silently making the matcher more conservative than it is configured to be. `Candidate` is also
-/// the *only* candidate type now (ARCH-16), shared with `services/sync`, so a field lost here is
-/// lost on both paths at once.
+/// `tankovault_matcher` adds bonuses for an agreeing medium, tag overlap and a shared author
+/// credit, and subtracts for disagreement. All four fields arrive through correlated subqueries
+/// with `COALESCE(..., '{}')`, so dropping one yields an empty set, not an error, and silently
+/// turns its signal off. `Candidate` is shared with `services/sync`, so a field lost here is lost
+/// on both paths.
 #[tokio::test]
 async fn a_candidate_carries_every_signal_the_scorer_reads() {
     let db = TestDb::spawn().await;
@@ -250,8 +248,8 @@ async fn a_candidate_carries_every_signal_the_scorer_reads() {
         &[1.0],
     )
     .await;
-    // A series with no tags, no authors and no year, so an empty vector proves "none recorded"
-    // rather than "the subquery is broken".
+    // A series with no tags, no authors and no year, so an empty vector proves "none recorded",
+    // not "the subquery is broken".
     let bare = ingest(
         &db,
         provider,
@@ -297,12 +295,10 @@ async fn a_candidate_carries_every_signal_the_scorer_reads() {
 
 /// Candidates come back best-first and the limit keeps the best, not an arbitrary subset.
 ///
-/// The ordering is written as **`ORDER BY 5 DESC`** — a positional reference to the `sim`
-/// expression. Inserting a column ahead of it re-sorts the whole result by something else
-/// entirely (`release_year`, in the current shape) and `LIMIT` then discards the *best* candidates
-/// instead of the worst, so the true match can fall out of the set the policy ever sees. Nothing
-/// else notices: the query still compiles and still returns candidates. The same positional
-/// hazard is pinned for the admin suggestion list in `repo_sync_admin.rs`.
+/// An ordering that falls through to another column makes `LIMIT` discard the *best* candidates
+/// instead of the worst, so the true match can fall out of the set the policy sees, while the
+/// query still compiles and returns candidates. The admin suggestion list's ordering is pinned in
+/// `repo_sync_admin.rs`.
 #[tokio::test]
 async fn candidates_are_ordered_best_first_and_the_limit_keeps_the_best() {
     let db = TestDb::spawn().await;
@@ -359,12 +355,11 @@ async fn candidates_are_ordered_best_first_and_the_limit_keeps_the_best() {
 /// `find_candidates_multi` returns exactly what `find_candidates` would return per title, in the
 /// caller's order, with a bucket for every requested title.
 ///
-/// This is a differential test between the two forms, and PERF-13's claim is precisely that they
-/// are interchangeable: the lateral join exists so `LIMIT` still applies **per title**, so a title
-/// with many weak candidates cannot crowd out another title's strong one. If the `LIMIT` escaped
-/// the lateral, or the similarity expression drifted between the two statements, an `AniList` entry
-/// would attach on the single-title path and not on the batched one — which is the shape of bug
-/// nobody finds, because both paths look like they work.
+/// A differential test of two forms that must be interchangeable: the lateral join keeps `LIMIT`
+/// **per title**, so a title with many weak candidates cannot crowd out another title's strong
+/// one. If the `LIMIT` escaped the lateral, or the similarity expression drifted, an `AniList`
+/// entry would attach on the single-title path and not the batched one, while both paths look
+/// like they work.
 ///
 /// The empty bucket matters too: `services/sync` iterates the returned pairs, so a title dropped
 /// for having no candidates would silently shorten the title family being scored.
@@ -443,15 +438,14 @@ async fn the_batched_candidate_lookup_agrees_with_the_single_title_form() {
     );
 }
 
-/// A repeated query title collapses into one bucket — pinned as written, because the only caller
+/// A repeated query title collapses into one bucket, pinned as written because the only caller
 /// deduplicates first.
 ///
 /// `UNNEST` scores a duplicated title twice and the bucketing takes the first match, so both sets
-/// of rows land in the first bucket and the second is left empty — which also means the first
-/// bucket can hold `2 × limit` candidates, breaking the per-title `LIMIT` the lateral exists for.
-/// `services/sync`'s `series_for_entry` normalises and **deduplicates** the title family before
-/// calling (`AniList` routinely repeats romaji and english), so this is unreachable today. It is
-/// asserted rather than left implicit so that a second caller cannot discover it by accident.
+/// of rows land in the first bucket, which can then hold `2 × limit` candidates, and the second
+/// stays empty. `services/sync`'s `series_for_entry` **deduplicates** the title family before
+/// calling, since `AniList` routinely repeats romaji and english. Asserted so a second caller
+/// cannot discover it by accident.
 #[tokio::test]
 async fn a_repeated_query_title_collapses_into_one_bucket() {
     let db = TestDb::spawn().await;
@@ -488,7 +482,7 @@ async fn a_repeated_query_title_collapses_into_one_bucket() {
 }
 
 // ---------------------------------------------------------------------------
-// resolve_canonical_series — what the repository persists
+// resolve_canonical_series: what the repository persists
 // ---------------------------------------------------------------------------
 
 /// A high-confidence match attaches the new source to the existing series and writes **no** merge
@@ -542,14 +536,13 @@ async fn a_confident_match_attaches_and_queues_nothing() {
     assert_eq!(merge_candidate_count(&db).await, 0);
 }
 
-/// The ambiguous band creates a **new** series *and* records the merge candidate — both, in one
+/// The ambiguous band creates a **new** series *and* records the merge candidate, both in one
 /// transaction.
 ///
-/// This is the only outcome with a side effect beyond the series row, and it is the whole point of
-/// having a middle band: the repository cannot decide, so it keeps the data separate and hands the
-/// judgement to an operator. Losing the `record_merge_candidate` call leaves the split silently
-/// permanent — two series, no queue entry, and nothing anywhere that says they might be one. The
-/// series row is still created, so no error surfaces and no test that only counts series notices.
+/// The only outcome with a side effect beyond the series row, and the point of a middle band:
+/// the repository cannot decide, so it keeps the data separate and hands the judgement to an
+/// operator. Losing the `record_merge_candidate` call leaves the split silently permanent: two
+/// series, no queue entry, and no error, since the series row is still created.
 ///
 /// The recorded `score` and `reason` are asserted because they are what the console renders for the
 /// operator to judge by; a candidate with no score is a coin flip.
@@ -594,12 +587,10 @@ async fn the_ambiguous_band_creates_a_series_and_queues_the_pair() {
         .expect("list merge candidates");
     assert_eq!(queued.len(), 1);
     let candidate = &queued[0];
-    // The pair is stored in canonical id order, **not** creation order. `series_id` used to be
-    // the newly-created series and `candidate_id` the one it might duplicate, which recorded
-    // nothing but which side a scan happened to reach second — and made `(A,B)` and `(B,A)` two
-    // different rows for one pair, so neither the unique index nor an operator's dismissal could
-    // be relied on. Both ids are still here; which one survives a merge is decided separately,
-    // from `suggested_keep`.
+    // The pair is stored in canonical id order, **not** creation order. Creation order records
+    // only which side a scan reached second and makes `(A,B)` and `(B,A)` two rows for one pair,
+    // defeating the unique index and an operator's dismissal. Which id survives a merge is
+    // decided separately, from `suggested_keep`.
     assert_eq!(
         (
             candidate.series_id.min(candidate.candidate_id),
@@ -636,8 +627,8 @@ async fn the_ambiguous_band_creates_a_series_and_queues_the_pair() {
 
 /// Nothing similar enough means a new series and no queue entry.
 ///
-/// The `Create` arm is the common case — every first source of a work takes it — so its cost has to
-/// be zero. A merge candidate written here would make the queue grow with the catalogue.
+/// The `Create` arm is the common case, taken by every first source of a work, so its cost must be
+/// zero. A merge candidate written here would make the queue grow with the catalogue.
 #[tokio::test]
 async fn an_unmatched_title_creates_a_series_and_queues_nothing() {
     let db = TestDb::spawn().await;
@@ -682,18 +673,16 @@ async fn an_unmatched_title_creates_a_series_and_queues_nothing() {
 /// The queue lists only unresolved candidates, **highest confidence first**, with both titles
 /// resolved.
 ///
-/// Three separate things, each of which fails quietly. `WHERE NOT mc.resolved` is the difference
-/// between a work queue and a log — without it an operator re-decides everything they have already
-/// decided. Both `JOIN series` legs supply the titles the console renders; an inner join is correct
-/// here (a candidate referencing a deleted series is meaningless) but means a dropped join makes
-/// rows *vanish* rather than error. And the ordering is what makes the queue drainable.
+/// Three things, each failing quietly. `WHERE NOT mc.resolved` separates a work queue from a log;
+/// without it an operator re-decides everything. Both `JOIN series` legs supply the titles the
+/// console renders; an inner join is correct, since a candidate referencing a deleted series is
+/// meaningless, but a dropped join makes rows *vanish* instead of erroring. And the ordering makes
+/// the queue drainable.
 ///
-/// The ordering was `created_at DESC` and is now `score DESC, created_at DESC`. That is a
-/// deliberate reversal of what this test used to assert, and the reason is scale: on a 26k-series
-/// catalogue the queue reached 2 676 rows, so "newest first" put whatever the last scan happened
-/// to observe at the top and buried every certain duplicate behind it. Confidence order is what
-/// makes a queue that size drainable at all; `created_at DESC` remains the tie-break, so two
-/// equally-confident pairs still arrive newest-first.
+/// The ordering is `score DESC, created_at DESC`. On a large catalogue the queue runs to
+/// thousands of rows, and "newest first" would bury every certain duplicate behind whatever the
+/// last scan observed. `created_at DESC` is the tie-break, so equally confident pairs arrive
+/// newest first.
 #[tokio::test]
 async fn the_merge_queue_lists_only_unresolved_candidates_by_confidence() {
     let db = TestDb::spawn().await;
@@ -748,8 +737,8 @@ async fn the_merge_queue_lists_only_unresolved_candidates_by_confidence() {
     assert_eq!(limited.len(), 1);
     assert_eq!(limited[0].id, queued[0].id);
 
-    // The confidence filter narrows the queue rather than reordering it. An operator working a
-    // band should not see a row below it at all.
+    // The confidence filter narrows the queue, not reorders it: an operator working a band should
+    // not see a row below it.
     let unreachable = list_open_merge_candidates(&db.pool, 10, 1.01)
         .await
         .expect("list");
@@ -783,9 +772,9 @@ async fn the_merge_queue_lists_only_unresolved_candidates_by_confidence() {
 /// Dismissing a candidate is single-use, and the second attempt says so.
 ///
 /// `AND NOT resolved` is what makes the boolean meaningful: without it the second call still
-/// reports success and overwrites `resolved_by`/`resolved_at`, so the record says the last operator
-/// to click made the decision rather than the one who actually did. The handler maps `false` to a
-/// `404`, which is also how a double-submitted console form is distinguished from a live one.
+/// reports success and overwrites `resolved_by` and `resolved_at`, crediting the last operator to
+/// click, not the one who decided. The handler maps `false` to a `404`, which also tells a
+/// double-submitted console form from a live one.
 #[tokio::test]
 async fn dismissing_a_merge_candidate_is_single_use() {
     let db = TestDb::spawn().await;
@@ -848,21 +837,19 @@ async fn dismissing_a_merge_candidate_is_single_use() {
 }
 
 // ---------------------------------------------------------------------------
-// merge_series — the irreversible one
+// merge_series: the irreversible one
 // ---------------------------------------------------------------------------
 
 /// A merge moves the whole footprint of one series onto another and then deletes it.
 ///
-/// Eleven statements, each owning one table, and a dropped one loses whatever that table held —
-/// silently, because the merge still reports success and the series row is still gone. Two of those
-/// tables hold **user** data (`watchlist_entries`, `read_progress`), so this is the one operation in
-/// the catalogue that can destroy something a user cannot re-create. There is no undo: the source
-/// series is deleted in the same transaction.
+/// A statement per table, and a dropped one silently loses whatever that table held, since the
+/// merge still reports success and the series row is still gone. Two tables hold **user** data
+/// (`watchlist_entries`, `read_progress`), which a user cannot re-create.
 ///
 /// Every claim below is a table: sources re-parent, the merged canonical title survives as an
-/// alternative title (so the merged spelling still *matches* afterwards — otherwise the next scan
-/// re-creates the series it just absorbed), tags and authors union, the watchlist entry moves, and
-/// the external-sync mapping moves so the account does not silently stop syncing.
+/// alternative title (so the merged spelling still *matches*, or the next scan re-creates the
+/// series it just absorbed), tags and authors union, the watchlist entry moves, and the
+/// external-sync mapping moves so the account does not silently stop syncing.
 #[tokio::test]
 async fn merging_moves_every_table_and_deletes_the_absorbed_series() {
     let db = TestDb::spawn().await;
@@ -925,7 +912,7 @@ async fn merging_moves_every_table_and_deletes_the_absorbed_series() {
     assert_eq!(source_count, 2, "both providers' sources re-parented");
 
     // The absorbed canonical title and its alternatives survive as alternative titles, which is
-    // what keeps the next scan of `beta` attaching here rather than re-creating the series.
+    // what keeps the next scan of `beta` attaching here instead of re-creating the series.
     let mut titles = list_series_titles(&db.pool, keep).await.expect("titles");
     titles.sort();
     assert_eq!(
@@ -976,24 +963,20 @@ async fn merging_moves_every_table_and_deletes_the_absorbed_series() {
     );
 }
 
-/// **MERGE-1.** A merge keeps the **furthest** read position when a user tracked both series, and
-/// drops a part frontier the merged whole frontier has overtaken.
+/// A merge keeps the **furthest** read position when a user tracked both series, and drops a part
+/// frontier the merged whole frontier has overtaken.
 ///
-/// `ON CONFLICT DO UPDATE … GREATEST(...)` is the only thing standing between an operator merge and
-/// a user losing reading progress, and the direction is not symmetric: taking the *absorbed* row's
-/// value unconditionally, or letting the insert lose to the existing row, both compile and both
-/// look right in a test where only one side has progress. Four users cover the four shapes — behind
-/// on the survivor, ahead on the survivor, present on one side only, and a part frontier to
-/// reconcile.
+/// `ON CONFLICT DO UPDATE … GREATEST(...)` is all that stops an operator merge from losing reading
+/// progress, and the direction is not symmetric: taking the *absorbed* row's value
+/// unconditionally, or letting the insert lose to the existing row, both look right when only one
+/// side has progress. Four users cover the four shapes: behind on the survivor, ahead on the
+/// survivor, present on one side only, and a part frontier to reconcile.
 ///
-/// The last shape is the defect this found. The part-frontier `CASE` read
-/// `whole >= floor(part) **AND** part = 0`, so it only cleared the frontier when there was no part
-/// frontier at all and its staleness half could never fire: merging whole `6` with part `4.5`
-/// produced `(6, 4.5)`, which §A.1 (`floor(part) >= whole`) forbids. Harmless to every current
-/// reader — `covers` already calls `4.5` read from `floor(4.5) <= 6` — and self-healing on the next
-/// `progress_set`, which is why nothing noticed; but the invariant is documented, so any future read
-/// model that reports "you are ahead on 4.5" would have been reading a lie. All three write paths
-/// now apply the same `floor(part) <= whole` rule.
+/// The bug the last shape pins: a part-frontier `CASE` reading `whole >= floor(part) **AND**
+/// part = 0` clears the frontier only when there is none, so merging whole `6` with part `4.5`
+/// produces `(6, 4.5)`, which §A.1 (`floor(part) >= whole`) forbids. `covers` reads it correctly,
+/// so nothing visible breaks, but a read model trusting the invariant would report "you are ahead
+/// on 4.5". Every write path applies the same `floor(part) <= whole` rule.
 #[tokio::test]
 async fn merging_keeps_the_furthest_read_position() {
     let db = TestDb::spawn().await;
@@ -1030,7 +1013,7 @@ async fn merging_keeps_the_furthest_read_position() {
 
     // Behind on the survivor, ahead on the series being absorbed.
     let behind = a_reader(&db, "behind", (keep, 1.0), (drop, 3.0, None)).await;
-    // Ahead on the survivor, behind on the absorbed one — the other direction.
+    // Ahead on the survivor, behind on the absorbed one: the other direction.
     let ahead = a_reader(&db, "ahead", (keep, 3.0), (drop, 1.0, None)).await;
     // Progress only on the absorbed series: the plain insert path.
     let only_absorbed = seed::user(&db, "onlyabsorbed").create().await;
@@ -1040,8 +1023,8 @@ async fn merging_keeps_the_furthest_read_position() {
     // A part frontier on the absorbed series that stays ahead of the merged whole frontier: it is
     // genuine reading and must survive.
     let part_survives = a_reader(&db, "partsurvives", (keep, 3.0), (drop, 1.0, Some(4.5))).await;
-    // MERGE-1: the same shape, but the survivor's whole frontier *overtakes* the part. `(6, 4.5)`
-    // is the §A.1 violation the old `AND` could not avoid.
+    // The same shape, but the survivor's whole frontier *overtakes* the part. `(6, 4.5)`
+    // is the §A.1 violation an `AND part = 0` guard cannot avoid.
     let part_is_stale = a_reader(&db, "partisstale", (keep, 6.0), (drop, 1.0, Some(4.5))).await;
 
     merge_series(&db.pool, keep, drop, None, "merged")
@@ -1072,7 +1055,7 @@ async fn merging_keeps_the_furthest_read_position() {
         (
             part_is_stale,
             (6.0, None),
-            "MERGE-1: floor(4.5) <= 6, so the part frontier is stale and §A.1 requires it cleared",
+            "floor(4.5) <= 6, so the part frontier is stale and §A.1 requires it cleared",
         ),
     ] {
         let progress: ReadProgress = progress_get_full(&db.pool, user, keep)
@@ -1087,8 +1070,8 @@ async fn merging_keeps_the_furthest_read_position() {
             expected,
             "{why}"
         );
-        // Whatever the frontiers are, they must satisfy §A.1 — that is the property a read model
-        // is entitled to trust.
+        // Whatever the frontiers are, they must satisfy §A.1, the property a read model is
+        // entitled to trust.
         if let Some(part) = progress.last_read_part_number {
             assert!(
                 part.floor() > progress.last_read_whole_number,
@@ -1107,20 +1090,19 @@ async fn merging_keeps_the_furthest_read_position() {
 /// A merge leaves no candidate naming the vanishing series, and refuses the two inputs that cannot
 /// mean anything.
 ///
-/// The property is "no orphan is left in the queue", and the mechanism is worth naming because it is
-/// not the statement it looks like: both of `merge_candidates`' series columns are
-/// `ON DELETE CASCADE`, so the rows are **deleted** by `DELETE FROM series`, and the
-/// `UPDATE merge_candidates SET resolved = true` ahead of it is belt-and-braces for the same rows.
-/// Either way `list_open_merge_candidates` inner-joins both sides, so a surviving row pointing at a
-/// deleted series would simply *disappear from the operator's queue* while staying open in the table
-/// — impossible to dismiss, and a queue that shrinks without anyone deciding. Asserting the property
-/// rather than the statement is what keeps this test true if the FK is ever loosened.
+/// The property is "no orphan is left in the queue", and the mechanism is not the statement it
+/// looks like: both of `merge_candidates`' series columns are `ON DELETE CASCADE`, so
+/// `DELETE FROM series` **deletes** the rows, and the `UPDATE merge_candidates SET resolved = true`
+/// ahead of it is belt-and-braces. `list_open_merge_candidates` inner-joins both sides, so a
+/// surviving row pointing at a deleted series would *disappear from the queue* while staying open,
+/// impossible to dismiss. Asserting the property, not the statement, keeps this true if the FK is
+/// loosened.
 ///
 /// A candidate naming only the *surviving* series is untouched: it is still a real question.
 ///
 /// Merging a series into itself would run every union statement against one row and then delete it,
-/// so the guard is what stops a mis-click from erasing a series outright; it is a `Conflict` rather
-/// than a silent no-op so the console can say why.
+/// so the guard stops a mis-click from erasing a series outright. It is a `Conflict`, not a silent
+/// no-op, so the console can say why.
 #[expect(
     clippy::too_many_lines,
     reason = "one merge scenario asserted from several angles against a single seeded graph; \
@@ -1259,10 +1241,10 @@ const fn plain(title: &'static str) -> Seed {
 /// Recording the same pair twice refreshes one row instead of adding a second, and does so in
 /// either argument order.
 ///
-/// `record_merge_candidate` was a bare `INSERT`, which failed in two opposite ways at once. The
-/// same ambiguity observed twice inserted two rows, so a queue of N rows was not N pairs. And
-/// `(A,B)` and `(B,A)` were two different rows describing one pair, so nothing that keyed on the
-/// pair — a unique index, a dismissal, the sweep's "have I seen this?" check — could be relied on.
+/// The bug: a bare `INSERT` fails two ways at once. The same ambiguity observed twice inserts two
+/// rows, so a queue of N rows is not N pairs, and `(A,B)` and `(B,A)` are two rows for one pair,
+/// so nothing keyed on the pair (a unique index, a dismissal, the sweep's "have I seen this?"
+/// check) can be relied on.
 #[tokio::test]
 async fn recording_a_pair_twice_refreshes_one_row_in_either_order() {
     use tankovault_db::repo::matching::{QueueOutcome, record_merge_candidate};
@@ -1301,13 +1283,12 @@ async fn recording_a_pair_twice_refreshes_one_row_in_either_order() {
     assert_eq!(queued[0].reason.as_deref(), Some("second"));
 }
 
-/// **Regression: an operator's dismissal used to be undone by the next scan.**
+/// **An operator's dismissal survives the next scan.**
 ///
-/// Dismissing a candidate marks the row resolved, but nothing stopped a later
-/// `record_merge_candidate` for the same pair inserting a *fresh open row* — so "these are two
-/// different works" was a judgement the system silently discarded, and the same pair came back
-/// every scan. The pair key plus the upsert's `NOT resolved` guard is what makes the judgement
-/// durable; without either, this test fails by the queue containing an open row again.
+/// The bug: dismissing marks the row resolved, but a later `record_merge_candidate` for the same
+/// pair inserts a *fresh open row*, silently discarding "these are two different works" and
+/// bringing the pair back every scan. The pair key and the upsert's `NOT resolved` guard make the
+/// judgement durable; without either, the queue holds an open row again.
 #[tokio::test]
 async fn a_dismissed_pair_is_not_resurrected_by_a_later_observation() {
     use tankovault_db::repo::matching::{QueueOutcome, record_merge_candidate};
@@ -1350,11 +1331,10 @@ async fn a_dismissed_pair_is_not_resurrected_by_a_later_observation() {
 
 /// A series row that already exists, with no canonicalisation involved.
 ///
-/// The sweep's whole subject is rows the matcher *did not* connect, and the improved matcher now
-/// connects the obvious cases at ingest — so going through `ingest_series` to build a duplicate
-/// no longer produces one. This is the honest shape of what the sweep meets in production: rows
-/// written before the normalization was corrected, and rows that only become recognisable once
-/// enrichment has filled them in.
+/// The sweep's subject is rows the matcher *did not* connect, and the matcher connects the obvious
+/// cases at ingest, so building a duplicate through `ingest_series` produces none. This is what
+/// the sweep meets: rows written under older normalisation, and rows that become recognisable
+/// only once enrichment fills them in.
 async fn insert_series_directly(db: &TestDb, title: &str) -> SeriesId {
     let id = SeriesId::new();
     sqlx::query("INSERT INTO series (id, canonical_title, normalized_title) VALUES ($1, $2, $3)")
@@ -1371,11 +1351,10 @@ async fn insert_series_directly(db: &TestDb, title: &str) -> SeriesId {
 /// pairs an operator has resolved.
 ///
 /// `find_duplicate_pairs` blocks on the whitespace-insensitive title key. `Spy X Family` and
-/// `Spyxfamily` have a trigram similarity of 0.5 and share no token at all, so *before* the
-/// compact rule existed nothing at ingest could have connected them — this is the class of
-/// duplicate that sat in the catalogue permanently, 59 pairs of it, without ever reaching the
-/// review queue. The second row is inserted directly for exactly that reason: the matcher would
-/// now attach it, and what the sweep has to handle is the rows written while it would not.
+/// `Spyxfamily` have a trigram similarity of 0.5 and share no token, so without the compact rule
+/// nothing at ingest connects them, and such duplicates sit in the catalogue without reaching the
+/// review queue. The second row is inserted directly, since the matcher would attach it at
+/// ingest, and the sweep handles rows written before it did.
 #[tokio::test]
 async fn the_duplicate_sweep_blocks_on_the_compact_title_key() {
     use tankovault_db::repo::matching::{find_duplicate_pairs, suppress_pair};
@@ -1433,8 +1412,8 @@ async fn the_duplicate_sweep_blocks_on_alternative_titles_too() {
         &[1.0],
     )
     .await;
-    // Inserted directly: the alias rule now attaches this at ingest, which is the point — the
-    // sweep's subject is the rows that were written before it did.
+    // Inserted directly: the alias rule attaches this at ingest, and the sweep's subject is rows
+    // written before it did.
     let romaji = insert_series_directly(&db, "Na Honjaman Level Up").await;
 
     let pairs = find_duplicate_pairs(&db.pool, 50).await.expect("pairs");
@@ -1444,7 +1423,7 @@ async fn the_duplicate_sweep_blocks_on_alternative_titles_too() {
     );
 }
 
-/// Attach an alternative title to a series that already exists.
+/// Attaches an alternative title to a series that already exists.
 async fn add_alt_title(db: &TestDb, series_id: SeriesId, title: &str) {
     sqlx::query("INSERT INTO series_titles (series_id, title, normalized) VALUES ($1, $2, $3)")
         .bind(series_id.as_uuid())
@@ -1455,14 +1434,13 @@ async fn add_alt_title(db: &TestDb, series_id: SeriesId, title: &str) {
         .expect("insert an alternative title directly");
 }
 
-/// **Regression: one title key held by thousands of series turned the shortlist quadratic.**
+/// **A title key held by thousands of series does not make the shortlist quadratic.**
 ///
-/// An adapter briefly scraped a Madara summary block's *labels* into `series_titles`, so 5 509
-/// series answered to the alternative title `Status`, 5 508 to `Alternative`, and so on. Blocking
-/// is an equality and equality alone bounds nothing: six such keys are `n·(n-1)/2` pairs each,
-/// which took the live shortlist from 4 352 pairs to 15 176 110 and pushed a byte-identical
-/// duplicate to position 8.9 million of a list the sweep reads 500 of. It was therefore
-/// unreachable, permanently, while looking for all the world like a scoring problem.
+/// The bug: an adapter scraping a summary block's *labels* into `series_titles` makes thousands
+/// of series answer to an alternative title such as `Status`. Blocking is an equality, which
+/// bounds nothing: each such key is `n·(n-1)/2` pairs, pushing a byte-identical duplicate
+/// millions of places down a list the sweep reads a few hundred of, where it is unreachable while
+/// looking like a scoring problem.
 #[tokio::test]
 async fn an_over_shared_title_key_is_not_a_blocking_key() {
     use tankovault_db::repo::matching::find_duplicate_pairs;
@@ -1494,15 +1472,14 @@ async fn an_over_shared_title_key_is_not_a_blocking_key() {
     );
 }
 
-/// **Regression: an over-shared alias key kept pulling unrelated sources onto one series.**
+/// **An over-shared alias key does not pull unrelated sources onto one series.**
 ///
-/// The create-time lookup searched `series_titles` without any fan-out ceiling, and the scorer
-/// read an exact hit on an alias as identity — so a junk key attracted a source, attaching filed
-/// *that* source's aliases under the same series, and the net widened with every attach. One live
-/// row reached 309 sources across three providers and 1 140 alternative titles, holding titles as
-/// unrelated as "Please Go Home, Akutsu-San!" and "I Am The Fated Villain". The sweep's blocking
-/// step already refused such keys (`an_over_shared_title_key_is_not_a_blocking_key`); this is the
-/// same ceiling one stage earlier, where the damage is actually done.
+/// The bug: with no fan-out ceiling on the create-time `series_titles` lookup, and an exact alias
+/// hit read as identity, a junk key attracts a source, the attach files *that* source's aliases
+/// under the same series, and the net widens with every attach, until one series holds hundreds of
+/// sources of unrelated works. The sweep's blocking step refuses such keys
+/// (`an_over_shared_title_key_is_not_a_blocking_key`); this is the same ceiling one stage earlier,
+/// where the damage is done.
 #[tokio::test]
 async fn an_over_shared_alias_is_not_a_candidate_key() {
     use tankovault_db::repo::matching::find_candidates;
@@ -1539,13 +1516,12 @@ async fn an_over_shared_alias_is_not_a_candidate_key() {
     );
 }
 
-/// **Regression: the new-pair shortlist re-offered the same prefix on every run.**
+/// **The new-pair shortlist does not re-offer the same prefix on every run.**
 ///
-/// It is ordered by `(lo, hi)` with a `LIMIT`, and it used to exclude only pairs an operator had
-/// *resolved* — so a pair queued for review was still open, came back in the same prefix an hour
-/// later, and displaced whatever sat behind it. The prefix never turned over; the only pairs that
-/// ever left it were the handful auto-merged per run. Anything past the budget was unreachable
-/// however obvious a duplicate it was.
+/// The bug: ordered by `(lo, hi)` with a `LIMIT` and excluding only pairs an operator *resolved*,
+/// a pair queued for review stays open, comes back in the same prefix on the next run, and
+/// displaces whatever sits behind it. The prefix never turns over, so anything past the budget
+/// is unreachable however obvious a duplicate.
 #[tokio::test]
 async fn the_shortlist_does_not_re_offer_a_pair_it_has_already_recorded() {
     use tankovault_db::repo::matching::{
@@ -1585,11 +1561,10 @@ async fn the_shortlist_does_not_re_offer_a_pair_it_has_already_recorded() {
 /// A scorer's `distinct` verdict keeps the pair out of the new-pair shortlist, stays revisitable,
 /// and never overwrites an operator's dismissal.
 ///
-/// **Regression: the verdict used to delete the row**, so that a later sweep could reconsider the
-/// pair — right in intent, wrong in mechanism. It also made the verdict invisible to
-/// `find_duplicate_pairs`, which re-offered the pair immediately; combined with the `LIMIT` that
-/// is how the shortlist stalled. The three properties asserted here are the ones that have to
-/// hold simultaneously, and the last is the one that a naive "just record it" would break.
+/// The bug: a verdict that deletes the row, so a later sweep can reconsider the pair, is
+/// invisible to `find_duplicate_pairs`, which re-offers the pair at once and, with the `LIMIT`,
+/// stalls the shortlist. The three properties must hold together, and a naive "just record it"
+/// breaks the last.
 #[tokio::test]
 async fn a_distinct_verdict_is_durable_revisitable_and_yields_to_an_operator() {
     use tankovault_db::repo::matching::{
@@ -1662,18 +1637,15 @@ async fn a_distinct_verdict_is_durable_revisitable_and_yields_to_an_operator() {
     assert_eq!(outcome, "dismissed");
 }
 
-/// **Regression: a merge used to destroy four tables' worth of user data.**
+/// **A merge keeps the user data in four tables.**
 ///
-/// `series_sync_overrides`, `sync_history`, `sync_remote_entries` and `notification_dedup` all
-/// reference `series` and none of them was moved, so the `DELETE FROM series` at the end of the
-/// merge cascaded them away: a user's per-series tracker exclusions and their whole visible sync
-/// history vanished, every remote entry matched to the absorbed series came back *unmatched* (the
-/// FK is `ON DELETE SET NULL`) and was re-resolved from the title on the next pull, and the
-/// notification suppression went with it, so every watcher was re-notified for chapters that had
-/// already been announced.
-///
-/// That was survivable while a merge was an operator pressing a button on a queue nobody worked.
-/// It is not survivable now the sweep merges automatically.
+/// The bug: `series_sync_overrides`, `sync_history`, `sync_remote_entries` and
+/// `notification_dedup` all reference `series`, so leaving them unmoved lets the final
+/// `DELETE FROM series` cascade them away. A user's per-series tracker exclusions and visible
+/// sync history vanish, every remote entry matched to the absorbed series comes back *unmatched*
+/// (the FK is `ON DELETE SET NULL`), and the lost notification suppression re-notifies every
+/// watcher for chapters already announced. The sweep merges automatically, so this would happen
+/// constantly.
 #[tokio::test]
 async fn a_merge_carries_the_sync_and_notification_state_across() {
     let db = TestDb::spawn().await;
@@ -1770,13 +1742,12 @@ async fn a_merge_carries_the_sync_and_notification_state_across() {
     );
 }
 
-/// `tv_normalize_title` — the SQL twin the 0023 migration backfills with — must agree with
-/// `tankovault_domain::normalize_title`, which is the authority.
+/// `tv_normalize_title`, the SQL twin the 0023 migration backfills with, must agree with
+/// `tankovault_domain::normalize_title`, the authority.
 ///
-/// The migration cannot call the Rust function and 26k stored keys cannot wait for a re-scan, so
-/// the twin exists; this is the only thing that keeps it a twin rather than a second, diverging
-/// implementation. Every case below is a rule the two have to implement identically, and the
-/// first four are the ones that were actually wrong in production.
+/// The migration cannot call the Rust function and stored keys cannot wait for a re-scan, so the
+/// twin exists; this keeps it a twin, not a diverging second implementation. Every case below is
+/// a rule both must implement identically.
 #[tokio::test]
 async fn the_sql_normalizer_agrees_with_the_rust_one() {
     let db = TestDb::spawn().await;
@@ -1827,7 +1798,7 @@ async fn the_sql_normalizer_agrees_with_the_rust_one() {
 ///
 /// The normalized title is written once, at creation, so a change to the normalization rules
 /// leaves the whole catalogue on the old keys until this runs. The second run asserting zero
-/// updates is what makes it an operator-safe button rather than a one-shot migration.
+/// updates makes it an operator-safe button, not a one-shot migration.
 #[tokio::test]
 async fn rebuilding_the_keys_is_idempotent_and_repairs_a_stale_key() {
     use tankovault_db::repo::matching::rebuild_normalized_keys;
@@ -1902,8 +1873,8 @@ async fn rebuilding_the_keys_keeps_an_alternative_titles_origin() {
 // Merges: the alias map, and the guard on `merge_series` itself
 // ---------------------------------------------------------------------------
 
-/// Three distinct works, so a merge in these tests is never also a *match* — the point under
-/// test is what the merge moves, not what the canonicaliser would have decided.
+/// Three distinct works, so a merge in these tests is never also a *match*: the point under test
+/// is what the merge moves, not what the canonicaliser would decide.
 const BERSERK: Seed = Seed {
     title: "Berserk",
     content_type: ContentType::Manga,
@@ -1934,8 +1905,8 @@ const MONSTER: Seed = Seed {
 enum Handling {
     /// Re-pointed, unioned or resolved onto the survivor inside the merge transaction.
     Folded,
-    /// Deliberately allowed to vanish with the absorbed row. The string is *why* — a reason
-    /// somebody has to write down, which is the whole point of the distinction.
+    /// Deliberately allowed to vanish with the absorbed row. The string is *why*, a reason
+    /// somebody has to write down, which is the point of the distinction.
     Cascades(&'static str),
 }
 
@@ -1961,10 +1932,10 @@ const SERIES_REFERENCES: &[(&str, &str, Handling)] = &[
     ("merge_candidates", "series_id", Handling::Folded),
     ("merge_candidates", "candidate_id", Handling::Folded),
     ("series_merges", "survivor_id", Handling::Folded),
-    // The recommendation model. Every one of these is *derived* — a rebuild reproduces it from
-    // `series` and its link tables — so losing the absorbed series' rows is not only acceptable,
-    // it is the mechanism: the cascade is what makes a merged series unreachable from the index
-    // in the same transaction that deletes it, rather than at the next build.
+    // The recommendation model. Every one of these is *derived*, reproduced by a rebuild from
+    // `series` and its link tables, so losing the absorbed series' rows is the mechanism: the
+    // cascade makes a merged series unreachable from the index in the transaction that deletes
+    // it, not at the next build.
     //
     // What is *not* automatic is the survivor, which absorbed the loser's tags and authors and
     // therefore needs re-embedding. `merge_series` queues it; see `rec_repair_queue` below.
@@ -2016,10 +1987,10 @@ const SERIES_REFERENCES: &[(&str, &str, Handling)] = &[
             "derived per watchlist entry and cascades with it; the merge's own watchlist, progress and source moves fire the triggers that recompute the survivor's rows",
         ),
     ),
-    // The reader model. Affinity is derived from the watchlist and read progress, both of which
-    // this transaction folds correctly a few statements earlier — so re-pointing it by hand is
-    // how the derived rows and their source diverge. `merge_series` marks the affected profiles
-    // stale instead, and they are recomputed from the folded truth.
+    // The reader model. Affinity is derived from the watchlist and read progress, both folded a
+    // few statements earlier, so re-pointing it by hand would let the derived rows diverge from
+    // their source. `merge_series` marks the affected profiles stale, and they are recomputed
+    // from the folded truth.
     (
         "user_series_affinity",
         "series_id",
@@ -2027,43 +1998,38 @@ const SERIES_REFERENCES: &[(&str, &str, Handling)] = &[
             "derived from watchlist_entries and read_progress, which are folded; affected taste profiles are marked stale and recomputed",
         ),
     ),
-    // The one table here that holds a *decision* rather than a derivation.
+    // The one table here that holds a *decision*, not a derivation.
     ("recommendation_feedback", "series_id", Handling::Folded),
-    // The decision journals. `sync_decisions.series_id` is `ON DELETE SET NULL` rather than a
-    // cascade — a journal a deletion can erase is not one — but the merge re-points it anyway,
-    // because a record detached from the series it describes survives and stops being findable.
+    // The decision journals. `sync_decisions.series_id` is `ON DELETE SET NULL`, not a cascade,
+    // since a journal a deletion can erase is not one, but the merge re-points it anyway: a record
+    // detached from its series survives and stops being findable.
     ("sync_decisions", "series_id", Handling::Folded),
     ("sync_match_blocks", "series_id", Handling::Folded),
 ];
 
-/// `user_taste_profile.seeds` is a `uuid[]` and therefore invisible to the enumeration above —
-/// no foreign key, and not named like a series id.
+/// `user_taste_profile.seeds` is a `uuid[]`, invisible to the enumeration above: no foreign key,
+/// and not named like a series id.
 ///
-/// That is a deliberate blind spot with a deliberate answer: the array is a *cache* of the top of
-/// the affinity ordering, `merge_series` marks every affected profile stale, and a stale profile
-/// is rebuilt from scratch before it is next read. A dangling id in it therefore survives exactly
-/// until the next shelf request, and never reaches a reader.
+/// A deliberate blind spot: the array is a *cache* of the top of the affinity ordering,
+/// `merge_series` marks every affected profile stale, and a stale profile is rebuilt before it is
+/// next read, so a dangling id never reaches a reader.
 ///
-/// Recorded here so the next person to add an array of series ids has to decide the same
-/// question rather than discover it. An array that is *not* rebuilt on staleness would need a
-/// real answer — which is the argument that kept the item model's neighbours out of arrays
-/// entirely (docs/RECOMMENDATIONS.md §5.2).
+/// Recorded so the next array of series ids gets the same decision on purpose. An array *not*
+/// rebuilt on staleness would need a real answer, which is why the item model's neighbours are
+/// not arrays (`docs/RECOMMENDATIONS.md` §5.2).
 const _ARRAY_COLUMNS_ARE_NOT_ENUMERATED: () = ();
 
 /// **The guard on `merge_series`.**
 ///
 /// `merge_series` is one long transaction that hand-folds every table holding a `series_id` and
 /// then deletes the absorbed row. Nothing in the type system relates that list to the schema, so
-/// a new table simply loses its rows on the next merge — silently, because a cascade and a
-/// deliberate decision produce identical output.
+/// a new table silently loses its rows on the next merge, since a cascade and a deliberate
+/// decision produce identical output. The duplicate sweep merges without an operator, so that
+/// would happen constantly.
 ///
-/// Merges are frequent here (`merge_candidates.outcome` admits `auto_merged`, and the duplicate
-/// sweep merges without an operator), so "silently, on some rows, eventually" means "constantly".
-///
-/// The test enumerates the schema two ways — every foreign key onto `series(id)`, and every
-/// column *named* like a series id, which catches a new table that forgot the key as well — and
-/// requires each to be classified. It asserts nothing about behaviour; it asserts that somebody
-/// thought about it.
+/// The test enumerates the schema two ways, every foreign key onto `series(id)` and every column
+/// *named* like a series id (which catches a table that forgot the key), and requires each to be
+/// classified. It asserts that somebody thought about it, not behaviour.
 #[tokio::test]
 async fn every_column_pointing_at_a_series_is_folded_or_deliberately_cascaded() {
     let db = TestDb::spawn().await;
@@ -2113,10 +2079,9 @@ async fn every_column_pointing_at_a_series_is_folded_or_deliberately_cascaded() 
          Delete the rows; a classification that matches nothing hides the next real one."
     );
 
-    // `series_merges.merged_id` is deliberately in neither list: it names a row that has already
-    // been deleted, which is the entire purpose of the table, so it can carry no foreign key.
-    // Asserted rather than assumed — a well-meaning future migration "fixing" the missing key
-    // would make every merge fail on its own forwarding record.
+    // `series_merges.merged_id` is deliberately in neither list: it names a deleted row, the
+    // purpose of the table, so it can carry no foreign key. Asserted, since a migration "fixing"
+    // the missing key would make every merge fail on its own forwarding record.
     let merged_id_has_fk: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM pg_constraint c \
                           JOIN unnest(c.conkey) AS k(attnum) ON true \
@@ -2136,10 +2101,9 @@ async fn every_column_pointing_at_a_series_is_folded_or_deliberately_cascaded() 
 
 /// A merge records where the series went.
 ///
-/// Before `series_merges` existed the absorbed row was deleted with no forwarding record, so
-/// every merged id became a hard 404 — for bookmarks, shared links, external references and any
-/// client holding a stale id. With the duplicate sweep merging automatically and continuously,
-/// that was not a rare case.
+/// Without a forwarding record in `series_merges`, every merged id is a hard 404 for bookmarks,
+/// shared links, external references and any client holding a stale id, and the duplicate sweep
+/// merges continuously.
 #[tokio::test]
 async fn a_merge_records_where_the_series_went() {
     let db = TestDb::spawn().await;
@@ -2171,9 +2135,9 @@ async fn a_merge_records_where_the_series_went() {
 /// **Path compression: the alias map stays one hop deep.**
 ///
 /// Merge B into C after A was already merged into B, and A must resolve straight to C. If
-/// `merge_series` only inserted its own row, A would still point at B — an id that no longer
-/// exists — and resolution would need a recursive walk that is both slower and able to spin on a
-/// cycle. The compression is one `UPDATE`; this test is what says it happened.
+/// `merge_series` only inserted its own row, A would still point at B, an id that no longer
+/// exists, and resolution would need a recursive walk that is slower and can spin on a cycle. The
+/// compression is one `UPDATE`; this test says it happened.
 #[tokio::test]
 async fn merging_a_survivor_repoints_the_aliases_that_pointed_at_it() {
     let db = TestDb::spawn().await;
@@ -2221,20 +2185,19 @@ async fn merging_a_survivor_repoints_the_aliases_that_pointed_at_it() {
 
 /// A merge and its revert leave the database byte-identical to how it started.
 ///
-/// This is the assertion the whole undo journal exists for, and it is deliberately made by
-/// *comparing the database to itself* rather than by checking a list of tables: a per-table
-/// assertion is exactly the thing that goes stale when someone adds a table, which is the failure
-/// mode `every_column_pointing_at_a_series_is_folded_or_deliberately_cascaded` already exists to
-/// catch on the forward path. Here the same risk runs backwards — a table the merge folds and the
-/// revert does not restore — and the only check that cannot rot is the whole-content one.
+/// The assertion the undo journal exists for, made by *comparing the database to itself*, not a
+/// list of tables: a per-table assertion goes stale when someone adds a table, the failure
+/// `every_column_pointing_at_a_series_is_folded_or_deliberately_cascaded` catches on the forward
+/// path. Here the risk runs backwards, a table the merge folds and the revert does not restore,
+/// and only the whole-content check cannot rot.
 ///
 /// The fixture is chosen so every shape of change in the journal is exercised at once:
 ///
 /// - a row only the **absorbed** series had (a second reader's watchlist entry, its own source),
 /// - a row only the **survivor** had (the first reader's watchlist entry),
 /// - a row **both** had at the same key, where the merge overwrote the survivor's value with
-///   `GREATEST` (the first reader's progress, 5.0 against 9.0) — the one case a `RETURNING`-based
-///   journal cannot reconstruct,
+///   `GREATEST` (the first reader's progress, 5.0 against 9.0), the one case a
+///   `RETURNING`-based journal cannot reconstruct,
 /// - and a title present on both sides, so the union insert has something to skip and the revert
 ///   has something it must *not* delete.
 #[tokio::test]
@@ -2249,7 +2212,7 @@ async fn a_merge_and_its_revert_leave_the_database_exactly_as_it_was() {
     let other = seed::user(&db, "other").create().await;
 
     // Both sides, same reader, different frontiers: the merge keeps the further one, so the
-    // survivor's row is *overwritten* rather than created.
+    // survivor's row is *overwritten*, not created.
     watchlist_upsert(&db.pool, reader, keep, WatchStatus::Reading, true)
         .await
         .expect("survivor watchlist");
@@ -2260,7 +2223,7 @@ async fn a_merge_and_its_revert_leave_the_database_exactly_as_it_was() {
         .await
         .expect("absorbed progress");
     // A row only the absorbed series has, so the revert has something to move back off the
-    // survivor entirely rather than merely restore.
+    // survivor entirely, not merely restore.
     watchlist_upsert(&db.pool, other, drop, WatchStatus::Completed, false)
         .await
         .expect("absorbed watchlist");
@@ -2312,7 +2275,7 @@ async fn a_merge_and_its_revert_leave_the_database_exactly_as_it_was() {
 ///
 /// Every bookmark, external mapping and shared link names an id. A revert that re-created the
 /// series under a fresh id would restore the data and break exactly the references the merge
-/// broke — which is the harm the whole feature exists to undo.
+/// broke, the harm the feature exists to undo.
 #[tokio::test]
 async fn a_revert_restores_the_original_id_and_removes_the_forwarding_address() {
     let db = TestDb::spawn().await;
@@ -2352,11 +2315,11 @@ async fn a_revert_restores_the_original_id_and_removes_the_forwarding_address() 
     );
 }
 
-/// Reverting twice is refused rather than half-applied.
+/// Reverting twice is refused, not half-applied.
 ///
-/// The journal is not idempotent — it re-inserts rows and re-points ids — so applying it to a
-/// database that has already been restored would fail partway through on a primary key. Refusing
-/// on the live id is what turns that into a clean 409.
+/// The journal re-inserts rows and re-points ids, so it is not idempotent: applied to a restored
+/// database it would fail partway on a primary key. Refusing on the live id makes that a clean
+/// 409.
 #[tokio::test]
 async fn a_second_revert_is_refused() {
     let db = TestDb::spawn().await;
@@ -2379,23 +2342,23 @@ async fn a_second_revert_is_refused() {
 
 /// Every row of every table a revert is expected to restore, as text, keyed by table.
 ///
-/// Read through `to_jsonb` so the comparison is over *values* rather than over a hand-written
-/// column list — the same reason the journal itself round-trips through the composite type.
+/// Read through `to_jsonb` so the comparison is over *values*, not a hand-written column list,
+/// the reason the journal itself round-trips through the composite type.
 /// Sorted inside each table so two equal sets compare equal regardless of physical row order,
 /// which changes freely when a row is deleted and re-inserted.
 ///
 /// # What this deliberately does not cover
 ///
 /// The `Handling::Cascades` tables are the recommender's *derived* rows: the merge lets them go
-/// with the absorbed series and the revert re-queues both series for a rebuild rather than
-/// reconstructing them, because re-deriving is the only way to be sure they agree with the
-/// restored truth. Asserting they came back would be asserting the wrong thing.
+/// with the absorbed series and the revert re-queues both series for a rebuild, since
+/// re-deriving is the only way to be sure they agree with the restored truth. Asserting they came
+/// back would assert the wrong thing.
 ///
-/// `rec_repair_queue` is excluded for the opposite reason — it is a work queue, not state. The
+/// `rec_repair_queue` is excluded for the opposite reason: it is a work queue, not state. The
 /// merge enqueues the survivor and the revert enqueues both, and neither can un-request a rebuild
 /// that has already been asked for.
 async fn snapshot(db: &TestDb) -> std::collections::BTreeMap<String, Vec<String>> {
-    // Derived from `SERIES_REFERENCES` rather than listed again, so a table classified as folded
+    // Derived from `SERIES_REFERENCES`, not listed again, so a table classified as folded
     // there is compared here without this function changing. Plus the series row itself and the
     // forwarding map, which that list does not name.
     let mut tables: std::collections::BTreeSet<&str> = SERIES_REFERENCES
@@ -2438,9 +2401,9 @@ fn pair_key(a: SeriesId, b: SeriesId) -> (SeriesId, SeriesId) {
 /// The sweep writes a run's review verdicts in one statement, and its `prior` CTE reads
 /// `merge_candidates` in the same statement as the upsert that changes it. That is only correct
 /// because a data-modifying CTE sees the snapshot taken at statement start; read after the write
-/// instead â€” or join against the upsert's `RETURNING` â€” and every pair in the batch comes back
-/// `refreshed`, the one outcome that reports the queue as not having grown. The console's queue
-/// arithmetic (`queued + reopened - withdrawn`) is computed from exactly these.
+/// instead, or join against the upsert's `RETURNING`, and every pair in the batch comes back
+/// `refreshed`, the one outcome reporting that the queue did not grow. The console's queue
+/// arithmetic (`queued + reopened - withdrawn`) is computed from these.
 #[tokio::test]
 async fn a_batched_queue_write_judges_each_pair_against_its_own_prior_state() {
     use tankovault_db::repo::matching::{
@@ -2523,12 +2486,11 @@ async fn a_batched_queue_write_judges_each_pair_against_its_own_prior_state() {
 /// **A batched write must survive a series merged away while the batch was being judged.**
 ///
 /// Both id columns are `REFERENCES series(id)`, and the sweep judges a whole shortlist against
-/// facts it loaded up front before writing the verdicts in one statement — so a series absorbed in
-/// the meantime, by the sweep's own automatic merge or by an operator in the console, left a
-/// verdict naming a row that no longer existed. Postgres rejected it and the whole statement with
-/// it: `insert or update on table "merge_candidates" violates foreign key constraint
-/// "merge_candidates_candidate_id_fkey"`, which failed the exhaustive sweep outright and lost
-/// every other verdict in the batch on the way out.
+/// facts loaded up front before writing the verdicts in one statement, so a series absorbed
+/// meanwhile, by the sweep's own merge or an operator, leaves a verdict naming a deleted row. The
+/// bug: Postgres rejects the whole statement (`insert or update on table "merge_candidates"
+/// violates foreign key constraint "merge_candidates_candidate_id_fkey"`), failing the sweep and
+/// losing every other verdict in the batch.
 #[tokio::test]
 async fn a_batched_write_drops_a_pair_whose_series_has_been_merged_away() {
     use tankovault_db::repo::matching::{
@@ -2685,13 +2647,12 @@ async fn a_batched_distinct_verdict_reports_what_it_closed_and_spares_a_dismissa
 
 /// **Flagging a merge that was never reverted must not fail on the absorbed series.**
 ///
-/// Flagging suppresses the pair so a later sweep cannot merge it again, and it does that by
-/// writing a dismissed `merge_candidates` row — whose two id columns are foreign keys into
-/// `series`. After a merge that has *not* been reverted, one of the pair is exactly what no longer
-/// exists, so the suppression the operator asked for was answered with
-/// `violates foreign key constraint "merge_candidates_candidate_id_fkey"` and the flag failed.
-/// Suppressing nothing is correct here: the sweep shortlists live series only, so a pair that
-/// cannot recur needs no suppression.
+/// Flagging suppresses the pair by writing a dismissed `merge_candidates` row, whose two id
+/// columns are foreign keys into `series`. After an unreverted merge one of the pair no longer
+/// exists, so the bug is the flag failing with
+/// `violates foreign key constraint "merge_candidates_candidate_id_fkey"`. Suppressing nothing is
+/// correct: the sweep shortlists live series only, so a pair that cannot recur needs no
+/// suppression.
 #[tokio::test]
 async fn flagging_an_unreverted_merge_records_the_flag_without_the_absorbed_series() {
     use tankovault_db::repo::matching::{
@@ -2753,11 +2714,10 @@ async fn flagging_an_unreverted_merge_records_the_flag_without_the_absorbed_seri
 /// **The decision journal's batch insert must round-trip its arrays and its documents.**
 ///
 /// A run's review and distinct decisions travel as one `jsonb` document, unpacked by
-/// `jsonb_to_recordset` against an explicit column list â€” two of those columns are `text[]` and
-/// three are `jsonb`. A wrong type there does not fail the statement; it yields NULL or an empty
-/// array. `signals`, `blocked_by` and the itemised score would then arrive empty, and those are
-/// the whole reason the journal exists: they are what an operator reads to decide whether an
-/// automatic merge was justified.
+/// `jsonb_to_recordset` against an explicit column list, two of them `text[]` and three `jsonb`.
+/// A wrong type there yields NULL or an empty array instead of failing, so `signals`,
+/// `blocked_by` and the itemised score would arrive empty, and they are what an operator reads to
+/// decide whether an automatic merge was justified.
 #[tokio::test]
 async fn the_decision_journal_batch_round_trips_arrays_and_documents() {
     use tankovault_db::repo::matching::{
@@ -2872,12 +2832,11 @@ async fn the_decision_journal_batch_round_trips_arrays_and_documents() {
     assert_eq!(withdrawn.blocked_by, Vec::<String>::new());
 }
 
-/// **A batch must refuse two entries naming one pair rather than sending them to the database.**
+/// **A batch must refuse two entries naming one pair instead of sending them to the database.**
 ///
-/// `ON CONFLICT DO UPDATE` cannot touch the same row twice in one statement â€” Postgres raises a
-/// cardinality violation â€” so the shape of the bug is not a wrong answer but a whole sweep's
-/// queue write failing on a driver error, taking the run's counts with it. Rejecting it in the
-/// caller names the problem instead.
+/// `ON CONFLICT DO UPDATE` cannot touch the same row twice in one statement, and Postgres raises
+/// a cardinality violation, so the bug is a whole sweep's queue write failing on a driver error,
+/// taking the run's counts with it. Rejecting it in the caller names the problem.
 #[tokio::test]
 async fn a_batch_refuses_the_same_pair_twice() {
     use tankovault_db::repo::matching::{NewMergeCandidate, record_merge_candidates};
@@ -2914,13 +2873,12 @@ async fn a_batch_refuses_the_same_pair_twice() {
 
 /// **Reading the journal must survive a decision that carries an undo journal.**
 ///
-/// `undo_breakdown` sized each segment with `jsonb_array_length(e.v)` and guarded it with
-/// `jsonb_typeof(e.v) = 'array'` in the same `WHERE`. Postgres orders the clauses of one qual by
-/// cost and planned the guard *behind* the call it was guarding, so the statement died with
-/// `cannot get array length of a non-array` on the journal's `version` — every page of the
-/// console's default view (`revertible`) 500ed, and so did any page holding one merged decision.
-/// Nothing caught it because every other test in this file journals `undo: None`, which is the
-/// one shape the broken expression could read.
+/// The bug: sizing each segment with `jsonb_array_length(e.v)`, guarded by
+/// `jsonb_typeof(e.v) = 'array'` in the same `WHERE`. Postgres orders one qual's clauses by cost
+/// and can plan the guard *behind* the call it guards, so the statement dies with
+/// `cannot get array length of a non-array` on the journal's `version`, and every console page
+/// holding a merged decision 500s. Every other test here journals `undo: None`, the one shape the
+/// broken expression can read.
 #[tokio::test]
 async fn the_journal_lists_a_decision_that_carries_an_undo() {
     use tankovault_db::repo::matching::{
@@ -3022,13 +2980,12 @@ async fn the_journal_lists_a_decision_that_carries_an_undo() {
 
 /// A source filed under a series it does not belong to, carrying `titled` as its provider title.
 ///
-/// Ingested through the real path so it carries real chapters, then re-parented — the shape an
-/// alias over-attach leaves behind, and the shape no journal records.
+/// Ingested through the real path so it carries real chapters, then re-parented: the shape an
+/// alias over-attach leaves behind, which no journal records.
 ///
-/// `seed` must be a title nothing else in the fixture matches, and the assertion below is what
-/// keeps that true: seeding with the *shared* title instead let the canonicaliser attach it to one
-/// of the pair on its own, whereupon this helper re-parented and deleted a series under the test.
-/// That is the bug this file is about, reached by accident from the fixture.
+/// `seed` must be a title nothing else in the fixture matches, which the assertion below keeps
+/// true: seeded with the *shared* title, the canonicaliser attaches it to one of the pair, and
+/// this helper re-parents and deletes a series under the test.
 async fn plant_stray(
     db: &TestDb,
     provider_id: ProviderId,
@@ -3108,14 +3065,12 @@ async fn chapter_count(db: &TestDb, series_id: SeriesId) -> i64 {
 
 /// **An unmerge must take back the sources the shared name attracted, not only the merge's rows.**
 ///
-/// The reported case: an operator unmerged a pair and the wrong chapters were still on the page.
-/// The merge itself had moved nothing — the absorbed row had been hollowed out by an earlier
-/// over-attach and had no sources left — so the exact inverse was a no-op over chapters, which
-/// hang off `series_sources` rather than off `series`. Everything wrong predated the merge: the
-/// survivor answered to the other work's name and held the sources that name had pulled in, and a
-/// revert that ran only the inverse left both exactly where they were. Suppressing the pair did
-/// not help either, because it binds the duplicate sweep and the create-time attach path reads
-/// `series_titles`.
+/// The reported case: an operator unmerges a pair and the wrong chapters are still on the page.
+/// The merge moved nothing, since an earlier over-attach had hollowed out the absorbed row, so
+/// the exact inverse is a no-op over chapters, which hang off `series_sources`, not `series`. The
+/// survivor answers to the other work's name and holds the sources that name pulled in, and an
+/// inverse-only revert leaves both in place. Suppressing the pair binds only the duplicate sweep,
+/// while the create-time attach path reads `series_titles`.
 #[tokio::test]
 async fn an_unmerge_returns_the_sources_the_shared_name_attracted() {
     use tankovault_db::repo::matching::revert_merge_decision;
@@ -3186,12 +3141,10 @@ async fn an_unmerge_returns_the_sources_the_shared_name_attracted() {
 
 /// **An unmerge must take the shared name off the survivor, or the next scan re-attaches.**
 ///
-/// Suppressing the pair stops the *duplicate sweep* re-proposing it and nothing else.
-/// `find_candidates` — the create-time path a scan runs through — searches `series_titles` and has
-/// never heard of `merge_candidates`, so a shared alias left on the survivor re-files the same
-/// source under it on the next scan and the operator's judgement lasts until then. The restored
-/// series keeps its own copy: it is the row the revert vindicated, not the one that acquired names
-/// by absorbing.
+/// Suppressing the pair stops only the *duplicate sweep* re-proposing it. `find_candidates`, the
+/// create-time path a scan runs through, searches `series_titles` and ignores
+/// `merge_candidates`, so a shared alias left on the survivor re-files the same source under it on
+/// the next scan. The restored series keeps its own copy, as the row the revert vindicated.
 #[tokio::test]
 async fn an_unmerge_takes_the_shared_name_off_the_survivor_only() {
     use tankovault_db::repo::matching::revert_merge_decision;
@@ -3254,9 +3207,9 @@ async fn an_unmerge_takes_the_shared_name_off_the_survivor_only() {
 /// **A revert must never strip a series of its own canonical title.**
 ///
 /// Two rows colliding on a canonical title are a same-name case, not alias contamination, and the
-/// rule that removes shared names would otherwise take the survivor's own — leaving a live series
-/// answering to nothing and unreachable by any later scan. The sources named after it stay too:
-/// they are indistinguishable from the survivor's own by the only evidence this step uses.
+/// rule that removes shared names would otherwise take the survivor's own, leaving a live series
+/// answering to nothing and unreachable by any later scan. The sources named after it stay too,
+/// indistinguishable from the survivor's own by the only evidence this step uses.
 #[tokio::test]
 async fn an_unmerge_never_takes_the_survivors_own_title() {
     use tankovault_db::repo::matching::revert_merge_decision;
@@ -3346,11 +3299,10 @@ async fn an_unmerge_of_an_unrelated_pair_changes_nothing_extra() {
 
 /// **A failed revert must leave the decision unreverted, not half-applied.**
 ///
-/// The stamp used to follow a committed revert, so a failure between them left a restored
-/// catalogue with a decision row still marked revertible — and the retry then died on the live
-/// absorbed id with no way forward but SQL. One transaction is what makes the retry the operator
-/// reaches for actually work; this pins the observable half, that a second revert is refused and
-/// the first one's stamp is there.
+/// The bug: stamping after a committed revert lets a failure between them leave a restored
+/// catalogue with the decision still marked revertible, and the retry dies on the live absorbed
+/// id with no way forward but SQL. One transaction makes the retry work; this pins the
+/// observable half, that a second revert is refused and the first one's stamp is there.
 #[tokio::test]
 async fn an_unmerge_is_stamped_and_refuses_a_second() {
     use tankovault_db::repo::matching::{
@@ -3387,10 +3339,9 @@ async fn an_unmerge_is_stamped_and_refuses_a_second() {
 
 /// **Every merge must be reachable, not just the newest page of them.**
 ///
-/// The console's Merges section used to read one page of 200 and apply its lenses and search to
-/// that window, so a merge older than the 200th was unreachable, and a "why merged" link naming
-/// one opened a different merge instead. The filters now run in the statement, a decision
-/// resolves by id, and paging is stable over a sweep batch that shares one `decided_at`.
+/// The bug: applying the lenses and search to one fetched page makes older merges unreachable,
+/// and a "why merged" link naming one opens a different merge. The filters run in the statement,
+/// a decision resolves by id, and paging is stable over a sweep batch sharing one `decided_at`.
 #[tokio::test]
 #[expect(
     clippy::too_many_lines,
@@ -3526,7 +3477,7 @@ async fn the_merge_journal_filters_searches_pages_and_resolves_by_id_in_the_stat
     ));
 }
 
-/// Set an `AniList` mapping on a series directly.
+/// Sets an `AniList` mapping on a series directly.
 async fn map_anilist(db: &TestDb, series_id: SeriesId, external_id: &str) {
     sqlx::query(
         "INSERT INTO sync_mappings (series_id, provider, external_id) VALUES ($1, 'anilist', $2)",
@@ -3635,9 +3586,9 @@ async fn only_an_unreferenced_orphan_is_deleted() {
 /// The sweep shortlists a series whose canonical title is another series' *listing* title, and
 /// the pair facts carry the listing titles and `AniList` ids the matcher reads.
 ///
-/// Without the listing branch a mirror-created duplicate of an `AniList`-renamed series only met
-/// it through an alias (`docs/MATCHING_OVERHAUL.md` WP3); without the facts the sweep could not
-/// read the listing title as the primary identity it is.
+/// Without the listing branch a mirror-created duplicate of an `AniList`-renamed series meets it
+/// only through an alias; without the facts the sweep cannot read the listing title as the
+/// primary identity it is.
 #[tokio::test]
 async fn the_sweep_blocks_on_listing_titles_and_loads_them() {
     use tankovault_db::repo::matching::{find_duplicate_pairs, series_match_facts};
@@ -3692,9 +3643,8 @@ async fn stamp_discoveries(db: &TestDb, series: SeriesId, lag_hours: i32) {
 /// Two sources of one ongoing work see each new chapter within hours of each other, and two works
 /// sharing chapter numbers do not; a back catalogue imported in bulk says neither.
 ///
-/// The sweep reads this to corroborate an alias hit or veto a merge (`docs/MATCHING_OVERHAUL.md`
-/// WP5), so a query that counted bulk-imported chapters would agree on every pair scanned the
-/// same day.
+/// The sweep reads this to corroborate an alias hit or veto a merge, so a query counting
+/// bulk-imported chapters would agree on every pair scanned the same day.
 #[tokio::test]
 async fn live_timing_agrees_conflicts_or_says_nothing() {
     use tankovault_db::repo::matching::live_timing;
@@ -3726,10 +3676,10 @@ async fn live_timing_agrees_conflicts_or_says_nothing() {
 /// Reverting a merge whose survivor was itself merged away later is refused until the later
 /// merge is reverted, and then leaves nothing of the absorbed series behind.
 ///
-/// The revert addresses the rows the merge added to the survivor by the survivor's id, which no
-/// longer exists once B is merged into C: reverting A→B first failed on a foreign key halfway
-/// through, a server error that named neither the cause nor the merge to revert first, and the
-/// names A brought were on C where no statement keyed on B could reach them.
+/// The revert addresses the rows the merge added to the survivor by the survivor's id, which is
+/// gone once B is merged into C. The bug: reverting A→B first fails on a foreign key halfway
+/// through, a server error naming neither the cause nor the merge to revert first, and the names
+/// A brought sit on C where no statement keyed on B reaches them.
 #[tokio::test]
 async fn a_merge_into_a_since_merged_survivor_reverts_only_after_the_later_merge() {
     let db = TestDb::spawn().await;

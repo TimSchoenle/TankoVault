@@ -1,4 +1,4 @@
-//! A reader's global provider order — the fallback the per-series pin overrides.
+//! A reader's global provider order, the fallback the per-series pin overrides.
 
 use crate::error::DbResult;
 use sqlx::{PgExecutor, PgPool};
@@ -16,10 +16,10 @@ pub struct RankedProvider {
     pub name: String,
 }
 
-/// Read a reader's provider priority, most preferred first.
+/// Reads a reader's provider priority, most preferred first.
 ///
-/// Disabled providers are dropped rather than returned: they carry nothing a reader can open,
-/// so listing them would invite ranking a source that can never win.
+/// Disabled providers are dropped: they carry nothing a reader can open, and listing them would
+/// invite ranking a source that can never win.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -41,14 +41,13 @@ pub async fn get_provider_priority<'e, E: PgExecutor<'e>>(
     Ok(rows)
 }
 
-/// Replace a reader's provider priority with `providers`, in the order given.
+/// Replaces a reader's provider priority with `providers`, in the order given.
 ///
-/// Replace rather than merge: the list *is* the preference, and an empty slice clears it. The
-/// delete and the insert share one transaction because the unique index on `(user_id, position)`
-/// is checked per statement — a partial write would leave two providers claiming one rank.
+/// Replace, not merge: the list *is* the preference, and an empty slice clears it. The delete and
+/// the insert share one transaction because the unique index on `(user_id, position)` is checked
+/// per statement, and a partial write would leave two providers claiming one rank.
 ///
-/// Callers are expected to have rejected unknown or duplicated ids already; both reach here as
-/// a constraint violation (a 500) rather than something this layer can explain.
+/// Callers reject unknown or duplicated ids first; here both are a constraint violation.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -78,10 +77,10 @@ pub async fn set_provider_priority(
     Ok(())
 }
 
-/// The providers this reader has opted into early access for.
+/// Returns the providers this reader has opted into early access for.
 ///
-/// Presence in `user_provider_early_access` is the whole preference — see migration 0047 on why
-/// there is no boolean column and therefore no way for the table to disagree with itself.
+/// Presence in `user_provider_early_access` is the whole preference; see migration 0047 for why
+/// there is no boolean column, so the table cannot disagree with itself.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -96,15 +95,17 @@ pub async fn get_early_access_providers(pool: &PgPool, user_id: UserId) -> DbRes
     Ok(rows)
 }
 
-/// Replace the reader's early-access opt-ins with exactly `providers`.
+/// Replaces the reader's early-access opt-ins with exactly `providers`.
 ///
 /// Wholesale replacement inside one transaction, like the priority list above: the request body
 /// *is* the preference, so a provider left out of it is opted out afterwards. Doing it as a diff
 /// would need the client to know the current state to express "turn this one off".
 ///
+/// Callers validate the ids against the public provider list first, so a foreign-key violation here
+/// means the provider was retired mid-request.
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. Callers validate the ids against the public provider list
-/// first, so a foreign-key violation here means the provider was retired mid-request.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn set_early_access_providers(
     pool: &PgPool,
     user_id: UserId,

@@ -1,35 +1,33 @@
-//! The scan run/task lifecycle (`crates/db/src/repo/scans/`, TEST F-05).
+//! The scan run and task lifecycle (`crates/db/src/repo/scans/`).
 //!
-//! # What is actually at stake here
+//! # What is at stake
 //!
 //! The task row is the truth for **progress and audit**; `JetStream` is the truth for dispatch
-//! (`docs/ARCHITECTURE.md` §2). That split means these eleven statements are the only record of how much of a scan
-//! has happened, and delivery is **at-least-once** — a worker sees the same task twice whenever an
-//! ack is lost or an ack deadline lapses. So every statement here has to be idempotent under
-//! replay, and the interesting failures are all arithmetic rather than type errors:
+//! (`docs/ARCHITECTURE.md` §2). These statements are the only record of how much of a scan has
+//! happened, and delivery is **at-least-once**: a worker sees the same task twice whenever an ack
+//! is lost or an ack deadline lapses. Every statement must be idempotent under replay, and the
+//! interesting failures are arithmetic, not type errors:
 //!
-//! - **`done_tasks` / `failed_tasks` are counts of *tasks*, not of settle calls.**
-//!   [`finalize_if_complete`] decides a run is over by comparing their sum against `total_tasks`,
-//!   so counting one task twice finalises a run — and emits its single terminal event — while
-//!   other tasks are still running. See `SCAN-1` below.
-//! - **`ON CONFLICT DO NOTHING` is what makes fan-out replay-safe.** A redelivered
-//!   `catalog_page` re-attempts every child insert; the conflict clause is the only reason that
-//!   does not double the run's planned total.
+//! - **`done_tasks` and `failed_tasks` count *tasks*, not settle calls.**
+//!   [`finalize_if_complete`] compares their sum against `total_tasks`, so counting one task
+//!   twice finalises a run, and emits its single terminal event, while other tasks still run.
+//! - **`ON CONFLICT DO NOTHING` makes fan-out replay-safe.** A redelivered `catalog_page`
+//!   re-attempts every child insert; the conflict clause keeps the run's planned total from
+//!   doubling.
 //! - **`COALESCE(started_at, now())`** is the same property for the run: a re-`start` must not
 //!   restamp it, or a run's duration resets every time the planner message is redelivered.
 //!
-//! None of that is visible to `sqlx prepare --check`, and none of it is visible to the worker's
-//! own unit tests, which stop at the retry policy and never reach the database.
+//! None of that is visible to `sqlx prepare --check` or to the worker's unit tests, which stop at
+//! the retry policy and never reach the database.
 //!
-//! # SCAN-1 — what this suite found
+//! # Settle once
 //!
-//! `claim_task` had **no state guard at all**, and the three settle statements each excluded only
-//! the state they were about to write. So the ordinary redelivery path —
-//! `claim → complete → (ack lost) → claim → complete` — put a finished task back into `claimed`,
-//! which re-opened `complete_task`'s `state <> 'done'` guard and counted the task a second time.
-//! A `done` task could also be turned into a `failed` one, adding a `failed_tasks` count next to
-//! its `done_tasks` one, and a `failed` task could be `skipped`, which `skip_task`'s guard did not
-//! exclude. All four statements now exclude the same three terminal states: a task settles once.
+//! The bug: a `claim_task` with no state guard, and settle statements that each exclude only the
+//! state they write. The ordinary redelivery path `claim → complete → (ack lost) → claim →
+//! complete` then puts a finished task back into `claimed`, reopens `complete_task`'s guard, and
+//! counts the task twice; a `done` task can turn `failed`, and a `failed` one `skipped`, each
+//! adding a second count. All four statements exclude the same three terminal states, so a task
+//! settles once.
 //!
 //! Opt-in: gated behind the `integration` feature because it requires Docker.
 #![cfg(feature = "integration")]
@@ -47,8 +45,8 @@ use tankovault_test_support::{TestDb, seed};
 // Fixture
 // ---------------------------------------------------------------------------
 
-/// A run with `planned` tasks declared, in the `running` state — the state every task settles
-/// into and the only state [`scans::finalize_if_complete`] acts on.
+/// A run with `planned` tasks declared, in the `running` state, the state every task settles
+/// into and the only one [`scans::finalize_if_complete`] acts on.
 async fn a_running_run(db: &TestDb, planned: i32) -> ScanRunId {
     let run = scans::create_run(&db.pool, None, ScanMode::Full)
         .await
@@ -107,22 +105,19 @@ async fn attempts(db: &TestDb, task: ScanTaskId) -> i16 {
 }
 
 // ---------------------------------------------------------------------------
-// SCAN-1 — settle once
+// Settle once
 // ---------------------------------------------------------------------------
 
-/// **SCAN-1.** A task contributes exactly one count to its run, no matter how many times it is
-/// delivered.
+/// **A task contributes exactly one count to its run, however often it is delivered.**
 ///
-/// This is the worker's real code path, in order: `claim_task`, `complete_task`, then — the ack
-/// having been lost — `claim_task` and `complete_task` again. Before the fix the second claim
-/// moved the row out of `done`, which re-opened `complete_task`'s guard and made `done_tasks` 2
-/// for one task.
+/// The worker's real code path, in order: `claim_task`, `complete_task`, then, the ack lost,
+/// `claim_task` and `complete_task` again. The bug: the second claim moves the row out of
+/// `done`, reopening `complete_task`'s guard, so `done_tasks` is 2 for one task.
 ///
-/// The consequence is not a cosmetic counter: [`scans::finalize_if_complete`] fires on
-/// `done_tasks + failed_tasks >= total_tasks` and is the run's *only* terminal event, so an
-/// inflated count closes a run whose other tasks are still running — the console shows the scan
-/// finished, the aggregator stops relaying progress, and whatever those tasks write afterwards is
-/// attributed to a run that already ended.
+/// [`scans::finalize_if_complete`] fires on `done_tasks + failed_tasks >= total_tasks` and is the
+/// run's *only* terminal event, so an inflated count closes a run whose other tasks still run:
+/// the console shows the scan finished, the aggregator stops relaying progress, and later writes
+/// are attributed to a run that already ended.
 #[tokio::test]
 async fn a_redelivered_task_is_counted_once() {
     let db = TestDb::spawn().await;
@@ -171,13 +166,12 @@ async fn a_redelivered_task_is_counted_once() {
     assert_eq!(counters(&db, run).await, (2, 0, 2));
 }
 
-/// **SCAN-1.** The first terminal state a task reaches is the one it keeps, and the only one it is
-/// counted under.
+/// **The first terminal state a task reaches is the one it keeps, and the only one counted.**
 ///
-/// Three transitions, each of which used to be allowed by a guard that named only its own target
-/// state: `done → failed` (a redelivery of a completed task that errors this time), `failed → done`
-/// and `failed → skipped`. Each added a second count, and `failed → done` also erased the error
-/// message the operator triage feed reads.
+/// Three transitions a guard naming only its own target state allows: `done → failed` (a
+/// redelivery of a completed task that errors this time), `failed → done` and `failed → skipped`.
+/// Each adds a second count, and `failed → done` also erases the error message the triage feed
+/// reads.
 #[tokio::test]
 async fn a_settled_task_cannot_move_to_another_terminal_state() {
     let db = TestDb::spawn().await;
@@ -236,8 +230,8 @@ async fn a_settled_task_cannot_move_to_another_terminal_state() {
 /// A new run is queued, has nothing planned, and carries no timestamps.
 ///
 /// The console renders "queued" from exactly these columns, and `finalize_if_complete`'s
-/// `total_tasks > 0` guard depends on a fresh run starting at zero rather than at some default the
-/// schema might supply.
+/// `total_tasks > 0` guard depends on a fresh run starting at zero, not at some default the schema
+/// might supply.
 #[tokio::test]
 async fn a_new_run_is_queued_with_nothing_planned() {
     let db = TestDb::spawn().await;
@@ -258,7 +252,7 @@ async fn a_new_run_is_queued_with_nothing_planned() {
     assert!(run.finished_at.is_none());
 }
 
-/// `get_run` reports a missing run as [`DbError::NotFound`] rather than as an empty success.
+/// `get_run` reports a missing run as [`DbError::NotFound`], not as an empty success.
 ///
 /// The handler maps this variant to `404`; a `None` reaching it as `Ok` would surface as a `200`
 /// with an empty body or a `500`, depending on the caller.
@@ -271,9 +265,9 @@ async fn an_unknown_run_is_not_found() {
 
 /// `start_run` stamps `started_at` once and never moves it.
 ///
-/// `COALESCE(started_at, now())` is the whole point: the planner's start message is redeliverable,
-/// and a plain `started_at = now()` would restamp on every redelivery — so a run's elapsed time
-/// would reset itself and a stuck scan would look like it had just begun.
+/// `COALESCE(started_at, now())` is the point: the planner's start message is redeliverable, and
+/// a plain `started_at = now()` would restamp on every redelivery, so a stuck scan would look like
+/// it had just begun.
 #[tokio::test]
 async fn starting_a_run_twice_keeps_the_first_instant() {
     let db = TestDb::spawn().await;
@@ -338,8 +332,8 @@ async fn recent_runs_are_newest_first() {
 ///
 /// It is the run's single terminal event: the control-plane aggregator calls it on **every**
 /// progress message, so returning `Some` twice publishes two terminal events for one run, and
-/// returning `Some` early publishes one for a run that is still working. `state = 'running'` in the
-/// `WHERE` is what makes the second call a no-op — that is the atomic claim, not a comment.
+/// returning `Some` early publishes one for a run still working. `state = 'running'` in the
+/// `WHERE` makes the second call a no-op: it is the atomic claim.
 #[tokio::test]
 async fn a_run_finalizes_once_and_only_when_every_task_has_settled() {
     let db = TestDb::spawn().await;
@@ -387,9 +381,9 @@ async fn a_run_finalizes_once_and_only_when_every_task_has_settled() {
 
 /// A run is `failed` only when **every** task failed; one success makes it `completed`.
 ///
-/// The `CASE` reads `done_tasks = 0 AND failed_tasks > 0`, which is a judgement rather than a
-/// mechanism: a partially-failed scan did produce catalogue data and must not be presented — or
-/// alerted on — as a total failure. Inverting the test is invisible until a scan has a mix.
+/// The `CASE` reads `done_tasks = 0 AND failed_tasks > 0`, a judgement, not a mechanism: a
+/// partially failed scan produced catalogue data and must not be presented, or alerted on, as a
+/// total failure. Inverting the test is invisible until a scan has a mix.
 #[tokio::test]
 async fn only_a_wholly_failed_run_is_failed() {
     let db = TestDb::spawn().await;
@@ -490,14 +484,14 @@ async fn finalize_ignores_an_unplanned_run_and_a_run_that_is_not_running() {
 /// Creating the same `(run, kind, target)` twice inserts once, and the caller can tell which call
 /// was the real one.
 ///
-/// `create_task` returning `None` is what stops a redelivered `catalog_page` from re-enqueuing —
-/// and, crucially, from calling `add_total_tasks` again. If it reported an id both times the run's
-/// planned total would grow on every redelivery and the run would never satisfy
-/// `done + failed >= total`, so it would hang in `running` forever.
+/// `create_task` returning `None` stops a redelivered `catalog_page` from re-enqueuing and from
+/// calling `add_total_tasks` again. Reporting an id both times would grow the planned total on
+/// every redelivery, and the run would never satisfy `done + failed >= total`, hanging in
+/// `running` forever.
 ///
 /// The `jsonb` key order is deliberately different on the second call: the unique index is on
 /// `(target::text)`, and `jsonb` normalises key order on the way in, so the two spellings are one
-/// target. On a `json`/`text` column they would be two, and every reordered target would be
+/// target. On a `json` or `text` column they would be two, and every reordered target would be
 /// double-enqueued.
 #[tokio::test]
 async fn creating_a_task_is_idempotent_on_the_run_kind_and_target() {
@@ -538,9 +532,9 @@ async fn creating_a_task_is_idempotent_on_the_run_kind_and_target() {
 ///
 /// The caller derives `add_total_tasks(delta)` and its publish list from the returned rows, so an
 /// over-report inflates the run's planned total (which never completes) and an under-report leaves
-/// a task in the table that nothing dispatches. Duplicates *within* one statement are the case
-/// that needs `DO NOTHING` rather than `DO UPDATE`: the latter cannot touch one row twice and
-/// raises `ON CONFLICT DO UPDATE command cannot affect row a second time`.
+/// a task in the table that nothing dispatches. Duplicates *within* one statement need
+/// `DO NOTHING`, not `DO UPDATE`, which cannot touch one row twice and raises
+/// `ON CONFLICT DO UPDATE command cannot affect row a second time`.
 #[tokio::test]
 async fn creating_a_batch_of_tasks_reports_only_the_new_ones() {
     let db = TestDb::spawn().await;
@@ -585,8 +579,8 @@ async fn creating_a_batch_of_tasks_reports_only_the_new_ones() {
 /// A claim records the worker and counts an attempt, and only ever moves a task forward.
 ///
 /// `attempts` is what the worker's delivery ceiling and the operator triage feed are read against,
-/// so it has to count deliveries rather than tasks. The state guard is SCAN-1: a settled task is
-/// not re-claimed, so a redelivery leaves both the state and the attempt count where they were.
+/// so it counts deliveries, not tasks. The state guard settles once: a settled task is not
+/// re-claimed, so a redelivery leaves both the state and the attempt count where they were.
 #[tokio::test]
 async fn claiming_records_the_worker_and_counts_the_attempt() {
     let db = TestDb::spawn().await;
@@ -630,8 +624,8 @@ async fn claiming_records_the_worker_and_counts_the_attempt() {
 ///
 /// This is the path used when the broker is unavailable, so it is the one that must not hand the
 /// same task to two workers: `FOR UPDATE SKIP LOCKED` plus `state = 'queued'` is the whole
-/// mechanism. `ORDER BY id` is FIFO only because the ids are `UUIDv7` — a switch to v4 would silently
-/// randomise the order, which is why the ordering is asserted rather than assumed.
+/// mechanism. `ORDER BY id` is FIFO only because the ids are `UUIDv7`; a switch to v4 would
+/// silently randomise the order, so the ordering is asserted.
 #[tokio::test]
 async fn the_fallback_claim_takes_one_queued_task_per_call_within_its_run() {
     let db = TestDb::spawn().await;
@@ -670,14 +664,13 @@ async fn the_fallback_claim_takes_one_queued_task_per_call_within_its_run() {
     );
 }
 
-/// The triage feed reports failures only, newest first, with the run context an operator needs —
+/// The triage feed reports failures only, newest first, with the run context an operator needs,
 /// and survives the provider being deleted.
 ///
-/// Three things drift silently here. The `WHERE t.state = 'failed'` is the difference between a
-/// triage feed and a task dump. The `LEFT JOIN providers` is why deleting a provider does not erase
-/// the record of what its scans did — an inner join would drop those rows entirely, which is the
-/// worst possible outcome for an audit surface. And `NULLS LAST` keeps a failure with no
-/// `finished_at` from sorting to the top of the page ahead of every real one.
+/// Three things drift silently. `WHERE t.state = 'failed'` separates a triage feed from a task
+/// dump. The `LEFT JOIN providers` keeps the record of a deleted provider's scans, which an inner
+/// join would drop, the worst outcome for an audit surface. And `NULLS LAST` keeps a failure with
+/// no `finished_at` from sorting ahead of every real one.
 #[tokio::test]
 async fn the_failed_task_feed_reports_failures_with_their_run_context() {
     let db = TestDb::spawn().await;
@@ -728,10 +721,10 @@ async fn the_failed_task_feed_reports_failures_with_their_run_context() {
 }
 
 // ---------------------------------------------------------------------------
-// Coalescing — one in-flight run per provider and mode
+// Coalescing: one in-flight run per provider and mode
 // ---------------------------------------------------------------------------
 
-/// A run in flight, holding one unsettled task — what the planner must refuse to duplicate.
+/// A run in flight, holding one unsettled task, which the planner must refuse to duplicate.
 async fn a_run_in_flight(db: &TestDb, provider: ProviderId, mode: ScanMode) -> ScanRunId {
     let run = scans::create_run(&db.pool, Some(provider), mode)
         .await
@@ -749,11 +742,10 @@ const AN_HOUR: std::time::Duration = std::time::Duration::from_secs(3600);
 /// **The clogged queue.** A provider whose fast scan is still running must not be given a second
 /// one.
 ///
-/// The scheduler sweeps on a fixed interval; a fast scan takes as long as the provider's feed and
-/// crawl budget make it take. When the second outgrows the first, every tick used to plan another
-/// identical `latest_feed` run — so that provider's lane filled with re-reads of a feed it was
-/// already reading, and because the worker drains the whole fast tier before it looks at the full
-/// one, no full scan anywhere in the deployment was served either.
+/// The scheduler sweeps on a fixed interval, and a fast scan takes as long as the provider's feed
+/// and crawl budget make it. The bug: when the scan outgrows the interval, every tick plans
+/// another identical `latest_feed` run, filling the lane with re-reads of a feed already being
+/// read, and since the worker drains the whole fast tier first, no full scan anywhere is served.
 #[tokio::test]
 async fn a_provider_already_scanning_does_not_get_a_second_run() {
     let db = TestDb::spawn().await;
@@ -769,8 +761,8 @@ async fn a_provider_already_scanning_does_not_get_a_second_run() {
 }
 
 /// Coalescing is per provider **and** per mode: neither a second provider nor the other mode is
-/// suppressed by a run that has nothing to do with it. Getting this wrong would be silent — one
-/// slow provider would simply stop the whole deployment scanning.
+/// suppressed by a run that has nothing to do with it. Getting this wrong would be silent: one
+/// slow provider would stop the whole deployment scanning.
 #[tokio::test]
 async fn coalescing_is_scoped_to_the_provider_and_the_mode() {
     let db = TestDb::spawn().await;
@@ -797,10 +789,10 @@ async fn coalescing_is_scoped_to_the_provider_and_the_mode() {
 /// A run whose tasks have all settled is **not** in flight, even while its row still says
 /// `running`.
 ///
-/// Finalisation happens when the aggregator sees the last progress event, and that event is
-/// best-effort — a lost one leaves the row `running` with nothing left to do. Treating the state
-/// alone as "in flight" would let one dropped event stop the provider being scanned again until
-/// the staleness bound expired.
+/// Finalisation happens when the aggregator sees the last progress event, which is best-effort,
+/// so a lost one leaves the row `running` with nothing to do. Treating the state alone as "in
+/// flight" would let one dropped event stop the provider being scanned until the staleness bound
+/// expires.
 #[tokio::test]
 async fn a_run_with_nothing_left_to_do_does_not_suppress_the_next_one() {
     let db = TestDb::spawn().await;
@@ -846,10 +838,10 @@ async fn a_run_that_can_never_settle_stops_suppressing_when_it_goes_stale() {
 
 /// A run the planner has created but not yet given a task to is already in flight.
 ///
-/// It is the narrowest window in the planner — one statement wide — and the only one where the
-/// unsettled-task test says "nothing to do" about a run that has not started doing it. A
-/// concurrent sweep and "Scan now" landing inside it would otherwise produce exactly the
-/// duplicate run this whole guard exists to prevent.
+/// The narrowest window in the planner, one statement wide, and the only one where the
+/// unsettled-task test says "nothing to do" about a run that has not started. A concurrent sweep
+/// and "Scan now" landing inside it would otherwise produce the duplicate run this guard exists
+/// to prevent.
 #[tokio::test]
 async fn a_run_whose_first_task_is_not_written_yet_is_already_in_flight() {
     let db = TestDb::spawn().await;
@@ -886,7 +878,7 @@ async fn a_finished_run_does_not_suppress_the_next_one() {
     }
 }
 
-/// Finish a run for `provider` in `state`, created `minutes_ago`.
+/// Finishes a run for `provider` in `state`, created `minutes_ago`.
 async fn a_finished_run(
     db: &TestDb,
     provider: ProviderId,
@@ -911,10 +903,10 @@ async fn a_finished_run(
 }
 
 /// **The provider that is never left alone.** The sweep asks every active provider on every tick,
-/// so a provider whose feed has been failing for a day was still asked for it 288 times a day —
-/// at an origin answering none of them, and where the host is refusing rather than broken, those
-/// requests are the reason it keeps refusing. The scheduler's cooldown is driven entirely by this
-/// count, so each of these cases is a way the backoff silently stops working.
+/// so a provider whose feed has failed all day is still asked on every tick, by an origin
+/// answering none of them, and where the host is refusing, those requests are why it keeps
+/// refusing. The scheduler's cooldown is driven by this count, so each case is a way the backoff
+/// silently stops working.
 #[tokio::test]
 async fn the_failure_streak_stops_at_the_last_run_that_did_not_fail() {
     let db = TestDb::spawn().await;
@@ -940,8 +932,8 @@ async fn the_failure_streak_stops_at_the_last_run_that_did_not_fail() {
         "the streak reports its *most recent* failure, which is what the cooldown counts from"
     );
 
-    // One success ends it outright — otherwise a provider that recovered would keep serving out
-    // the cooldown its outage earned.
+    // One success ends it outright, or a provider that recovered would keep serving out the
+    // cooldown its outage earned.
     a_finished_run(&db, provider, ScanMode::Fast, RunState::Completed, 50).await;
     assert_eq!(
         scans::failure_streak(&db.pool, provider, ScanMode::Fast)
@@ -964,8 +956,8 @@ async fn only_this_providers_finished_runs_of_this_mode_count_toward_its_streak(
         a_finished_run(&db, provider, ScanMode::Fast, RunState::Failed, ago).await;
     }
 
-    // A run still in flight is not evidence of anything yet — and one is queued on every sweep,
-    // so counting it would clear the streak every tick and the backoff would never engage.
+    // A run still in flight is not evidence yet, and one is queued on every sweep, so counting it
+    // would clear the streak every tick and the backoff would never engage.
     a_run_in_flight(&db, provider, ScanMode::Fast).await;
     // The other mode, and another provider, are separate histories.
     a_finished_run(&db, provider, ScanMode::Full, RunState::Completed, 10).await;
@@ -988,10 +980,10 @@ async fn only_this_providers_finished_runs_of_this_mode_count_toward_its_streak(
 }
 
 // ---------------------------------------------------------------------------
-// SCAN-2 — cancellation, and the stage telemetry that explains a slow run
+// Cancellation, and the stage telemetry that explains a slow run
 // ---------------------------------------------------------------------------
 
-/// Read one column off a task row.
+/// Reads one column off a task row.
 async fn task_stage_at(db: &TestDb, task: ScanTaskId) -> time::OffsetDateTime {
     sqlx::query_scalar("SELECT stage_at FROM scan_tasks WHERE id = $1")
         .bind(task.as_uuid())
@@ -1000,14 +992,13 @@ async fn task_stage_at(db: &TestDb, task: ScanTaskId) -> time::OffsetDateTime {
         .expect("read stage_at")
 }
 
-/// Cancelling a run stops it, abandons what it had outstanding, and — the part that is easy to
-/// get wrong — does **not** count the abandoned tasks as done.
+/// Cancelling a run stops it, abandons what it had outstanding, and does **not** count the
+/// abandoned tasks as done.
 ///
 /// [`scans::skip_task`] bumps `done_tasks`, because "nothing to do" settles a task as
 /// successfully as doing the work. Cancellation writes the same `skipped` state for a different
-/// reason, and reusing that increment would render a cancelled run as a completed one: a full
-/// progress bar on a scan the operator just stopped, which is the most misleading thing this
-/// surface could draw.
+/// reason, and reusing that increment would draw a full progress bar on a scan the operator just
+/// stopped.
 #[tokio::test]
 async fn cancelling_a_run_abandons_its_tasks_without_counting_them_as_done() {
     let db = TestDb::spawn().await;
@@ -1110,9 +1101,9 @@ async fn cancelling_the_queue_narrows_to_the_provider_it_names() {
 /// `stage_at` marks when a task entered its stage, and must not move while that stage merely
 /// reports progress.
 ///
-/// The whole value of the field is "this stage has not advanced in nine minutes". A stamp that
-/// reset on every counter tick would read as freshly entered forever — busiest exactly during the
-/// fan-out that ticks most often, and silent about the stall it exists to show.
+/// The field's value is "this stage has not advanced in nine minutes". A stamp reset on every
+/// counter tick would read as freshly entered forever, and say nothing of the stall it exists to
+/// show.
 #[tokio::test]
 async fn a_stages_start_time_survives_its_own_progress_reports() {
     let db = TestDb::spawn().await;
@@ -1157,10 +1148,10 @@ async fn a_stages_start_time_survives_its_own_progress_reports() {
 
 /// A settled task keeps the stage it ended in and records what it cost.
 ///
-/// The stage a task *died in* is the most useful single field on a failure — it says whether the
-/// provider stopped answering or our own ingest rejected what it sent — so the settle must not
-/// clear it. `wait_ms` is computed inside the statement rather than passed in, because the
-/// worker's clock and the database's are not the same clock.
+/// The stage a task *died in* is the most useful field on a failure, saying whether the provider
+/// stopped answering or our own ingest rejected what it sent, so the settle must not clear it.
+/// `wait_ms` is computed inside the statement, not passed in, because the worker's clock and the
+/// database's differ.
 #[tokio::test]
 async fn settling_records_the_breakdown_and_keeps_the_stage() {
     let db = TestDb::spawn().await;
@@ -1217,8 +1208,8 @@ async fn settling_records_the_breakdown_and_keeps_the_stage() {
     assert_eq!(telemetry["pace_wait_ms"], 61_000);
     assert_eq!(telemetry["stages"]["series_chapters"], 61_500);
 
-    // And the run-level rollup reads it back out of the jsonb — the console's whole answer to
-    // "why did this take so long" is that read, not the column.
+    // And the run-level rollup reads it back out of the jsonb: the console's answer to "why did
+    // this take so long" is that read, not the column.
     let (rollup, stages) = scans::run_telemetry(&db.pool, run)
         .await
         .expect("run telemetry");
@@ -1234,8 +1225,8 @@ async fn settling_records_the_breakdown_and_keeps_the_stage() {
 ///
 /// A worker serves at most one task per provider, so a provider's second run legitimately sits
 /// with everything queued and nothing claimed. Through `scan_runs.state` alone that is
-/// indistinguishable from a run that has hung — which is the reading it used to get, and the
-/// reason a queued full scan looked stuck behind the fast scan holding the provider's slot.
+/// indistinguishable from a hung run, so a queued full scan looks stuck behind the fast scan
+/// holding the provider's slot.
 #[tokio::test]
 async fn activity_tells_a_working_run_from_one_waiting_for_a_worker() {
     let db = TestDb::spawn().await;
@@ -1280,7 +1271,7 @@ async fn activity_tells_a_working_run_from_one_waiting_for_a_worker() {
 }
 
 // ---------------------------------------------------------------------------
-// Reconciliation — the queries that repair dispatch drift
+// Reconciliation: the queries that repair dispatch drift
 // ---------------------------------------------------------------------------
 
 /// Zero grace: every row already in the table counts as aged. Lets these tests assert on the
@@ -1297,8 +1288,8 @@ async fn only_task(db: &TestDb, run: ScanRunId) -> ScanTaskId {
     ScanTaskId::from_uuid(id)
 }
 
-/// The reconciler can only repair what this query reports, and it reports **per lane** — a
-/// provider and a scan mode — because that is the granularity the broker can be asked about.
+/// The reconciler can only repair what this query reports, and it reports **per lane** (a
+/// provider and a scan mode), the granularity the broker can be asked about.
 ///
 /// Both halves of the row fail silently, in opposite directions. Under-reporting `open_tasks`
 /// invents a deficit and republishes tasks whose messages are perfectly fine; over-reporting
@@ -1406,8 +1397,8 @@ async fn stranded_tasks_are_the_lanes_own_open_work() {
 ///
 /// Finalisation rides on a progress event and that event is best-effort, so one lost publish
 /// leaves a finished run open forever: the console counts it as active and, until it goes stale,
-/// the planner refuses to start another for that provider and mode. No further task will ever
-/// settle on it, so nothing else revisits it — this query is the only way back.
+/// the planner refuses to start another for that provider and mode. No further task will settle
+/// on it, so this query is the only way back.
 #[tokio::test]
 async fn a_run_whose_tasks_have_all_settled_is_offered_for_finalisation() {
     let db = TestDb::spawn().await;
@@ -1454,10 +1445,10 @@ async fn a_run_whose_tasks_have_all_settled_is_offered_for_finalisation() {
 /// A run that never planned a task at all is failed, but only once it is old enough to be one.
 ///
 /// The planner writes the run row, then the task, then publishes. Killed between the first two it
-/// leaves a run with nothing to republish and nothing that can ever settle it — invisible to both
-/// other repairs, and suppressing that provider's next run of the same mode until it goes stale.
-/// The age check is the only thing separating that from a plan milliseconds into the same
-/// sequence, so failing one of those would kill live scans as fast as the reconciler ran.
+/// leaves a run with nothing to republish and nothing to settle it, invisible to both other
+/// repairs and suppressing the provider's next run of the same mode until it goes stale. The age
+/// check separates that from a plan milliseconds into the same sequence; without it the
+/// reconciler would kill live scans.
 #[tokio::test]
 async fn a_run_that_never_planned_a_task_is_failed_but_only_once_it_is_old() {
     let db = TestDb::spawn().await;
@@ -1501,7 +1492,7 @@ async fn a_run_that_never_planned_a_task_is_failed_but_only_once_it_is_old() {
 
 const DAY: i64 = 24 * 60;
 
-/// Prune until a pass finds nothing, counting the passes.
+/// Prunes until a pass finds nothing, counting the passes.
 async fn prune_all(db: &TestDb, task_batch: i64) -> (scans::HistoryPrune, usize) {
     let mut total = scans::HistoryPrune::default();
     for pass in 1..=100 {

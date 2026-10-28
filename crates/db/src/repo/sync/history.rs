@@ -9,10 +9,11 @@ use tankovault_domain::{SeriesId, UserId};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-/// Append one row to the user-facing sync history (design v2 §B.2).
+/// Appends one row to the user-facing sync history (design v2 §B.2).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; an unknown `user_id`/`series_id` is a foreign-key violation (500).
+/// [`crate::DbError::Sqlx`] only, including the foreign-key violation of an unknown `user_id` or
+/// `series_id`.
 pub async fn append_history<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -57,7 +58,8 @@ pub struct HistoryRow {
     pub created_at: OffsetDateTime,
 }
 
-/// A page of a user's sync history, newest first, optionally filtered by series and/or provider.
+/// Returns a page of a user's sync history, newest first, optionally filtered by series and/or
+/// provider.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; no match is an empty `Vec`, never [`crate::DbError::NotFound`].

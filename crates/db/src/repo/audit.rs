@@ -28,11 +28,12 @@ pub struct AuditRecord<'a> {
     pub user_agent: Option<&'a str>,
 }
 
-/// Append one privileged-action record.
+/// Appends one privileged-action record.
+///
+/// A bad `outcome` fails the check constraint, a 500.
 ///
 /// # Errors
-/// `Sqlx` only; a bad `outcome` fails the check constraint (500), not
-/// [`crate::DbError::Conflict`].
+/// `Sqlx` only; a bad `outcome` fails the check constraint (500), not [`crate::DbError::Conflict`].
 pub async fn record<'e, E: PgExecutor<'e>>(exec: E, entry: &AuditRecord<'_>) -> DbResult<()> {
     sqlx::query!(
         "INSERT INTO audit_log (id, actor_id, action, target, detail, outcome, actor_ip, user_agent) \
@@ -51,7 +52,7 @@ pub async fn record<'e, E: PgExecutor<'e>>(exec: E, entry: &AuditRecord<'_>) -> 
     Ok(())
 }
 
-/// Delete records older than `retention_days`, returning how many were removed.
+/// Deletes records older than `retention_days`, returning how many were removed.
 ///
 /// GDPR Art. 5(1)(e) storage limitation. Capped per call so a first sweep over a
 /// long-neglected table can't hold a lock long enough to stall concurrent writers.
@@ -97,8 +98,8 @@ pub struct AuditView {
 
 /// What narrows a page of the audit trail.
 ///
-/// Every field is a SQL predicate, never a client-side filter: the point of paging the trail is
-/// that the console no longer holds it, so it cannot filter what it does not have.
+/// Every field is a SQL predicate, never a client-side filter: the console holds only one page
+/// of the trail, so it cannot filter what it does not have.
 #[derive(Debug, Clone, Default)]
 pub struct AuditFilter<'a> {
     /// Records attributed to one actor. `None` matches every actor *and* the system.
@@ -122,17 +123,15 @@ pub struct AuditPage {
     pub total: i64,
 }
 
-/// A filtered, paged window on the audit trail, newest first.
+/// Returns a filtered, paged window on the audit trail, newest first.
 ///
 /// Every predicate is `$n IS NULL OR …`, so one prepared statement serves every combination of
-/// filters — and each one is a *SQL* predicate, which is the whole point: with the trail paged,
-/// the console no longer holds it and cannot filter what it does not have.
+/// filters. `total` is read off the first row, as in [`crate::repo::user_admin::directory`], so
+/// a filter matching nothing and an offset past the end both report `0`.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. A filter matching nothing is an empty page with `total: 0`,
-/// not [`crate::DbError::NotFound`]; as in [`crate::repo::user_admin::directory`], `total` is
-/// read off the first row, so it is only meaningful because every row carries the same value —
-/// and an offset past the end reports `0`.
+/// [`crate::DbError::Sqlx`] only; a filter matching nothing is an empty page with `total: 0`, not
+/// [`crate::DbError::NotFound`].
 pub async fn list_filtered<'e, E: PgExecutor<'e>>(
     exec: E,
     filter: &AuditFilter<'_>,
@@ -194,10 +193,10 @@ pub async fn list_filtered<'e, E: PgExecutor<'e>>(
     Ok(AuditPage { items, total })
 }
 
-/// Every distinct action key present in the trail, for the filter's picker.
+/// Returns every distinct action key present in the trail, for the filter's picker.
 ///
-/// Read from the data rather than from a hand-written list: the vocabulary is whatever handlers
-/// have recorded, and a list here would go stale the first time one is added.
+/// Read from the data, since the vocabulary is whatever handlers have recorded and a
+/// hand-written list would go stale the first time one is added.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -208,7 +207,7 @@ pub async fn distinct_actions<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<St
     Ok(rows)
 }
 
-/// The most recent privileged actions, newest first, for the operator console.
+/// Returns the most recent privileged actions, newest first, for the operator console.
 ///
 /// # Errors
 /// `Sqlx` only; an empty log is `Ok(vec![])`, not [`crate::DbError::NotFound`].

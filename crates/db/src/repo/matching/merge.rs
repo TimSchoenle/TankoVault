@@ -6,55 +6,45 @@ use sqlx::{PgExecutor, Postgres, Transaction};
 use tankovault_domain::SeriesId;
 use uuid::Uuid;
 
-/// Merges `drop_id` into `keep_id` in one transaction, and deletes it (`docs/ARCHITECTURE.md` §10).
+/// Merges `drop_id` into `keep_id` in one transaction and deletes it
+/// (`docs/ARCHITECTURE.md` §10).
 ///
 /// Sources are re-parented; titles, tags, watchlist entries, progress, sync state and external
 /// mappings are unioned onto the survivor; related merge candidates are resolved. Every
 /// child-table move is `ON CONFLICT`, so a retry of a partially applied merge is safe, and read
 /// progress keeps whichever side had read further.
 ///
-/// Returns the [`MergeUndo`] journal — the exact inverse of everything this transaction did.
-/// The caller is expected to persist it (see
-/// [`record_merge_decisions`](super::record_merge_decisions)); a merge whose journal is dropped is
-/// a merge that cannot be reverted, which is the state this function used to leave the catalogue
-/// in unconditionally.
+/// Returns the [`MergeUndo`] journal, the inverse of every row this transaction moved. The
+/// recommender's derived tables are not in it: a revert queues them for recomputation instead of
+/// restoring them. The caller persists it with
+/// [`record_merge_decisions`](super::record_merge_decisions); a merge whose journal is dropped
+/// cannot be reverted.
 ///
 /// # The read-progress merge
 ///
-/// Both frontiers take the furthest of the two rows, and the part frontier is then dropped if the
-/// merged **whole** frontier covers it — the same staleness rule
+/// Both frontiers take the furthest of the two rows, and the part frontier is dropped if the
+/// merged **whole** frontier covers it (`floor(part) <= whole`). That is the staleness rule
 /// [`progress_set`](crate::repo::tracking::progress_set) and
-/// [`progress_mark_read`](crate::repo::tracking::progress_mark_read) apply (`floor(part) <=
-/// whole`), so all three write paths uphold §A.1 identically.
-///
-/// Getting this wrong produces a `(whole, part)` pair §A.1 forbids (e.g. `(6, 4.5)`) that every
-/// read model is entitled to assume cannot occur.
+/// [`progress_mark_read`](crate::repo::tracking::progress_mark_read) apply, so all three write
+/// paths uphold §A.1 and never store a forbidden pair such as `(6, 4.5)`.
 ///
 /// # Tables that must move with the merge
 ///
 /// `series_sync_overrides`, `sync_history`, `sync_remote_entries`, `sync_decisions`,
-/// `sync_match_blocks` and `notification_dedup` all reference `series`; omitting any of them
-/// silently destroys a user's per-series sync exclusions and visible sync history, orphans remote
-/// tracker entries matched to the absorbed series (`ON DELETE SET NULL` turns them *unmatched*,
-/// re-resolved from scratch on the next pull), or lets a title match an operator has already
-/// judged wrong come back.
+/// `sync_match_blocks` and `notification_dedup` all reference `series`. Omitting one silently
+/// destroys a user's sync exclusions or sync history, turns matched remote entries unmatched
+/// through `ON DELETE SET NULL`, or brings back a title match an operator judged wrong.
 ///
-/// # Merge candidates
-///
-/// The `UPDATE merge_candidates` below is belt-and-braces: both of that table's series columns are
-/// `ON DELETE CASCADE`, so every row naming `drop_id` is removed by the `DELETE FROM series` that
-/// follows regardless. What matters — and what `repo_matching.rs` asserts — is that no *unresolved*
-/// candidate is left naming a series that no longer exists, because
-/// [`list_open_merge_candidates`](super::list_open_merge_candidates) inner-joins both sides and such a row would silently vanish from
-/// the operator's queue while staying open in the table.
+/// The `UPDATE merge_candidates` is belt-and-braces, since both series columns cascade. What
+/// `repo_matching.rs` asserts is that no *unresolved* candidate names a deleted series:
+/// [`list_open_merge_candidates`](super::list_open_merge_candidates) inner-joins both sides,
+/// so such a row would vanish from the queue while staying open.
 ///
 /// # Errors
-/// [`crate::DbError::Conflict`] — a 409 — when `keep_id == drop_id`, checked before the
-/// transaction opens. [`crate::DbError::NotFound`] — a 404 — when either series is missing,
-/// which is one `count(*) = 2` check rather than two lookups so a series deleted between them
-/// cannot slip through. Otherwise [`crate::DbError::Sqlx`] from any statement in the
-/// transaction, which rolls back whole: a partial merge would leave sources re-parented to a
-/// series whose titles and progress had not moved, so there is no partial-success return.
+/// [`crate::DbError::Conflict`] (409) when `keep_id == drop_id`. [`crate::DbError::NotFound`]
+/// (404) when either series is missing, checked with one `count(*) = 2` so a series deleted
+/// between two lookups cannot slip through. Otherwise [`crate::DbError::Sqlx`], rolling the whole
+/// transaction back.
 pub async fn merge_series(
     pool: &sqlx::PgPool,
     keep_id: SeriesId,
@@ -83,8 +73,8 @@ pub async fn merge_series(
         return Err(crate::error::DbError::NotFound);
     }
 
-    // Read the pre-merge state before touching anything: after the first statement below, "what
-    // it was" is no longer recoverable from the database.
+    // Read the pre-merge state before touching anything: after the first statement below the
+    // database cannot say what it was.
     let mut undo = MergeUndo::new(keep, drop);
     super::undo::capture(&mut tx, &mut undo).await?;
 
@@ -262,8 +252,8 @@ async fn move_sync_state(tx: &mut Transaction<'_, Postgres>, undo: &mut MergeUnd
     .execute(&mut **tx)
     .await?;
 
-    // The user-visible sync log. Re-pointed rather than unioned: these rows have their own
-    // primary key and no uniqueness to collide on.
+    // The user-visible sync log. Re-pointed, not unioned: these rows have their own primary key
+    // and no uniqueness to collide on.
     undo.moved_history = sqlx::query_scalar!(
         "UPDATE sync_history SET series_id = $1 WHERE series_id = $2 RETURNING id",
         keep,
@@ -272,9 +262,9 @@ async fn move_sync_state(tx: &mut Transaction<'_, Postgres>, undo: &mut MergeUnd
     .fetch_all(&mut **tx)
     .await?;
 
-    // The operator-facing decision journal, same reasoning. Its foreign key is `SET NULL`, so
-    // omitting this would not delete the rows — it would quietly detach them from the series
-    // they describe, which is worse: the record survives and stops being findable.
+    // The operator-facing decision journal, likewise. Its foreign key is `SET NULL`, so omitting
+    // this would detach the rows from the series they describe: the record survives and stops
+    // being findable.
     undo.moved_decisions = sqlx::query_scalar!(
         "UPDATE sync_decisions SET series_id = $1 WHERE series_id = $2 RETURNING id",
         keep,
@@ -296,10 +286,9 @@ async fn move_sync_state(tx: &mut Transaction<'_, Postgres>, undo: &mut MergeUnd
         .await?,
     );
 
-    // Remote tracker entries already matched to the absorbed series. Without this the FK's
-    // `ON DELETE SET NULL` turns them into *unmatched* entries, and the next pull re-resolves
-    // them from the title — which is the same guess that produced the duplicate in the first
-    // place.
+    // Remote tracker entries matched to the absorbed series. Without this the foreign key's
+    // `ON DELETE SET NULL` makes them unmatched, and the next pull re-resolves them from the
+    // title, the same guess that produced the duplicate.
     undo.moved_remote_entries = rows_to_json(
         sqlx::query_scalar!(
             "UPDATE sync_remote_entries SET series_id = $1 WHERE series_id = $2 \
@@ -339,9 +328,8 @@ async fn move_notification_dedup(
 ) -> DbResult<()> {
     let keep = undo.survivor_id;
     let drop = undo.absorbed_id;
-    // Notification suppression. Not moving these re-notifies every watcher of the survivor for
-    // every chapter the absorbed series had already announced — which, on an automatic merge, is
-    // a mail-out nobody asked for.
+    // Notification suppression. Without this every watcher of the survivor is re-notified of
+    // every chapter the absorbed series already announced.
     undo.inserted_dedup = rows_to_json(
         sqlx::query_scalar!(
             "INSERT INTO notification_dedup (user_id, series_id, chapter_number, created_at) \
@@ -424,13 +412,12 @@ async fn fold_recommendations(
     .execute(&mut **tx)
     .await?;
 
-    // The survivor absorbed the loser's tags and authors, so its feature digest has changed and
-    // its embedding is stale. Queued rather than recomputed here: re-embedding needs the
-    // projection basis, which is the builder's, and a merge must not block on it.
+    // The survivor absorbed the loser's tags and authors, so its embedding is stale. Queued,
+    // not recomputed: re-embedding needs the builder's projection basis, and a merge must not
+    // block on it.
     //
-    // The *loser's* model rows need nothing — they cascade with the series row below, which is
-    // what makes a merged series unreachable from the index in the same transaction that
-    // deletes it rather than at the next build.
+    // The loser's model rows cascade with the series row below, so a merged series leaves the
+    // index in the transaction that deletes it.
     sqlx::query!(
         "INSERT INTO rec_repair_queue (series_id, reason) VALUES ($1, 'merged') \
          ON CONFLICT (series_id) DO NOTHING",
@@ -450,17 +437,15 @@ async fn forward_merged_id(
     let keep = undo.survivor_id;
     let drop = undo.absorbed_id;
     // Where this series went. Written before the DELETE, so the forwarding record and the
-    // disappearance are one atomic fact: there is no instant in which the row is gone and
-    // nothing says where to look instead.
+    // disappearance are one atomic fact.
     //
-    // Path compression, not a chain. When B is absorbed into C, every alias already pointing at
-    // B is re-pointed at C in the same statement, so the map stays exactly one hop deep forever
-    // and resolution is a single lookup. The alternative — walking A→B→C at read time — is both
-    // slower and able to spin on a cycle. Cycles cannot form here: the survivor always exists
-    // and the merged id is always deleted, so no id is ever on both sides.
+    // Path compression, not a chain: when B is absorbed into C, every alias pointing at B is
+    // re-pointed at C, so the map stays one hop deep and resolution is one lookup. A walk of
+    // A→B→C at read time would be slower and could spin on a cycle. No cycle can form, since the
+    // survivor exists and the merged id is deleted.
     //
-    // Compression runs before the insert. After it, the freshly written row would be a candidate
-    // for its own rewrite the next time this predicate changed.
+    // Compression runs before the insert, so the new row is never a candidate for its own
+    // rewrite.
     undo.recompressed = sqlx::query_scalar!(
         "UPDATE series_merges SET survivor_id = $1 WHERE survivor_id = $2 RETURNING merged_id",
         keep,
@@ -488,18 +473,15 @@ async fn forward_merged_id(
     Ok(())
 }
 
-/// Collect a `RETURNING to_jsonb(t)` result into the JSON array shape the undo journal stores.
+/// Collects a `RETURNING to_jsonb(t)` result into the JSON array shape the undo journal stores.
 fn rows_to_json(rows: Vec<Option<serde_json::Value>>) -> serde_json::Value {
     serde_json::Value::Array(rows.into_iter().flatten().collect())
 }
 
-/// Where a series went, if it was merged away.
+/// Returns where a series went, if it was merged away.
 ///
-/// Returns `None` for an id that is either still live or was never known — the caller cannot
-/// distinguish those and does not need to: both mean "no forwarding address".
-///
-/// One lookup, never a walk. [`merge_series`] path-compresses on write, so the map is exactly
-/// one hop deep and a recursive resolution here would be dead code that only appears correct.
+/// `None` for an id that is live or was never known; both mean no forwarding address. One
+/// lookup, never a walk, since [`merge_series`] path-compresses on write.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; an unknown id is `Ok(None)`, not [`crate::DbError::NotFound`].
@@ -516,11 +498,10 @@ pub async fn resolve_merged_series<'e, E: PgExecutor<'e>>(
     Ok(survivor.map(SeriesId::from_uuid))
 }
 
-/// Resolve many ids at once, returning only those that actually moved.
+/// Resolves many ids at once, returning only those that moved.
 ///
-/// The batch form exists because the request path resolves a reader's seeds together — a
-/// per-seed round trip would be twenty-five queries to discover that, usually, none of them
-/// moved.
+/// The request path resolves a reader's seeds together, where a round trip per seed would be
+/// twenty-five queries to learn that usually none moved.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.

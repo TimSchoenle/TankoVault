@@ -1,27 +1,27 @@
 //! GDPR data-subject operations: portability (Art. 20) and erasure (Art. 17).
 //!
-//! Each is one explicit statement, not a loop over repo functions — a table added later must
-//! force a visible change here, or a generic walker would silently omit it from the export.
+//! Each is one explicit statement, not a loop over repo functions, so a table added later
+//! forces a visible change here; a generic walker would silently omit it from the export.
 
 use crate::error::DbResult;
 use serde_json::Value as Json;
 use sqlx::PgExecutor;
 use tankovault_domain::UserId;
 
-/// Assemble everything the system holds about one user as one portable JSON document (one
-/// round trip, so it can't interleave with concurrent writes).
+/// Assembles everything the system holds about one user as one portable JSON document, in one
+/// round trip so it cannot interleave with concurrent writes.
 ///
-/// Credentials (password hash, session/OAuth tokens) are excluded — an export is a
-/// commonly-emailed file. `WebAuthn` credentials carry their metadata only: the serialised
-/// credential is the library's business, and `credential_id` is withheld because observing one is
-/// the first half of the registration-collision takeover `0022_passkeys.up.sql` blocks with its
-/// `UNIQUE`. A TOTP secret is withheld outright — see the comment on that key. The
-/// subject's own `audit_log` rows are projected, not dumped (no `detail`; `target` only when it
-/// names the subject), so an operator's export can't leak another subject's identity
+/// Credentials (password hash, session and OAuth tokens) are excluded, because an export is a
+/// commonly emailed file. `WebAuthn` credentials carry their metadata only: `credential_id` is
+/// withheld because observing one is the first half of the registration-collision takeover
+/// `0022_passkeys.up.sql` blocks with its `UNIQUE`. A TOTP secret is withheld outright; see the
+/// comment on that key. The subject's `audit_log` rows are projected, with no `detail` and a
+/// `target` only when it names the subject, so an export cannot leak another subject's identity
 /// (Art. 15(4)).
 ///
 /// # Errors
-/// `Sqlx` only; an unknown `user_id` returns an empty document, not `NotFound`.
+/// `Sqlx` only; an unknown `user_id` returns a document with `exported_at`, a null `profile` and
+/// empty arrays, not `NotFound`.
 pub async fn export_user_data<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<Json> {
     let export = sqlx::query_scalar!(
         "SELECT json_build_object( \
@@ -135,11 +135,11 @@ pub async fn export_user_data<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -
     Ok(export)
 }
 
-/// Erase a user and everything owned by them (GDPR Art. 17). Returns `false` when no such
-/// user existed, so callers can distinguish "erased" from "already gone".
+/// Erases a user and everything they own (GDPR Art. 17), returning `false` when no such user
+/// existed.
 ///
-/// `audit_log.actor_id` is `ON DELETE SET NULL`, not cascaded — keeps the audit trail
-/// (pseudonymised, under legitimate interest, Art. 6(1)(f)) once the identity link is gone.
+/// `audit_log.actor_id` is `ON DELETE SET NULL`, not cascaded, which keeps the audit trail
+/// pseudonymised under legitimate interest (Art. 6(1)(f)) once the identity link is gone.
 ///
 /// # Errors
 /// `Sqlx` only; "no such user" is `Ok(false)`, not `NotFound`.

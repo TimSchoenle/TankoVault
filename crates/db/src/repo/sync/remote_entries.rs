@@ -1,5 +1,5 @@
-//! Snapshots of what a provider's list actually held (`docs/ARCHITECTURE.md` §15), kept for every fetched
-//! entry whether or not it matched — the unmatched ones are the queue the admin console works.
+//! Snapshots of what a provider's list held (`docs/ARCHITECTURE.md` §15), kept for every fetched
+//! entry whether or not it matched; the unmatched ones are the admin console's queue.
 
 use crate::error::DbResult;
 use sqlx::PgExecutor;
@@ -29,7 +29,7 @@ pub struct FetchedRemoteEntry {
     pub series_id: Option<SeriesId>,
 }
 
-/// Upsert every fetched remote entry for one account in one statement, not one round trip per
+/// Upserts every fetched remote entry for one account in one statement, not one round trip per
 /// entry.
 ///
 /// `DISTINCT ON` is required: `ON CONFLICT DO UPDATE` aborts if a statement touches one row

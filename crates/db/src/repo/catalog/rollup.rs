@@ -30,8 +30,8 @@ impl RollupCheck {
     }
 }
 
-/// Compare up to `limit` sources after `after` (in id order) with a live count, rebuild the ones
-/// that disagree, and report what was found.
+/// Compares up to `limit` sources after `after` (in id order) with a live count, rebuilds the ones
+/// that disagree, and reports what was found.
 ///
 /// One statement reads both sides, so a chapter an ingest commits meanwhile is either in both
 /// the count and the rollup or in neither, and is never reported as drift.

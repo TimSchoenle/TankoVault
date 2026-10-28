@@ -11,58 +11,42 @@ pub type DuplicatePair = (SeriesId, SeriesId);
 
 use super::MAX_KEY_FANOUT;
 
-/// Every pair of *existing* series whose titles collide on the whitespace-insensitive key and
-/// that the sweep has not already recorded a verdict for.
+/// Returns every pair of *existing* series whose titles collide on the whitespace-insensitive key
+/// and that the sweep has not already recorded a verdict for.
 ///
-/// # Why blocking on the compact key
+/// # Blocking on the compact key
 ///
-/// A duplicate sweep cannot score 26 418 × 26 418 pairs, so it needs a cheap predicate that
-/// admits every pair worth looking at and almost nothing else. The compact key — the normalized
-/// title with its spaces removed — is exactly that: it is an equality (so it is an index lookup,
-/// not a similarity scan), and the class of duplicate it admits is the one the create-time
-/// matcher is worst at, because a missing space between two HTML elements destroys both the
-/// trigram score and the token-set ratio at once.
+/// A sweep cannot score every pair of the catalogue, so it needs a cheap predicate that admits
+/// every pair worth a look and little else. The compact key, the normalized title without
+/// spaces, is an equality, so an index lookup, and it admits the duplicate the create-time
+/// matcher handles worst: a missing space between two HTML elements wrecks both the trigram
+/// score and the token-set ratio.
 ///
-/// Four collisions count, and they are four different provider behaviours: two canonical
-/// titles agreeing, one series' canonical title agreeing with another's *alternative* title
-/// (the same work listed under its romaji name on one site and its english name on another),
-/// two series sharing an alternative title, and a source's *listing* title agreeing with
-/// another series' canonical or listing title (a mirror that registered its own series because
-/// `AniList` had renamed the one its siblings sit under).
+/// Four collisions count: two canonical titles; one series' canonical title and another's
+/// *alternative* title, the same work under its romaji and english names; two shared
+/// alternative titles; and a source's *listing* title against another series' canonical or
+/// listing title, a mirror that registered its own series after `AniList` renamed the one its
+/// siblings sit under.
 ///
-/// The result is only a *shortlist*. Every pair is re-scored in full — with the tags, authors,
-/// release years and alternative titles that the create-time path never had — before anything
-/// is queued, let alone merged.
+/// The result is a *shortlist*: every pair is re-scored with the tags, authors, years and
+/// alternative titles the create-time path never had before anything is queued.
 ///
-/// # Why an over-shared key is dropped
+/// A key held by more than `MAX_KEY_FANOUT` series is dropped. Equality gives no protection
+/// against one key held by thousands of series, an all-pairs clique behind a `LIMIT`; scraped
+/// summary labels such as `Status` or `Genres` produce exactly that, and a title thousands of
+/// series answer to identifies none of them.
 ///
-/// A blocking key is only cheap while it is selective, and equality gives no protection against
-/// one key being held by thousands of series: that is not a shortlist, it is an all-pairs clique
-/// with a `LIMIT` in front of it. Six such keys — `Status`, `Alternative`, `Genres`, `View`,
-/// `Rating`, `Release`, scraped as alternative titles out of a summary block's labels — took the
-/// live shortlist from 4 352 pairs to 15 176 110, and buried a byte-identical duplicate at
-/// position 8.9 million of a list the sweep reads 500 of. `MAX_KEY_FANOUT` is the ceiling, and
-/// the justification is independent of what produced the key: a title thousands of series answer
-/// to does not identify any of them.
+/// # Progress
 ///
-/// # Why already-recorded pairs are excluded entirely
+/// This is the *new-pair* shortlist, under a `LIMIT`, so every pair with a `merge_candidates`
+/// row of any kind is excluded; an open one would otherwise return in the same prefix forever.
+/// Open pairs are re-scored by [`open_merge_pairs`] and scorer-distinct ones by
+/// [`distinct_merge_pairs`], each on its own budget.
 ///
-/// This is the *new-pair* shortlist, and it is ordered with a `LIMIT`, so it needs a progress
-/// guarantee. Excluding only resolved pairs did not give it one — a pair queued for review is
-/// still open, so it came back in the same prefix on the next run, forever. Every pair with a
-/// row of any kind is now this function's business no longer: the open ones are re-scored by
-/// [`open_merge_pairs`] and the scorer-distinct ones by [`distinct_merge_pairs`], each on its
-/// own budget and least-recently-scored first.
-///
-/// # Why there is no ordering
-///
-/// There used to be an `ORDER BY (lo, hi)`. It sorts by uuid, so it expressed no priority at all,
-/// and it forced the entire pair set — all three branches, unioned and anti-joined — to be built
-/// and sorted before the `LIMIT` could take a prefix of it. Progress does not depend on it:
-/// every pair returned here is judged and leaves with a `merge_candidates` row of some kind,
-/// which the anti-join below then excludes, so an arbitrary budget-sized slice drains the
-/// shortlist exactly as a sorted one does. Do not restore an ordering without a priority that is
-/// worth paying for the sort.
+/// There is no `ORDER BY`. A uuid order expresses no priority and forces the whole unioned,
+/// anti-joined set to be built and sorted before the `LIMIT`. Every returned pair leaves with a
+/// row the anti-join then excludes, so any budget-sized slice drains the shortlist. Add an
+/// ordering only for a priority worth the sort.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -152,12 +136,11 @@ pub async fn find_duplicate_pairs<'e, E: PgExecutor<'e>>(
 /// Series with no source paired with a sourced series of the same normalized title, as
 /// `(orphan, twin)`, at most `limit` of them and one twin per orphan.
 ///
-/// The twin rule of the duplicate sweep: an orphan is the leftover copy of a fixed registration
-/// bug (22,696 of 23,500 production orphans had a sourced twin), so an exact title is enough —
-/// unless both carry an `AniList` id and the ids differ. Deliberately **not** capped by
-/// `MAX_KEY_FANOUT`: the copies sit in clusters of 17–256 per title, which is exactly what the cap
-/// exists to refuse, and lifting it globally would let junk keys collapse unrelated works. Being
-/// sourceless is what makes this safe to run uncapped; nothing here can join two sourced series.
+/// The twin rule of the duplicate sweep: an orphan with a sourced twin is a leftover copy, so an
+/// exact title is enough unless both carry different `AniList` ids. **Not** capped by
+/// `MAX_KEY_FANOUT`: such copies come in clusters larger than the cap, and lifting it globally
+/// would let junk keys collapse unrelated works. Running uncapped is safe because one side is
+/// sourceless, so this can never join two sourced series.
 ///
 /// Among several sourced twins the one with the most sources wins, so every orphan of one title
 /// lands on the same survivor.
@@ -244,19 +227,17 @@ pub struct SeriesMatchFacts {
 impl SeriesMatchFacts {
     /// How much of the catalogue this series carries, most significant first.
     ///
-    /// The merge survivor is chosen by this rather than by which row is older or which id sorts
-    /// lower. Both sides' data is preserved either way — the merge unions everything — but the
-    /// absorbed id *stops existing*, and every bookmark, notification and external tracker
-    /// mapping that already names it breaks. Keeping the series with more sources, chapters and
-    /// watchers is keeping the id more of the world already points at.
+    /// The merge survivor is chosen by this, not by age or id order. The merge unions both
+    /// sides' data, but the absorbed id stops existing and every bookmark, notification and
+    /// tracker mapping naming it breaks, so the id more of the world points at survives.
     #[must_use]
     pub const fn weight(&self) -> (i64, i64, i64) {
         (self.source_count, self.chapter_count, self.watcher_count)
     }
 }
 
-/// Load [`SeriesMatchFacts`] for the given series, in one round trip. Unknown ids are absent
-/// from the result rather than an error.
+/// Loads [`SeriesMatchFacts`] for the given series in one round trip. Unknown ids are absent from
+/// the result.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -329,24 +310,18 @@ pub async fn series_match_facts<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// The trigram similarity of each given pair, on the same rule [`find_candidates`] uses.
+/// Returns the trigram similarity of each given pair.
 ///
 /// Canonical against canonical, and each side's alternative titles against the other's canonical
-/// title, taking the best of the three.
+/// title, taking the best of the three. Source listing titles are not compared, so a pair
+/// [`find_candidates`] scored `1` on a compact-key listing-title match can score lower here.
 ///
 /// [`find_candidates`]: super::find_candidates
 ///
-/// # Why the sweep needs this
-///
-/// [`SeriesMatchFacts`] carries everything about *one* series, and the scorer's base is the
-/// strongest of three views — of which one, the trigram score, is a property of the *pair* and
-/// comes from the database. Scoring a pair with that term set to zero would systematically
-/// under-score it, and the sweep withdraws queue rows that fall below the review floor: a pair
-/// whose stored score came from a trigram match would be re-scored lower on no new evidence and
-/// quietly dropped out of the queue. Pairs are batched into one round trip so this costs the
-/// sweep a query, not a query per pair.
-///
-/// Pairs whose ids do not both exist are absent from the result.
+/// [`SeriesMatchFacts`] describes one series, but the trigram score is a property of the pair
+/// and comes from the database. Scored as zero, a pair whose stored score came from a trigram
+/// match would drop below the review floor on no new evidence and leave the queue. Batched, so
+/// the sweep pays one query. Pairs whose ids do not both exist are absent.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -394,12 +369,12 @@ pub async fn pair_similarities<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// The pairs currently sitting open in the queue, for the sweep to re-score.
+/// Returns the pairs currently sitting open in the queue, for the sweep to re-score.
 ///
-/// A candidate recorded at ingest was scored before the series had tags, authors, a release year
-/// or alternative titles, so its stored score is a floor rather than a verdict. Re-scoring is
-/// how a pair that was genuinely ambiguous in January becomes an automatic merge once both sides
-/// have been enriched — without it, the queue only ever grows.
+/// A candidate recorded at ingest was scored before the series had tags, authors, a release
+/// year or alternative titles, so its stored score is a floor, not a verdict. Re-scoring lets an
+/// ambiguous pair become an automatic merge once both sides are enriched, or the queue only
+/// grows.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -442,31 +417,26 @@ pub struct DistinctVerdict<'a> {
     pub signals: &'a [&'a str],
 }
 
-/// Record the scorer's verdict that a batch of pairs are **not** duplicates, closing any open
+/// Records the scorer's verdict that a batch of pairs are **not** duplicates, closing any open
 /// queue row for each. Returns, per pair, whether a row was open before this call.
 ///
-/// # Why these are rows rather than deletions
+/// "Distinct" is the *scorer's* conclusion on evidence enrichment keeps changing, so the pair
+/// must be reconsidered later, but as a row, not a deletion: a deleted verdict is invisible to
+/// [`find_duplicate_pairs`], whose `LIMIT` would return the pair in the same prefix every run.
+/// A row with `outcome = 'distinct'` is excluded from the new-pair shortlist and revisited by
+/// [`distinct_merge_pairs`] on its own budget.
 ///
-/// It used to delete, so that a later sweep could reconsider the pair. Reconsidering it is
-/// right — "distinct" here is the *scorer's* conclusion, not an operator's, reached on evidence
-/// that enrichment keeps changing — but deletion is not how to get it. It also made the verdict
-/// invisible to [`find_duplicate_pairs`], which is ordered with a `LIMIT`: every distinct pair
-/// came straight back in the same prefix on the next run, and the shortlist never advanced past
-/// the pairs it had already judged. A row with `outcome = 'distinct'` is instead durable against
-/// the new-pair shortlist and revisited by [`distinct_merge_pairs`] on its own budget.
+/// An operator's `dismissed` is never overwritten: a human said these are different works, and
+/// re-entering the recheck rotation would undo that.
 ///
-/// An operator's `dismissed` is never overwritten. The two look alike and are not: a dismissal
-/// is a human saying these are different works, and it must suppress the pair permanently, which
-/// is exactly what re-entering the recheck rotation would undo.
-///
-/// A pair naming a series that no longer exists is dropped rather than written, exactly as in
-/// [`record_merge_candidates`](super::record_merge_candidates) and for the same reason: both id
-/// columns are foreign keys into `series`, and one violating row would fail the whole batch.
+/// A pair naming a deleted series is dropped, as in
+/// [`record_merge_candidates`](super::record_merge_candidates), since one foreign-key violation
+/// would fail the whole batch.
 ///
 /// # Errors
 /// [`crate::DbError::Conflict`] when a pair names one series twice, or when two entries name the
-/// same canonical pair — one `ON CONFLICT DO UPDATE` statement cannot touch a row twice.
-/// Otherwise [`crate::DbError::Sqlx`].
+/// same canonical pair, which one `ON CONFLICT DO UPDATE` cannot touch twice. Otherwise
+/// [`crate::DbError::Sqlx`].
 pub async fn record_distinct_pairs<'e, E: PgExecutor<'e>>(
     exec: E,
     verdicts: &[DistinctVerdict<'_>],
@@ -497,10 +467,10 @@ pub async fn record_distinct_pairs<'e, E: PgExecutor<'e>>(
         }));
     }
 
-    // `prior` reads the pre-insert snapshot, so it reports the state the upsert is about to
-    // replace; a data-modifying CTE runs whether or not the outer query selects from it. `live`
-    // is the foreign-key guard — two primary-key lookups, so a pair either side of which has been
-    // merged away since it was judged leaves the batch instead of failing it.
+    // `prior` reads the pre-insert snapshot, so it reports the state the upsert replaces; a
+    // data-modifying CTE runs whether or not the outer query selects from it. `live` is the
+    // foreign-key guard: two primary-key lookups, so a pair with a side merged away since it was
+    // judged leaves the batch instead of failing it.
     let rows = sqlx::query!(
         "WITH input AS ( \
            SELECT d.id, LEAST(d.a, d.b) AS series_id, GREATEST(d.a, d.b) AS candidate_id, \
@@ -590,13 +560,12 @@ pub async fn record_distinct_pair<'e, E: PgExecutor<'e>>(
         .is_some_and(|(_, was_open)| was_open))
 }
 
-/// The pairs the scorer has judged distinct, least-recently-scored first, for the sweep to
+/// Returns the pairs the scorer has judged distinct, least-recently-scored first, for the sweep to
 /// reconsider.
 ///
-/// The counterpart to [`record_distinct_pair`] keeping the row: a verdict reached before both
-/// sides were enriched is a snapshot, not a fact, and re-scoring bumps `updated_at`, so draining
-/// this oldest-first is a round-robin over the whole set rather than a fixed prefix — which is
-/// the property [`find_duplicate_pairs`] lacked.
+/// A verdict reached before both sides were enriched is a snapshot, not a fact. Re-scoring bumps
+/// `updated_at`, so draining this oldest-first is a round-robin over the whole set, not a fixed
+/// prefix.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.

@@ -9,12 +9,11 @@ use tankovault_domain::{AccountStatus, User, UserId};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-/// Look up a user by email address (the forgot-password entry point). `None` lets the handler
+/// Looks up a user by email address (the forgot-password entry point). `None` lets the handler
 /// respond identically whether or not the address is registered.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only. An unregistered address is `Ok(None)`, not [`DbError::NotFound`] —
-/// preserves the anti-enumeration response.
+/// [`DbError::Sqlx`] only; an unregistered address is `Ok(None)`, not [`DbError::NotFound`].
 pub async fn find_by_email<'e, E: PgExecutor<'e>>(exec: E, email: &str) -> DbResult<Option<User>> {
     let row = sqlx::query_as!(
         UserRow,
@@ -41,9 +40,11 @@ pub struct PasswordResetRecord {
 
 /// Persist a freshly issued password-reset token as its SHA-256 hash.
 ///
+/// A duplicate `token_hash` is a generator fault (500), not a client-triggerable
+/// [`DbError::Conflict`] (409).
+///
 /// # Errors
-/// [`DbError::Sqlx`] only. A duplicate `token_hash` is a generator fault (500), not a
-/// client-triggerable [`DbError::Conflict`] (409).
+/// [`DbError::Sqlx`] only.
 pub async fn insert_password_reset<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -63,10 +64,12 @@ pub async fn insert_password_reset<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Find a password-reset token by its hash, regardless of expiry/use.
+/// Finds a password-reset token by its hash, regardless of expiry/use.
+///
+/// Expiry and use are record fields for the caller to check.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only. An unknown token is `Ok(None)`; expiry/use are record fields.
+/// [`DbError::Sqlx`] only; an unknown token is `Ok(None)`.
 pub async fn find_password_reset<'e, E: PgExecutor<'e>>(
     exec: E,
     token_hash: &str,
@@ -94,14 +97,15 @@ pub async fn find_password_reset<'e, E: PgExecutor<'e>>(
     }))
 }
 
-/// Atomically mark a reset token consumed (single-use). `0` rows means already used or expired.
+/// Marks a reset token consumed, atomically, so it is single-use.
 ///
 /// The expiry is re-checked here, not only in the caller's lookup: the handler hashes the new
 /// password between the two, and a token must not be honoured past its expiry for as long as
 /// that hash waited.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only. Losing the race is `Ok(0)`, not an error.
+/// [`DbError::Sqlx`] only; an unknown, already used or expired token is `Ok(0)`, whether or not
+/// a concurrent request consumed it.
 pub async fn consume_password_reset<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) -> DbResult<u64> {
     let result = sqlx::query!(
         "UPDATE password_reset_tokens SET used_at = now() \
@@ -113,11 +117,13 @@ pub async fn consume_password_reset<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) ->
     Ok(result.rows_affected())
 }
 
-/// Replace a user's password hash (pre-computed argon2id PHC string).
+/// Replaces a user's password hash (pre-computed argon2id PHC string).
+///
+/// An unknown `id` is an error, so a reset never reports success while the old password stays
+/// live.
 ///
 /// # Errors
-/// [`DbError::NotFound`] — a 404 — when `id` matches no row, so a reset never reports success
-/// while leaving the old password live. Otherwise [`DbError::Sqlx`].
+/// [`DbError::NotFound`] for an unknown `id`, [`DbError::Sqlx`] otherwise.
 pub async fn update_password<'e, E: PgExecutor<'e>>(
     exec: E,
     id: UserId,

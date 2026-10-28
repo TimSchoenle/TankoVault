@@ -109,8 +109,8 @@ async fn other_active_holders_protects_the_last_holder_of_a_critical_capability(
 }
 
 /// The permission editor's catalogue does not list `system.superuser`, so *every* checklist
-/// submit omits it. A plain whole-set diff would therefore revoke the deployment owner's grant
-/// the first time anyone edited their other permissions — and no API path can put it back.
+/// submit omits it. A plain whole-set diff would revoke the deployment owner's grant the first
+/// time anyone edited their other permissions, and no API path can put it back.
 #[tokio::test]
 async fn a_permission_edit_that_omits_the_super_user_grant_leaves_it_in_place() {
     let db = TestDb::spawn().await;
@@ -197,11 +197,10 @@ async fn only_the_deployments_first_account_can_claim_the_super_user() {
     );
 }
 
-/// Make `user` look older than everything else seeded in the test.
+/// Makes `user` look older than everything else seeded in the test.
 ///
 /// `ensure_super_user` orders by `created_at`, and accounts seeded back to back are microseconds
-/// apart — close enough that asserting on "the earliest" without saying which one is earliest
-/// would pin the clock rather than the rule.
+/// apart, so asserting on "the earliest" without choosing it would pin the clock, not the rule.
 async fn backdate(pool: &tankovault_db::PgPool, user: tankovault_domain::UserId) {
     sqlx::query("UPDATE users SET created_at = created_at - interval '1 day' WHERE id = $1")
         .bind(user.as_uuid())
@@ -210,10 +209,10 @@ async fn backdate(pool: &tankovault_db::PgPool, user: tankovault_domain::UserId)
         .expect("backdate");
 }
 
-/// A deployment can end up with no super user at all: accounts registered before the seed job
-/// ran (so the installer's claim found the database populated and did nothing), or the owner was
-/// erased. Neither state is recoverable by hand — the grant is unforgeable through the API — so
-/// the deployment would keep serving with nobody holding the capabilities a later release adds.
+/// A deployment can end up with no super user: accounts registered before the seed job ran, so
+/// the installer's claim found the database populated and did nothing, or the owner was erased.
+/// Neither is recoverable by hand, since the grant is unforgeable through the API, so nobody
+/// would hold the capabilities a later release adds.
 #[tokio::test]
 async fn ensure_super_user_promotes_the_earliest_active_administrator_when_there_is_none() {
     let db = TestDb::spawn().await;
@@ -340,12 +339,10 @@ async fn ensure_super_user_never_displaces_an_existing_owner() {
     );
 }
 
-/// The owner's *stored* grants used to stop at whatever the codebase defined the day their
-/// account was seeded. The seed is create-only, so `catalogue.read` and `catalogue.delete` —
-/// added long after — were never written against the deployment owner, and every surface that
-/// reads the rows rather than calling `PermissionSet::has` showed them as not holding the
-/// capability. The access was fine; the console said otherwise, which is indistinguishable from
-/// a broken grant when you are staring at an unticked box.
+/// The bug: a create-only seed stops the owner's *stored* grants at whatever the codebase defined
+/// the day their account was seeded, so permissions added later are never written. Every surface
+/// that reads the rows instead of calling `PermissionSet::has` then shows an unticked box for
+/// access the owner holds, indistinguishable from a broken grant.
 #[tokio::test]
 async fn the_super_user_gains_a_stored_row_for_every_capability_added_after_their_account() {
     let db = TestDb::spawn().await;

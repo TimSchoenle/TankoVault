@@ -1,4 +1,4 @@
-//! Chapter ingest against a real, migrated schema — pins the batching semantics
+//! Chapter ingest against a real, migrated schema, pinning the batching semantics
 //! `chapter.discovered` depends on.
 //!
 //! Gated behind the `integration` feature (requires Docker).
@@ -55,8 +55,8 @@ async fn a_rescan_of_an_unchanged_listing_discovers_nothing() {
     let db = TestDb::spawn().await;
     let provider = seed::provider(&db, "ingest-rescan").create().await;
 
-    // `ChapterUpsert` is deliberately not `Clone` — it is a one-shot ingest payload — so the
-    // identical listing is rebuilt rather than cloned.
+    // `ChapterUpsert` is a one-shot ingest payload and deliberately not `Clone`, so the identical
+    // listing is rebuilt.
     let listing = || {
         vec![
             chapter(1.0, Some("Awakening"), "/c/1"),
@@ -205,7 +205,7 @@ async fn a_listing_that_repeats_a_chapter_number_does_not_abort_the_batch() {
 /// `chapters.number` is `numeric(10,4)`.
 ///
 /// The bug: `DISTINCT ON` deduplicated on the raw `float8`, so both rows survived it, and the
-/// unique index then saw one key twice — "ON CONFLICT DO UPDATE command cannot affect row a
+/// unique index then saw one key twice: "ON CONFLICT DO UPDATE command cannot affect row a
 /// second time", which aborts the statement and fails the entire scan batch, not just the odd
 /// chapter. The dedup key has to be the same cast expression the column stores.
 #[tokio::test]
@@ -247,8 +247,8 @@ async fn chapter_numbers_that_round_to_one_value_do_not_abort_the_batch() {
     );
 }
 
-/// An empty listing must be a no-op rather than a malformed statement — a provider whose
-/// chapter selector stopped matching produces exactly this.
+/// An empty listing must be a no-op, not a malformed statement: a provider whose chapter
+/// selector stopped matching produces exactly this.
 #[tokio::test]
 async fn an_empty_chapter_list_is_a_no_op() {
     let db = TestDb::spawn().await;
@@ -275,10 +275,9 @@ async fn an_empty_chapter_list_is_a_no_op() {
 /// A chapter whose paywall lifts must lose its unlock time in the same write.
 ///
 /// `chapters_unlocks_at_requires_early_access` (migration `0047`) rejects a free row carrying an
-/// `unlocks_at`, and the whole chapter batch is one statement — so a re-scan that freed a chapter
-/// while leaving the stale date behind would not store a slightly-wrong row, it would abort the
-/// ingest of every chapter of that series. The upsert overwrites both columns rather than
-/// coalescing them, which is what makes the transition safe; this pins that, in both directions.
+/// `unlocks_at`, and the whole chapter batch is one statement, so a re-scan that freed a chapter
+/// but kept the stale date would abort the ingest of every chapter of that series. The upsert
+/// overwrites both columns instead of coalescing them; this pins that, in both directions.
 #[tokio::test]
 async fn freeing_a_locked_chapter_clears_the_unlock_time_it_carried() {
     let db = TestDb::spawn().await;
@@ -349,9 +348,9 @@ async fn freeing_a_locked_chapter_clears_the_unlock_time_it_carried() {
 
 /// The series screen's chapter list is scoped to the reader asking for it.
 ///
-/// Everything that screen shows is derived from this one list — the totals, the read/unread
-/// split, and the "next up" marker — so a paywalled chapter left in it put a link to a paywall
-/// under "next up" and made the counts disagree with every other surface. An anonymous visitor
+/// Everything that screen shows derives from this list (the totals, the read and unread split,
+/// the "next up" marker), so a paywalled chapter left in it puts a paywall link under "next up"
+/// and makes the counts disagree with every other surface. An anonymous visitor
 /// sees what an anonymous visitor sees on the provider's own site: the free chapters.
 #[tokio::test]
 async fn the_chapter_list_hides_paid_chapters_from_readers_who_have_not_bought_them() {
@@ -406,8 +405,8 @@ async fn the_chapter_list_hides_paid_chapters_from_readers_who_have_not_bought_t
         "the reader who bought this provider's early access sees it"
     );
 
-    // A stated unlock time that has passed frees the chapter for everyone, with no rescan — the
-    // same rule the unread predicate applies, and the reason `unlocks_at` is stored at all.
+    // A stated unlock time that has passed frees the chapter for everyone with no rescan, the
+    // rule the unread predicate applies and the reason `unlocks_at` is stored.
     sqlx::query(
         "UPDATE chapters SET unlocks_at = now() - interval '1 minute' WHERE number_milli = 30000",
     )
@@ -426,11 +425,11 @@ async fn series_count(db: &TestDb) -> i64 {
 
 /// Rescanning a source whose series has since been renamed must land in that series.
 ///
-/// Ingest used to re-canonicalise every scan on the page title. Once `AniList` had renamed the
-/// series, that title matched nothing, so each scan created a fresh series, wrote the page's
-/// metadata onto it, and left it with no source because the existing source is never
-/// re-pointed: dozens of identical "0 chapters" cards per work, and `chapter.discovered` naming a
-/// series nobody watches.
+/// The bug: re-canonicalising every scan on the page title. Once `AniList` renames the series,
+/// that title matches nothing, so each scan creates a fresh series, writes the page's metadata
+/// onto it, and leaves it with no source, since the existing source is never re-pointed: dozens
+/// of identical "0 chapters" cards per work, and `chapter.discovered` naming a series nobody
+/// watches.
 #[tokio::test]
 async fn a_rescan_after_a_rename_does_not_create_an_empty_duplicate() {
     let db = TestDb::spawn().await;
@@ -482,8 +481,8 @@ async fn a_rescan_after_a_rename_does_not_create_an_empty_duplicate() {
 /// The first full scan of a catalogue stub files into the stub's series, whatever it is titled.
 ///
 /// A listing and its series page often spell the work differently ("Return of the Mount Hua
-/// Sect" against "Hwasangwihwan"). Canonicalising the page title created a second series on the
-/// very first scan, while the stub's source — and every chapter — stayed on the first.
+/// Sect" against "Hwasangwihwan"). Canonicalising the page title would create a second series on
+/// the first scan, while the stub's source and every chapter stay on the first.
 #[tokio::test]
 async fn a_stub_scanned_under_another_title_keeps_its_series() {
     let db = TestDb::spawn().await;
@@ -521,10 +520,10 @@ async fn a_stub_scanned_under_another_title_keeps_its_series() {
 ///
 /// `register_chunk` creates a series per fresh path and then upserts the sources, and the upsert
 /// keeps the series a concurrent scan already filed the path under. The series this scan created
-/// for that path was left with no source: an orphan nothing would ever scan again
-/// (`docs/MATCHING_OVERHAUL.md` WP6). Each path must end up with exactly one series.
+/// for that path is left with no source, an orphan nothing would ever scan again. Each path must
+/// end up with exactly one series.
 ///
-/// The overlap is real concurrency, not staged: with no overlap this passes without the fix too,
+/// The overlap is real concurrency, not staged: with no overlap this passes without the guard too,
 /// so it can only ever fail for the right reason.
 #[tokio::test]
 async fn concurrent_registrations_of_one_path_leave_no_empty_series() {
@@ -561,10 +560,10 @@ async fn concurrent_registrations_of_one_path_leave_no_empty_series() {
 
 /// **A mirror listing attaches through a sibling source's listing title.**
 ///
-/// Once `AniList` has renamed a series, a mirror's stub (listing `Legend of Star General`) matched
-/// it only through an alias, which never attaches, so registration created a new series that the
-/// sweep later merged — 37 merges from that one key in production (`docs/MATCHING_OVERHAUL.md`
-/// WP3). The first source's listing title is a primary title, and the stub attaches to it.
+/// Once `AniList` has renamed a series, a mirror's stub (listing `Legend of Star General`)
+/// matches it only through an alias, which never attaches, so registration would create a new
+/// series for the sweep to merge later. The first source's listing title is a primary title, and
+/// the stub attaches to it.
 #[tokio::test]
 async fn a_mirror_stub_attaches_through_a_sibling_listing_title() {
     let db = TestDb::spawn().await;
@@ -612,10 +611,10 @@ async fn a_mirror_stub_attaches_through_a_sibling_listing_title() {
 
 /// **A source that only shares an alias with a series files its aliases on a series of its own.**
 ///
-/// Every attach filed the incoming source's alternative titles under the series it attached to,
-/// so one weak attach pulled the next work in through those names: a dozen hub series absorbed
-/// 20–100 different works each (`docs/MATCHING_OVERHAUL.md` §2). An alias-only match no longer
-/// attaches at all, which is what keeps the incoming aliases off the matched series.
+/// The bug: filing the incoming source's alternative titles under the series it attached to lets
+/// one weak attach pull the next work in through those names, until hub series absorb dozens of
+/// different works each. An alias-only match does not attach at all, which keeps the incoming
+/// aliases off the matched series.
 #[tokio::test]
 async fn an_alias_only_match_does_not_file_its_aliases_on_the_matched_series() {
     use tankovault_db::repo::catalog::list_series_titles;

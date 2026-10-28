@@ -1,10 +1,9 @@
 //! Operator-facing user administration.
 //!
-//! Split from [`crate::repo::users`] deliberately: that module is the authentication path,
-//! reached on every sign-in and every token refresh, and it must stay small enough to audit as
-//! a security-critical surface. This module is the administration path — searching a
-//! directory, editing someone else's identity, suspending an account — which has different
-//! callers, different authorization, and no business being mixed into the login query.
+//! Kept apart from [`crate::repo::users`], the authentication path reached on every sign-in and
+//! token refresh, which must stay small enough to audit as a security-critical surface. This is
+//! the administration path: searching the directory, editing someone else's identity,
+//! suspending an account. It has different callers and different authorization.
 //!
 //! Nothing here grants or revokes permissions; that is [`crate::repo::permissions`]. Nothing
 //! here erases an account; that is [`crate::repo::privacy::erase_user`], which is shared with
@@ -18,10 +17,8 @@ use uuid::Uuid;
 
 /// One row of the operator user directory.
 ///
-/// Carries a grant *count* rather than the grants themselves: the directory is a list, and a
-/// user's actual capabilities are what the detail view is for. The count is enough to answer
-/// "which of these accounts are privileged at all", which is the question the list is scanned
-/// for.
+/// Carries a grant *count*, not the grants: the list is scanned for which accounts are
+/// privileged at all, and the detail view shows what they can do.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct DirectoryRow {
     /// The account.
@@ -42,11 +39,10 @@ pub struct DirectoryRow {
     pub permission_count: i64,
     /// Whether this account holds the super-user grant.
     ///
-    /// Carried separately because the grant is not enumerable — it is absent from the permission
-    /// catalogue by design, so a client reconciling grants against that catalogue sees the
-    /// deployment owner as an account holding nothing.
+    /// Carried separately because the grant is absent from the permission catalogue, so a
+    /// client reconciling grants against that catalogue sees the owner as holding nothing.
     pub is_super_user: bool,
-    /// How many series the user tracks — the cheapest signal of a real, in-use account.
+    /// How many series the user tracks, the cheapest signal of an account in use.
     pub tracked_count: i64,
     /// Its most recent sign-in, `None` for an account that has never signed in.
     #[serde(with = "time::serde::rfc3339::option")]
@@ -66,20 +62,19 @@ pub struct DirectoryPage {
     pub total: i64,
 }
 
-/// Search the user directory.
+/// Searches the user directory.
 ///
 /// `search` matches username or email as a case-insensitive substring; an empty search lists
 /// everyone. Both columns are `citext`, so the comparison is already case-insensitive without
 /// a `lower()` wrapper that would defeat their unique indexes.
 ///
-/// The counts come from lateral subqueries rather than `GROUP BY` joins: with two independent
-/// one-to-many relations (permissions and watchlist entries), a join would multiply rows and
-/// need `count(DISTINCT …)` on both.
+/// The counts come from lateral subqueries: with two independent one-to-many relations, a
+/// `GROUP BY` join would multiply rows and need `count(DISTINCT …)` on both. `total` is read off
+/// the first row, so a search matching nobody reports `0`.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only — no other variant is reachable. A search matching nobody is an
-/// empty page with `total: 0`, not [`DbError::NotFound`]; note that `total` is read off the
-/// first row, so it is only meaningful because every returned row carries the same value.
+/// [`DbError::Sqlx`] only; a search matching nobody is an empty page with `total: 0`, not
+/// [`DbError::NotFound`].
 pub async fn directory<'e, E: PgExecutor<'e>>(
     exec: E,
     search: &str,
@@ -103,14 +98,11 @@ pub async fn directory<'e, E: PgExecutor<'e>>(
     // `$1 = ''` short-circuits the pattern match so an unfiltered listing does not pay for a
     // `LIKE '%%'` scan predicate on every row.
     //
-    // `ILIKE`, not `LIKE`, and that is a fix rather than a preference. `username`/`email` are
-    // `citext`, but `'%' || $1 || '%'` concatenates down to `text`, so `citext ~~ text`
-    // resolved to a plain case-sensitive `text ~~ text` — an operator searching for `alice`
-    // found nothing for a user who registered as `Alice`. Same root cause as
-    // `repo::users::CiText`, which fixes the equality lookups; a wrapper cannot fix this one
-    // because the concatenation, not the parameter, is what carries the type. Read that
-    // type's doc comment for why the schema's intent silently stops holding at the operator.
-    // A leading wildcard forecloses an index either way, so `ILIKE` costs nothing here.
+    // `ILIKE`, not `LIKE`: `username` and `email` are `citext`, but `'%' || $1 || '%'`
+    // concatenates to `text`, so `LIKE` would compare case-sensitively and miss `Alice` for
+    // `alice`. `repo::users::CiText` covers the equality lookups; no wrapper can fix this one,
+    // because the concatenation carries the type. A leading wildcard rules out an index
+    // either way, so `ILIKE` costs nothing.
     let rows = sqlx::query_as!(
         Row,
         "WITH matched AS ( \
@@ -202,10 +194,10 @@ pub struct UserDetail {
     pub open_privacy_requests: i64,
 }
 
-/// Fetch one user's administrative detail.
+/// Fetches one user's administrative detail.
 ///
 /// # Errors
-/// [`DbError::NotFound`] — a 404 — when no such user exists; otherwise [`DbError::Sqlx`].
+/// [`DbError::NotFound`] (404) when no such user exists; otherwise [`DbError::Sqlx`].
 pub async fn detail<'e, E: PgExecutor<'e>>(exec: E, id: UserId) -> DbResult<UserDetail> {
     let row = sqlx::query_as!(
         UserDetail,
@@ -270,22 +262,19 @@ pub async fn update_identity<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Suspend or reinstate an account.
+/// Suspends or reinstates an account.
 ///
-/// Suspending clears nothing else: the account's data, grants and links are untouched, so a
-/// suspension is reversible and is not a covert deletion. Revoking the account's live sessions
-/// is a *separate* call the caller makes deliberately
-/// ([`crate::repo::users::revoke_all_sessions`]) — a suspension that silently signed people
-/// out would be indistinguishable from one that did not, and an operator needs to know which
-/// they performed.
+/// Suspending clears nothing else: data, grants and links are untouched, so a suspension is
+/// reversible and not a covert deletion. Revoking live sessions is a separate call
+/// ([`crate::repo::users::revoke_all_sessions`]), so an operator knows which they performed.
 ///
-/// Reinstating clears `suspended_at` and the reason, so a re-suspension records its own fresh
-/// timestamp rather than showing the first one.
+/// Reinstating clears `suspended_at` and the reason, so a later suspension records its own
+/// timestamp. Setting the status an account already has succeeds and refreshes
+/// `suspended_at`.
 ///
 /// # Errors
-/// [`DbError::NotFound`] — a 404 — when `id` matches no row. Otherwise [`DbError::Sqlx`].
-/// Setting the status an account already has is not [`DbError::Conflict`]: it succeeds and
-/// refreshes `suspended_at`, which is deliberate for a re-suspension.
+/// [`DbError::NotFound`] (404) when `id` matches no row; otherwise [`DbError::Sqlx`]. Setting the
+/// status an account already has is not [`DbError::Conflict`].
 pub async fn set_status<'e, E: PgExecutor<'e>>(
     exec: E,
     id: UserId,
@@ -311,18 +300,17 @@ pub async fn set_status<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Confirm a user's email address administratively.
+/// Confirms a user's email address administratively.
 ///
-/// The escape hatch for a deployment whose outbound mail is broken or whose user never
-/// received the link: without it, an unverified account is permanently unable to sign in and
-/// has no self-service path back. Idempotent, matching
-/// [`crate::repo::users::mark_email_verified`].
+/// The escape hatch for a deployment whose outbound mail is broken or whose user never got the
+/// link: without it, an unverified account cannot sign in and has no self-service path back.
+/// Idempotent, like [`crate::repo::users::mark_email_verified`], but a missing user is an
+/// error here, so an operator is told the call did nothing.
 ///
 /// # Errors
-/// [`DbError::NotFound`] — a 404 — when `id` matches no row; otherwise [`DbError::Sqlx`].
-/// Unlike [`crate::repo::users::mark_email_verified`], which returns `Ok(())` for a missing
-/// user, this one reports it: an operator invoking the escape hatch needs to be told it did
-/// nothing.
+/// [`DbError::NotFound`] (404) when `id` matches no row; otherwise [`DbError::Sqlx`]. Unlike
+/// [`crate::repo::users::mark_email_verified`], which returns `Ok(())` for a missing user, this one
+/// reports it.
 pub async fn force_verify_email<'e, E: PgExecutor<'e>>(exec: E, id: UserId) -> DbResult<()> {
     let result = sqlx::query!(
         "UPDATE users SET email_verified_at = COALESCE(email_verified_at, now()) WHERE id = $1",

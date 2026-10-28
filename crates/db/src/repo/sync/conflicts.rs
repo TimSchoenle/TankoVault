@@ -27,12 +27,14 @@ pub struct NewConflict<'a> {
     pub remote_value: &'a str,
 }
 
-/// Queue a genuine, unresolved conflict for the `ask_me` policy (design v2 §B.3). Idempotent: a
+/// Queues a genuine, unresolved conflict for the `ask_me` policy (design v2 §B.3). Idempotent: a
 /// unique partial index caps this at one pending row per `(user, series, provider, field)`.
+///
+/// An already-queued conflict keeps the first detection's values.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; an already-queued conflict is `Ok(())`, not
-/// [`crate::DbError::Conflict`] — the row keeps the first detection's values.
+/// [`crate::DbError::Conflict`].
 pub async fn insert_conflict<'e, E: PgExecutor<'e>>(
     exec: E,
     conflict: &NewConflict<'_>,
@@ -87,7 +89,7 @@ pub struct ConflictRow {
     pub detected_at: OffsetDateTime,
 }
 
-/// Every pending (unresolved) conflict for a user, across all providers, newest first.
+/// Returns every pending (unresolved) conflict for a user, across all providers, newest first.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; nothing queued is an empty `Vec`, never
@@ -110,7 +112,7 @@ pub async fn list_pending_conflicts<'e, E: PgExecutor<'e>>(
     Ok(rows)
 }
 
-/// A pending conflict's identity + values, used to apply a user's resolution.
+/// A pending conflict's identity and values, used to apply a user's resolution.
 #[derive(Debug, Clone, FromRow)]
 pub struct ConflictDetail {
     /// The series the resolution writes to.
@@ -125,11 +127,13 @@ pub struct ConflictDetail {
     pub remote_value: String,
 }
 
-/// Fetch a single pending conflict scoped to its owner, if it exists and is unresolved.
+/// Fetches a single pending conflict scoped to its owner, if it exists and is unresolved.
+///
+/// Unknown, not-yours and already-resolved are all `None`: distinguishing them would let a
+/// client probe other users' conflict ids.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; unknown, not-yours and already-resolved are all `Ok(None)` —
-/// distinguishing them would let a client probe other users' conflict ids.
+/// [`crate::DbError::Sqlx`] only; unknown, not-yours and already-resolved are all `Ok(None)`.
 pub async fn get_pending_conflict<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -148,12 +152,14 @@ pub async fn get_pending_conflict<'e, E: PgExecutor<'e>>(
     Ok(row)
 }
 
-/// Mark a conflict resolved with the chosen side (`local` | `remote`). Returns `true` if a
+/// Marks a conflict resolved with the chosen side (`local` or `remote`), returning `true` if a
 /// pending row was updated.
 ///
+/// `false` covers the cases of [`get_pending_conflict`]. Never default a failure to `true`, or
+/// an already-applied resolution is silently re-offered.
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; `Ok(false)` covers the same cases as [`get_pending_conflict`] —
-/// never default it to `true`, or an already-applied resolution is silently re-offered.
+/// [`crate::DbError::Sqlx`] only; `Ok(false)` covers the same cases as [`get_pending_conflict`].
 pub async fn resolve_conflict<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -172,11 +178,12 @@ pub async fn resolve_conflict<'e, E: PgExecutor<'e>>(
     Ok(result.rows_affected() > 0)
 }
 
-/// Count a user's pending conflicts, for the account panel badge and the admin console.
+/// Counts a user's pending conflicts, for the account panel badge and the admin console.
+///
+/// Never default a failure to `0`: the badge reads zero as "nothing needs attention".
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; never default a failure to `0` — the badge reads zero as
-/// "nothing needs attention" and would hide the failure.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn count_pending_conflicts<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,

@@ -233,7 +233,7 @@ flate2 = "1"
 scraper = "0.29"
 governor = "0.10"
 url = "2.5"
-# Headless-browser driver for the optional `render` service (design §9). Default
+# Headless-browser driver for the optional `render` service (`docs/ARCHITECTURE.md` §9). Default
 # features only (`bytes`); the `fetcher`/TLS features pull a chromium *downloader* we
 # don't use — the CDP link is a plain local `ws://`, so no aws-lc/OpenSSL is dragged in.
 chromiumoxide = { version = "0.9", default-features = false, features = ["bytes"] }

@@ -306,7 +306,7 @@ pub async fn feed(
 #[into_params(parameter_in = Query)]
 pub struct StreamQuery {
     /// Single-use ticket from `POST /v1/me/stream-ticket`, passed as a query parameter because
-    /// the browser `EventSource` API cannot attach an `Authorization` header (design §17.4).
+    /// the browser `EventSource` API cannot attach an `Authorization` header (`docs/ARCHITECTURE.md` §17.4).
     ///
     /// Was the raw access token until SEC-8. A query string is recorded by `TraceLayer` as a
     /// span field, preserved verbatim by the frontend proxy, written to every reverse-proxy
@@ -383,7 +383,7 @@ impl Drop for StreamGuard {
 
 /// Live notification stream
 ///
-/// Server-Sent Events of live per-user notifications (design §14, §17.4). Authenticated by a
+/// Server-Sent Events of live per-user notifications (`docs/ARCHITECTURE.md` §14, §17.4). Authenticated by a
 /// single-use `ticket` query parameter obtained from `POST /v1/me/stream-ticket` — not the
 /// `Authorization` header, which `EventSource` cannot set. It subscribes to the ticket's own
 /// user's core-NATS subject and relays each `UserNotification` as a `notification` SSE event,

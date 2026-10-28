@@ -1,6 +1,6 @@
 # TankoVault frontend (Dioxus)
 
-The reader-facing product plus the operator console (design §17), built with **Dioxus 0.7** +
+The reader-facing product plus the operator console (`docs/ARCHITECTURE.md` §17), built with **Dioxus 0.7** +
 `dioxus-router` and the **Inkstone** design system.
 
 One component tree, **two builds**:

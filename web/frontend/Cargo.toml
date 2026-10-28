@@ -8,7 +8,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["TankoVault contributors"]
 publish = false
-description = "TankoVault reader-facing web frontend — Dioxus (WASM SPA) + the Inkstone design system (design §17)."
+description = "TankoVault's reader-facing frontend and operator console, built with Dioxus for the browser and the desktop on the Inkstone design system."
 
 # This target's name — not the package's — decides two user-visible things, which is why it is
 # pinned to the product rather than to the crate:

@@ -1,4 +1,4 @@
-//! Client session state (design §17.4).
+//! Client session state (`docs/ARCHITECTURE.md` §17.4).
 //!
 //! The access token lives only in memory — never `localStorage`, so an XSS foothold cannot
 //! exfiltrate it — and is re-adopted from the httpOnly refresh cookie on boot. That holds on

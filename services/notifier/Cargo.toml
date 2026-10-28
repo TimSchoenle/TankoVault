@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
-description = "Notification fan-out: chapter.discovered -> per-watcher notifications."
+description = "Notification fan-out: turns each discovered chapter into a notification for every user watching the series."
 # Not published: this is a workspace-internal crate. Also what lets `cargo deny`
 # skip license-checking our own code.
 publish = false

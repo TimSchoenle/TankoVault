@@ -26,7 +26,7 @@ A rule with no answer to that is a suggestion. Both are useful; they are labelle
 | looking for what runs where | [§5 The enforcement map](#5-the-enforcement-map) |
 
 Related documents, none of which this one replaces: [`CONTRIBUTING.md`](../CONTRIBUTING.md)
-(workflow, setup, what to run), [`docs/design.md`](design.md) (the system design),
+(workflow, setup, what to run), [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) (the system design),
 [`docs/CONFIGURATION.md`](CONFIGURATION.md) (the `TANKOVAULT_*` surface).
 
 ---

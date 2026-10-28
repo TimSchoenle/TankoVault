@@ -863,7 +863,7 @@ pub async fn verify_projection(
     Ok(check)
 }
 
-/// Alternative titles of a series (design §9.2 enrichment). Empty when none are recorded.
+/// Alternative titles of a series (`docs/ARCHITECTURE.md` §9.2 enrichment). Empty when none are recorded.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; unknown id or no synonyms is the same empty `Vec`.
@@ -912,7 +912,7 @@ pub async fn list_series_authors<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Tags attached to a series, alphabetically (design §9.2 enrichment).
+/// Tags attached to a series, alphabetically (`docs/ARCHITECTURE.md` §9.2 enrichment).
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; unknown id or untagged is the same empty `Vec`.
@@ -981,7 +981,7 @@ pub async fn tags_for_series<'e, E: PgExecutor<'e>>(
     Ok(out)
 }
 
-/// List all tags/genres, alphabetically (design §11 `GET /v1/tags`).
+/// List all tags/genres, alphabetically (`docs/ARCHITECTURE.md` §11 `GET /v1/tags`).
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; must not be defaulted to empty — that reads as "no tags"

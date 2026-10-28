@@ -4,7 +4,7 @@
 
 use dioxus::prelude::*;
 
-/// Every glyph the `TankoVault` design uses (`DESIGN_SPEC` §6–7).
+/// Every glyph the `TankoVault` design uses (`docs/DESIGN_SYSTEM.md` §6–7).
 ///
 /// No blanket dead-code allow: an unreferenced variant should warn, not sit silently in the
 /// bundle.

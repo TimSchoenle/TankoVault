@@ -3,7 +3,7 @@
 How a provider site is onboarded, as configuration for a layout family TankoVault already parses
 or as a custom `SourceAdapter`, and how each is pinned by fixture tests.
 
-TankoVault onboards a source site in one of two ways (design §7):
+TankoVault onboards a source site in one of two ways (`docs/ARCHITECTURE.md` §7):
 
 1. **Config only** — the site runs a layout TankoVault already has a parser for (today: the
    Madara WordPress theme). Onboarding is **data**: one `providers` row whose `config`

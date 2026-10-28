@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
-description = "AniList external sync (OAuth push/pull). Phase 5."
+description = "External list sync over OAuth, AniList first: reconciles each user's remote list with the local watchlist and reading progress."
 # Not published: this is a workspace-internal crate. Also what lets `cargo deny`
 # skip license-checking our own code.
 publish = false

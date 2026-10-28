@@ -1,4 +1,4 @@
-//! Appearance preferences (`DESIGN_SPEC` §8) and the operator console's persisted knobs.
+//! Appearance preferences (`docs/DESIGN_SYSTEM.md` §8) and the operator console's persisted knobs.
 //!
 //! Each appearance knob is a `data-*` attribute on the document root, mirrored into a `tv-*`
 //! settings key so it survives a restart. On the web build the *initial* application runs from

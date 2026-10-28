@@ -1,6 +1,6 @@
 //! # tankovault-fetch
 //!
-//! The **only** place network egress to providers happens (design §9): `wreq` wrapped in
+//! The **only** place network egress to providers happens (`docs/ARCHITECTURE.md` §9): `wreq` wrapped in
 //! backoff, rate-limiting, challenge-solving and retry decorators, outer to inner.
 //!
 //! Hard invariant: **no image/content fetch path exists**. [`FetchResponse::body`] is

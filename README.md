@@ -260,10 +260,11 @@ separate claims that happen to agree today.
 
 | Document | Purpose |
 | --- | --- |
-| [Challenge handling](docs/CHALLENGE_HANDLING.md) | All seven workstreams of the bot-management tier (design §9), from detection to a shared session store, with the status of each. |
+| [Architecture](docs/ARCHITECTURE.md) | The architecture and build specification other documents cite by section: the services, the data model, the crawl and solve pipeline, and the library choices behind them. |
+| [Challenge handling](docs/CHALLENGE_HANDLING.md) | All seven workstreams of the bot-management tier, from detection to a shared session store, with the status of each. |
 | [Chapter storage](docs/CHAPTER_STORAGE.md) | Where the chapters table's 1.2 GB goes, and the change in migration 0055_chapter_storage that roughly halves it so a running scan stops evicting the Postgres working set. |
 | [Configuration reference](docs/CONFIGURATION.md) | Every TANKOVAULT_* key the deployment reads: what it does, its default, and which services consume it. |
-| [Design system](docs/DESIGN_SPEC.md) | The design system the SPA is built to: tokens, component inventory, per-screen breakdowns and interaction rules. |
+| [Design system](docs/DESIGN_SYSTEM.md) | The design system the SPA is built to: tokens, component inventory, per-screen breakdowns and interaction rules. |
 | [Engineering guide](docs/ENGINEERING_GUIDE.md) | The rules this codebase is written to, and what would notice if each one stopped being followed. |
 | [Matching overhaul](docs/MATCHING_OVERHAUL.md) | The rework of automatic series merging and source attachment, which both merged different works and missed identical ones. WP0 to WP8 are implemented except WP3c and WP8c. |
 | [Observability](docs/OBSERVABILITY.md) | What this deployment measures, what is collected, which alerts exist, and what to do when each one fires. |
@@ -273,7 +274,6 @@ separate claims that happen to agree today.
 | [Recommendations](docs/RECOMMENDATIONS.md) | The recommendation model: item features and embeddings, the reader's taste profile, retrieval and ranking, and the tuning registry behind them. |
 | [Releasing](docs/RELEASING.md) | How a release is cut from conventional commits, then signed and published as multi-architecture images. |
 | [Watchlist backup and restore](docs/WATCHLIST_BACKUP.md) | The watchlist backup file: its format, how an import finds each series again, and the limits on a restore. |
-| [Architecture](docs/design.md) | The architecture and build specification other documents cite by section: the services, the data model, the crawl and solve pipeline, and the library choices behind them. |
 | [Query latency, September 2026: progress report](docs/perf/2026-09-latency-report.md) | Which slow queries were fixed locally in September 2026, and which decisions still wait on a production measurement. |
 | [Query latency, September 2026: local measurements](docs/perf/2026-09-local-measurements.md) | Which catalogue statements are expensive by shape, and what a cold cache costs, measured on a local catalogue. |
 | [Discover browse latency](docs/perf/BROWSE_REDESIGN.md) | The measured redesign of the Discover browse queries, shipped as migration 0060_series_browse. |

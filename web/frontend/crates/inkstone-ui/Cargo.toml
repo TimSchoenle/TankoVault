@@ -7,7 +7,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["TankoVault contributors"]
 publish = false
-description = "Inkstone — an unopinionated Dioxus component kit: typed variants over a documented CSS class and custom-property contract."
+description = "Inkstone, an unopinionated Dioxus component kit: typed variants over a documented contract of CSS classes and custom properties."
 
 # Picked up automatically as a member of the `web/frontend` workspace (cargo adopts path
 # dependencies that live under the workspace root), so `cargo check`/`clippy`/`fmt` there cover

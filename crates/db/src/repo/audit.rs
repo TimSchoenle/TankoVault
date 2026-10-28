@@ -1,4 +1,4 @@
-//! Append-only audit log for privileged actions (design §16).
+//! Append-only audit log for privileged actions (`docs/ARCHITECTURE.md` §16).
 
 use crate::error::DbResult;
 use serde_json::Value as Json;

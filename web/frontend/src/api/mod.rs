@@ -1,4 +1,4 @@
-//! The app's API access point (design §17.4) — a thin, `Copy` handle over the generated
+//! The app's API access point (`docs/ARCHITECTURE.md` §17.4) — a thin, `Copy` handle over the generated
 //! `tankovault-api-client`, provided once at the router root.
 
 mod error;
@@ -164,7 +164,7 @@ pub(crate) fn forget_session() {
     session_store::session_jar().forget();
 }
 
-/// Absolute base URL for API calls (design §19: same origin as the API on web, the configured
+/// Absolute base URL for API calls (`docs/ARCHITECTURE.md` §19: same origin as the API on web, the configured
 /// server on desktop). See [`crate::platform::origin`].
 fn origin() -> String {
     crate::platform::origin()

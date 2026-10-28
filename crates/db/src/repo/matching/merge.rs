@@ -6,7 +6,7 @@ use sqlx::PgExecutor;
 use tankovault_domain::SeriesId;
 use uuid::Uuid;
 
-/// Merges `drop_id` into `keep_id` in one transaction, and deletes it (design §10).
+/// Merges `drop_id` into `keep_id` in one transaction, and deletes it (`docs/ARCHITECTURE.md` §10).
 ///
 /// Sources are re-parented; titles, tags, watchlist entries, progress, sync state and external
 /// mappings are unioned onto the survivor; related merge candidates are resolved. Every

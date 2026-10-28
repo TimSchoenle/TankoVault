@@ -204,7 +204,7 @@ pub async fn record_merge_candidate<'e, E: PgExecutor<'e>>(
 }
 
 /// A pending merge candidate enriched with everything an operator needs to judge it without
-/// opening both series (design §11 `GET /v1/admin/merge-candidates`).
+/// opening both series (`docs/ARCHITECTURE.md` §11 `GET /v1/admin/merge-candidates`).
 ///
 /// The counts are the reason this is not just two titles and a number. Deciding a merge means
 /// deciding which row *survives*, and the answer is whichever one carries more of the catalogue:

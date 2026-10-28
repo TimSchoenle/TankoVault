@@ -1,4 +1,4 @@
-//! Live per-user notification stream (design §14, §17.4).
+//! Live per-user notification stream (`docs/ARCHITECTURE.md` §14, §17.4).
 //!
 //! Connects to `/v1/me/stream`, updating the rail's unread badge; a dropped stream fails
 //! silently and just waits for the next navigation refetch.

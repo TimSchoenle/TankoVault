@@ -1,4 +1,4 @@
-//! Snapshots of what a provider's list actually held (design §15), kept for every fetched
+//! Snapshots of what a provider's list actually held (`docs/ARCHITECTURE.md` §15), kept for every fetched
 //! entry whether or not it matched — the unmatched ones are the queue the admin console works.
 
 use crate::error::DbResult;

@@ -419,7 +419,7 @@ FROM scratch AS build-cache
 COPY --from=builder /out/ /out/
 COPY --from=wasm-builder /dist/ /dist/
 
-# Debian + Chromium for the render tier (chromiumoxide, design §9); `scratch` can't host a browser.
+# Debian + Chromium for the render tier (chromiumoxide, `docs/ARCHITECTURE.md` §9); `scratch` can't host a browser.
 FROM debian:13-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS runtime-browser
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \

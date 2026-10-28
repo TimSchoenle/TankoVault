@@ -4,7 +4,7 @@ The design system the SPA is built to: tokens, component inventory, per-screen b
 interaction rules.
 
 `web/frontend/input.css` and `web/frontend/crates/inkstone-ui` are the implementation. Source
-files cite this document by section (`DESIGN_SPEC §7.1`), so section numbers do not change. Where
+files cite this document by section (`docs/DESIGN_SYSTEM.md` §7.1), so section numbers do not change. Where
 the shipped UI and this document disagree, the code is right and this document is the bug.
 
 ---
@@ -16,7 +16,7 @@ ink than the usual neon-on-black tracker. Contrast comes from tonal ramps, not s
 Vermilion is the single bold accent (a hanko-seal red), used as a **line and a glow** —
 active-nav stroke, unread badges, primary CTAs, progress fills — never as a flood. A second
 jade/teal role carries "healthy / synced / up-to-date". This is a direct evolution of the
-project's existing **"Inkstone"** direction (`docs/design.md` §17.1): same palette, same
+project's existing **"Inkstone"** direction (`docs/ARCHITECTURE.md` §17.1): same palette, same
 philosophy, richer surface.
 
 **Signature devices** (use sparingly, keep everything else quiet):
@@ -110,10 +110,6 @@ fallback glyph. In production this is the placeholder behind a lazy-loaded `cove
 | Display | **Bricolage Grotesque** | 400–800 | Wordmark, page/hero titles, section headers, KPI values, cover initials |
 | Body / UI | **IBM Plex Sans** | 400/500/600/700 | All UI text |
 | Data / labels | **IBM Plex Mono** | 400/500/600 | Chapter numbers, counts, timestamps, IDs, uppercase kicker labels, `⌘K` hint |
-
-> The current codebase's `docs/design.md` §17.1 names *Clash Display / Zodiak* for display.
-> The mockup uses **Bricolage Grotesque**. Treat Bricolage as the canonical display face and
-> update §17.1 (see plan §3).
 
 **Observed type scale (px):**
 
@@ -338,7 +334,7 @@ as CSS-variable swaps if/when Appearance ships.
 
 ## 9. Accessibility & quality floor (must hold)
 
-Carried from `docs/design.md` §17.3 — the redesign must not regress:
+Carried from `docs/ARCHITECTURE.md` §17.3 — the redesign must not regress:
 - Responsive to mobile; cover grid reflows to 2-up; sidebar collapses.
 - Visible **keyboard focus rings** (`:focus-visible` 2px accent, offset 2px); full keyboard nav
   of lists, chips, and the command bar.

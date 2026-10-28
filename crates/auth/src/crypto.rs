@@ -1,4 +1,4 @@
-//! Authenticated symmetric encryption (AES-256-GCM) for secrets at rest (design §16): OAuth
+//! Authenticated symmetric encryption (AES-256-GCM) for secrets at rest (`docs/ARCHITECTURE.md` §16): OAuth
 //! tokens are sealed before they touch the database, so a database compromise alone cannot
 //! disclose them. Named `Sealer`, not `SecretBox`, to avoid confusion with [`secrecy::SecretBox`].
 

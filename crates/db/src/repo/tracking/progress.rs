@@ -136,7 +136,7 @@ pub async fn progress_get_full<'e, E: PgExecutor<'e>>(
 }
 
 /// Get a user's whole-chapter frontier together with when it last changed, if tracked. Used
-/// by external sync to reconcile progress under a `NewestWins` conflict policy (design §B.3).
+/// by external sync to reconcile progress under a `NewestWins` conflict policy (`docs/ARCHITECTURE.md` §B.3).
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only — no other variant is reachable. No progress row is

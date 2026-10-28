@@ -1,5 +1,5 @@
 //! Challenge-solving decorator: detect a bot-management challenge in-band, delegate to a
-//! [`ChallengeSolver`], cache the solved session, and replay (design §9).
+//! [`ChallengeSolver`], cache the solved session, and replay (`docs/ARCHITECTURE.md` §9).
 //!
 //! Sessions are cached per provider and replayed on later requests so one solve
 //! amortises across many fetches until it expires; expiry re-triggers a solve, not a

@@ -1,4 +1,4 @@
-//! Reusable Inkstone UI components (design §17.3/§17.4).
+//! Reusable Inkstone UI components (`docs/ARCHITECTURE.md` §17.3/§17.4).
 
 mod bottombar;
 mod confirm;

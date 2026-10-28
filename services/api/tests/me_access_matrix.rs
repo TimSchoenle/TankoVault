@@ -1,4 +1,4 @@
-//! The authenticated-tier access-control matrix — the other half of
+//! Tests the authenticated-tier access-control matrix, the other half of
 //! [`admin_access_matrix`](../admin_access_matrix.rs): every `/v1/me` route driven anonymous
 //! (401), suspended (403), and as an ordinary account (neither), reconciled against the
 //! published `OpenAPI` document. Gated behind the `integration` feature; requires Docker.
@@ -43,8 +43,8 @@ struct Gate {
     /// Load-bearing in both directions, and both are asserted. The admitted leg presents a grant
     /// for these and not for the others, so a route that gains the extractor without gaining the
     /// flag fails there with a `403`. The unelevated leg drives every route *without* a grant and
-    /// requires `step_up_required` from exactly the flagged ones — which is what catches the
-    /// dangerous direction the compiler cannot: a refactor that drops `Elevated` from a route,
+    /// requires `step_up_required` from exactly the flagged ones. That catches the dangerous
+    /// direction the compiler cannot: a refactor that drops `Elevated` from a route,
     /// leaving the flag behind as a header nobody reads and the route reachable with a bare
     /// token.
     elevated: bool,
@@ -54,7 +54,7 @@ fn empty() -> Option<Value> {
     None
 }
 
-/// A valid, empty watchlist backup — the smallest body the import routes accept.
+/// A valid, empty watchlist backup: the smallest body the import routes accept.
 fn empty_watchlist_backup() -> Value {
     json!({
         "format": "tankovault.watchlist",
@@ -109,7 +109,8 @@ fn me_gates() -> Vec<Gate> {
     vec![
         // --- account ---
         Gate {
-            // Deliberately wrong, so the admitted leg reaches a `400` rather than deleting the caller.
+            // Deliberately wrong, so the admitted leg reaches a `400` instead of deleting the
+            // caller.
             body: || Some(json!({ "confirm_username": "not-the-caller" })),
             ..elevated("DELETE", "/v1/me", "/v1/me")
         },
@@ -119,13 +120,14 @@ fn me_gates() -> Vec<Gate> {
             ..get("/v1/me/export", "/v1/me/export")
         },
         Gate {
-            // Every field is optional, so an empty patch cannot disturb the account later legs reuse.
+            // Every field is optional, so an empty patch cannot disturb the account later legs
+            // reuse.
             body: || Some(json!({})),
             ..elevated("PATCH", "/v1/me/profile", "/v1/me/profile")
         },
         Gate {
-            // No `current_password` any more — the step-up is the proof — so the admitted leg
-            // can be asserted rather than skipped. It really does change the seeded account's
+            // No `current_password`: the step-up is the proof, so the admitted leg can be
+            // asserted instead of skipped. It really does change the seeded account's
             // password; no later leg depends on the old one.
             body: || Some(json!({ "new_password": "correct horse battery staple" })),
             ..elevated("POST", "/v1/me/password", "/v1/me/password")
@@ -243,7 +245,7 @@ fn me_gates() -> Vec<Gate> {
             "/v1/me/mfa/recovery-codes",
         ),
         Gate {
-            // A wrong password, so the admitted leg reaches the refusal rather than minting a
+            // A wrong password, so the admitted leg reaches the refusal instead of minting a
             // grant the rest of the matrix would then be running under.
             body: || Some(json!({ "password": "not-the-seeded-hash" })),
             admitted_leg_skipped: Some(
@@ -433,7 +435,7 @@ fn me_gates() -> Vec<Gate> {
             )
         },
         Gate {
-            // The admitted leg lands on `404` — the account tracks nothing — which is still an
+            // The admitted leg lands on `404` (the account tracks nothing), which is still an
             // admission, and the point here is that the anonymous and suspended legs never
             // reach the lookup at all.
             body: || Some(json!({ "series_source_id": "00000000-0000-7000-8000-00000000000b" })),
@@ -529,7 +531,7 @@ fn me_gates() -> Vec<Gate> {
 
 /// Reachable with no session at all, by design: the catalogue tier, and the legal documents.
 ///
-/// Asserted because the failure is silent otherwise — an `AuthUser` on a browse route breaks
+/// Asserted because the failure is silent otherwise: an `AuthUser` on a browse route breaks
 /// the front page for everyone, but a developer testing while signed in wouldn't notice.
 ///
 /// The legal routes are here for a sharper reason than symmetry: **registering is the act of
@@ -559,7 +561,7 @@ fn public_gates() -> Vec<(&'static str, &'static str)> {
         ),
         ("/v1/tags", "/v1/tags"),
         ("/v1/legal", "/v1/legal"),
-        // The harness publishes no documents, so this answers `404` — which is the point: a
+        // The harness publishes no documents, so this answers `404`, which is the point: a
         // `404` is not a `401`, so the assertion still distinguishes "no such document" from
         // "you must sign in to read the privacy policy".
         ("/v1/legal/{slug}", "/v1/legal/terms"),
@@ -575,7 +577,7 @@ fn public_gates() -> Vec<(&'static str, &'static str)> {
 /// Endpoints deliberately outside this file, each with the reason and where they *are* covered.
 ///
 /// The reconciliation test consults this list, so "not in the matrix" is always a decision
-/// somebody wrote down rather than an omission.
+/// somebody wrote down, never an omission.
 fn covered_elsewhere() -> Vec<(&'static str, &'static str)> {
     // A status-only leg can't distinguish "no session" from "wrong password" here (both 401),
     // so these are driven with real credentials elsewhere instead.
@@ -589,8 +591,8 @@ fn covered_elsewhere() -> Vec<(&'static str, &'static str)> {
         "POST /v1/auth/verify-email",
         "POST /v1/auth/verify-email/resend",
     ];
-    // Sign-in with a passkey is credential-free on purpose — there is no session yet, and the
-    // challenge is deliberately identifier-free — so neither leg of this matrix applies.
+    // Sign-in with a passkey is credential-free on purpose (there is no session yet, and the
+    // challenge is deliberately identifier-free), so neither leg of this matrix applies.
     let passkey_login = [
         "POST /v1/auth/passkey/login/start",
         "POST /v1/auth/passkey/login/finish",
@@ -628,10 +630,10 @@ struct Caller {
     user: UserId,
 }
 
-/// Build the URI and `Authorization` header for one leg of one gate.
+/// Builds the URI and `Authorization` header for one leg of one gate.
 ///
 /// `caller` is `None` for the anonymous leg. A `StreamTicket` route still needs *a* ticket in the
-/// URL there, since a missing parameter would 400 before reaching the check under test — so the
+/// URL there, since a missing parameter would 400 before reaching the check under test, so the
 /// anonymous leg presents a value that cannot redeem.
 async fn credential_for(
     app: &TestApp,
@@ -654,14 +656,12 @@ async fn credential_for(
 /// *before* the elevation is consulted, and handing them a grant would hide a route that had
 /// stopped checking the session at all.
 ///
-/// Minted **per request**, not once per caller, and that is not tidiness — it is required.
-/// `POST /v1/me/password` revokes every grant the caller holds, which is the right behaviour and
-/// which, with one shared grant, silently killed the elevation for every gate the loop reached
-/// afterwards. The first symptom was `DELETE /v1/me/sessions/{id}` answering `403` for reasons
-/// that had nothing to do with `DELETE /v1/me/sessions/{id}`.
+/// Minted **per request**, not once per caller, and that is required. `POST /v1/me/password`
+/// revokes every grant the caller holds, so one shared grant would silently kill the elevation
+/// for every gate the loop reaches afterwards, and an unrelated later route would answer `403`.
 ///
-/// Earned by *password*, which is what an account with no enrolled factor can offer — and which
-/// is exactly what this leg's caller is. Enrolling it would make every gate below run as an
+/// Earned by *password*, which is what an account with no enrolled factor can offer, and this
+/// leg's caller is exactly such an account. Enrolling it would make every gate below run as an
 /// account that has opted into two-factor, which is not the ordinary account being represented.
 async fn step_up_for(
     app: &TestApp,
@@ -682,13 +682,13 @@ async fn step_up_for(
     )
 }
 
-/// Append the query credential the `Credential::StreamTicket` routes read.
+/// Appends the query credential the `Credential::StreamTicket` routes read.
 fn with_ticket(path: &str, ticket: &str) -> String {
     let separator = if path.contains('?') { '&' } else { '?' };
     format!("{path}{separator}ticket={ticket}")
 }
 
-/// Assemble the request for one leg, given the URI and header `credential_for` decided.
+/// Assembles the request for one leg, given the URI and header `credential_for` decided.
 fn build(gate: &Gate, uri: String, bearer: Option<String>, step_up: Option<&str>) -> Request<Body> {
     let mut builder = Request::builder().method(gate.method).uri(uri);
     if let Some(value) = bearer {
@@ -706,8 +706,8 @@ fn build(gate: &Gate, uri: String, bearer: Option<String>, step_up: Option<&str>
     }
 }
 
-/// Drive one request and return its status **without draining the body** — `/v1/me/stream` is an
-/// SSE stream that never ends, and draining it would hang the suite.
+/// Drives one request and returns its status **without draining the body**: `/v1/me/stream` is
+/// an SSE stream that never ends, and draining it would hang the suite.
 async fn status_of(
     app: &TestApp,
     gate: &Gate,
@@ -721,7 +721,7 @@ async fn status_of(
         .status()
 }
 
-/// Read a response body as JSON, for the legs that assert on the problem document.
+/// Reads a response body as JSON, for the legs that assert on the problem document.
 async fn problem_of(app: &TestApp, gate: &Gate, caller: &Caller) -> (StatusCode, Value) {
     let (uri, bearer) = credential_for(app, gate, Some(caller)).await;
     let response = app.request(build(gate, uri, bearer, None)).await;
@@ -787,9 +787,9 @@ async fn no_me_endpoint_answers_without_a_session() {
 
 /// A suspended account is refused everywhere, and told why.
 ///
-/// Suspension is enforced inside `AuthUser`, so this holds for free until a handler resolves
-/// claims some other way, as `/v1/me/stream` once did. The body is asserted too, since `403`
-/// alone can't distinguish "suspended" from "insufficient privileges".
+/// Suspension is enforced inside `AuthUser`, so this holds for free until a handler resolves claims
+/// some other way, as a stream route that reads its own ticket can. The body is asserted too, since
+/// `403` alone can't distinguish "suspended" from "insufficient privileges".
 #[tokio::test]
 async fn every_me_endpoint_refuses_a_suspended_account() {
     let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
@@ -815,7 +815,7 @@ async fn every_me_endpoint_refuses_a_suspended_account() {
 /// An ordinary active account with no capabilities reaches every `/v1/me` endpoint.
 ///
 /// The inverse failure: a route that requires a capability is dead for every real user, and
-/// nobody testing with an admin token would notice. Not `is_success()` — these requests name
+/// nobody testing with an admin token would notice. Not `is_success()`: these requests name
 /// absent rows and an unreachable sync service on purpose, so `404`/`400`/`502` are correct.
 #[tokio::test]
 async fn every_me_endpoint_admits_an_ordinary_account() {
@@ -836,7 +836,7 @@ async fn every_me_endpoint_admits_an_ordinary_account() {
     }
 }
 
-/// The step-up gate covers exactly the routes the matrix declares — no more, no fewer.
+/// The step-up gate covers exactly the routes the matrix declares, no more and no fewer.
 ///
 /// Every gate is driven by an ordinary, admitted account that simply has not confirmed itself,
 /// which is the state a real caller is in the moment before the prompt opens. A flagged route
@@ -847,8 +847,8 @@ async fn every_me_endpoint_admits_an_ordinary_account() {
 /// extractor removed: the anonymous and suspended legs are refused by `AuthUser` long before the
 /// elevation is consulted, and the admitted leg would sail through a route that had stopped
 /// reading the header at all. So a refactor that dropped `Elevated` from `GET /v1/me/export`
-/// would leave one person's entire personal record — reading history, addresses, linked accounts
-/// — behind nothing but a bearer token, with a green build.
+/// would leave one person's entire personal record (reading history, addresses, linked
+/// accounts) behind nothing but a bearer token, with a green build.
 ///
 /// The problem *type* is asserted, not the status: `403` is also how a suspended account and a
 /// missing capability are refused, and a route that started answering one of those instead would
@@ -897,7 +897,7 @@ async fn the_public_catalogue_is_reachable_without_a_session() {
 
 /// Every published endpoint is covered by one of the access-control matrices.
 ///
-/// Reconciled against the published document rather than a hand-maintained list, so adding a
+/// Reconciled against the published document, not a hand-maintained list, so adding a
 /// route without classifying it turns the build red on the pull request that adds it.
 /// `/v1/admin` is `admin_access_matrix.rs`'s half, reconciled there against the same document.
 #[tokio::test]
@@ -991,9 +991,8 @@ async fn a_stream_ticket_cannot_open_the_stream_twice() {
 /// # The bug this pins
 ///
 /// The two halves are wired through separate state, so they can drift silently: a mint storing
-/// under a different key, or a stream reading a different query parameter, leaves the endpoint
-/// answering `200` and the stream `401` forever — the shape of a bug once found on the frontend
-/// (`?token=` against `?access_token=`), where nothing connected producer to reader.
+/// under a different key, or a stream reading a different query parameter (`?token=` against
+/// `?access_token=`), leaves the endpoint answering `200` and the stream `401` forever.
 #[tokio::test]
 async fn the_minted_ticket_is_the_one_the_stream_accepts() {
     let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;

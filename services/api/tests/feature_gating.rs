@@ -1,7 +1,7 @@
-//! What a switched-off feature actually does to a real request: that the gate layer is mounted,
-//! that `tankovault_api::route_features` names paths that actually exist, and that a disabled
-//! route gets the documented answer rather than running anyway. `crates/service`'s unit tests
-//! cover only the resolution logic, not this end-to-end path.
+//! Tests what a switched-off feature actually does to a real request: that the gate layer is
+//! mounted, that `tankovault_api::route_features` names paths that actually exist, and that a
+//! disabled route gets the documented answer instead of running anyway. `crates/service`'s unit
+//! tests cover only the resolution logic, not this end-to-end path.
 
 #![cfg(feature = "integration")]
 
@@ -107,7 +107,7 @@ async fn the_same_route_is_reachable_with_the_feature_on() {
 /// # The bug this pins
 ///
 /// `/v1/me/chapter-progress` was gated but no route ever had that path. The external-sync
-/// suffixes are exempted by deriving from `tankovault_contracts::sync` rather than listing them,
+/// suffixes are exempted by deriving from `tankovault_contracts::sync`, not by listing them,
 /// so a suffix added there is exempted automatically.
 #[tokio::test]
 async fn every_gated_prefix_still_matches_a_published_route() {
@@ -128,7 +128,7 @@ async fn every_gated_prefix_still_matches_a_published_route() {
     // The exemption is only sound while the surface it exempts still exists.
     assert!(
         published.iter().any(|path| path.starts_with("/v1/me/sync")),
-        "the external-sync surface is exempted from the check below because ARCH-18 gates it \
+        "the external-sync surface is exempted from the check below because it is gated \
          from a shared declaration; if the API stops publishing it, the exemption is covering \
          a real disappearance"
     );

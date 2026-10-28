@@ -1,4 +1,4 @@
-//! The recommender's control plane: model health, the tuning registry, and the rebuild that
+//! Owns the recommender's control plane: model health, the tuning registry, and the rebuild that
 //! makes a `NextBuild` change take effect (`docs/RECOMMENDATIONS.md` §8, §10).
 //!
 //! Modelled on `admin/flags.rs`, down to the response shape: every write answers with the whole
@@ -29,18 +29,18 @@ pub struct TunableView {
     /// When a change to this value actually reaches a reader. The console shows it on every row:
     /// a knob that needs a rebuild and does not say so is the surface's most likely failure.
     pub applies: Applies,
-    /// The effective value: the override if there is one, else the compiled default — already
+    /// The effective value: the override if there is one, else the compiled default, already
     /// clamped, so it is exactly what the pipeline reads.
     pub value: f64,
     /// What this value ships as, so the page can show "changed from default" without the client
     /// carrying a copy of the registry.
     pub default_value: f64,
-    /// Inclusive bounds. Enforced here, not only in the UI — a `curl` is not an attack.
+    /// Inclusive bounds. Enforced here, not only in the UI: a `curl` is not an attack.
     pub min: f64,
     pub max: f64,
     /// Whether an operator has explicitly decided this one.
     pub overridden: bool,
-    /// Whether [`Self::min`] is a privacy threshold rather than a taste decision. The console
+    /// Whether [`Self::min`] is a privacy threshold, not a taste decision. The console
     /// says so next to the field; the API refuses the write regardless.
     pub privacy_floor: bool,
     /// Why it was last changed, if the operator said.
@@ -115,7 +115,7 @@ pub async fn set_tunable(
     let spec = tunable.spec();
 
     // Refused here as well as clamped by every reader. The clamp is a safety net for a row that
-    // should not exist — a restored backup, a rollback, a hand-edited database; this is the door
+    // should not exist (a restored backup, a rollback, a hand-edited database); this is the door
     // that row should not get through. For `recsys.cooccurrence.min_support` the bound is the
     // k-anonymity threshold of §12.2, so a panel that accepted `1` would be a privacy bug with a
     // user interface.
@@ -134,8 +134,8 @@ pub async fn set_tunable(
         }));
     }
 
-    // The one cross-field rule (§8.3). The five weights need not sum to anything — sub-scores are
-    // rank-normalised per path before blending, so their scale is free — but all-zero produces an
+    // The one cross-field rule (§8.3). The five weights need not sum to anything (sub-scores are
+    // rank-normalised per path before blending, so their scale is free), but all-zero produces an
     // arbitrary shelf and no error anywhere.
     if would_zero_every_score_weight(&state, tunable, body.value).await? {
         return Err(ApiError::BadRequest(
@@ -243,7 +243,7 @@ pub struct ModelHealthView {
     #[schema(example = "2026-08-04T12:04:00Z")]
     pub finished_at: Option<String>,
     /// How the last run ended, when it ended badly. The builder always releases its claim, so a
-    /// failure shows up here rather than as a build that never finishes.
+    /// failure shows up here instead of as a build that never finishes.
     pub error: Option<String>,
     /// Series the running stage has processed, or the count the last completed run wrote.
     pub series_built: i32,
@@ -269,7 +269,7 @@ pub struct ModelHealthView {
 
 /// Get recommendation model health
 ///
-/// Generation, build state, catalogue coverage and repair-queue depth — what an operator needs
+/// Generation, build state, catalogue coverage and repair-queue depth: what an operator needs
 /// before changing a tuning value, and the only way to tell an unbuilt model from a broken one.
 #[utoipa::path(
     get,
@@ -328,7 +328,7 @@ pub struct RebuildRequest {
 
 /// Rebuild the recommendation model
 ///
-/// Starts a build now rather than waiting for the schedule. A `next_build` tuning change takes
+/// Starts a build now instead of waiting for the schedule. A `next_build` tuning change takes
 /// effect after an incremental run; a `next_full_build` one is baked into stored vectors and the
 /// index, and needs `full`.
 ///
@@ -380,7 +380,7 @@ pub async fn rebuild_model(
 
 /// Whether writing `value` to `tunable` would leave every score weight at zero.
 ///
-/// Resolved against the *stored* overrides rather than this replica's snapshot: the snapshot is
+/// Resolved against the *stored* overrides, not this replica's snapshot: the snapshot is
 /// refreshed on a timer, so a second operator's write from thirty seconds ago might not be in it
 /// yet, and this check has to see the state the write actually lands on.
 async fn would_zero_every_score_weight(
@@ -421,15 +421,15 @@ async fn tunable_views(state: &AppState) -> ApiResult<Vec<TunableView>> {
 
     Ok(Tunable::all()
         .iter()
-        // The registry also carries the automatic-merge policy, which is served — and
-        // permissioned — by `/v1/admin/matching/policy`. Publishing it here would put a knob
+        // The registry also carries the automatic-merge policy, which is served (and
+        // permissioned) by `/v1/admin/matching/policy`. Publishing it here would put a knob
         // that deletes series on a page reachable with `recsys.write`.
         .filter(|tunable| !tunable.is_matching())
         .map(|&tunable| {
             let spec = tunable.spec();
             let stored = by_key.get(spec.key).copied();
-            // Clamped, so the page reports what the pipeline reads rather than what the row
-            // happens to say — the two differ exactly when a row should not have existed.
+            // Clamped, so the page reports what the pipeline reads, not what the row happens
+            // to say; the two differ exactly when a row should not have existed.
             let value = stored.map_or(spec.default, |row| spec.clamp(row.value));
             TunableView {
                 key: tunable,
@@ -456,9 +456,9 @@ async fn tunable_views(state: &AppState) -> ApiResult<Vec<TunableView>> {
         .collect())
 }
 
-/// The tunable `key` names, provided it is one this surface owns.
+/// Returns the tunable `key` names, provided it is one this surface owns.
 ///
-/// A `matching.*` key is refused as unknown rather than accepted: it is a real registry entry,
+/// A `matching.*` key is refused as unknown instead of accepted: it is a real registry entry,
 /// but writing it from here would move the duplicate sweep's policy under the recommender's
 /// permission, and `recsys.write` is not `merge.write`.
 fn parse_tunable(key: &str) -> ApiResult<Tunable> {

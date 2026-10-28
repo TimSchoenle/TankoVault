@@ -1,7 +1,7 @@
-//! The adult-content gate, end to end: who can see a gated series through a real request.
+//! Tests the adult-content gate, end to end: who can see a gated series through a real request.
 //!
-//! Every read surface resolves the same two-part answer — the deployment flag *and* the reader's
-//! own opt-in — so these tests drive the routes rather than the repository. A gate that holds in
+//! Every read surface resolves the same two-part answer (the deployment flag *and* the reader's
+//! own opt-in), so these tests drive the routes, not the repository. A gate that holds in
 //! `crates/db` and leaks through a handler that forgot to ask is the failure worth catching.
 
 #![cfg(feature = "integration")]
@@ -27,7 +27,7 @@ async fn app_with_adult_allowed() -> TestApp {
     .await
 }
 
-/// Ingest one series. `tags` decides whether the ingest classifier gates it.
+/// Ingests one series. `tags` decides whether the ingest classifier gates it.
 async fn ingest(app: &TestApp, provider: ProviderId, title: &str, tags: &[&str]) -> SeriesId {
     ingest_series(
         &app.db.pool,
@@ -67,7 +67,7 @@ async fn ingest(app: &TestApp, provider: ProviderId, title: &str, tags: &[&str])
     .series_id
 }
 
-/// A catalogue of one gated and one ordinary series, plus a provider to hang them off.
+/// Seeds a catalogue of one gated and one ordinary series, and a provider to hang them off.
 async fn catalogue(app: &TestApp) -> (SeriesId, SeriesId) {
     let provider = seed::provider(&app.db, "alpha").create().await;
     let gated = ingest(app, provider, "Gated Work", &["Hentai", "Romance"]).await;
@@ -75,7 +75,7 @@ async fn catalogue(app: &TestApp) -> (SeriesId, SeriesId) {
     (gated, ordinary)
 }
 
-/// Turn a reader's opt-in on, attesting in the same request.
+/// Turns a reader's opt-in on, attesting in the same request.
 async fn opt_in(app: &TestApp, user: UserId) {
     let token = app.bearer(user);
     let (status, _) = app
@@ -100,7 +100,7 @@ fn titles(body: &serde_json::Value) -> Vec<String> {
 /// An unauthenticated caller never sees a gated series, on any catalogue surface.
 ///
 /// The bug this pins: the opt-in lives on an account, so a request with no account has nothing
-/// to consult — and the natural way to write that resolution is to reach for the token, find
+/// to consult, and the natural way to write that resolution is to reach for the token, find
 /// none, and fall through to whatever the local variable was initialised to. There is no
 /// anonymous state in which adult content is correct, and the deployment flag being *on* is
 /// exactly when this would go unnoticed, because the operator sees their own opted-in view.
@@ -206,7 +206,7 @@ async fn opting_in_opens_the_gate_and_opting_out_closes_it() {
 ///
 /// The bug this pins: the two conditions are resolved in one place precisely so that neither can
 /// be forgotten, and the tempting simplification is to treat the reader's stored preference as
-/// the whole answer — which silently turns the operator's kill switch into a no-op for exactly
+/// the whole answer, which silently turns the operator's kill switch into a no-op for exactly
 /// the readers it exists to cover.
 #[tokio::test]
 async fn the_deployment_flag_overrides_a_readers_opt_in() {
@@ -215,10 +215,10 @@ async fn the_deployment_flag_overrides_a_readers_opt_in() {
     let (gated, _) = catalogue(&app).await;
     let user = app.seed_user("reader", &[], AccountStatus::Active).await;
 
-    // Stored through the repository rather than the endpoint: this is an account that opted in
+    // Stored through the repository, not the endpoint: this is an account that opted in
     // while some deployment allowed it, and is now being served by one that does not. Driving
     // the API instead would only prove the API refuses to *set* it, which is a weaker claim than
-    // the one under test — that an already-stored opt-in does not open the gate.
+    // the one under test: that an already-stored opt-in does not open the gate.
     tankovault_db::repo::users::set_content_prefs(&app.db.pool, user, true, true)
         .await
         .expect("store the opt-in");
@@ -304,9 +304,9 @@ async fn the_attestation_outlives_the_preference() {
 /// A provider genre alone gates a series, with no `AniList` involvement at all.
 ///
 /// The bug this pins: `series.is_adult` is written only by the `AniList` enrichment sweep, so
-/// before the ingest classifier existed every series the sweep had not matched — most of a
-/// freshly scanned catalogue, and permanently so for anything `AniList` does not carry — sat at
-/// the column's `false` default and read as safe.
+/// without the ingest classifier every series the sweep had not matched (most of a freshly
+/// scanned catalogue, and permanently so for anything `AniList` does not carry) sat at the
+/// column's `false` default and read as safe.
 #[tokio::test]
 async fn a_provider_genre_alone_gates_a_series() {
     let app = app_with_adult_allowed().await;

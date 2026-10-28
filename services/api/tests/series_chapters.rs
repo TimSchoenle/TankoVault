@@ -1,7 +1,7 @@
-//! `GET /v1/series/{id}/chapters/by-source` against the per-source route it replaced.
+//! Tests `GET /v1/series/{id}/chapters/by-source` against the per-source route.
 //!
 //! The series screen renders both providers' lists side by side, so the batched answer has to be
-//! the per-source answers — same sources, same order, same rows, same read-state. A drift here is
+//! the per-source answers: same sources, same order, same rows, same read-state. A drift here is
 //! invisible in the response's own shape.
 
 #![cfg(feature = "integration")]
@@ -16,7 +16,7 @@ use tankovault_domain::{
 };
 use tankovault_test_support::seed;
 
-/// Ingest `title` on `provider` carrying chapters 1..=`chapters`.
+/// Ingests `title` on `provider` carrying chapters 1..=`chapters`.
 async fn ingest(app: &TestApp, provider: ProviderId, title: &str, chapters: u32) -> SeriesId {
     let numbers = (1..=chapters).map(|n| ChapterUpsert {
         number: f64::from(n),
@@ -79,11 +79,11 @@ fn source_ids(detail: &serde_json::Value) -> Vec<String> {
 /// The batched route answers exactly what a call per source answers, in the detail's order.
 ///
 /// The bug this pins: the series screen used to fetch one `.../chapters?source=` per source and
-/// merge them client-side, so a well-carried title cost one request per provider — re-issued in
+/// merge them client-side, so a well-carried title cost one request per provider, re-issued in
 /// full on every read toggle. That spent the caller's rate-limit burst and the screen started
 /// answering its own reads with `429`. Collapsing the fan-out into this route is only a fix while
-/// the two agree: the moment the batched handler stops mirroring the per-source one — a different
-/// provider grouping, a different order, a dropped early-access filter — the screen renders
+/// the two agree: the moment the batched handler stops mirroring the per-source one (a different
+/// provider grouping, a different order, a dropped early-access filter), the screen renders
 /// chapters no single-source call would ever return.
 #[tokio::test]
 async fn the_batched_route_matches_a_call_per_source() {
@@ -138,8 +138,8 @@ async fn the_batched_route_matches_a_call_per_source() {
 ///
 /// The batched handler reads the frontier once for the whole series instead of once per source.
 /// A refactor that loses the reader's identity on the way into the per-source projection would
-/// still answer `200` with every chapter of every source — just silently unread, which on this
-/// screen reads as "nothing has been marked" rather than as a failure.
+/// still answer `200` with every chapter of every source, just silently unread, which on this
+/// screen reads as "nothing has been marked" instead of as a failure.
 #[tokio::test]
 async fn read_state_is_populated_for_every_source() {
     let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
@@ -179,7 +179,7 @@ async fn read_state_is_populated_for_every_source() {
         }
     }
 
-    // Anonymous callers have nothing to track, so the field is absent rather than `false`.
+    // Anonymous callers have nothing to track, so the field is absent, not `false`.
     let (_, anonymous) = app
         .call(
             "GET",

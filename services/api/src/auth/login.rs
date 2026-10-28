@@ -1,6 +1,6 @@
-//! Sign-in.
+//! Owns sign-in.
 //!
-//! Both branches — known and unknown identifier — verify a password hash, so the response
+//! Both branches (known and unknown identifier) verify a password hash, so the response
 //! time does not disclose whether an account exists.
 
 use axum::Json;
@@ -53,7 +53,7 @@ pub struct TokenResponse {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum LoginStatus {
-    /// Done — `session` carries the tokens and the refresh cookie is set.
+    /// Done: `session` carries the tokens and the refresh cookie is set.
     Authenticated,
     /// The password verified and a second factor is owed. `mfa` says how to present one, and
     /// **no session was issued**.
@@ -62,23 +62,22 @@ pub enum LoginStatus {
 
 /// What `POST /v1/auth/login` answers.
 ///
-/// A discriminated struct rather than two response bodies on two status codes, or an untagged
-/// union: one status and one schema means the generated client gets a single struct to
-/// deserialise instead of a `oneOf` enum, which this generator renders awkwardly enough that it
-/// has caused trouble here before. `status` is the field a client branches on; the two payloads
-/// are mutually exclusive and each absent when the other is present.
+/// A discriminated struct, not two response bodies on two status codes or an untagged union:
+/// one status and one schema means the generated client gets a single struct to deserialise
+/// instead of a `oneOf` enum, which this generator renders awkwardly. `status` is the field a
+/// client branches on; the two payloads are mutually exclusive and each absent when the other
+/// is present.
 ///
-/// [`TokenResponse`] is left untouched by this, so `refresh` and `register` — which answer with
-/// a session and never a challenge — keep the shape they had.
+/// [`TokenResponse`] stays a plain session, so `refresh` and `register` (which answer with a
+/// session and never a challenge) share it.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct LoginResponse {
     pub status: LoginStatus,
     // `nullable = false` on both payloads keeps the published document saying what it means:
     // without it utoipa writes an `Option<T>` as `oneOf [null, $ref]`, a union standing in for
     // something `required` already expresses, and `required` is what a client actually reads.
-    // (`xtask`'s `collapse_nullable_union` now flattens such a union before the client is
-    // generated, so this no longer decides whether the field is usable — it decides whether the
-    // document is honest.)
+    // `xtask`'s `collapse_nullable_union` flattens such a union before the client is generated,
+    // so this decides whether the document is honest, not whether the field is usable.
     /// Present iff `status` is `authenticated`.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]
@@ -94,13 +93,13 @@ pub struct LoginResponse {
 /// Authenticates by email or username + password.
 ///
 /// Answers one of two things, told apart by `status`. An account with **no** second factor gets
-/// a session outright, as before. An account **with** one gets a challenge and no session at
-/// all — no access token, no refresh cookie — and finishes at `POST /v1/auth/mfa/verify`. That
+/// a session outright. An account **with** one gets a challenge and no session at all (no
+/// access token, no refresh cookie) and finishes at `POST /v1/auth/mfa/verify`. That
 /// is the whole point: a caller who has the password but not the factor must come away with
 /// strictly less than they arrived with.
 ///
-/// Every outcome — success, unknown identifier, bad password, unverified address, second factor
-/// owed — is audited. An authentication log that only records successes cannot answer the
+/// Every outcome (success, unknown identifier, bad password, unverified address, second factor
+/// owed) is audited. An authentication log that only records successes cannot answer the
 /// question anyone actually asks it after an incident.
 #[utoipa::path(
     post,
@@ -178,16 +177,16 @@ pub async fn login(
     ))
 }
 
-/// The first leg: resolve the identifier, verify the password, and refuse an account that may
-/// not sign in at all.
+/// Runs the first leg: resolves the identifier, verifies the password, and refuses an account
+/// that may not sign in at all.
 ///
 /// Split out of [`login`] so the handler reads as "check the password, then check the second
-/// factor" rather than as five refusal branches with a flow buried among them. Every branch here
+/// factor", not as five refusal branches with a flow buried among them. Every branch here
 /// is a refusal; the caller only ever sees credentials that passed all of them.
 ///
 /// # Errors
-/// [`ApiError::Unauthorized`] for an unknown identifier or a wrong password — deliberately the
-/// same answer, and deliberately the same cost, since a faster "no such account" is an account
+/// Returns [`ApiError::Unauthorized`] for an unknown identifier or a wrong password: deliberately
+/// the same answer, and deliberately the same cost, since a faster "no such account" is an account
 /// enumeration oracle. [`ApiError::Suspended`] and [`ApiError::EmailNotVerified`] are distinct
 /// because the client can act on each.
 async fn verify_credentials(
@@ -217,8 +216,8 @@ async fn verify_credentials(
     let Some(creds) = tankovault_db::repo::users::find_credentials(&state.pool, login).await?
     else {
         // Pay the argon2 cost anyway, or the timing gap between known and unknown identifiers
-        // lets an attacker enumerate accounts. Result discarded; only elapsed time matters —
-        // except a shed request, which must answer as the known branch would.
+        // lets an attacker enumerate accounts. Result discarded; only elapsed time matters,
+        // except for a shed request, which must answer as the known branch would.
         if let Err(ApiError::Unavailable) =
             super::kdf::verify_password(password, DUMMY_PASSWORD_HASH, &state.password_pepper).await
         {
@@ -253,7 +252,7 @@ async fn verify_credentials(
     }
 
     // Checked here too (not just the `AuthUser` extractor), so a suspended account is told
-    // so at sign-in rather than signing in and failing every request after.
+    // so at sign-in instead of signing in and failing every request after.
     if !creds.user.status.may_authenticate() {
         return Err(refuse(
             state,
@@ -290,10 +289,10 @@ async fn verify_credentials(
     Ok(creds)
 }
 
-/// Audit a refused sign-in and hand back the error to return.
+/// Audits a refused sign-in and hands back the error to return.
 ///
-/// Every refusal goes through here, so the shape of the record cannot drift between branches —
-/// and so the list of reasons a sign-in can fail is readable as a list rather than as five
+/// Every refusal goes through here, so the shape of the record cannot drift between branches,
+/// and so the list of reasons a sign-in can fail is readable as a list instead of as five
 /// twelve-line blocks that differ in one string each.
 async fn refuse(
     state: &AppState,
@@ -325,7 +324,7 @@ mod tests {
 
     /// The dummy hash must **parse** and must carry the live hasher's parameters. If it does
     /// not parse, `verify_password` errors immediately and the unknown-identifier branch is
-    /// fast again — restoring the enumeration oracle without any visible symptom.
+    /// fast again, restoring the enumeration oracle without any visible symptom.
     #[test]
     fn the_dummy_hash_is_a_real_argon2id_hash_with_the_live_parameters() {
         let live = hash_password(&SecretString::from("any password"), &SecretSlice::default());
@@ -343,7 +342,7 @@ mod tests {
              branches take measurably different time again"
         );
 
-        // Parses, and does the work rather than erroring out of it.
+        // Parses, and does the work instead of erroring out of it.
         assert!(
             !verify_password(
                 &SecretString::from("whatever"),

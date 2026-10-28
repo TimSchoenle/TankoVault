@@ -1,6 +1,6 @@
-//! What the `api` binary reads from its configuration.
+//! Owns what the `api` binary reads from its configuration.
 //!
-//! Public, and in the library rather than beside `main`, because it is the root
+//! Public, and in the library instead of beside `main`, because it is the root
 //! `config-contract` describes for this image: the contract has to be generated from the very
 //! type the binary deserialises, or it is a claim about something else.
 
@@ -14,14 +14,14 @@ use crate::legal::{LEGAL_SECTION, legal_rules};
 /// checks they cannot state, wherever a check can be stated exactly.
 ///
 /// # Errors
-/// A refinement terrace-config refuses: an unknown path, a key that is not a map, or an entry
-/// name some layer cannot spell.
+/// Returns an error for a refinement terrace-config refuses: an unknown path, a key that is not a
+/// map, or an entry name some layer cannot spell.
 pub fn published_schema() -> Result<Schema, terrace_config::Error> {
     published_schema_with(&legal_rules())
 }
 
-/// [`published_schema`] with the `[legal]` section refined by `legal` instead of the shipped
-/// rules.
+/// Returns [`published_schema`] with the `[legal]` section refined by `legal` instead of the
+/// shipped rules.
 pub(crate) fn published_schema_with(
     legal: &CatalogBuilder,
 ) -> Result<Schema, terrace_config::Error> {
@@ -68,7 +68,8 @@ pub struct Config {
     #[serde(default)]
     #[config(nested)]
     pub redis: Option<tankovault_config::RedisConfig>,
-    /// Transactional email (registration, password reset); unconfigured falls back to a no-op mailer.
+    /// Transactional email (registration, password reset); unconfigured falls back to a no-op
+    /// mailer.
     #[serde(default)]
     #[config(nested)]
     pub email: tankovault_config::EmailConfig,
@@ -88,7 +89,7 @@ pub struct Config {
     #[serde(default)]
     #[config(nested)]
     pub audit: tankovault_config::AuditConfig,
-    /// Runtime feature flags; only refresh cadence lives here — on/off is an operator
+    /// Runtime feature flags; only refresh cadence lives here, since on/off is an operator
     /// decision made in the control plane at runtime.
     #[serde(default)]
     #[config(nested)]
@@ -117,7 +118,7 @@ pub struct Config {
     /// Metadata intake rules, cut to what a reader consults: the adult classifier alone, shared
     /// with the worker so the genres the public tag facet withholds are exactly the ones that put
     /// a series behind the gate. The API writes no metadata, so `metadata.priority` stays out of
-    /// its contract — see [`tankovault_config::MetadataReadConfig`].
+    /// its contract; see [`tankovault_config::MetadataReadConfig`].
     #[serde(default)]
     #[config(nested)]
     pub metadata: tankovault_config::MetadataReadConfig,
@@ -127,12 +128,13 @@ pub struct Config {
 #[derive(Debug, serde::Deserialize, Describe)]
 pub struct AuthConfig {
     /// HS256 signing key for access tokens; wrapped in `SecretString` so a `tracing::debug!(?cfg)`
-    /// on this Debug-deriving, nested struct can't publish the key that authenticates every session.
+    /// on this Debug-deriving, nested struct can't publish the key that authenticates every
+    /// session.
     #[config(secret)]
     pub jwt_secret: SecretString,
     /// Server-side password pepper: mixed into every argon2id hash so a leak alone can't be
-    /// brute-forced offline. Empty (default) is un-peppered, for compatibility with old
-    /// hashes; once configured it must stay stable or passwords stop verifying.
+    /// brute-forced offline. Empty (default) is un-peppered and offers no such protection;
+    /// once configured it must stay stable or passwords stop verifying.
     #[serde(default)]
     #[config(secret)]
     pub password_pepper: SecretString,
@@ -144,16 +146,16 @@ pub struct AuthConfig {
     /// come back. Each use rotates the token and revokes its predecessor.
     #[serde(default = "default_refresh_days")]
     pub refresh_ttl_days: i64,
-    /// Mark the refresh cookie `Secure`.
+    /// Marks the refresh cookie `Secure`.
     ///
-    /// Defaults to true — a `bool`'s implicit default is `false`, which would silently send a
+    /// Defaults to true: a `bool`'s implicit default is `false`, which would silently send a
     /// 30-day refresh credential over plain HTTP.
     ///
     /// Also selects the cookie's name/path (`__Host-` vs unprefixed), since a `__Host-`
     /// cookie without `Secure` is refused by the browser. Flipping this forces one re-login.
     #[serde(default = "tankovault_config::default_true")]
     pub cookie_secure: bool,
-    /// Public origin of the web app, for passkeys — `https://tanko.example.com`.
+    /// Public origin of the web app, for passkeys, such as `https://tanko.example.com`.
     ///
     /// Cannot be inferred from a request: `Host` is attacker-controlled, and trusting it
     /// would let anyone mint credentials under a domain of their choosing. Unset falls back
@@ -172,14 +174,14 @@ pub struct AuthConfig {
     ///
     /// Deliberately *not* derived from [`Self::jwt_secret`]: rotating the signing key is a
     /// routine operation, and deriving from it would silently invalidate every enrolled
-    /// authenticator app — the same class of failure as rotating `password_pepper` and
+    /// authenticator app, the same class of failure as rotating `password_pepper` and
     /// stranding the seeded admin. Unset disables TOTP enrolment only; security keys and
     /// recovery codes are unaffected, since neither stores a symmetric secret.
     #[serde(default)]
     #[config(secret)]
     pub mfa_encryption_key: Option<SecretString>,
     /// The issuer name an authenticator app files the entry under. Defaults to
-    /// [`Self::webauthn_rp_name`], then to the product name — one label for both prompts.
+    /// [`Self::webauthn_rp_name`], then to the product name: one label for both prompts.
     #[serde(default)]
     pub totp_issuer: Option<String>,
     /// How long a step-up elevation survives **unused** before a sensitive action prompts again.
@@ -190,7 +192,7 @@ pub struct AuthConfig {
     /// however continuously it is used.
     #[serde(default = "default_step_up_max_minutes")]
     pub step_up_max_ttl_minutes: i64,
-    /// How long a half-finished sign-in — password accepted, second factor still owed — may
+    /// How long a half-finished sign-in (password accepted, second factor still owed) may
     /// sit before the user has to start again.
     #[serde(default = "default_mfa_challenge_minutes")]
     pub mfa_challenge_ttl_minutes: i64,
@@ -199,7 +201,7 @@ pub struct AuthConfig {
 /// Server-side statement ceilings for the two route classes.
 ///
 /// A statement past its request's own deadline (`security.request_timeout_secs`) is work nobody
-/// will read, and before these existed it kept its pooled connection busy after the request had
+/// will read, and without a ceiling it keeps its pooled connection busy after the request has
 /// already answered `408`. Each ceiling is fixed per connection, which is why admin routes draw
 /// from a separate pool.
 #[derive(Debug, Clone, Copy, serde::Deserialize, Describe)]
@@ -268,8 +270,8 @@ fn default_refresh_days() -> i64 {
 }
 
 /// Thirty minutes of *inactivity*. The window slides on every elevated request, so this is how
-/// long an operator may leave a console panel alone before it asks again — five minutes measured
-/// from the confirmation meant a re-prompt in the middle of the very task it was earned for.
+/// long an operator may leave a console panel alone before it asks again. A window measured from
+/// the confirmation would re-prompt in the middle of the very task it was earned for.
 fn default_step_up_minutes() -> i64 {
     30
 }
@@ -281,7 +283,7 @@ fn default_step_up_max_minutes() -> i64 {
     240
 }
 
-/// Five minutes, matching the `WebAuthn` ceremony timeout — a sign-in that offers a security
+/// Five minutes, matching the `WebAuthn` ceremony timeout: a sign-in that offers a security
 /// key must not expire its own challenge before the authenticator prompt does.
 fn default_mfa_challenge_minutes() -> i64 {
     5

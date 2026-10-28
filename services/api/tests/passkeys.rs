@@ -1,6 +1,6 @@
-//! The passkey surface, minus ceremony verification (no authenticator exists in a test process,
-//! so that part is left to `webauthn-rs`). Pins routes, access scoping, single-use challenges,
-//! and the missing-relying-party vs. disabled-feature distinction instead.
+//! Tests the passkey surface, minus ceremony verification (no authenticator exists in a test
+//! process, so that part is left to `webauthn-rs`). Pins routes, access scoping, single-use
+//! challenges, and the missing-relying-party vs. disabled-feature distinction instead.
 //!
 //! Opt-in: gated behind the `integration` feature because they require Docker.
 #![cfg(feature = "integration")]
@@ -72,7 +72,7 @@ async fn a_ceremony_handle_is_single_use_and_unguessable() {
         .await;
     let ceremony_id = started["ceremony_id"].as_str().expect("a ceremony id");
 
-    // A structurally valid but unsigned assertion. It cannot verify — that is fine; what is
+    // A structurally valid but unsigned assertion. It cannot verify, and that is fine; what is
     // being pinned is that the *challenge* is gone afterwards, whatever the outcome was.
     let assertion = |id: &str| {
         json!({
@@ -132,7 +132,7 @@ async fn a_ceremony_handle_is_single_use_and_unguessable() {
 
 /// The management surface is the caller's own, and nobody else's.
 ///
-/// A fresh account has no passkeys — and reads an empty list rather than a `404`, because having
+/// A fresh account has no passkeys, and reads an empty list instead of a `404`, because having
 /// none is the ordinary state of most accounts.
 #[tokio::test]
 async fn the_passkey_list_requires_a_session_and_starts_empty() {
@@ -217,14 +217,14 @@ async fn one_account_cannot_touch_anothers_passkeys() {
 /// Adding a passkey needs a second factor enrolled **and** presented, not just a session.
 ///
 /// A passkey is permanent while an access token lasts fifteen minutes, and it signs in on its
-/// own with no second leg — so minting one is the act of creating a single-factor bypass of
+/// own with no second leg, so minting one is the act of creating a single-factor bypass of
 /// everything below it. Three states, three answers:
 ///
-/// * no session at all — `401`;
-/// * a session, no factor enrolled — `403 mfa_enrolment_required`, the gate this change exists
+/// * no session at all: `401`;
+/// * a session, no factor enrolled: `403 mfa_enrolment_required`, the gate this test exists
 ///   for. It is checked separately from the elevation because an unenrolled account *can* still
 ///   elevate, using the password fallback, so the elevation alone does not imply enrolment;
-/// * a factor enrolled but not presented — `403 step_up_required`.
+/// * a factor enrolled but not presented: `403 step_up_required`.
 ///
 /// The suite deliberately asserts the problem *type*, not just the status: both refusals are
 /// `403`, and a client that cannot tell them apart sends a user to re-authenticate when what
@@ -245,8 +245,8 @@ async fn registering_a_passkey_needs_a_second_factor_enrolled_and_presented() {
         .await;
     assert_eq!(anonymous, StatusCode::UNAUTHORIZED);
 
-    // Elevated by password, which is all an account with no factor can offer — and still
-    // refused, because the gate is on enrolment rather than on the elevation.
+    // Elevated by password, which is all an account with no factor can offer, and still
+    // refused, because the gate is on enrolment, not on the elevation.
     let password_grant = app
         .step_up(
             user,
@@ -322,7 +322,7 @@ async fn a_missing_relying_party_is_unavailable_rather_than_absent() {
 
 /// Switching the feature off takes **both** halves with it.
 ///
-/// Two rules in `route_features`, one flag — gating only the management surface would let a
+/// Two rules in `route_features`, one flag: gating only the management surface would let a
 /// registered credential keep signing people in with no way to revoke it.
 #[tokio::test]
 async fn switching_passkeys_off_removes_sign_in_and_management_together() {

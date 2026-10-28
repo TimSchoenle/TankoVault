@@ -1,4 +1,4 @@
-//! The personalised shelf, end to end through the real router.
+//! Tests the personalised shelf, end to end through the real router.
 //!
 //! The model's own tests (`crates/recsys`, `services/control-plane/tests/recsys_build.rs`) prove
 //! that a built index separates thematic clusters. What they cannot show is whether the *request
@@ -117,7 +117,7 @@ async fn ingest(app: &TestApp, provider: ProviderId, fixture: &Fixture) -> Serie
     .series_id
 }
 
-/// A catalogue, a built model, and a reader. Returns the two clusters and the reader.
+/// Seeds a catalogue, a built model, and a reader. Returns the two clusters and the reader.
 async fn world(app: &TestApp) -> (Vec<SeriesId>, Vec<SeriesId>, UserId) {
     let provider = seed::provider(&app.db, "alpha").create().await;
     let mut dungeon = Vec::new();
@@ -183,7 +183,7 @@ async fn the_shelf_is_drawn_from_what_the_reader_has_read() {
 
 /// A reader is never shown what they already track.
 ///
-/// Obvious, and the single most visible way a recommender can look broken — a "you might like"
+/// Obvious, and the single most visible way a recommender can look broken: a "you might like"
 /// rail full of things sitting in the reader's own watchlist.
 #[tokio::test]
 async fn the_shelf_never_contains_something_already_tracked() {
@@ -212,7 +212,7 @@ async fn the_shelf_never_contains_something_already_tracked() {
 /// **A refusal sticks, and takes effect on the next request.**
 ///
 /// The shelf is cached, so a dismissal that only wrote a row would keep showing the dismissed
-/// series until the cache expired — up to six hours of the product ignoring an explicit "no".
+/// series until the cache expired: up to six hours of the product ignoring an explicit "no".
 #[tokio::test]
 async fn dismissing_a_recommendation_removes_it_immediately() {
     let app = TestApp::spawn().await;
@@ -262,9 +262,9 @@ async fn an_unknown_verdict_is_refused() {
 
 /// **A watchlist change invalidates the profile.**
 ///
-/// The invariant is enforced by a database trigger rather than by every write site remembering,
+/// The invariant is enforced by a database trigger, not by every write site remembering,
 /// and this is what says the trigger is wired. Without it a reader's recommendations silently
-/// stop reflecting what they read — no error, no symptom, just a shelf that stops moving.
+/// stop reflecting what they read: no error, no symptom, just a shelf that stops moving.
 #[tokio::test]
 async fn tracking_a_new_series_reshapes_the_shelf() {
     let app = TestApp::spawn().await;
@@ -349,7 +349,7 @@ async fn the_reader_can_read_their_own_profile() {
 /// **Dropping a series must not make it a seed.**
 ///
 /// "More like this" pointed at something the reader abandoned is the most obviously wrong thing a
-/// recommender can do, and it is what happens if seeds are taken by absolute affinity — which is
+/// recommender can do, and it is what happens if seeds are taken by absolute affinity, which is
 /// the correct ordering for building the *profile*, and the wrong one for choosing seeds.
 #[tokio::test]
 async fn a_dropped_series_never_becomes_a_seed() {
@@ -437,7 +437,7 @@ async fn the_shelf_size_tunable_decides_how_many_items_come_back() {
 ///
 /// The bug this pins: the affinity parameters threaded into `rebuild_profile` but not into the
 /// call that computes each row, so a deployment that had raised `plan to read` above `completed`
-/// would still seed from completions — a tuning page that reports success and changes nothing.
+/// would still seed from completions: a tuning page that reports success and changes nothing.
 #[tokio::test]
 async fn the_affinity_bases_decide_which_series_seeds() {
     // Plan-to-read raised to the top and completion floored: the exact inversion of the shipped
@@ -470,7 +470,7 @@ async fn the_affinity_bases_decide_which_series_seeds() {
 
 /// **The retrieval seed count has to bound the number of anchors actually used.**
 ///
-/// Its whole purpose is trading tail latency for recall — one nearest-neighbour search per seed.
+/// Its whole purpose is trading tail latency for recall: one nearest-neighbour search per seed.
 /// A seed count that shaped the stored profile but not the searches would move neither.
 #[tokio::test]
 async fn the_seed_count_bounds_the_profile() {

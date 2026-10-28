@@ -1,4 +1,4 @@
-//! What this deployment expects of the native client that connects to it.
+//! Owns what this deployment expects of the native client that connects to it.
 //!
 //! **Unauthenticated on purpose**, like `/v1/branding`: the desktop updater runs from the moment
 //! the app starts, including on the sign-in screen and while a session is being re-adopted, and
@@ -7,14 +7,14 @@
 //!
 //! Two things are published, and the second is the point of the endpoint. The **repository** is
 //! where the client reads its releases from, so a fork's readers are offered the fork's
-//! installers rather than this project's. The **version range** is the compatibility contract:
+//! installers, not this project's. The **version range** is the compatibility contract:
 //! a client honours it as a ceiling, and therefore never installs a build newer than the server
 //! it is pointed at can talk to.
 //!
 //! Naming a repository here does **not** make this deployment a trust anchor for what a reader
 //! runs. The client verifies every release against a signing key compiled into it and refuses
 //! anything else, so the worst a hostile server can name is a repository whose releases it will
-//! then reject — see `web/frontend/src/update/discover.rs`.
+//! then reject; see `web/frontend/src/update/discover.rs`.
 
 use std::sync::Arc;
 
@@ -37,19 +37,19 @@ const CACHE_POLICY: &str = "public, max-age=300";
 
 /// The resolved channel, held in [`AppState`] and served verbatim.
 ///
-/// Resolution happens once at boot — unlike the branding's copyright year, nothing in it depends
+/// Resolution happens once at boot: unlike the branding's copyright year, nothing in it depends
 /// on the request.
 #[derive(Debug, Clone)]
 pub struct ClientChannel(Arc<ClientView>);
 
 impl ClientChannel {
-    /// Resolve the configured channel, filling the ceiling in from `service_version` when the
+    /// Resolves the configured channel, filling the ceiling in from `service_version` when the
     /// operator set none.
     ///
     /// # Errors
-    /// A sentence naming the setting and what it holds, for a boot that should not continue: a
-    /// client that cannot read the ceiling falls back to having none, so an unusable value here
-    /// would silently restore the behaviour the range exists to remove.
+    /// Returns a sentence naming the setting and what it holds, for a boot that should not
+    /// continue: a client that cannot read the ceiling falls back to having none, so an unusable
+    /// value here would silently restore the behaviour the range exists to remove.
     pub fn new(config: &ClientConfig, service_version: &str) -> Result<Self, String> {
         config.validate()?;
         Ok(Self(Arc::new(ClientView {
@@ -123,7 +123,7 @@ mod tests {
         assert_eq!(channel.0.max_version, "2.0.0");
     }
 
-    /// A value no client would honour fails the boot rather than reaching the wire — the client
+    /// A value no client would honour fails the boot instead of reaching the wire: the client
     /// discards a malformed bound, and a discarded ceiling is no ceiling.
     #[test]
     fn an_unusable_setting_refuses_to_resolve() {

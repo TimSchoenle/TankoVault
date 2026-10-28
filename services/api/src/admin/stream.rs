@@ -1,9 +1,9 @@
-//! The operator console's single live stream.
+//! Owns the operator console's single live stream.
 //!
 //! One SSE connection carries every push the console needs, on the cadence each payload
-//! deserves, instead of a dozen panels re-issuing their own GET against a shared four-second
-//! timer. `/v1/admin/scans/stream` predates this and stays for one release; it is unreachable
-//! from a browser (see below) and is why the console polled at all.
+//! deserves, instead of a dozen panels re-issuing their own GET against a shared timer.
+//! `/v1/admin/scans/stream` authenticates by `Authorization` header, which `EventSource` cannot
+//! send, so a browser reaches the console's live data only through this route.
 
 use crate::error::{ApiError, ApiResult};
 use crate::me::notifications::{StreamGuard, StreamQuery};
@@ -24,34 +24,33 @@ use tokio_stream::wrappers::IntervalStream;
 const RUNS_PERIOD: Duration = Duration::from_secs(2);
 /// How often the task-level activity is re-read.
 ///
-/// Was deliberately slower than the run counters, on the reasoning that its tail is read rather
-/// than watched. That stopped being true when this payload started carrying the live *stage*:
-/// a run's counters can sit still for the whole of a slow task, and the stage is then the only
-/// thing on the screen that moves. Matching the run cadence is what makes the panel read as live
-/// rather than as frozen. It is two aggregate statements against `scan_tasks`, both index-served.
+/// Matches the run counters because this payload carries the live *stage*: a run's counters can sit
+/// still for the whole of a slow task, and the stage is then the only thing on the screen that
+/// moves. A slower cadence makes the panel read as frozen. It is two aggregate statements against
+/// `scan_tasks`, both index-served.
 const ACTIVITY_PERIOD: Duration = Duration::from_secs(2);
 /// How often the system counters are re-read. They move slowly and the aggregate behind them is
-/// the heaviest read on the admin surface — the old whole-console four-second poll was both too
-/// fast for these and too slow for a run.
+/// the heaviest read on the admin surface, so they get a cadence of their own instead of the
+/// run counters'.
 const STATS_PERIOD: Duration = Duration::from_secs(10);
 /// How many runs the `runs` event carries. Matches what the panel renders.
 const RUNS_LIMIT: i64 = 20;
 /// How many settled tasks the `activity` tail carries. A scan settles far more than this per
 /// tick; the tail is meant to show that work is moving and what it is moving through, not to be
-/// a complete log — the run counters are that.
+/// a complete log; the run counters are that.
 const ACTIVITY_LIMIT: i64 = 15;
 
 /// Console live stream
 ///
-/// Server-Sent Events for the operator console: `stats` every 10 s, and `runs` plus `activity` —
-/// the task-level state and current stage of the runs in flight — every 2 s.
+/// Server-Sent Events for the operator console: `stats` every 10 s, and `runs` and `activity`
+/// (the task-level state and current stage of the runs in flight) every 2 s.
 ///
 /// Authenticated by a single-use `ticket` query parameter from `POST /v1/me/stream-ticket`,
 /// because `EventSource` cannot set an `Authorization` header. A ticket proves a session
 /// existed thirty seconds ago and nothing more, so the permission check below happens *after*
 /// redemption and gates each event separately: a caller entitled to scan runs but not to system
 /// counters receives `runs` and never `stats`. Emitting an event the caller could not fetch
-/// over its own GET would be a disclosure, and the access-matrix suites would not catch it —
+/// over its own GET would be a disclosure, and the access-matrix suites would not catch it:
 /// they reconcile status codes, not event names.
 #[utoipa::path(
     get,
@@ -100,10 +99,10 @@ pub async fn admin_stream(
                 .boxed(),
         );
 
-        // A second source on the same cadence rather than a wider `runs` payload: the run
+        // A second source on the same cadence, not a wider `runs` payload: the run
         // counters are twenty rows of history, the activity is the task-level state of however
         // few runs are in flight, and a reader that has one is not obliged to re-parse the
-        // other. A failed read skips its tick — the counters are still arriving.
+        // other. A failed read skips its tick; the counters are still arriving.
         let pool = state.pool.clone();
         sources.push(
             IntervalStream::new(tokio::time::interval(ACTIVITY_PERIOD))
@@ -150,7 +149,7 @@ pub async fn admin_stream(
                             .await;
                         match snapshot {
                             Ok(overview) => Ok(named("stats", overview.into_view())),
-                            // A failed aggregate skips this tick rather than ending the stream:
+                            // A failed aggregate skips this tick instead of ending the stream:
                             // the console would reconnect and re-run the same failing query.
                             Err(_) => Ok(Event::default().comment("stats unavailable")),
                         }
@@ -162,7 +161,7 @@ pub async fn admin_stream(
 
     let open = StreamGuard::enter();
     let events = futures::stream::select_all(sources).map(move |event| {
-        // Bound into the closure so the gauge decrements when the stream is dropped — which for
+        // Bound into the closure so the gauge decrements when the stream is dropped, which for
         // SSE is the normal ending, the operator closing the tab.
         let _open = &open;
         metrics::counter!("sse_events_pushed_total", "result" => "ok").increment(1);
@@ -170,13 +169,13 @@ pub async fn admin_stream(
     });
 
     // Capped to the access-token lifetime, exactly as `/v1/me/stream` is: a ticket must not
-    // quietly extend the window the token bounded, and re-minting re-runs the checks above.
+    // quietly extend the window the token bounds, and re-minting re-runs the checks above.
     let deadline = tokio::time::sleep(state.access_ttl.unsigned_abs());
     let events = futures::StreamExt::take_until(events, deadline);
     Ok(Sse::new(events).keep_alive(KeepAlive::default()))
 }
 
-/// Spend `ticket` and resolve the principal behind it.
+/// Spends `ticket` and resolves the principal behind it.
 ///
 /// The status re-check is not redundant with minting: a ticket is valid for thirty seconds, and
 /// an account suspended inside that window must not open a stream on the strength of it.
@@ -198,8 +197,8 @@ async fn redeem(state: &AppState, ticket: &str) -> ApiResult<Principal> {
         return Err(ApiError::Suspended);
     }
     // The same rule `AuthUser::require_all` applies to every privileged route: no permission is
-    // honoured for an account without a second factor. This route skips that extractor, and
-    // used to skip the rule with it.
+    // honoured for an account without a second factor. This route skips that extractor, so it
+    // must apply the rule itself.
     if !principal.mfa_enrolled {
         state
             .audit
@@ -218,7 +217,7 @@ async fn redeem(state: &AppState, ticket: &str) -> ApiResult<Principal> {
     Ok(principal)
 }
 
-/// One named SSE event, or a comment if the payload will not serialise.
+/// Builds one named SSE event, or a comment if the payload will not serialise.
 fn named<T: serde::Serialize>(name: &str, payload: T) -> Event {
     Event::default()
         .event(name)

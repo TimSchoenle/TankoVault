@@ -1,4 +1,4 @@
-//! Passwordless sign-in with a passkey.
+//! Owns passwordless sign-in with a passkey.
 //!
 //! `start` issues a discoverable-credential challenge to nobody in particular; `finish` learns
 //! the account from the signed assertion, verifies it, and mints the same session
@@ -25,14 +25,13 @@ use crate::passkey::{begin_ceremony, relying_party, take_ceremony, verification_
 use crate::state::{AppState, ClientContext};
 use tankovault_db::repo::users::webauthn::{CeremonyKind, CredentialPurpose};
 
-/// The challenge, plus the handle the client echoes back to complete it.
+/// The challenge, and the handle the client echoes back to complete it.
 ///
 /// `options` is a W3C `PublicKeyCredentialRequestOptions` envelope, passed to
 /// `navigator.credentials.get()` verbatim. It is typed as an opaque JSON document here on
 /// purpose: the shape is the `WebAuthn` specification's, not this API's, and mirroring it into
 /// the `OpenAPI` document would be this service publishing a second, hand-maintained copy of a
-/// standard — the exact drift that made `/v1/me/sync/*` move its DTOs into
-/// `crates/contracts`. Both ends parse it with the *same* crate (`webauthn-rs-proto`, pinned to
+/// standard, which drifts. Both ends parse it with the *same* crate (`webauthn-rs-proto`, pinned to
 /// one version in both workspaces), so there is nothing for the two to disagree about.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct PasskeyChallenge {
@@ -59,7 +58,7 @@ pub struct PasskeyLoginRequest {
 /// identifier-free: the account is learned from the response, not asked for here.
 ///
 /// The response is safe to hand to any caller. It contains a random challenge and no
-/// information about which accounts exist — mint one for a nonexistent user and it is
+/// information about which accounts exist: mint one for a nonexistent user and it is
 /// indistinguishable from any other, because no user was named.
 #[utoipa::path(
     post,
@@ -95,7 +94,7 @@ pub async fn passkey_login_start(
 ///
 /// Verifies the assertion against the challenge issued by
 /// [`passkey_login_start`](passkey_login_start) and, on success, issues an access token and a
-/// rotating refresh cookie — the same session a password sign-in produces.
+/// rotating refresh cookie, the same session a password sign-in produces.
 ///
 /// Every outcome is audited under `auth.passkey_login`, matching
 /// [`login`](super::login::login): an authentication log that only records successes cannot
@@ -124,7 +123,7 @@ pub async fn passkey_login_finish(
     let credential: PublicKeyCredential = serde_json::from_value(body.credential)
         .map_err(|e| ApiError::BadRequest(format!("malformed WebAuthn assertion: {e}")))?;
 
-    // Consumes the challenge whatever happens below — it is a `DELETE ... RETURNING`, so none
+    // Consumes the challenge whatever happens below: it is a `DELETE ... RETURNING`, so none
     // of the early returns can leave a replayable challenge behind.
     let (_, ceremony): (_, DiscoverableAuthentication) =
         take_ceremony(&state, body.ceremony_id, CeremonyKind::Authenticate).await?;
@@ -136,7 +135,7 @@ pub async fn passkey_login_finish(
         .map_err(|e| verification_failed(&e))?;
 
     // Scoped to `Passkey`: a security key is a *second* factor, and resolving one here would
-    // let it sign in on its own — which is the whole thing the second factor is for.
+    // let it sign in on its own, which is the whole thing the second factor is for.
     let record = tankovault_db::repo::users::webauthn::find_by_credential_id(
         &state.pool,
         credential_id,
@@ -196,7 +195,7 @@ pub async fn passkey_login_finish(
     let user = tankovault_db::repo::users::get(&state.pool, record.user_id).await?;
     ensure_may_sign_in(&state, &client, &user).await?;
 
-    // Best-effort — none of it is worth failing an already-successful sign-in over.
+    // Best-effort: none of it is worth failing an already-successful sign-in over.
     // `needs_update` is false for most passkeys, which sync between devices and have no counter.
     if result.needs_update() {
         passkey.update_credential(&result);
@@ -229,12 +228,12 @@ pub async fn passkey_login_finish(
     issue_session(&state, jar, &user, Uuid::now_v7()).await
 }
 
-/// The two account gates a password sign-in passes, applied here too — refusing at the door
+/// Applies the two account gates a password sign-in passes; refusing at the door
 /// keeps a suspended or unconfirmed account from signing in and failing every request after,
 /// and closes off passkeys as a bypass for email confirmation.
 ///
 /// # Errors
-/// [`ApiError::Suspended`] or [`ApiError::EmailNotVerified`], audited before returning.
+/// Returns [`ApiError::Suspended`] or [`ApiError::EmailNotVerified`], audited before returning.
 async fn ensure_may_sign_in(
     state: &AppState,
     client: &ClientContext,

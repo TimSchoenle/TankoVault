@@ -1,5 +1,5 @@
-//! Operator-supplied legal documents: the index the footer builds its Legal column from, and
-//! the documents themselves.
+//! Owns the operator-supplied legal documents: the index the footer builds its Legal column from,
+//! and the documents themselves.
 //!
 //! **Unauthenticated on purpose.** A reader is owed the Terms and the Data Policy *before* they
 //! register, because registering is the act of accepting them; the register form links these,
@@ -35,12 +35,13 @@ pub fn legal_rules() -> CatalogBuilder {
     Catalog::builder()
 }
 
-/// Validate the operator's `[legal]` section into the documents this runtime serves.
+/// Validates the operator's `[legal]` section into the documents this runtime serves.
 ///
 /// Warnings (an external document on plain `http`) are logged and do not refuse the section.
 ///
 /// # Errors
-/// Every problem in the section at once, keyed as the operator wrote it (`legal.documents.…`).
+/// Returns every problem in the section at once, keyed as the operator wrote it
+/// (`legal.documents.…`).
 pub fn legal_documents(config: &LegalConfig) -> Result<Legal, ConfigIssues> {
     let rules = legal_rules();
     let catalog = rules
@@ -55,7 +56,7 @@ pub fn legal_documents(config: &LegalConfig) -> Result<Legal, ConfigIssues> {
 /// List the legal documents
 ///
 /// Only what this deployment actually publishes. An operator who configures no Imprint gets no
-/// Imprint entry, so the footer renders no dead link rather than one that 404s.
+/// Imprint entry, so the footer renders no dead link instead of one that 404s.
 #[utoipa::path(
     get,
     path = "/v1/legal",
@@ -75,7 +76,7 @@ pub async fn legal_index(
 
 /// Get one legal document
 ///
-/// The Markdown as the operator wrote it. Rendering — and sanitising the result — is the
+/// The Markdown as the operator wrote it. Rendering (and sanitising the result) is the
 /// client's job: this is operator input, not developer input, so it is never trusted as HTML.
 #[utoipa::path(
     get,

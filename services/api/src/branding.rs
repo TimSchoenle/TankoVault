@@ -1,4 +1,4 @@
-//! The deployment's own identity, published so the client renders it instead of a literal.
+//! Owns the deployment's own identity, published so the client renders it instead of a literal.
 //!
 //! **Unauthenticated on purpose**, for the same reason `/v1/legal` is: the sign-in card carries
 //! the wordmark and the footer, and a client that has to authenticate before it learns what it is
@@ -21,13 +21,13 @@ use crate::state::AppState;
 ///
 /// The same five minutes `/v1/legal` uses, and for the same reason: it changes only when the
 /// operator restarts, but it is asked for on every page load, and an operator who has just
-/// renamed their deployment should see it within a coffee break rather than an hour.
+/// renamed their deployment should see it within a coffee break, not an hour.
 const CACHE_POLICY: &str = "public, max-age=300";
 
 /// The resolved identity, held in [`AppState`].
 ///
-/// Resolution happens once at boot — the wordmark split and the licence label do not depend on
-/// the request — with the single exception of the copyright year, which is filled in per response
+/// Resolution happens once at boot (the wordmark split and the licence label do not depend on
+/// the request), with the single exception of the copyright year, which is filled in per response
 /// so a long-running deployment does not keep claiming the year it was started in.
 #[derive(Clone)]
 pub struct Branding(Arc<BrandingConfig>);
@@ -52,7 +52,7 @@ impl Branding {
         self.0.bot_user_agent.as_deref()
     }
 
-    /// The view served to clients.
+    /// Builds the view served to clients.
     fn view(&self) -> BrandingView {
         let (lead, accent) = self.0.wordmark();
         BrandingView {
@@ -74,9 +74,9 @@ impl Branding {
     }
 }
 
-/// The current UTC year, as the footer would print it.
+/// Returns the current UTC year, as the footer would print it.
 ///
-/// UTC rather than the reader's zone: a copyright notice is not a clock, and resolving it
+/// UTC, not the reader's zone: a copyright notice is not a clock, and resolving it
 /// per-reader would make the response uncacheable for a difference nobody can observe.
 fn current_year() -> String {
     time::OffsetDateTime::now_utc().year().to_string()
@@ -127,7 +127,7 @@ pub struct CopyrightView {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct LicenceView {
     pub name: String,
-    /// Absent renders the label as plain text rather than a dead link.
+    /// Absent renders the label as plain text instead of a dead link.
     pub url: Option<String>,
 }
 

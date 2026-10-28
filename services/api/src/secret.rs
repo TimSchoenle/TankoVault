@@ -1,4 +1,4 @@
-//! Serialising a secret onto the wire, deliberately and in one place — no type here opts into
+//! Owns serialising a secret onto the wire, deliberately and in one place: no type here opts into
 //! `SerializableSecret`, so a secret can't reach a JSON body by riding along in a struct
 //! someone serialised. The two values that must reach the client (the access and refresh
 //! tokens) go through [`expose_onto_wire`], the one exception `grep expose_onto_wire`
@@ -7,10 +7,10 @@
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serializer;
 
-/// Serialise a [`SecretString`] as the plain string it wraps.
+/// Serialises a [`SecretString`] as the plain string it wraps.
 ///
 /// # Errors
-/// Propagates whatever the underlying [`Serializer`] returns.
+/// Returns whatever the underlying [`Serializer`] returns.
 pub(crate) fn expose_onto_wire<S: Serializer>(
     secret: &SecretString,
     serializer: S,
@@ -18,13 +18,13 @@ pub(crate) fn expose_onto_wire<S: Serializer>(
     serializer.serialize_str(secret.expose_secret())
 }
 
-/// [`expose_onto_wire`] for an optional field — needed separately since `serialize_with`
+/// [`expose_onto_wire`] for an optional field, needed separately since `serialize_with`
 /// replaces the whole field's serialisation, `Option` included, so the inner-value form can't
-/// be reused. Paired with `skip_serializing_if` so an absent value stays absent rather than
+/// be reused. Paired with `skip_serializing_if` so an absent value stays absent instead of
 /// becoming an explicit `null`.
 ///
 /// # Errors
-/// Propagates whatever the underlying [`Serializer`] returns.
+/// Returns whatever the underlying [`Serializer`] returns.
 #[expect(
     clippy::ref_option,
     reason = "serde's serialize_with fixes the signature to &T of the field's own type, which \
@@ -46,7 +46,7 @@ pub(crate) fn expose_option_onto_wire<S: Serializer>(
 /// replaces the whole field's serialisation, so the scalar form cannot be reused inside a `Vec`.
 ///
 /// # Errors
-/// Propagates whatever the underlying [`Serializer`] returns.
+/// Returns whatever the underlying [`Serializer`] returns.
 pub(crate) fn expose_list_onto_wire<S: Serializer>(
     secrets: &[SecretString],
     serializer: S,
@@ -59,11 +59,11 @@ pub(crate) fn expose_list_onto_wire<S: Serializer>(
     seq.end()
 }
 
-/// [`expose_list_onto_wire`] for an optional list — recovery codes ride along only with the
+/// [`expose_list_onto_wire`] for an optional list: recovery codes ride along only with the
 /// registration that was the account's *first* factor.
 ///
 /// # Errors
-/// Propagates whatever the underlying [`Serializer`] returns.
+/// Returns whatever the underlying [`Serializer`] returns.
 #[expect(
     clippy::ref_option,
     reason = "serde's serialize_with fixes the signature to &T of the field's own type, which \
@@ -112,7 +112,7 @@ mod tests {
         codes: Vec<SecretString>,
     }
 
-    /// A list opts in the same way, and lands as plain strings rather than as objects.
+    /// A list opts in the same way, and lands as plain strings, not as objects.
     #[test]
     fn an_opted_in_list_serialises_as_plain_strings() {
         let json = serde_json::to_string(&Codes {
@@ -126,14 +126,14 @@ mod tests {
     }
 
     /// The half easy to lose in a refactor: without the attribute the struct must not compile
-    /// at all, rather than serialising `[REDACTED]` or an object — enforced by `secrecy`
+    /// at all, instead of serialising `[REDACTED]` or an object; enforced by `secrecy`
     /// refusing `Serialize` for `SecretBox<str>`.
     ///
     /// A future `impl SerializableSecret for …` would make this refusal disappear silently.
     /// Do not add one.
     #[test]
     fn a_secret_is_not_serialisable_without_the_opt_in() {
-        // `SecretString: Serialize` does not hold — asserted structurally: a helper generic
+        // `SecretString: Serialize` does not hold, asserted structurally: a helper generic
         // over `Serialize` can't be instantiated with it, so the absence of a call is the test.
         fn assert_serialisable<T: serde::Serialize>() {}
         assert_serialisable::<String>();

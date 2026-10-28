@@ -1,5 +1,5 @@
-//! The reader's global provider order — which source a series should open on when no per-series
-//! pin says otherwise.
+//! Owns the reader's global provider order: which source a series should open on when no
+//! per-series pin says otherwise.
 //!
 //! Deliberately ungated: it shapes outbound links and nothing else, has no delivery cost behind
 //! it, and switching it off would leave readers with an order they cannot change. The per-series
@@ -20,12 +20,12 @@ use utoipa::ToSchema;
 #[derive(Debug, Serialize, ToSchema)]
 pub struct PreferredProvider {
     pub id: ProviderId,
-    /// The provider slug — the same stable client-side key the source lists are drawn with.
+    /// The provider slug: the same stable client-side key the source lists are drawn with.
     pub slug: String,
     pub name: String,
 }
 
-/// The reader's provider order, most preferred first, plus their early-access opt-ins.
+/// The reader's provider order, most preferred first, and their early-access opt-ins.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SourcePreferences {
     /// Ranked providers only. An absent provider is "no opinion", not "last": series carried by
@@ -48,16 +48,16 @@ pub struct SourcePreferencesUpdate {
     /// Provider ids whose early-access chapters should count for this reader.
     ///
     /// **Omitted leaves the current set untouched**; `[]` clears it. The distinction matters
-    /// because this field was added after the endpoint shipped — treating an absent field as an
-    /// empty list would silently revoke the opt-in of every client that has not been updated.
+    /// because older clients do not send this field: treating an absent field as an empty list
+    /// would silently revoke the opt-in of every client that has not been updated.
     #[serde(default)]
     pub early_access_provider_ids: Option<Vec<ProviderId>>,
 }
 
 /// Get source preferences
 ///
-/// The caller's provider order. Providers that have since been disabled are dropped rather than
-/// returned — they carry nothing a reader can open, so ranking them would be a preference that
+/// The caller's provider order. Providers that have since been disabled are dropped, not
+/// returned: they carry nothing a reader can open, so ranking them would be a preference that
 /// can never apply.
 #[utoipa::path(
     get,
@@ -129,7 +129,7 @@ pub async fn put_source_preferences(
     // Both checks are the caller's mistake, not the database's: without them a duplicate lands
     // as a primary-key violation and an unknown id as a foreign-key violation, and a 500 tells
     // nobody which id was wrong. Validating against the public list also keeps a disabled
-    // provider — invisible everywhere else — from being ranked.
+    // provider (invisible everywhere else) from being ranked.
     let known = tankovault_db::repo::providers::list_public(&state.pool).await?;
     let known: HashSet<uuid::Uuid> = known.into_iter().map(|p| p.id).collect();
     let mut seen = HashSet::with_capacity(body.provider_ids.len());
@@ -144,7 +144,7 @@ pub async fn put_source_preferences(
 
     // The early-access set is validated against the same public list: an opt-in for a provider
     // the reader cannot see would be a preference that can never apply, and it feeds a
-    // predicate rather than only a link, so a stale id there changes unread counts.
+    // predicate, not only a link, so a stale id there changes unread counts.
     if let Some(early) = &body.early_access_provider_ids {
         let mut seen = HashSet::with_capacity(early.len());
         for id in early {

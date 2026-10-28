@@ -1,7 +1,7 @@
-//! Managing one's own passkeys: register, list, rename, revoke; sign-in lives in
+//! Owns managing one's own passkeys: register, list, rename, revoke; sign-in lives in
 //! [`crate::auth::passkey`].
 //!
-//! Its one non-obvious rule is the password check on registration — see
+//! Its one non-obvious rule is the factor check on registration; see
 //! [`passkey_register_start`].
 
 use axum::Json;
@@ -32,7 +32,7 @@ const DEFAULT_LABEL: &str = "Passkey";
 ///
 /// Note what is **not** here: the credential itself, the public key and the credential id. None
 /// of them is a secret, but none is useful to a browser either, and a credential id is the
-/// lookup key a sign-in resolves an account from — publishing every account's ids on an
+/// lookup key a sign-in resolves an account from, and publishing every account's ids on an
 /// authenticated page would hand an attacker who compromises one session the material to
 /// recognise that user's authenticator elsewhere.
 #[derive(Debug, Serialize, ToSchema)]
@@ -60,7 +60,7 @@ pub struct PasskeyRegisterStart {
     pub label: Option<String>,
 }
 
-/// The challenge, plus the handle the client echoes back to complete it.
+/// The challenge, and the handle the client echoes back to complete it.
 ///
 /// `options` is a W3C `PublicKeyCredentialCreationOptions` envelope. It is an opaque JSON
 /// document here for the reason [`crate::auth::passkey::PasskeyChallenge`] gives: the shape
@@ -131,22 +131,21 @@ pub async fn list_passkeys(
 /// # Two gates, and why a passkey has the strictest one on the account
 ///
 /// A passkey is a **permanent** credential, and an access token is a 15-minute one. Anyone who
-/// got hold of a token for those fifteen minutes — a shared browser, a proxy log, an XSS
-/// payload that survives one page — could otherwise register their own authenticator and keep
+/// got hold of a token for those fifteen minutes (a shared browser, a proxy log, an XSS
+/// payload that survives one page) could otherwise register their own authenticator and keep
 /// the account forever, surviving every password change and session revocation the real owner
 /// performs. So installing a credential requires proving you hold one:
 ///
-/// 1. **A second factor must already be enrolled.** Not merely presented — enrolled. A passkey
+/// 1. **A second factor must already be enrolled.** Not merely presented: enrolled. A passkey
 ///    signs in on its own, with no second leg, so minting one is the act of creating a
 ///    single-factor bypass of everything below it. An account that has not yet decided to hold
 ///    a second factor has not earned the right to create something that outranks it.
 /// 2. **A step-up.** The factor must be presented *now*, not merely exist.
 ///
-/// This used to take `current_password` instead, which defended against the wrong attacker: the
-/// person most likely to be holding a stolen token is the person who phished the password to
-/// open it.
+/// A `current_password` check would defend against the wrong attacker: the person most likely
+/// to be holding a stolen token is the person who phished the password to open it.
 ///
-/// Credentials already registered to the account — passkeys **and** security keys — are sent as
+/// Credentials already registered to the account (passkeys **and** security keys) are sent as
 /// the exclusion list, so an authenticator that already holds one for this account says so at
 /// the prompt instead of silently minting a second credential that would let one touch satisfy
 /// both legs of a sign-in.
@@ -173,8 +172,8 @@ pub async fn passkey_register_start(
     let label = normalise_label(body.label.as_deref())?;
 
     // Gate 1. `Elevated` already proved a factor was *presented*, which for an unenrolled
-    // account can be satisfied by the password fallback — so the enrolment itself is checked
-    // separately here rather than being assumed from the elevation.
+    // account can be satisfied by the password fallback, so the enrolment itself is checked
+    // separately here instead of being assumed from the elevation.
     if !user.mfa_enrolled {
         audit_failure(
             &state,
@@ -194,7 +193,7 @@ pub async fn passkey_register_start(
             .await?;
 
     // `user_unique_id` is the account's own id: the stable, one-row-per-account handle the
-    // authenticator stores. Not a secret leaked to the device — the owner already reads it via
+    // authenticator stores. Not a secret leaked to the device: the owner already reads it via
     // `GET /v1/me/profile`, and it travels nowhere else.
     let (challenge, ceremony) = webauthn
         .start_passkey_registration(
@@ -205,7 +204,7 @@ pub async fn passkey_register_start(
         )
         .map_err(|e| ceremony_start_failed(&e))?;
 
-    // The label is decided now and travels with the ceremony rather than being resent at
+    // The label is decided now and travels with the ceremony instead of being resent at
     // `finish`, so the two requests can't disagree on what it was.
     let ceremony_id = begin_ceremony(
         &state,
@@ -227,7 +226,7 @@ pub async fn passkey_register_start(
     }))
 }
 
-/// The registration ceremony as stored: the library's state plus the label chosen alongside it.
+/// The registration ceremony as stored: the library's state and the label chosen alongside it.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct StoredRegistration {
     registration: PasskeyRegistration,
@@ -265,9 +264,9 @@ pub async fn passkey_register_finish(
     let (owner, stored): (_, StoredRegistration) =
         take_ceremony(&state, body.ceremony_id, CeremonyKind::Register).await?;
 
-    // A registration ceremony belongs to the account that started it — otherwise a leaked
+    // A registration ceremony belongs to the account that started it; otherwise a leaked
     // ceremony id lets an attacker install their own authenticator on someone else's account.
-    // `Unauthorized` rather than `Forbidden` so the caller isn't told the ceremony exists.
+    // `Unauthorized`, not `Forbidden`, so the caller isn't told the ceremony exists.
     if owner != Some(user.user_id) {
         tracing::warn!(
             caller = %user.user_id.as_uuid(),
@@ -319,7 +318,7 @@ pub async fn passkey_register_finish(
 
 /// Rename a passkey
 ///
-/// Change the label on one of the caller's own passkeys. Scoped to ownership; a foreign or
+/// Changes the label on one of the caller's own passkeys. Scoped to ownership; a foreign or
 /// unknown id yields `404`.
 #[utoipa::path(
     patch,
@@ -358,12 +357,12 @@ pub async fn rename_passkey(
 
 /// Revoke a passkey
 ///
-/// Delete one of the caller's own passkeys. Scoped to ownership; a foreign or unknown id yields
+/// Deletes one of the caller's own passkeys. Scoped to ownership; a foreign or unknown id yields
 /// `404`.
 ///
 /// Deleting the last passkey is allowed, and is not a lockout: every account on this deployment
 /// has a password, and passkeys are additive to it. Refusing would be the wrong protection
-/// anyway — the case a user most urgently needs this for is a device they have just lost.
+/// anyway: the case a user most urgently needs this for is a device they have just lost.
 #[utoipa::path(
     delete,
     path = "/v1/me/passkeys/{id}",
@@ -402,11 +401,12 @@ pub async fn delete_passkey(
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
-/// Trim a caller-supplied label, substitute the default for an empty one, and bound its length.
+/// Trims a caller-supplied label, substitutes the default for an empty one, and bounds its
+/// length.
 ///
 /// # Errors
-/// [`ApiError::BadRequest`] when the label exceeds [`MAX_LABEL_LEN`] **characters** (not bytes —
-/// truncating a multi-byte label at a byte boundary would be wrong).
+/// Returns [`ApiError::BadRequest`] when the label exceeds [`MAX_LABEL_LEN`] **characters** (not
+/// bytes: truncating a multi-byte label at a byte boundary would be wrong).
 fn normalise_label(label: Option<&str>) -> ApiResult<String> {
     let label = label.unwrap_or("").trim();
     if label.chars().count() > MAX_LABEL_LEN {

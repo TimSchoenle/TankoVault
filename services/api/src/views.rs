@@ -1,9 +1,9 @@
-//! Repository row → wire view conversions: the one seam allowed to know both the
+//! Owns the repository-row to wire-view conversions: the one seam allowed to know both the
 //! `tankovault-db` and `tankovault_contracts` layers, so a renamed or dropped column is a
-//! compile error here rather than a silent drift in the published API.
+//! compile error here instead of a silent drift in the published API.
 //!
-//! Keep conversions exhaustive and literal — no `..Default::default()`, no struct-update
-//! syntax — so a new column forces a decision about whether it is published.
+//! Keep conversions exhaustive and literal (no `..Default::default()`, no struct-update
+//! syntax), so a new column forces a decision about whether it is published.
 
 use tankovault_contracts::{admin, catalogue, me};
 use tankovault_db::repo;
@@ -17,7 +17,7 @@ pub(crate) trait IntoView {
 }
 
 /// Lists convert element-wise, so a handler answering with a page writes `.into_view()` once
-/// rather than an `into_iter().map(..).collect()` at every call site.
+/// instead of an `into_iter().map(..).collect()` at every call site.
 impl<T: IntoView> IntoView for Vec<T> {
     type View = Vec<T::View>;
 
@@ -142,7 +142,7 @@ impl IntoView for repo::scans::RunListing {
 }
 
 /// The window rollup and its per-provider breakdown are two statements against the same filter,
-/// so the pair converts together rather than leaving the handler to assemble a published shape.
+/// so the pair converts together instead of leaving the handler to assemble a published shape.
 impl IntoView
     for (
         repo::scans::ScanSummary,
@@ -577,7 +577,7 @@ impl IntoView for repo::permissions::GrantRow {
 
 // --- privacy: the data-subject request queue --------------------------------------------
 //
-// The two enums are mirrored rather than moved: their `sqlx::Type` derive binds them to the
+// The two enums are mirrored, not moved: their `sqlx::Type` derive binds them to the
 // `gdpr_request_kind` / `gdpr_request_status` SQL enums, and `tankovault-contracts` must not
 // depend on a database driver. Both directions are written out and both matches are
 // exhaustive, so adding a variant on either side fails to compile until it is mapped.
@@ -663,7 +663,7 @@ impl IntoView for repo::gdpr::AdminRequestRow {
     fn into_view(self) -> Self::View {
         admin::AdminPrivacyRequestView {
             // Read before `request` is moved into the view: the kind is what decides this, and
-            // `RequestKind::needs_export` is the one definition of it (FRONTEND F10).
+            // `RequestKind::needs_export` is the one definition of it.
             needs_export: self.request.kind.needs_export(),
             request: self.request.into_view(),
             user_id: self.user_id,
@@ -719,8 +719,8 @@ mod tests {
         OffsetDateTime::from_unix_timestamp(1_754_700_000).expect("a representable instant")
     }
 
-    /// A column that stops being published is a compile error rather than a silent hole in the
-    /// API, which is what this module is for — but the compiler only checks that every
+    /// A column that stops being published is a compile error, not a silent hole in the API,
+    /// which is what this module is for; but the compiler only checks that every
     /// *field of the view* is assigned, never that it was assigned the matching one. Two fields
     /// of the same type transposed compiles cleanly and ships wrong numbers, which on this
     /// surface means an operator reading one provider's failure count against another's.
@@ -761,7 +761,7 @@ mod tests {
     }
 
     /// The summary and its per-provider breakdown are two statements converted as one pair, so
-    /// the join between them is this conversion rather than anything the database checked.
+    /// the join between them is this conversion, not anything the database checked.
     #[test]
     fn a_window_summary_publishes_its_own_values() {
         let summary = repo::scans::ScanSummary {
@@ -821,7 +821,7 @@ mod tests {
     }
 
     /// The live panel reads "is it moving" off these three counts, and the run id is a bare
-    /// `Uuid` on the row that becomes a typed `ScanRunId` on the wire — a conversion no other
+    /// `Uuid` on the row that becomes a typed `ScanRunId` on the wire, a conversion no other
     /// test on this surface performs.
     #[test]
     fn live_activity_publishes_its_own_values() {
@@ -847,9 +847,9 @@ mod tests {
         assert_eq!(view.oldest_claim_at, Some(an_instant()));
         assert_eq!(view.kinds, vec!["series".to_owned()]);
         assert_eq!(view.workers, 2);
-        // The stage is what turned this payload from "a run is claimed" into "a run is fetching
-        // chapters for /manga/x"; a conversion that dropped it would leave the panel exactly as
-        // uninformative as it was before.
+        // The stage is what turns this payload from "a run is claimed" into "a run is fetching
+        // chapters for /manga/x"; a conversion that dropped it would leave the panel saying only
+        // the first.
         assert_eq!(view.stage.as_deref(), Some("series_chapters"));
         assert_eq!(view.stage_detail.as_deref(), Some("/manga/x"));
         assert_eq!(view.stage_done, Some(12));
@@ -923,8 +923,8 @@ mod tests {
         assert_eq!(view.latest_at, Some(an_instant()));
     }
 
-    /// A page keeps its total *and* converts its rows; returning the count of the page rather
-    /// than of the filter would make the pager claim the window is one page deep.
+    /// A page keeps its total *and* converts its rows; returning the count of the page instead
+    /// of the filter would make the pager claim the window is one page deep.
     #[test]
     fn a_run_page_keeps_its_filter_total() {
         let page = repo::scans::RunPage {

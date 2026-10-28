@@ -1,4 +1,4 @@
-//! The operator side of the data-subject request queue: triage, fulfilment and the record of
+//! Owns the operator side of the data-subject request queue: triage, fulfilment and the record of
 //! how each request was answered. Duplicates [`crate::me::privacy`] deliberately, since these
 //! act on another person's account under separately audited permissions.
 
@@ -24,7 +24,7 @@ const QUEUE_LIMIT: i64 = 200;
 
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct QueueQuery {
-    /// Show only unresolved requests. Defaults to `true` — the queue's job is the work
+    /// Show only unresolved requests. Defaults to `true`: the queue's job is the work
     /// outstanding, and resolved requests are the compliance record behind it.
     #[serde(default)]
     pub include_resolved: bool,
@@ -60,7 +60,7 @@ pub async fn list_privacy_queue(
 /// Claim a data-subject request
 ///
 /// Takes ownership of a pending request so two operators do not work the same one. Refuses if
-/// somebody already claimed it, rather than silently taking it over.
+/// somebody already claimed it, instead of silently taking it over.
 #[utoipa::path(
     post,
     path = "/v1/admin/privacy/requests/{id}/claim",
@@ -111,7 +111,7 @@ pub struct ResolveRequest {
     /// How it ends. Only `completed` and `rejected` are operator decisions; `cancelled` belongs
     /// to the subject and is refused here.
     pub status: PrivacyRequestStatus,
-    /// What was done, or — for a rejection — why.
+    /// What was done, or, for a rejection, why.
     ///
     /// Mandatory on a rejection: Art. 12(4) obliges the controller to give reasons for refusing
     /// to act, so a rejection without one is not a lawful response.
@@ -124,7 +124,7 @@ pub struct ResolveRequest {
 /// Marks a request completed or rejected. Only transitions out of an open state, so a
 /// resolution cannot be recorded twice or rewritten later.
 ///
-/// Does **not** perform the underlying action — completing an erasure request does not erase.
+/// Does **not** perform the underlying action: completing an erasure request does not erase.
 /// Fulfilment is [`fulfil_erasure`] and [`export_subject_data`], each with its own permission,
 /// so "we said we did it" and "we did it" are separate records.
 #[utoipa::path(
@@ -279,11 +279,11 @@ pub async fn extend_privacy_request(
 /// Produces the same document as the subject's own export, for delivery in answer to an access
 /// (Art. 15) or portability (Art. 20) request.
 ///
-/// Gated on [`Permission::PrivacyExport`] rather than `privacy.write`, and audited under its own
+/// Gated on [`Permission::PrivacyExport`], not `privacy.write`, and audited under its own
 /// action: this is the one operation in the queue that *discloses* another person's entire
 /// record, and it needs to be separately grantable and separately searchable afterwards.
 ///
-/// Refused for request kinds that are not about disclosure — an erasure request is not a licence
+/// Refused for request kinds that are not about disclosure: an erasure request is not a licence
 /// to read the account first.
 #[utoipa::path(
     get,
@@ -312,7 +312,7 @@ pub async fn export_subject_data(
             "this request is not an access or portability request".to_owned(),
         ));
     }
-    // A missing subject means the account is gone — which for a completed erasure is the
+    // A missing subject means the account is gone, which for a completed erasure is the
     // expected end state, not an error in this system.
     let subject = request
         .user_id
@@ -354,7 +354,7 @@ pub struct FulfilErasure {
 /// Carry out an erasure request
 ///
 /// Erases the subject's account and everything it owns, then resolves the request as completed
-/// in the same call — so the compliance record cannot end up saying an erasure was done when it
+/// in the same call, so the compliance record cannot end up saying an erasure was done when it
 /// was not, or the reverse.
 ///
 /// Requires [`Permission::UsersDelete`] as well as [`Permission::PrivacyWrite`]: working the

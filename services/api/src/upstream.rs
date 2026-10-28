@@ -1,7 +1,7 @@
-//! One typed client for every internal service the API fronts.
+//! Owns the one typed client for every internal service the API fronts.
 //!
-//! Centralizes the internal-token header, timeouts and upstream-status mapping that call
-//! sites used to duplicate, each free to get the error mapping subtly different.
+//! Centralizes the internal-token header, timeouts and upstream-status mapping, so no call site
+//! can get the error mapping subtly different.
 
 use crate::error::{ApiError, ApiResult};
 use axum::Json;
@@ -17,7 +17,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Whole-request timeout. Above the slowest legitimate operation (a `sync` pull walks a
 /// third-party list) and below the API's own 30 s request timeout, so the caller sees this
-/// service's `504` rather than an ambiguous edge timeout.
+/// service's `504` instead of an ambiguous edge timeout.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(25);
 
 /// A typed handle to one internal service.
@@ -36,10 +36,7 @@ pub struct Upstream {
 }
 
 impl Upstream {
-    /// Build a handle to `base`, presenting `token` on every call.
-    ///
-    /// # Errors
-    /// When the shared `reqwest::Client` cannot be constructed (a TLS backend failure).
+    /// Builds a handle to `base`, presenting `token` on every call.
     pub fn new(
         http: reqwest::Client,
         base: impl Into<String>,
@@ -59,12 +56,12 @@ impl Upstream {
     ///
     /// `material` is present under `internal.identity = "mtls"`, and then the client both
     /// presents this service's certificate and verifies its peers against the configured
-    /// bundle — `.tls_built_in_root_certs(false)` because a peer signed by a *public* authority
-    /// is not a peer, and accepting one would make the whole point of pinning to an internal CA
-    /// moot.
+    /// bundle, with the built-in roots dropped because a peer signed by a *public* authority is
+    /// not a peer, and accepting one would make pinning to an internal CA moot.
     ///
     /// # Errors
-    /// When the TLS backend cannot be initialised, or the supplied material is not valid PEM.
+    /// Returns an error when the TLS backend cannot be initialised, or the supplied material is not
+    /// valid PEM.
     pub fn client(
         material: Option<&tankovault_service::ClientMaterial>,
     ) -> Result<reqwest::Client, reqwest::Error> {
@@ -90,21 +87,23 @@ impl Upstream {
             .build()
     }
 
-    /// `GET path`, decoding the body as `T`.
+    /// Sends `GET path`, decoding the body as `T`.
     ///
     /// # Errors
-    /// A bad gateway or a gateway timeout when the peer cannot be reached, and the peer's own
-    /// not-found or conflict when it refused deliberately.
+    /// Returns `ApiError::GatewayTimeout` when the peer times out, `ApiError::NotFound` or
+    /// `ApiError::Conflict` for its `404` or `409`, and `ApiError::BadGateway` for an unreachable
+    /// peer, any other non-success status, or a JSON body that is not a `T`.
     pub async fn get<T: DeserializeOwned>(&self, path: &str) -> ApiResult<Json<T>> {
         let url = self.url(path);
         self.send(self.http.get(url)).await
     }
 
-    /// `POST path` with a JSON body, decoding the response as `T`.
+    /// Sends `POST path` with a JSON body, decoding the response as `T`.
     ///
     /// # Errors
-    /// A bad gateway or a gateway timeout when the peer cannot be reached, and the peer's own
-    /// not-found or conflict when it refused deliberately.
+    /// Returns `ApiError::GatewayTimeout` when the peer times out, `ApiError::NotFound` or
+    /// `ApiError::Conflict` for its `404` or `409`, and `ApiError::BadGateway` for an unreachable
+    /// peer, any other non-success status, or a JSON body that is not a `T`.
     pub async fn post<B: Serialize, T: DeserializeOwned>(
         &self,
         path: &str,
@@ -114,11 +113,12 @@ impl Upstream {
         self.send(self.http.post(url).json(body)).await
     }
 
-    /// `PATCH path` with a JSON body, decoding the response as `T`.
+    /// Sends `PATCH path` with a JSON body, decoding the response as `T`.
     ///
     /// # Errors
-    /// A bad gateway or a gateway timeout when the peer cannot be reached, and the peer's own
-    /// not-found or conflict when it refused deliberately.
+    /// Returns `ApiError::GatewayTimeout` when the peer times out, `ApiError::NotFound` or
+    /// `ApiError::Conflict` for its `404` or `409`, and `ApiError::BadGateway` for an unreachable
+    /// peer, any other non-success status, or a JSON body that is not a `T`.
     pub async fn patch<B: Serialize, T: DeserializeOwned>(
         &self,
         path: &str,
@@ -128,11 +128,12 @@ impl Upstream {
         self.send(self.http.patch(url).json(body)).await
     }
 
-    /// `DELETE path` with a JSON body, decoding the response as `T`.
+    /// Sends `DELETE path` with a JSON body, decoding the response as `T`.
     ///
     /// # Errors
-    /// A bad gateway or a gateway timeout when the peer cannot be reached, and the peer's own
-    /// not-found or conflict when it refused deliberately.
+    /// Returns `ApiError::GatewayTimeout` when the peer times out, `ApiError::NotFound` or
+    /// `ApiError::Conflict` for its `404` or `409`, and `ApiError::BadGateway` for an unreachable
+    /// peer, any other non-success status, or a JSON body that is not a `T`.
     pub async fn delete<B: Serialize, T: DeserializeOwned>(
         &self,
         path: &str,
@@ -142,15 +143,15 @@ impl Upstream {
         self.send(self.http.delete(url).json(body)).await
     }
 
-    /// Fire a request whose outcome the caller does not await — the targeted sync push.
+    /// Builds a request whose outcome the caller does not await: the targeted sync push.
     ///
-    /// Returns the builder rather than sending, so the caller owns the `tokio::spawn`. The internal
+    /// Returns the builder instead of sending, so the caller owns the `tokio::spawn`. The internal
     /// token and the trace headers are still attached, which is the point.
     pub fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
         self.prepare(self.http.request(method, self.url(path)))
     }
 
-    /// The peer's name, for the caller's own log lines.
+    /// Returns the peer's name, for the caller's own log lines.
     #[must_use]
     pub fn name(&self) -> &'static str {
         self.name
@@ -164,9 +165,9 @@ impl Upstream {
         format!("{}/{}", self.base, path.trim_start_matches('/'))
     }
 
-    /// Attach the internal token, if one is configured, and the trace this call belongs to.
+    /// Attaches the internal token, if one is configured, and the trace this call belongs to.
     ///
-    /// Every outbound path goes through here — [`Self::send`] and [`Self::request`] both — so
+    /// Every outbound path goes through here ([`Self::send`] and [`Self::request`] both), so
     /// it is the one place either can be forgotten.
     fn prepare(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
         let mut req = match &self.token {
@@ -181,10 +182,13 @@ impl Upstream {
         req
     }
 
-    /// Send, then translate the outcome into this service's error vocabulary.
+    /// Sends, then translates the outcome into this service's error vocabulary.
     ///
     /// # Errors
-    /// [`ApiError::BadGateway`] or [`ApiError::GatewayTimeout`] on transport failure; [`ApiError::NotFound`] or [`ApiError::Conflict`] when the peer said so deliberately.
+    /// Returns [`ApiError::GatewayTimeout`] when the peer times out, [`ApiError::NotFound`] or
+    /// [`ApiError::Conflict`] for its `404` or `409`, and [`ApiError::BadGateway`] for an
+    /// unreachable peer, any other non-success status, or a JSON body that is not a `T`. A success
+    /// whose body is empty, unreadable or not JSON decodes as `{"ok": true}` instead.
     async fn send<T: DeserializeOwned>(&self, req: reqwest::RequestBuilder) -> ApiResult<Json<T>> {
         let resp = self.prepare(req).send().await.map_err(|e| {
             tracing::error!(upstream = self.name, error = %e, "internal service unreachable");
@@ -204,12 +208,13 @@ impl Upstream {
         self.decode(&text)
     }
 
-    /// Turn a successful response body into the `T` the calling endpoint publishes.
+    /// Turns a successful response body into the `T` the calling endpoint publishes.
     ///
     /// Separate from [`Self::send`] so the two rules it encodes are testable without a peer.
     ///
     /// # Errors
-    /// [`ApiError::BadGateway`] when the body is not a `T`.
+    /// Returns [`ApiError::BadGateway`] when the body, or the `{"ok": true}` an empty or non-JSON
+    /// body stands in for, is not a `T`.
     fn decode<T: DeserializeOwned>(&self, text: &str) -> ApiResult<Json<T>> {
         // A `204`, or a body the peer chose not to give us, is a success with nothing to
         // forward. Callers expect an object, so give them the canonical empty one.
@@ -220,7 +225,7 @@ impl Upstream {
         };
 
         // Where the caller named a concrete `T`, this is the step that makes the endpoint's
-        // `#[utoipa::path]` declaration true rather than aspirational: a peer that changed its
+        // `#[utoipa::path]` declaration true, not aspirational: a peer that changed its
         // shape fails here, at the boundary, instead of silently reaching a generated client
         // that was compiled against the old one. A `T` of `serde_json::Value` passes through.
         serde_json::from_value(value).map(Json).map_err(|e| {
@@ -234,16 +239,16 @@ impl Upstream {
         })
     }
 
-    /// Map an upstream status onto this service's error vocabulary.
+    /// Maps an upstream status onto this service's error vocabulary.
     ///
     /// `404`/`409` are forwarded since internal services emit them deliberately and the
-    /// public contract documents both. `401` is not forwarded — it means this service failed
+    /// public contract documents both. `401` is not forwarded: it means this service failed
     /// to authenticate to its own peer, an operator misconfiguration, not the client's fault.
     fn map_status(&self, status: reqwest::StatusCode, body: &str) -> ApiError {
         match status.as_u16() {
             404 => ApiError::NotFound,
             409 => ApiError::Conflict("Account not linked".to_owned()),
-            // `401` and `403` mean different misconfigurations now that callers are named:
+            // `401` and `403` mean different misconfigurations because callers are named:
             // the peer either did not recognise this service, or recognised it and refuses it
             // this route. Neither is the client's fault, so both surface as `502`.
             401 => {
@@ -325,9 +330,9 @@ mod tests {
 
     /// The endpoint's declared body is enforced, not merely documented.
     ///
-    /// Proxy handlers used to return `Json<serde_json::Value>` while their `#[utoipa::path]`
-    /// named a concrete body; nothing connected the two. A peer whose shape has drifted must
-    /// now fail at this boundary instead of reaching a client compiled against the old one.
+    /// The bug: a proxy handler returning `Json<serde_json::Value>` while its `#[utoipa::path]`
+    /// names a concrete body connects nothing between the two. A peer whose shape has drifted
+    /// must fail at this boundary instead of reaching a client compiled against the old one.
     #[test]
     fn a_body_that_is_not_the_declared_shape_is_a_bad_gateway() {
         let up = upstream(None);
@@ -346,14 +351,12 @@ mod tests {
 
     /// A `204` from the peer is a success with nothing to forward, not an absent body the
     /// client should see, so the empty-body case must produce the canonical acknowledgement
-    /// rather than `null`.
+    /// instead of `null`.
     ///
     /// The second half is what makes [`tankovault_contracts::sync::Ack`] honest. Two routes
     /// (`link`, `patch_settings`) answer `204` upstream and are published as `200 {"ok": true}`
-    /// purely because of the synthesis below; before `Ack` existed, that coupling lived in a
-    /// hand-written `json!` literal in the handler and a `serde_json::Value` return type, so
-    /// changing the synthesis would have silently changed what the SPA received. If these two
-    /// ever disagree, those routes break.
+    /// purely because of the synthesis below, so changing the synthesis silently changes what
+    /// the SPA receives. If these two ever disagree, those routes break.
     #[test]
     fn an_empty_body_is_still_the_canonical_acknowledgement() {
         let up = upstream(None);

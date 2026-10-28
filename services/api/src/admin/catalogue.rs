@@ -1,9 +1,9 @@
-//! Catalogue maintenance: the operator's series list, the deployment totals behind the purge
+//! Owns catalogue maintenance: the operator's series list, the deployment totals behind the purge
 //! panel's stated blast radius, and bulk deletion. The purge is in `catalogue_purge`.
 //!
 //! Deleting a series is not the same act as merging one. A merge folds a duplicate into a
 //! survivor and carries every reader's watchlist entry and reading position across; these
-//! endpoints discard both. That is why they sit behind their own capability rather than
+//! endpoints discard both. That is why they sit behind their own capability, not
 //! `merge.write`, and why every response states what actually went.
 //!
 //! The listing is **not** narrowed by the adult-content gate, unlike every reader-facing read.
@@ -89,7 +89,7 @@ pub struct CatalogueRowView {
     pub providers: Vec<String>,
     pub source_count: i64,
     pub chapter_count: i64,
-    /// Readers with this series on a watchlist — the part of the blast radius no re-scan
+    /// Readers with this series on a watchlist: the part of the blast radius no re-scan
     /// restores.
     pub watcher_count: i64,
     #[serde(with = "time::serde::rfc3339")]
@@ -100,7 +100,7 @@ pub struct CatalogueRowView {
     pub updated_at: OffsetDateTime,
 }
 
-/// A page of the maintenance list plus the total matching the filter, so the pager needs no
+/// A page of the maintenance list and the total matching the filter, so the pager needs no
 /// second request.
 #[derive(Debug, Serialize, ToSchema)]
 #[schema(as = CataloguePage)]
@@ -124,7 +124,7 @@ pub struct CatalogueSummaryView {
     pub progress_rows: i64,
 }
 
-/// What a deletion actually removed, per table, counted rather than estimated.
+/// What a deletion actually removed, per table, counted, not estimated.
 #[derive(Debug, Clone, Copy, Default, Serialize, ToSchema)]
 #[schema(as = CatalogueDeletion)]
 pub struct DeletionView {
@@ -149,7 +149,7 @@ impl From<DeletionReport> for DeletionView {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct BulkDeleteSeries {
-    /// The series to remove. Ids naming nothing are skipped rather than failing the batch.
+    /// The series to remove. Ids naming nothing are skipped instead of failing the batch.
     pub series_ids: Vec<SeriesId>,
 }
 
@@ -243,7 +243,7 @@ pub async fn catalogue_summary(
 
 /// Delete series in bulk
 ///
-/// Removes every named series and everything the schema hangs off it — sources, chapters, tag
+/// Removes every named series and everything the schema hangs off it: sources, chapters, tag
 /// links, watchlist entries and reading positions. One transaction, so the batch either applies
 /// or does not.
 #[utoipa::path(

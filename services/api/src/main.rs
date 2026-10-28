@@ -1,4 +1,4 @@
-//! Entrypoint for the `api` service: loads config, wires up infra, and calls into
+//! Owns the `api` service's entrypoint: loads config, wires up infra, and calls into
 //! `tankovault_api` for the route table and app state.
 
 use secrecy::{ExposeSecret as _, SecretSlice, SecretString};
@@ -26,7 +26,7 @@ const MIN_JWT_SECRET_LEN: usize = 32;
 
 /// Placeholder secrets that ship in this repository, and are therefore public.
 ///
-/// Kept as data rather than a `matches!` inside one caller, since the seed step consults
+/// Kept as data, not a `matches!` inside one caller, since the seed step consults
 /// the same list.
 const KNOWN_PLACEHOLDERS: [(&str, &str); 4] = [
     ("dev-jwt-secret-change-me", "development JWT secret"),
@@ -38,7 +38,7 @@ const KNOWN_PLACEHOLDERS: [(&str, &str); 4] = [
     ("change-me", "default email password"),
 ];
 
-/// Re-wrap a configured secret as the key material `tankovault_auth` takes.
+/// Re-wraps a configured secret as the key material `tankovault_auth` takes.
 ///
 /// Doing this crossing here, once, for both secrets means neither the JWT key nor the
 /// pepper ever exists as a bare `String` or `Vec<u8>` in this process.
@@ -46,7 +46,7 @@ fn secret_bytes(value: &SecretString) -> SecretSlice<u8> {
     SecretSlice::from(value.expose_secret().as_bytes().to_vec())
 }
 
-/// The name of the placeholder `value` matches, if any.
+/// Returns the name of the placeholder `value` matches, if any.
 fn known_placeholder(value: &str) -> Option<&'static str> {
     let trimmed = value.trim();
     KNOWN_PLACEHOLDERS
@@ -55,16 +55,17 @@ fn known_placeholder(value: &str) -> Option<&'static str> {
         .map(|(_, name)| *name)
 }
 
-/// Fail fast on a misconfigured secret **before** the edge accepts a single request.
+/// Fails fast on a misconfigured secret **before** the edge accepts a single request.
 ///
 /// A weak or missing `jwt_secret` in production can have every session forged, so refusing to
 /// start is safer than serving with a broken trust root. An empty `password_pepper` is only
 /// weakened, not broken, so it warns instead of blocking boot.
 ///
 /// # Errors
-/// Production only: `jwt_secret` empty or shorter than [`MIN_JWT_SECRET_LEN`].
+/// Returns an error in every profile when `jwt_secret` is a known placeholder, and in production
+/// when it is empty or shorter than [`MIN_JWT_SECRET_LEN`].
 fn validate_auth_secrets(auth: &AuthConfig, production: bool) -> anyhow::Result<()> {
-    // Checked in every profile — placeholder strings ship in the reference compose file.
+    // Checked in every profile: placeholder strings ship in the reference compose file.
     // Length is safe to log; the value never is (`expose_secret` only measures/compares).
     if let Some(name) = known_placeholder(auth.jwt_secret.expose_secret()) {
         anyhow::bail!(
@@ -133,10 +134,8 @@ async fn main() -> anyhow::Result<()> {
     // request-facing listener. Outside the reloadable runtime so a reload does not rebind it.
     tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
 
-    // Boxed, not because the future is held across an await here — it is the whole program —
-    // but because it carries the config by value, and this one is among the largest in the
-    // workspace. Left on the stack it trips `clippy::large_futures`, which is a stack-overflow
-    // guard rather than a style rule.
+    // Boxed because the future carries the config by value and is among the largest in the
+    // workspace. Left on the stack it trips `clippy::large_futures`, a stack-overflow guard.
     Box::pin(tankovault_service::run_reloading(
         boot,
         &shutdown,
@@ -145,17 +144,6 @@ async fn main() -> anyhow::Result<()> {
     .await
 }
 
-/// Build and run everything a configuration change rebuilds: the pool, the broker and Redis
-/// connections, the mailer, the audit sink, the application state, the router and the listener.
-///
-/// Returns when `shutdown` is cancelled — by the OS signal, or by the supervisor because the
-/// configuration changed and this runtime is being replaced.
-///
-/// The secret validation runs here rather than in `main` deliberately: it has to hold for a
-/// *rotated* secret too, and a rotation that fails it leaves the previous runtime serving
-/// rather than taking the pod down. Note what a successful `auth.jwt_secret` rotation means —
-/// every session signed with the old key stops verifying, so every user is signed out. That is
-/// the correct behaviour for a compromised key and a surprising one otherwise.
 /// What this service needs to *call* the internal tier.
 struct Internal {
     auth: tankovault_config::ResolvedInternalAuth,
@@ -165,9 +153,9 @@ struct Internal {
     tls: Option<tankovault_service::ClientMaterial>,
 }
 
-/// Resolve and cross-check the internal-tier identity.
+/// Resolves and cross-checks the internal-tier identity.
 ///
-/// The API serves no internally-authenticated route of its own — it is a caller only — so what
+/// The API serves no internally-authenticated route of its own (it is a caller only), so what
 /// it takes from the `internal` section is whichever outbound credential the mode uses: a token
 /// its peers list under `api`, or a client certificate they match by SAN.
 ///
@@ -176,7 +164,7 @@ struct Internal {
 fn resolve_internal(cfg: &Config) -> anyhow::Result<Internal> {
     let auth = tankovault_service::internal_auth::resolve(&cfg.internal)?;
 
-    // Checked here, where the URLs are, rather than inside the client: an `http://` upstream
+    // Checked here, where the URLs are, not inside the client: an `http://` upstream
     // under mtls is the one misconfiguration that produces no symptom at all.
     for (name, url) in [
         ("control-plane", &cfg.control_plane_url),
@@ -200,6 +188,20 @@ fn resolve_internal(cfg: &Config) -> anyhow::Result<Internal> {
     Ok(Internal { auth, token, tls })
 }
 
+/// Builds and runs everything a configuration change rebuilds: the pool, the broker and Redis
+/// connections, the mailer, the audit sink, the application state, the router and the listener.
+///
+/// Returns when `shutdown` is cancelled, by the OS signal or by the supervisor because the
+/// configuration changed and this runtime is being replaced.
+///
+/// The secret validation runs here, not in `main`, deliberately: it has to hold for a *rotated*
+/// secret too, and a rotation that fails it leaves the previous runtime serving instead of taking
+/// the pod down. A successful `auth.jwt_secret` rotation stops every session signed with the old
+/// key from verifying, so every user is signed out. That is correct for a compromised key and
+/// surprising otherwise.
+///
+/// # Errors
+/// Returns an error when configuration validation, a required connection, or the listener fails.
 async fn serve_once(
     cfg: Arc<Config>,
     metrics: MetricsRegistry,
@@ -227,7 +229,7 @@ async fn serve_once(
     } = resolve_internal(&cfg)?;
 
     // Connect to NATS for the live SSE relay. A broker outage must not stop the public edge
-    // from booting, so a failure here degrades the feature to `503` rather than aborting.
+    // from booting, so a failure here degrades the feature to `503` instead of aborting.
     let bus = tankovault_api::connect_bus(cfg.nats.as_ref(), internal_auth.tls.as_ref()).await;
 
     // Likewise Redis: it sharpens rate limiting across replicas and holds the SSE stream
@@ -235,7 +237,7 @@ async fn serve_once(
     let redis = connect_redis(cfg.redis.as_ref()).await;
     let stream_tickets = stream_ticket_store(redis.as_ref());
 
-    // Build the transactional email back-end. A missing/invalid relay degrades to a no-op
+    // Builds the transactional email back-end. A missing or invalid relay degrades to a no-op
     // mailer (logs and drops) so the edge still boots and login/registration keep working.
     let mailer = tankovault_email::build(&cfg.email);
 
@@ -251,32 +253,32 @@ async fn serve_once(
     let tunables =
         tankovault_api::install_tunables(pool.clone(), &cfg.features, shutdown.clone()).await;
 
-    // One client for every internal hop, with connect and request timeouts — without them, a
+    // One client for every internal hop, with connect and request timeouts; without them, a
     // hung downstream leaks a task and a socket per request.
     let internal_http = tankovault_api::Upstream::client(internal_tls.as_ref())?;
     let internal_http_worker = internal_http.clone();
 
-    // `None` origin is a valid "no passkeys" state; a *malformed* one is fatal — it would
+    // `None` origin is a valid "no passkeys" state; a *malformed* one is fatal, since it would
     // otherwise surface as browsers refusing every ceremony with an opaque `SecurityError`.
     let webauthn = build_relying_party(&cfg.auth, &cfg.email.base_url, &cfg.branding.name)?;
     let mfa_sealer = build_mfa_sealer(&cfg.auth)?;
 
     // Fatal for the same reason the origin above is: a client that cannot read the ceiling
     // behaves as though there were none, so an unusable value would quietly undo the version
-    // range rather than report it. The service's own version is the default ceiling — client and
+    // range instead of reporting it. The service's own version is the default ceiling: client and
     // server are cut from this repository at one version.
     let client_channel = tankovault_api::ClientChannel::new(&cfg.client, env!("CARGO_PKG_VERSION"))
         .map_err(|error| anyhow::anyhow!(error))?;
 
-    // Abandoned ceremonies — a user who closed the tab at the authenticator prompt — are
-    // already unusable, so this reclaims rows rather than enforcing anything. The same sweep
+    // Abandoned ceremonies (a user who closed the tab at the authenticator prompt) are already
+    // unusable, so this reclaims rows instead of enforcing anything. The same sweep
     // clears expired sign-in challenges and step-up grants, which have the same shape.
     spawn_credential_sweep(&admin_pool, shutdown.clone());
 
     let state = AppState {
         pool: pool.clone(),
         // The only place these cross from text to key material; `Arc` because axum clones
-        // state per request — see `AppState::jwt_secret`.
+        // state per request (see `AppState::jwt_secret`).
         jwt_secret: Arc::new(secret_bytes(&cfg.auth.jwt_secret)),
         password_pepper: Arc::new(secret_bytes(&cfg.auth.password_pepper)),
         access_ttl: time::Duration::minutes(cfg.auth.access_ttl_minutes),
@@ -393,10 +395,10 @@ fn build_audit_sink(
     }
 }
 
-/// Start the audit-retention sweep, unless retention is switched off.
+/// Starts the audit-retention sweep, unless retention is switched off.
 ///
-/// Idempotent (a bounded `DELETE` by age), so replicas racing on it just share the work —
-/// no leader election needed.
+/// Idempotent (a bounded `DELETE` by age), so replicas racing on it just share the work, and no
+/// leader election is needed.
 fn spawn_audit_retention(
     pool: &tankovault_db::PgPool,
     cfg: &tankovault_config::AuditConfig,
@@ -445,7 +447,8 @@ fn spawn_audit_retention(
 /// passkey must be bound to, so duplicating the string risks silent disagreement.
 ///
 /// # Errors
-/// Origin is not a URL, has no host, or isn't covered by the relying-party id.
+/// Returns an error when the origin is not a URL, has no host, or isn't covered by the
+/// relying-party id.
 fn build_relying_party(
     auth: &AuthConfig,
     email_base_url: &str,
@@ -484,15 +487,15 @@ fn build_relying_party(
     Ok(Some(Arc::new(rp)))
 }
 
-/// Build the sealer that protects TOTP secrets at rest, or `None` when unconfigured.
+/// Builds the sealer that protects TOTP secrets at rest, or `None` when unconfigured.
 ///
-/// Logged loudly rather than fatal, matching [`build_relying_party`]: TOTP is one factor of an
+/// Logged loudly, not fatal, matching [`build_relying_party`]: TOTP is one factor of an
 /// application that must still start without it, and security keys remain available. A bad key
-/// *is* fatal, because it means the operator configured one and it will not work — silently
+/// *is* fatal, because it means the operator configured one and it will not work; silently
 /// falling back to "TOTP disabled" would hide a typo behind a feature that quietly vanished.
 ///
 /// # Errors
-/// When the value is not base64 or does not decode to exactly 32 bytes.
+/// Returns an error when the value is not base64 or does not decode to exactly 32 bytes.
 fn build_mfa_sealer(auth: &AuthConfig) -> anyhow::Result<Option<tankovault_auth::Sealer>> {
     let Some(key) = auth
         .mfa_encryption_key
@@ -521,15 +524,15 @@ fn build_mfa_sealer(auth: &AuthConfig) -> anyhow::Result<Option<tankovault_auth:
 ///
 /// Generous: expiry is already enforced in every read (`take_ceremony`,
 /// `charge_challenge_attempt` and `renew_step_up` all filter on `expires_at`), so an unswept row
-/// is unusable, not dangerous — this only stops three tables growing without bound.
+/// is unusable, not dangerous; this only stops three tables growing without bound.
 const CREDENTIAL_SWEEP_INTERVAL: Duration = Duration::from_mins(15);
 
-/// Start the sweep over abandoned `WebAuthn` ceremonies, half-finished sign-ins and expired
+/// Starts the sweep over abandoned `WebAuthn` ceremonies, half-finished sign-ins and expired
 /// step-up grants.
 ///
-/// Runs unconditionally, unlike the passkey-only version it replaced: sign-in challenges and
-/// step-up grants are written whenever a second factor is enrolled, which does not require a
-/// relying party — an account with TOTP alone produces both. Idempotent like the audit sweep,
+/// Runs unconditionally: sign-in challenges and step-up grants are written whenever a second
+/// factor is enrolled, which does not require a relying party (an account with TOTP alone
+/// produces both). Idempotent like the audit sweep,
 /// so racing replicas just share the work.
 fn spawn_credential_sweep(
     pool: &tankovault_db::PgPool,
@@ -557,7 +560,7 @@ fn spawn_credential_sweep(
     });
 }
 
-/// One pass of the credential sweep. Each table is independent: a failure on one is logged and
+/// Runs one pass of the credential sweep. Each table is independent: a failure on one is logged and
 /// the others still run, because a sweep that gives up on the first error leaves the *others*
 /// growing for reasons nothing names.
 async fn sweep_once(pool: &tankovault_db::PgPool) {
@@ -585,10 +588,10 @@ async fn sweep_once(pool: &tankovault_db::PgPool) {
     }
 }
 
-/// Connect Redis, or `None` when unconfigured/unreachable.
+/// Connects Redis, or returns `None` when unconfigured or unreachable.
 ///
 /// One client shared by both Redis users (rate-limit counters, stream tickets). Neither is
-/// worth refusing to boot over — both degrade to per-replica/per-process state with a warning.
+/// worth refusing to boot over: both degrade to per-replica or per-process state with a warning.
 async fn connect_redis(
     cfg: Option<&tankovault_config::RedisConfig>,
 ) -> Option<fred::clients::Client> {
@@ -619,10 +622,11 @@ async fn connect_redis(
     }
 }
 
-/// The stream-ticket store this deployment gets: Redis where available, this process otherwise.
+/// Returns the stream-ticket store this deployment gets: Redis where available, this process
+/// otherwise.
 ///
-/// The fallback is wrong across replicas — a ticket minted on one is unknown to others — so
-/// it warns loudly rather than degrading silently.
+/// The fallback is wrong across replicas (a ticket minted on one is unknown to others), so it
+/// warns loudly instead of degrading silently.
 fn stream_ticket_store(
     redis: Option<&fred::clients::Client>,
 ) -> std::sync::Arc<dyn tankovault_api::stream_tickets::StreamTicketStore> {
@@ -662,8 +666,8 @@ mod tests {
     }
 
     /// The published placeholder must be refused **outside** production too. A check an
-    /// operator can skip by forgetting `TANKOVAULT_PROFILE` is not a check, and this exact
-    /// string shipped in `deploy/docker-compose.yml`.
+    /// operator can skip by forgetting `TANKOVAULT_PROFILE` is not a check, and every string in
+    /// [`KNOWN_PLACEHOLDERS`] is public in this repository.
     #[test]
     fn the_published_placeholder_secret_is_refused_in_every_profile() {
         for production in [true, false] {

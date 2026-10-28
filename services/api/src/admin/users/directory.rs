@@ -1,4 +1,4 @@
-//! The operator user directory: the one read that answers "who is in this deployment".
+//! Owns the operator user directory: the one read that answers "who is in this deployment".
 
 use crate::error::ApiResult;
 use crate::openapi::ADMIN_USERS_TAG;
@@ -11,7 +11,7 @@ use tankovault_contracts::admin::UserDirectoryPage;
 use tankovault_domain::Permission;
 use utoipa::IntoParams;
 
-/// Directory paging. Deliberately capped server-side — the console offers 25/50/100 and a
+/// Directory paging. Deliberately capped server-side: the console offers 25/50/100 and a
 /// caller asking for everything would page the whole user table into one response.
 const MAX_PAGE: i64 = 200;
 

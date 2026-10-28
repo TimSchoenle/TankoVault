@@ -1,4 +1,4 @@
-//! The password-reset flow: request a link, then consume it.
+//! Owns the password-reset flow: request a link, then consume it.
 //!
 //! Both endpoints answer identically whether or not the address is registered, so neither can
 //! be used to probe which emails have accounts.
@@ -45,17 +45,17 @@ pub struct ResetPasswordRequest {
 /// endpoint can't be used to probe which emails have accounts. When the address does exist
 /// and email is configured, a single-use, time-limited reset link is sent.
 ///
-/// **Every** account-dependent step happens on a detached task (SEC-10). The uniform `202`
-/// was previously defeated by timing: the known-address branch generated a token, hashed it
-/// and performed an `INSERT` — a write, so a WAL flush — before answering, while the unknown
-/// branch returned straight after the lookup. That is a smaller gap than `login`'s two orders
-/// of magnitude but it is the same oracle, and it needs no credentials at all to read. With
-/// the whole body spawned, this handler's only statement is the spawn, so there is no branch
-/// left for a response time to disclose.
+/// **Every** account-dependent step happens on a detached task. Otherwise timing defeats the
+/// uniform `202`: the known-address branch generates a token, hashes it and performs an
+/// `INSERT` (a write, so a WAL flush) before answering, while the unknown branch returns
+/// straight after the lookup. That is a smaller gap than `login`'s two orders of magnitude but
+/// it is the same oracle, and it needs no credentials at all to read. With the whole body
+/// spawned, this handler's only statement is the spawn, so there is no branch for a response
+/// time to disclose.
 ///
-/// The return type is deliberately `StatusCode` rather than `ApiResult<StatusCode>`: the
+/// The return type is deliberately `StatusCode`, not `ApiResult<StatusCode>`: the
 /// anti-enumeration property is "this endpoint has exactly one answer", and making that a
-/// type rather than a convention means a later edit cannot reintroduce a second one.
+/// type instead of a convention means a later edit cannot introduce a second one.
 #[utoipa::path(
     post,
     path = "/v1/auth/password/forgot",
@@ -78,10 +78,10 @@ pub async fn forgot_password(
     StatusCode::ACCEPTED
 }
 
-/// Mint, store and send a reset link for `email`, if it belongs to an account.
+/// Mints, stores and sends a reset link for `email`, if it belongs to an account.
 ///
 /// Runs detached: a failure here is logged and dropped, same as a success looks to the
-/// caller. Awaited rather than backgrounded again — this task already is the background.
+/// caller. Awaited, not backgrounded again: this task already is the background.
 async fn deliver_reset_link(state: AppState, email: String) {
     let found = tankovault_db::repo::users::find_by_email(&state.pool, &email).await;
     let user = match found {
@@ -112,7 +112,7 @@ async fn deliver_reset_link(state: AppState, email: String) {
     if !state.mailer.is_enabled() {
         return;
     }
-    // Deliberate unwrapping — the token must appear in the link for it to work. Never logged;
+    // Deliberate unwrapping: the token must appear in the link for it to work. Never logged;
     // the failure branch below records only the error.
     let link = format!(
         "{}/reset-password?token={}",

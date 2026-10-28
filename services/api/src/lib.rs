@@ -1,4 +1,4 @@
-//! Library surface for the `api` service: the route table, shared [`AppState`], and the
+//! Owns the `api` service's library surface: the route table, shared [`AppState`], and the
 //! [`openapi`] schema export. `main.rs` is the thin entrypoint.
 
 // Handlers are `pub` for the router and `openapi::ApiDoc`; containing modules stay private.
@@ -71,25 +71,25 @@ pub fn full_openapi() -> utoipa::openapi::OpenApi {
 /// Which rate-limit budget each route family draws from.
 ///
 /// Anything unlisted falls back to the global budget: a new route is limited from the
-/// moment it exists rather than unlimited until someone classifies it.
+/// moment it exists, not unlimited until someone classifies it.
 #[must_use]
 pub fn route_classifier() -> RouteClassifier {
     RouteClassifier::new()
         // Online-guessing surface: `login/start` is unauthenticated and mints a row per call,
         // so leaving passkeys unclassified would let it fill `webauthn_ceremonies` freely.
         .auth("/v1/auth")
-        // Verifies an argon2id hash before issuing a challenge — same guessing surface as
+        // Verifies an argon2id hash before issuing a challenge: the same guessing surface as
         // `/v1/auth`, so a stolen access token must not buy a looser-rate password oracle.
         .auth("/v1/me/passkeys/register/start")
         // The step-up prompt takes a six-digit code, a recovery code, or a password. It is the
         // online-guessing surface of the second factor and, unlike the sign-in second leg, it
-        // has no per-challenge attempt counter to fall back on — the session is already valid,
+        // has no per-challenge attempt counter to fall back on: the session is already valid,
         // so there is no challenge row to exhaust. The rate limit is the whole bound here.
         .auth("/v1/me/step-up")
         // Enrolment writes ceremony rows and issues secrets on demand, from an authenticated
         // caller. Same reasoning as `/v1/me/passkeys/register/start`.
         .auth("/v1/me/mfa")
-        // Cheap to ask for, expensive to serve — genuinely heavy however they are called.
+        // Cheap to ask for, expensive to serve, however they are called.
         .expensive("/v1/me/export")
         // A backup is the whole watchlist in one response, and an import resolves and rewrites
         // up to ten thousand entries in one transaction.
@@ -100,7 +100,7 @@ pub fn route_classifier() -> RouteClassifier {
         .expensive("/v1/admin/providers/{id}/test")
         .expensive("/v1/admin/series/merge")
         // A sweep re-blocks the whole catalogue; a key rebuild rewrites every normalized
-        // title — the heaviest calls the console can make.
+        // title. These are the heaviest calls the console can make.
         .expensive("/v1/admin/merge-candidates/sweep")
         // The exhaustive run is that sweep drawn until the shortlists are dry. `_write` because
         // the console polls the `GET` of the same path every few seconds for as long as a run
@@ -127,8 +127,8 @@ pub fn route_classifier() -> RouteClassifier {
 
 /// Which [`Feature`] each route family belongs to.
 ///
-/// Deliberately not exhaustive: an unlisted route is ungated. That's right for the substrate
-/// — credential endpoints, the capabilities probe, the ops router — since switching those off
+/// Deliberately not exhaustive: an unlisted route is ungated. That is right for the substrate
+/// (credential endpoints, the capabilities probe, the ops router), since switching those off
 /// would be turning the service off, not a feature decision.
 #[must_use]
 pub fn route_features() -> RouteFeatures {
@@ -198,21 +198,21 @@ pub fn route_features() -> RouteFeatures {
         )
         // Reads stay reachable when manual scanning is off: an operator who has just disabled
         // scan triggers still needs the history that made them do it. Exact, not a prefix, so
-        // the cancellations beneath it stay reachable too — switching triggering off is usually
+        // the cancellations beneath it stay reachable too: switching triggering off is usually
         // a response to a queue that is already the problem, and taking the stop button away at
         // that moment is the last thing this flag should do.
         .gate_path_writes("/v1/admin/scans", Feature::ScanningManual)
         .gate("/v1/admin/merge-candidates", Feature::ScanningMergeQueue)
         .gate("/v1/admin/series/merge", Feature::ScanningMergeQueue)
-        // Longest prefix overrides the rule above for the sweeps — the routes here that delete
+        // Longest prefix overrides the rule above for the sweeps, the routes here that delete
         // series. The control plane re-checks the same flag independently.
         .gate(
             "/v1/admin/merge-candidates/sweep",
             Feature::ScanningAutoMerge,
         )
-        // Written out rather than left to the rule above. Prefixes match as raw strings, so
-        // `…/sweep` covers `…/sweep-all` only because one spells the other — rename the first
-        // and the exhaustive run, which deletes series by the hundred, silently loses its flag.
+        // Written out, not left to the rule above. Prefixes match as raw strings, so `…/sweep`
+        // covers `…/sweep-all` only because one spells the other; rename the first and the
+        // exhaustive run, which deletes series by the hundred, silently loses its flag.
         .gate(
             "/v1/admin/merge-candidates/sweep-all",
             Feature::ScanningAutoMerge,
@@ -236,7 +236,7 @@ pub fn route_features() -> RouteFeatures {
         .gate("/v1/admin/recommendations", Feature::AdminRecommendations)
 }
 
-/// Assemble the full route table and the shared middleware stack.
+/// Assembles the full route table and the shared middleware stack.
 ///
 /// The ops probes (`/health`, `/ready`, metrics) are merged in **outside** the middleware
 /// stack: a rate limit or body cap must never make a healthy replica look unhealthy.
@@ -301,11 +301,11 @@ pub fn build_router(
     app.merge(tankovault_service::ops_router(health, metrics))
 }
 
-/// Identify the caller from a `Bearer` access token, for per-account rate limiting.
+/// Identifies the caller from a `Bearer` access token, for per-account rate limiting.
 ///
 /// The signature is verified first: an unverified header would let any caller mint unlimited
-/// fresh buckets. Cheaper than [`crate::state::AuthUser`] — no DB round trip or permission
-/// check — since this only needs to name a bucket; the handler refuses a suspended account.
+/// fresh buckets. Cheaper than [`crate::state::AuthUser`] (no DB round trip or permission
+/// check), since this only needs to name a bucket; the handler refuses a suspended account.
 fn bearer_principal_resolver(
     jwt_secret: std::sync::Arc<secrecy::SecretSlice<u8>>,
 ) -> tankovault_service::http::PrincipalResolver {
@@ -320,10 +320,10 @@ fn bearer_principal_resolver(
     })
 }
 
-/// Load the deployment's flag overrides and keep them fresh for the lifetime of the process.
+/// Loads the deployment's flag overrides and keeps them fresh for the lifetime of the process.
 ///
 /// Awaited before the listener binds, so the first request after a deploy sees the operator's
-/// stored decisions rather than briefly reverting to compiled defaults.
+/// stored decisions instead of briefly reverting to compiled defaults.
 pub async fn install_feature_gate(
     pool: tankovault_db::PgPool,
     cfg: &tankovault_config::FeaturesConfig,
@@ -336,9 +336,9 @@ pub async fn install_feature_gate(
     gate
 }
 
-/// Load the deployment's tuning overrides and keep them fresh for the lifetime of the process.
+/// Loads the deployment's tuning overrides and keeps them fresh for the lifetime of the process.
 ///
-/// Shares [`tankovault_config::FeaturesConfig`]'s interval rather than adding a second one: both
+/// Shares [`tankovault_config::FeaturesConfig`]'s interval instead of adding a second one: both
 /// snapshots answer "what did the operator decide", both are cheap single-table reads, and a
 /// second knob would only create a window where the two disagree.
 pub async fn install_tunables(
@@ -353,23 +353,23 @@ pub async fn install_tunables(
     set
 }
 
-/// Reconcile the deployment's owner at boot: promote an account to super user if none holds the
-/// grant, then give whoever holds it a stored row for every grantable capability it lacks.
+/// Reconciles the deployment's owner at boot: promotes an account to super user if none holds the
+/// grant, then gives whoever holds it a stored row for every grantable capability it lacks.
 ///
 /// The promotion runs here because the installer's claim only covers an empty database. Any
 /// deployment that gained accounts before it was seeded, or that erased its owner, has no route
-/// back to an owner otherwise — the grant is deliberately unforgeable through the API, so no
+/// back to an owner otherwise: the grant is deliberately unforgeable through the API, so no
 /// administrator can restore it, and the console gives no sign that it is missing.
 ///
-/// The top-up runs here because the seed that writes an owner's grants is create-only. Every
-/// capability the codebase gains after an account is created is one the console will never show
-/// against it, so the owner's checklist reads as a shrinking subset of the deployment while
-/// their actual access is unchanged. Boot is the one moment the set of capabilities this build
-/// defines is known and the database is reachable.
+/// The top-up runs here because the seed that writes an owner's grants is create-only. A capability
+/// added after an account is created is one the console would never show against it, so the owner's
+/// checklist reads as a shrinking subset of the deployment while their actual access is unchanged.
+/// Boot is the one moment the set of capabilities this build defines is known and the database is
+/// reachable.
 ///
 /// A failure of either is logged and does not abort the boot. Every permission check keeps
-/// working — the super user grant answers them by implication — and refusing to serve the whole
-/// edge over a reconciliation query would turn a cosmetic gap into an outage.
+/// working, since the super user grant answers them by implication, and refusing to serve the
+/// whole edge over a reconciliation query would turn a cosmetic gap into an outage.
 pub async fn ensure_deployment_owner(pool: &tankovault_db::PgPool) {
     match tankovault_db::repo::permissions::ensure_super_user(pool).await {
         Ok(Some(user_id)) => tracing::warn!(
@@ -404,7 +404,7 @@ fn watchlist_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(me::watchlist))
         .routes(routes!(me::watchlist_summary))
-        // Bulk before the `{series_id}` sibling for readability only — `matchit` prefers the
+        // Bulk sits before the `{series_id}` sibling for readability only: `matchit` prefers the
         // static segment regardless, and a `series_id` is a uuid, so `bulk` can never be one.
         .routes(routes!(
             me::bulk_update_watchlist,
@@ -444,7 +444,7 @@ fn reader_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(auth::reset_password))
         .routes(routes!(auth::verify_email))
         .routes(routes!(auth::resend_verification))
-        // auth — passkey login (two legs: challenge, then signed assertion)
+        // auth: passkey login (two legs: challenge, then signed assertion)
         .routes(routes!(auth::passkey_login_start))
         .routes(routes!(auth::passkey_login_finish))
         .routes(routes!(auth::mfa_security_key_start))
@@ -480,7 +480,7 @@ fn reader_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(me::put_sync_excluded))
         .routes(routes!(me::put_sync_override))
         .routes(routes!(me::feed))
-        // reading dashboard + recommendations + stats (§9.3)
+        // reading dashboard, recommendations and stats (§9.3)
         .routes(routes!(me::continue_reading))
         .routes(routes!(me::recommendations))
         .routes(routes!(me::feedback))
@@ -493,7 +493,7 @@ fn reader_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(me::change_password))
         .routes(routes!(me::sessions))
         .routes(routes!(me::delete_session))
-        // account settings — passkeys the caller has registered, and the ceremony that adds one
+        // account settings: passkeys the caller has registered, and the ceremony that adds one
         .routes(routes!(me::list_passkeys))
         .routes(routes!(me::passkey_register_start))
         .routes(routes!(me::passkey_register_finish))
@@ -510,7 +510,7 @@ fn reader_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(me::step_up_security_key_finish))
         .routes(routes!(me::notification_prefs, me::put_notification_prefs))
         .routes(routes!(me::source_preferences, me::put_source_preferences))
-        // The reader's half of the adult gate. Ungated on purpose — see `me::content`.
+        // The reader's half of the adult gate. Ungated on purpose; see `me::content`.
         .routes(routes!(me::content_prefs, me::put_content_prefs))
         .routes(routes!(me::notifications))
         .routes(routes!(me::mark_read))
@@ -523,10 +523,10 @@ fn reader_routes() -> OpenApiRouter<AppState> {
             me::create_privacy_request
         ))
         .routes(routes!(me::cancel_privacy_request))
-        // live SSE stream + the mint for its query credential (a single-use ticket, not the
+        // live SSE stream and the mint for its query credential (a single-use ticket, not the
         // access token). Both gated by the one `/v1/me/stream` prefix rule below.
         .routes(routes!(me::stream, me::stream_ticket))
-        // me — external sync, provider-keyed (proxied to the sync service)
+        // me: external sync, provider-keyed (proxied to the sync service)
         .routes(routes!(me::sync_providers))
         .routes(routes!(me::sync_authorize_url))
         .routes(routes!(me::sync_status))
@@ -534,7 +534,7 @@ fn reader_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(me::sync_callback))
         .routes(routes!(me::sync_push))
         .routes(routes!(me::sync_pull))
-        // me — automatic-sync policy, conflicts and history
+        // me: automatic-sync policy, conflicts and history
         .routes(routes!(me::sync_settings, me::sync_settings_patch))
         .routes(routes!(me::sync_conflicts))
         .routes(routes!(me::sync_resolve_conflict))
@@ -544,7 +544,7 @@ fn reader_routes() -> OpenApiRouter<AppState> {
 /// Every `/v1/admin` route, served from the admin pool.
 fn admin_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        // admin — sync visibility + operator actions
+        // admin: sync visibility and operator actions
         .routes(routes!(admin::list_sync_accounts))
         .routes(routes!(
             admin::list_sync_mappings,
@@ -575,8 +575,8 @@ fn admin_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(admin::set_provider_preset_lock))
         .routes(routes!(admin::test_adapter))
         .routes(routes!(admin::resolve_provider))
-        // admin — user administration: directory, identity, suspension, sessions, grants,
-        // erasure, and the catalogue of what can be granted
+        // admin: user administration (directory, identity, suspension, sessions, grants,
+        // erasure, and the catalogue of what can be granted)
         .routes(routes!(admin::list_users))
         .routes(routes!(
             admin::get_user,
@@ -588,16 +588,16 @@ fn admin_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(admin::revoke_user_sessions))
         .routes(routes!(admin::verify_user_email))
         .routes(routes!(admin::permission_catalogue))
-        // admin — the deployment control plane: every feature and its switch
+        // admin: the deployment control plane, every feature and its switch
         .routes(routes!(admin::list_flags))
         .routes(routes!(admin::set_flag, admin::reset_flag))
-        // admin — the recommender's control plane: model health, tuning, and the rebuild that
-        // makes a change to a build-time value take effect
+        // admin: the recommender's control plane (model health, tuning, and the rebuild that
+        // makes a change to a build-time value take effect)
         .routes(routes!(admin::model_health))
         .routes(routes!(admin::list_tunables))
         .routes(routes!(admin::set_tunable, admin::reset_tunable))
         .routes(routes!(admin::rebuild_model))
-        // admin — the GDPR data-subject request queue and its fulfilment
+        // admin: the GDPR data-subject request queue and its fulfilment
         .routes(routes!(admin::list_privacy_queue))
         .routes(routes!(admin::claim_privacy_request))
         .routes(routes!(admin::resolve_privacy_request))
@@ -621,7 +621,7 @@ fn admin_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(admin::admin_stream))
         .routes(routes!(admin::scan_stream))
         .routes(routes!(admin::get_scan))
-        // admin — catalogue maintenance: the operator's series list, bulk deletion, the purge
+        // admin: catalogue maintenance (the operator's series list, bulk deletion, the purge)
         .routes(routes!(admin::list_catalogue))
         .routes(routes!(admin::catalogue_summary))
         .routes(routes!(admin::bulk_delete_series))
@@ -651,7 +651,7 @@ fn admin_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(admin::flag_sync_decision))
 }
 
-/// Best-effort connection to NATS for the live notification relay. Returns `None` when
+/// Connects to NATS, best effort, for the live notification relay. Returns `None` when
 /// unconfigured or unreachable, so `/v1/me/stream` degrades to `503` while the edge keeps serving.
 pub async fn connect_bus(
     nats: Option<&tankovault_config::NatsConfig>,
@@ -734,7 +734,7 @@ mod tests {
     #[test]
     fn the_substrate_is_never_behind_a_flag() {
         // Turning off sign-in, the capabilities probe or ops is turning the service off,
-        // not a product decision — these must have no rule at all.
+        // not a product decision, so these must have no rule at all.
         let features = route_features();
         for path in [
             "/v1/auth/login",
@@ -781,8 +781,8 @@ mod tests {
 
     /// Every suffix in the shared declaration is actually gated under this tier's prefix.
     ///
-    /// The two tiers used to keep independent tables and had drifted — gated `/conflicts` and
-    /// `/history` but not `/push-series` — with nothing asserting they agreed. `services/sync`
+    /// The bug: the two tiers kept independent tables that drifted apart, gating `/conflicts` and
+    /// `/history` but not `/push-series`, with nothing asserting they agreed. `services/sync`
     /// carries the mirror of this test.
     #[test]
     fn the_shared_sync_declaration_is_applied_under_this_tier_s_prefix() {
@@ -799,7 +799,7 @@ mod tests {
 
     #[test]
     fn the_recovery_paths_are_gated_only_by_features_that_cannot_be_switched_off() {
-        // Both surfaces *are* declared, so the table is complete — but their features are
+        // Both surfaces *are* declared, so the table is complete, but their features are
         // locked, so declaring them cannot lock anybody out.
         let features = route_features();
         for (path, expected) in [
@@ -813,8 +813,8 @@ mod tests {
 
     #[test]
     fn every_route_backed_feature_is_actually_reachable() {
-        // A feature nobody gates is a switch that does nothing. These are enforced elsewhere
-        // — background loops, outbound channels, behaviour decided inside a handler.
+        // A feature nobody gates is a switch that does nothing. These are enforced elsewhere:
+        // background loops, outbound channels, behaviour decided inside a handler.
         let declared = route_features().declared_features();
         let enforced_elsewhere = [
             Feature::CatalogueSearch,
@@ -830,11 +830,11 @@ mod tests {
             Feature::ScanningFull,
             // Not a route either, and deliberately not: it is a *requirement placed on the
             // caller*, checked in the `AuthUser` extractor for every authenticated route at
-            // once. Gating a path would be the opposite of what it does — the enrolment
+            // once. Gating a path would be the opposite of what it does: the enrolment
             // surface has to stay reachable precisely when the flag is on, or turning it on
             // confines every account to a page it cannot reach. See `crate::state`.
             Feature::AccountsMfaRequired,
-            // The same shape, one layer out: a requirement on the caller rather than a route,
+            // The same shape, one layer out: a requirement on the caller, not a route,
             // enforced for every route at once by `crate::account_gate`. A rule here would have
             // to name every public path, and the one nobody named would be the hole.
             Feature::AccountsRequired,

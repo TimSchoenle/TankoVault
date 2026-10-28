@@ -1,9 +1,9 @@
-//! The deployment-wide account requirement: with `accounts.required` on, nothing outside the
+//! Owns the deployment-wide account requirement: with `accounts.required` on, nothing outside the
 //! sign-in surface answers a caller who has no account.
 //!
 //! The inverse of [`tankovault_service::flags::enforce`], which withdraws a route when its
 //! feature is *off*. This one places a requirement on the *caller*, so it is a mounted layer
-//! rather than a row in `route_features` — a rule keyed on path would have to name every public
+//! instead of a row in `route_features`: a rule keyed on path would have to name every public
 //! route, and the one nobody remembered to name would be the hole the flag exists to close.
 //!
 //! # Why a layer and not an extractor
@@ -11,13 +11,13 @@
 //! Default-closed. Every route is gated unless [`is_sign_in_surface`] names it, so a public
 //! route added later is private on a private deployment without anyone editing a table.
 //! Putting it in the `Option<AuthUser>` extractor instead would gate only the routes that
-//! happen to ask for a principal — and `/v1/tags`, `/v1/providers` and the legal documents do
+//! happen to ask for a principal, and `/v1/tags`, `/v1/providers` and the legal documents do
 //! not ask for one.
 //!
 //! # What "has an account" means here
 //!
 //! A verified access-token signature naming a user, and nothing further: no database round trip,
-//! no suspension check, no permission resolution. Deliberately — this gate decides whether the
+//! no suspension check, no permission resolution. Deliberately: this gate decides whether the
 //! caller is *the public*, not what they may do, and every route that grants anything still
 //! resolves the principal properly through [`crate::state::AuthUser`], which refuses a suspended
 //! or erased account there. The cost of the difference is bounded by the access token's lifetime:
@@ -62,16 +62,16 @@ pub(crate) async fn enforce(State(state): State<AppState>, req: Request, next: N
 /// `crate::state::exempt_from_mandatory_mfa`: a gate with no way through it is not a private
 /// deployment but a bricked one, recoverable only by an operator switching the flag back off.
 ///
-/// - `/v1/auth` — signing in, registering, resetting a password, confirming an address, and both
+/// - `/v1/auth`: signing in, registering, resetting a password, confirming an address, and both
 ///   legs of a passkey or second-factor sign-in.
-/// - `/v1/legal` — registering *is* the act of accepting the Terms, so a visitor has to be able
+/// - `/v1/legal`: registering *is* the act of accepting the Terms, so a visitor has to be able
 ///   to read them before they have an account.
-/// - `/v1/branding` — the sign-in screen is the whole of a private deployment's public face, and
+/// - `/v1/branding`: the sign-in screen is the whole of a private deployment's public face, and
 ///   it draws the wordmark, the tagline, the licence and the copyright line. Walled, the client
 ///   falls back to the *shipped* identity, so a rebranded private deployment would greet every
 ///   visitor under this project's name. It publishes nothing a visitor could not read off the
 ///   page it is rendered on.
-/// - `/v1/client` — the desktop updater runs from the moment the app starts, so on a private
+/// - `/v1/client`: the desktop updater runs from the moment the app starts, so on a private
 ///   deployment it would otherwise never learn which releases its own server supports, and would
 ///   fall back to having no ceiling at all.
 ///
@@ -127,7 +127,7 @@ mod tests {
     }
 
     /// The sign-in screen is a private deployment's whole public face, and it draws the
-    /// wordmark. Walled, the client falls back to the shipped identity — so a rebranded private
+    /// wordmark. Walled, the client falls back to the shipped identity, so a rebranded private
     /// deployment would greet every visitor under this project's name.
     #[test]
     fn the_sign_in_screen_can_still_learn_what_this_deployment_is_called() {
@@ -152,7 +152,7 @@ mod tests {
     }
 
     /// The capability probe carries the answer the signed-out client needs, so it has to be
-    /// refused rather than exempted — see [`is_sign_in_surface`].
+    /// refused, not exempted; see [`is_sign_in_surface`].
     #[test]
     fn the_capability_probe_is_not_exempt() {
         assert!(!is_sign_in_surface("/v1/me/capabilities"));

@@ -1,4 +1,4 @@
-//! External-sync proxy endpoints, keyed by provider.
+//! Owns the external-sync proxy endpoints, keyed by provider.
 
 use crate::error::{ApiError, ApiResult};
 use crate::openapi::ME_SYNC_TAG;
@@ -95,7 +95,7 @@ pub async fn sync_authorize_url(
 
 /// Get link status for a provider
 ///
-/// Whether the caller has a linked account at `provider`, plus the connected display name and
+/// Whether the caller has a linked account at `provider`, and the connected display name and
 /// most recent sync time (Sync & integrations panel, header pill, Series tracking card).
 /// Always `200`; an unlinked account reads `{ "linked": false }`. The body type is shared with
 /// the sync service via `tankovault_contracts::sync`.
@@ -126,7 +126,7 @@ pub async fn sync_status(
 
 /// Unlink a provider
 ///
-/// Unlink the caller's account at `provider`.
+/// Unlinks the caller's account at `provider`.
 #[utoipa::path(
     delete,
     path = "/v1/me/sync/{provider}",
@@ -225,17 +225,17 @@ pub async fn sync_callback(
 pub struct SyncOpts {
     /// Overrides the account's own conflict policy for this run; omitted uses it.
     ///
-    /// Typed rather than a bare string since FRONTEND F10: the sync service's request body
-    /// has always been a `ConflictPolicy`, so a token this proxy accepted and that one did not
-    /// used to fail one hop downstream, as a `502` with no useful detail. Now the two name the
-    /// same type and the rejection happens here, as a `422` that says which values are legal.
+    /// Typed, not a bare string: the sync service's request body is a `ConflictPolicy`, so a
+    /// token this proxy accepted and that one did not would fail one hop downstream, as a `502`
+    /// with no useful detail. The two name the same type and the rejection happens here, as a
+    /// `422` that says which values are legal.
     #[serde(default)]
     pub policy: Option<ConflictPolicy>,
 }
 
 /// Push local state to a provider
 ///
-/// Reflect local watchlist/progress to `provider` (bulk, full-reconciliation walk — see
+/// Reflects local watchlist/progress to `provider` (bulk, full-reconciliation walk; see
 /// `spawn_targeted_push` for the fast per-series path used automatically when marking a
 /// chapter/series read).
 #[utoipa::path(
@@ -268,7 +268,7 @@ pub async fn sync_push(
 
 /// Pull a provider's list into local state
 ///
-/// Import `provider`'s list into the local watchlist.
+/// Imports `provider`'s list into the local watchlist.
 #[utoipa::path(
     post,
     path = "/v1/me/sync/{provider}/pull",
@@ -331,14 +331,14 @@ pub struct SyncSettingsPatch {
     pub auto_sync_enabled: Option<bool>,
     /// The account's new conflict policy; omitted leaves it unchanged.
     ///
-    /// See [`SyncOpts::policy`] for why this is typed rather than a bare string.
+    /// See [`SyncOpts::policy`] for why this is typed, not a bare string.
     #[serde(default)]
     pub conflict_policy: Option<ConflictPolicy>,
 }
 
 /// Update automatic-sync settings
 ///
-/// Update automatic sync + conflict policy (design v2 §B.6).
+/// Updates automatic sync and conflict policy (design v2 §B.6).
 #[utoipa::path(
     patch,
     path = "/v1/me/sync/{provider}/settings",
@@ -363,7 +363,7 @@ pub async fn sync_settings_patch(
         "conflict_policy": body.conflict_policy,
     });
     // The sync service answers `204`; forwarding what `Upstream::decode` synthesises keeps one
-    // source for this body rather than re-stating it as a literal here.
+    // source for this body instead of re-stating it as a literal here.
     state
         .sync
         .patch(
@@ -405,7 +405,7 @@ pub struct ResolveConflict {
 
 /// Resolve a sync conflict
 ///
-/// Apply the caller's chosen resolution (§B.6).
+/// Applies the caller's chosen resolution (§B.6).
 #[utoipa::path(
     post,
     path = "/v1/me/sync/conflicts/{id}/resolve",
@@ -438,7 +438,7 @@ pub async fn sync_resolve_conflict(
 pub struct HistoryParams {
     #[serde(default)]
     pub series_id: Option<Uuid>,
-    // Plain `//`, not `///` — a doc comment here would move the published parameter
+    // Plain `//`, not `///`: a doc comment here would move the published parameter
     // description via `value_type = String` (rule 9). See `sync_history` for why this field
     // is `ProviderSlug`, not `String`.
     #[param(value_type = String)]
@@ -474,14 +474,14 @@ pub async fn sync_history(
     }
     if let Some(p) = &q.provider {
         // No percent-encoding needed: `ProviderSlug` is `[A-Za-z0-9_-]+`, already URL-safe.
-        // Widening it back to `String` would re-open query injection via `&`, `=`, `#`.
+        // Widening it to `String` would open query injection via `&`, `=`, `#`.
         let _ = write!(path, "provider={p}&");
     }
     let _ = write!(path, "page={}", q.page.unwrap_or(0));
     sync_get(&state, &path).await
 }
 
-/// GET a JSON body from the sync service; a thin alias over [`crate::upstream::Upstream`] so
+/// GETs a JSON body from the sync service; a thin alias over [`crate::upstream::Upstream`] so
 /// `admin/sync.rs` reads the same way as this module.
 pub(crate) async fn sync_get<T: serde::de::DeserializeOwned>(
     state: &AppState,
@@ -490,7 +490,7 @@ pub(crate) async fn sync_get<T: serde::de::DeserializeOwned>(
     state.sync.get(path).await
 }
 
-/// POST a JSON body to the sync service. `pub(crate)` so `admin/sync.rs` can reuse it for
+/// POSTs a JSON body to the sync service. `pub(crate)` so `admin/sync.rs` can reuse it for
 /// operator-triggered force pull/push.
 ///
 /// Generic in the response so each caller names the body it publishes; that name is what makes

@@ -1,4 +1,4 @@
-//! The session itself: the rotating refresh-token cookie, its reuse detection, and the
+//! Owns the session itself: the rotating refresh-token cookie, its reuse detection, and the
 //! access-token mint every sign-in path funnels through.
 
 use axum::Json;
@@ -19,7 +19,7 @@ use crate::state::{AppState, ClientContext};
 
 /// The `__Host-`-prefixed cookie name, used whenever `cookie_secure` is on.
 ///
-/// See [`refresh_cookie`] for the `Path=/` review that decided this.
+/// See [`refresh_cookie`] for why the path is `/`.
 const HOST_REFRESH_COOKIE: &str = "__Host-refresh_token";
 /// The unprefixed name, used only by the local-HTTP development opt-out.
 const DEV_REFRESH_COOKIE: &str = "refresh_token";
@@ -28,20 +28,20 @@ const HOST_REFRESH_PATH: &str = "/";
 /// The narrow path the unprefixed development cookie keeps.
 const DEV_REFRESH_PATH: &str = "/v1/auth";
 
-/// How long after its own rotation a refresh token is still honoured — absorbs a raced or
+/// How long after its own rotation a refresh token is still honoured. Absorbs a raced or
 /// interrupted rotation (two tabs, a dropped response) without treating an honest retry as
-/// theft, which would revoke the whole session rather than just fail one request.
+/// theft, which would revoke the whole session instead of failing one request.
 ///
 /// Safe because acceptance collapses the family to one token and requires a still-live token
 /// in it; a genuine replay later still hits an already-revoked token, caught one cycle late
-/// rather than never.
+/// instead of never.
 const ROTATION_GRACE: time::Duration = time::Duration::seconds(60);
 
 /// The name and `Path` this deployment issues the refresh cookie under.
 ///
 /// `__Host-` makes `Secure`, no `Domain`, and `Path=/` browser-enforced, closing a subdomain
-/// cookie-tossing write a narrower path did not stop — but it requires `Secure`, so the
-/// local-HTTP opt-out keeps the old unprefixed name instead, since a `__Host-` cookie without
+/// cookie-tossing write a narrower path does not stop. It requires `Secure`, so the
+/// local-HTTP opt-out keeps an unprefixed name instead, since a `__Host-` cookie without
 /// `Secure` is silently dropped. The read side accepts only the name this deployment issues,
 /// never both, or a sibling subdomain could plant the unprefixed name.
 const fn refresh_cookie(cookie_secure: bool) -> (&'static str, &'static str) {
@@ -58,8 +58,8 @@ const fn refresh_cookie(cookie_secure: bool) -> (&'static str, &'static str) {
 /// Presenting a token that was already rotated (reuse) revokes the whole token family. The one
 /// exception is a token presented within a short grace window of its own rotation while its
 /// family is still live: that is an interrupted or raced rotation by a client that never took
-/// delivery of the successor, and it is served — collapsing the family to the single token it
-/// issues — rather than counted as theft.
+/// delivery of the successor, and it is served (collapsing the family to the single token it
+/// issues) instead of counted as theft.
 #[utoipa::path(
     post,
     path = "/v1/auth/refresh",
@@ -93,14 +93,14 @@ pub async fn refresh(
     // Every write below shares one transaction, and the revoke of the presented token is a
     // compare-and-swap: a second request racing this rotation blocks on the row until this one
     // has committed its successor, then loses the swap and takes the reuse path with that
-    // successor visible. Without it both requests rotated and the family forked into two live
+    // successor visible. Without it both requests rotate and the family forks into two live
     // lineages. Every early return commits first, so a revocation is never rolled back.
     let mut tx = tankovault_db::begin(&state.pool).await?;
     let rotated = record.revoked_at.is_none()
         && tankovault_db::repo::users::revoke_token(&mut *tx, record.id).await?;
 
     // Reuse detection: presenting an already-rotated token usually means theft, but a raced or
-    // interrupted rotation leaves an honest client holding the same evidence — see
+    // interrupted rotation leaves an honest client holding the same evidence; read
     // `ROTATION_GRACE`'s doc before changing anything below.
     let mut recovered_race = false;
     if !rotated {
@@ -112,7 +112,7 @@ pub async fn refresh(
             tankovault_db::repo::users::revoke_family(&mut *tx, record.family_id).await?;
         if now - revoked_at > ROTATION_GRACE || standing == 0 {
             tankovault_db::commit(tx).await?;
-            // The highest-signal security event this service emits — a rotated token replayed
+            // The highest-signal security event this service emits: a rotated token replayed
             // means two parties hold the same credential.
             tracing::warn!(
                 user_id = %record.user_id.as_uuid(),
@@ -216,13 +216,13 @@ pub async fn logout(State(state): State<AppState>, jar: CookieJar) -> ApiResult<
         tankovault_db::repo::users::mfa::revoke_step_ups(&state.pool, record.user_id).await?;
     }
     // The removal must match the cookie's name and path, or the browser keeps its old copy.
-    // `Secure` matters too: a `__Host-` removal without it is refused by the browser rather
-    // than applied, so a stale cookie would sit in the jar until it expired on its own.
+    // `Secure` matters too: a `__Host-` removal without it is refused by the browser instead
+    // of applied, so a stale cookie would sit in the jar until it expired on its own.
     Ok(jar.remove(removal_cookie(name, path, state.cookie_secure)))
 }
 
 /// The `Set-Cookie` that clears the refresh cookie, built to the same rules as the one that
-/// set it — separate from [`logout`] so those rules are assertable without a database.
+/// set it; separate from [`logout`] so those rules are assertable without a database.
 ///
 /// `secure` is a parameter, not a literal `true`: pinning it would stop the local-HTTP opt-out
 /// from ever clearing its cookie, since a `Secure` cookie is ignored over plain HTTP. Both
@@ -236,7 +236,7 @@ fn removal_cookie(name: &'static str, path: &'static str, secure: bool) -> Cooki
         .build()
 }
 
-/// Mint an access token + a rotating refresh cookie for `user` under `family_id`, returning
+/// Mints an access token and a rotating refresh cookie for `user` under `family_id`, returning
 /// the JSON body wrapper used by [`login`], [`refresh`] and [`verify_email`].
 pub(super) async fn issue_session(
     state: &AppState,
@@ -248,7 +248,7 @@ pub(super) async fn issue_session(
     Ok((jar, Json(resp)))
 }
 
-/// The core of [`issue_session`]: persist a rotating refresh token, set its cookie, and mint
+/// The core of [`issue_session`]: persists a rotating refresh token, sets its cookie, and mints
 /// an access token, returning the raw [`TokenResponse`] so callers ([`register`]) can embed it
 /// in a different envelope.
 pub(super) async fn issue_session_tokens(
@@ -260,7 +260,7 @@ pub(super) async fn issue_session_tokens(
     issue_session_tokens_via(&state.pool, state, jar, user, family_id).await
 }
 
-/// As [`issue_session_tokens`], persisting the refresh token through `exec` — a transaction when
+/// As [`issue_session_tokens`], persisting the refresh token through `exec`: a transaction when
 /// the issue has to commit together with a revocation.
 async fn issue_session_tokens_via<'e, E: tankovault_db::PgExecutor<'e>>(
     exec: E,
@@ -281,7 +281,7 @@ async fn issue_session_tokens_via<'e, E: tankovault_db::PgExecutor<'e>>(
     // `__Host-refresh_token` at `Path=/` when cookies are `Secure`; the unprefixed name at
     // `/v1/auth` only for the local-HTTP opt-out. No `Domain` is set, deliberately.
     let (name, path) = refresh_cookie(state.cookie_secure);
-    // Deliberate unwrapping — the refresh token exists to be handed to the browser in this
+    // Deliberate unwrapping: the refresh token exists to be handed to the browser in this
     // header, and `Cookie::build` needs an owned `String`.
     let cookie = Cookie::build((name, raw_refresh.expose_secret().to_owned()))
         .http_only(true)
@@ -309,10 +309,10 @@ mod tests {
     /// A `__Host-` cookie without `Secure` is refused, and that applies to the removal too.
     ///
     /// The bug: the removal cookie omitted `Secure`, so the browser silently dropped it in any
-    /// `cookie_secure` deployment — the family was revoked server-side, but the user's cookie
+    /// `cookie_secure` deployment: the family was revoked server-side, but the user's cookie
     /// jar still held a value that looked "logged in".
     ///
-    /// `secure` tracks `cookie_secure` rather than being pinned to `true`, since a `Secure`
+    /// `secure` tracks `cookie_secure` instead of being pinned to `true`, since a `Secure`
     /// removal sent over plain HTTP is itself ignored.
     #[test]
     fn the_logout_removal_carries_the_attributes_the_host_prefix_requires() {
@@ -336,8 +336,8 @@ mod tests {
     /// The `__Host-` prefix is only honoured at `Path=/`, and a browser that refuses the cookie
     /// says nothing about it.
     ///
-    /// Narrowing the path back while keeping the prefixed name passes every server-side test —
-    /// the browser just silently drops the cookie, so sign-in appears to work and every
+    /// Narrowing the path while keeping the prefixed name passes every server-side test: the
+    /// browser just silently drops the cookie, so sign-in appears to work and every
     /// refresh answers 401 forever after, with nothing to explain why.
     #[test]
     fn the_host_prefixed_name_is_only_ever_issued_at_the_root_path() {
@@ -351,7 +351,7 @@ mod tests {
     }
 
     /// The development opt-out keeps the unprefixed name, because a `__Host-` cookie without
-    /// `Secure` is refused too — and `cookie_secure = false` exists precisely to omit `Secure`.
+    /// `Secure` is refused too, and `cookie_secure = false` exists precisely to omit `Secure`.
     #[test]
     fn the_insecure_opt_out_keeps_the_unprefixed_name_and_the_narrow_path() {
         let (name, path) = refresh_cookie(false);
@@ -364,7 +364,7 @@ mod tests {
     }
 
     /// The two configurations must not share a name, or a `Secure` deployment would also
-    /// honour a cookie a sibling subdomain could have written — reopening the cookie-tossing
+    /// honour a cookie a sibling subdomain could have written, reopening the cookie-tossing
     /// hole the prefix exists to close.
     #[test]
     fn the_secure_and_insecure_names_are_distinct() {

@@ -1,6 +1,6 @@
-//! The single-account read model, shared by every mutating handler in this module: each answers
-//! with the re-read state rather than echoing its input, so the client always renders what the
-//! database now holds.
+//! Owns the single-account read model, shared by every mutating handler in this module: each
+//! answers with the re-read state instead of echoing its input, so the client always renders what
+//! the database now holds.
 
 use crate::error::ApiResult;
 use crate::openapi::ADMIN_USERS_TAG;
@@ -22,7 +22,7 @@ pub struct UserDetailResponse {
     pub permissions: Vec<GrantView>,
 }
 
-/// Account row plus its grants, re-read from the database.
+/// Re-reads the account row and its grants from the database.
 pub(crate) async fn user_detail_response(
     state: &AppState,
     target: UserId,

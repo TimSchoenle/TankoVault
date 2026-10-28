@@ -1,4 +1,4 @@
-//! In-app notifications, the activity feed, and the live SSE stream.
+//! Owns in-app notifications, the activity feed, and the live SSE stream.
 
 use crate::error::{ApiError, ApiResult};
 use crate::openapi::{ME_DASHBOARD_TAG, ME_NOTIFICATIONS_TAG};
@@ -35,23 +35,23 @@ pub struct NotificationsParams {
     pub limit: i64,
     #[serde(default)]
     pub offset: i64,
-    /// Return only unread rows.
+    /// Returns only unread rows.
     #[serde(default)]
     pub unread: bool,
-    /// Return only rows of this `kind`.
+    /// Returns only rows of this `kind`.
     #[serde(default)]
     pub kind: Option<String>,
 }
 
 /// One inbox row, resolved to the fields a list can render without opening it.
 ///
-/// Flat rather than a `kind`-discriminated `oneOf`: the generated client is what the frontend
+/// Flat, not a `kind`-discriminated `oneOf`: the generated client is what the frontend
 /// consumes, and a `oneOf` there produces an enum that is painful to match on for a gain the
 /// retained `payload` already covers.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct NotificationItem {
     pub id: Uuid,
-    /// The kind token. A string rather than the enum, because a client generated from an older
+    /// The kind token. A string, not the enum, because a client generated from an older
     /// document still has to render a row a newer notifier wrote.
     pub kind: String,
     #[serde(with = "time::serde::rfc3339")]
@@ -83,11 +83,11 @@ pub struct NotificationItem {
 pub struct NotificationsView {
     /// One page of the inbox, newest first.
     pub items: Vec<NotificationItem>,
-    /// Notifications matching this request's filter — the pager's denominator.
+    /// Notifications matching this request's filter: the pager's denominator.
     pub total: i64,
     /// Unread notifications the caller has, ignoring the filter. Counted server-side on purpose:
-    /// derived from `items` it is only ever the unread count *of the loaded page*, which is what
-    /// pinned the bell at 100.
+    /// derived from `items` it is only ever the unread count *of the loaded page*, which caps
+    /// the bell at the page size.
     pub unread: i64,
 }
 
@@ -96,13 +96,12 @@ pub struct NotificationsView {
 /// A page of the caller's inbox, newest first, with the filtered `total` and the inbox-wide
 /// `unread`.
 ///
-/// The body is an object rather than the bare array it used to be, for the same reason
-/// `/v1/me/watchlist` is: neither count is derivable from a page of items, and the frontend —
-/// the only consumer, and regenerated from this document — needs both to page and to keep the
-/// bell honest past the first page.
+/// The body is an object, not a bare array, for the same reason `/v1/me/watchlist` is: neither
+/// count is derivable from a page of items, and the frontend (the only consumer, regenerated from
+/// this document) needs both to page and to keep the bell honest past the first page.
 ///
-/// `unread` and `kind` filter server-side. They exist because the client used to filter the one
-/// page it had loaded, so a tab could show nothing while matching rows sat on the next page.
+/// `unread` and `kind` filter server-side: a client filtering the one page it loaded can show
+/// an empty tab while matching rows sit on the next page.
 #[utoipa::path(
     get,
     path = "/v1/me/notifications",
@@ -133,7 +132,7 @@ pub async fn notifications(
     .await?;
 
     // Rows written before the payload carried a title are named by one lookup for the whole page,
-    // rather than a backfill migration that would rewrite what readers were actually told.
+    // not a backfill migration that would rewrite what readers were actually told.
     let undecorated: Vec<SeriesId> = page
         .items
         .iter()
@@ -171,11 +170,11 @@ fn series_id_of(payload: &serde_json::Value) -> Option<SeriesId> {
         .map(SeriesId::from_uuid)
 }
 
-/// Resolve one stored row into its display fields, reading both payload versions.
+/// Resolves one stored row into its display fields, reading both payload versions.
 ///
 /// `v1` wrote a flat `chapter_number`/`chapter_title` and no title, cover or link; `v2` writes a
-/// coalesced `count`/`first_number`/`last_number` plus a `latest` object. Both have to keep
-/// rendering — the older rows are a reader's history, not a migration backlog.
+/// coalesced `count`/`first_number`/`last_number` and a `latest` object. Both have to keep
+/// rendering: the older rows are a reader's history, not a migration backlog.
 fn item_from(
     n: tankovault_domain::Notification,
     fallback: &HashMap<SeriesId, tankovault_db::repo::catalog::SeriesDisplay>,
@@ -215,7 +214,7 @@ pub struct MarkRead {
     /// The notifications to mark read. Ignored when `all` is set.
     #[serde(default)]
     pub ids: Vec<Uuid>,
-    /// Mark the caller's whole inbox read, rather than the listed ids.
+    /// Marks the caller's whole inbox read, instead of the listed ids.
     ///
     /// A client only ever holds the page it loaded, so "mark all read" sent as a list of ids
     /// marks one page and quietly leaves the rest unread.
@@ -268,7 +267,7 @@ pub struct FeedEntry {
 /// Get the unread-chapters feed
 ///
 /// Unread chapters across the watchlist (the reading dashboard), one entry per chapter: a series
-/// carried by several sources — which is what a merge leaves behind — contributes each chapter
+/// carried by several sources (which is what a merge leaves behind) contributes each chapter
 /// once, resolved to that series' preferred carrier.
 #[utoipa::path(
     get,
@@ -305,12 +304,13 @@ pub async fn feed(
 #[derive(Debug, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 pub struct StreamQuery {
-    /// Single-use ticket from `POST /v1/me/stream-ticket`, passed as a query parameter because
-    /// the browser `EventSource` API cannot attach an `Authorization` header (`docs/ARCHITECTURE.md` §17.4).
+    /// Single-use ticket from `POST /v1/me/stream-ticket`, passed as a query parameter because the
+    /// browser `EventSource` API cannot attach an `Authorization` header (`docs/ARCHITECTURE.md`
+    /// §17.4).
     ///
-    /// Was the raw access token until SEC-8. A query string is recorded by `TraceLayer` as a
-    /// span field, preserved verbatim by the frontend proxy, written to every reverse-proxy
-    /// access log and kept in browser history — so the credential that rides here must be worth
+    /// A query string is recorded by `TraceLayer` as a span field, preserved verbatim by the
+    /// frontend proxy, written to every reverse-proxy access log and kept in browser history, so
+    /// the credential that rides here must be worth
     /// nothing by the time anyone reads it back. This one is spent by the request that carries
     /// it, expires in 30 seconds, and opens nothing but this stream.
     pub ticket: String,
@@ -331,7 +331,7 @@ pub struct StreamTicket {
 /// Mint a stream ticket
 ///
 /// Exchanges the caller's `Bearer` session for a single-use, 30-second credential that
-/// `EventSource` can carry in a query string. Mint one per connection attempt — including each
+/// `EventSource` can carry in a query string. Mint one per connection attempt, including each
 /// reconnect, since redeeming a ticket spends it.
 #[utoipa::path(
     post,
@@ -383,16 +383,16 @@ impl Drop for StreamGuard {
 
 /// Live notification stream
 ///
-/// Server-Sent Events of live per-user notifications (`docs/ARCHITECTURE.md` §14, §17.4). Authenticated by a
-/// single-use `ticket` query parameter obtained from `POST /v1/me/stream-ticket` — not the
-/// `Authorization` header, which `EventSource` cannot set. It subscribes to the ticket's own
-/// user's core-NATS subject and relays each `UserNotification` as a `notification` SSE event,
-/// with a periodic keep-alive comment so proxies keep the connection open. Ownership is
-/// implicit: the subscription is scoped to the user the ticket was minted for.
+/// Server-Sent Events of live per-user notifications (`docs/ARCHITECTURE.md` §14, §17.4).
+/// Authenticated by a single-use `ticket` query parameter obtained from `POST
+/// /v1/me/stream-ticket`, not the `Authorization` header, which `EventSource` cannot set. It
+/// subscribes to the ticket's own user's core-NATS subject and relays each `UserNotification` as a
+/// `notification` SSE event, with a periodic keep-alive comment so proxies keep the connection
+/// open. Ownership is implicit: the subscription is scoped to the user the ticket was minted for.
 ///
 /// The ticket is consumed here, so `EventSource`'s *automatic* reconnect cannot re-open this
-/// stream — the client has to mint a new ticket per attempt (`web/frontend/src/live.rs` does).
-/// That is a feature rather than a cost: re-minting goes through `AuthUser`, so a suspension
+/// stream: the client has to mint a new ticket per attempt (`web/frontend/src/live.rs` does).
+/// That is a feature, not a cost: re-minting goes through `AuthUser`, so a suspension
 /// applied mid-stream is caught by the mint call as well as by the check below.
 #[utoipa::path(
     get,
@@ -438,9 +438,9 @@ pub async fn stream(
             ApiError::Internal
         })?;
 
-    // Held by the stream, so the decrement runs when the response future is dropped — which
+    // Held by the stream, so the decrement runs when the response future is dropped, which
     // for SSE is the *normal* ending, the browser closing the tab. Same reason
-    // `http_requests_in_flight` uses a guard rather than a trailing statement.
+    // `http_requests_in_flight` uses a guard instead of a trailing statement.
     let open = StreamGuard::enter();
     let events = subscriber.map(move |msg| {
         // Bound into the closure so the guard lives exactly as long as the stream does.
@@ -463,7 +463,7 @@ pub async fn stream(
     });
 
     // Capped to the access-token lifetime so these checks re-run periodically, not just at
-    // connect — a ticket must not quietly extend the window the token used to bound.
+    // connect: a ticket must not quietly extend the window the token bounds.
     let deadline = tokio::time::sleep(state.access_ttl.unsigned_abs());
     let events = futures::StreamExt::take_until(events, deadline);
 

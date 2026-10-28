@@ -1,15 +1,15 @@
-//! Ways an elevation could outlive what earned it.
+//! Tests the ways an elevation could outlive what earned it.
 //!
 //! `mfa.rs` covers the prompt working: which routes demand a grant, which factors buy one, and
-//! that one account cannot present another's. This file covers the other side — the four events
+//! that one account cannot present another's. This file covers the other side: the four events
 //! that are supposed to *end* an elevation, and the two values that must never be mistaken for
 //! one.
 //!
 //! Why they need their own suite: a grant is a bearer credential with no per-request proof
 //! behind it, so between issue and expiry the token *is* the elevation. Every bound on it is a
 //! predicate in a `SELECT` or a `revoke_step_ups` call somebody remembered to make, and dropping
-//! either leaves a system that passes every functional test — the prompt still opens, the right
-//! code still works, the sensitive route still runs — while a captured grant stays good long
+//! either leaves a system that passes every functional test (the prompt still opens, the right
+//! code still works, the sensitive route still runs) while a captured grant stays good long
 //! after the session, the password, or the factor that earned it is gone.
 //!
 //! Each test proves the elevation worked *first*, then that the event killed it. Without that
@@ -32,10 +32,10 @@ const PASSWORD: &str = "correct horse battery staple";
 const REFRESH_COOKIE: &str = "__Host-refresh_token";
 
 /// The canary. `GET /v1/me/export` is behind `Elevated`, takes no body, and answers `200` for an
-/// account with nothing in it — so "did the elevation count" reads off the status alone.
+/// account with nothing in it, so "did the elevation count" reads off the status alone.
 const SENSITIVE: &str = "/v1/me/export";
 
-/// Register through the real sign-up route, so the account has a password hash the login and
+/// Registers through the real sign-up route, so the account has a password hash the login and
 /// step-up paths can actually verify. `TestDb::seed_user` writes a placeholder.
 async fn register(app: &TestApp, username: &str) -> UserId {
     register_with_session(app, username).await.0
@@ -43,9 +43,9 @@ async fn register(app: &TestApp, username: &str) -> UserId {
 
 /// [`register`], also returning the refresh cookie the new session was issued with.
 ///
-/// Taken here rather than from a later sign-in on purpose: with no mailer configured
+/// Taken here, not from a later sign-in, on purpose: with no mailer configured
 /// registration activates the account and issues the session immediately, whereas signing in
-/// again *after* a factor is enrolled answers with a challenge and no cookie at all — which
+/// again *after* a factor is enrolled answers with a challenge and no cookie at all, which
 /// would leave the sign-out test revoking nothing and passing for it.
 async fn register_with_session(app: &TestApp, username: &str) -> (UserId, String) {
     let response = app
@@ -92,7 +92,7 @@ async fn register_with_session(app: &TestApp, username: &str) -> (UserId, String
     (user, session)
 }
 
-/// Drive the canary with `grant` and report whether the elevation counted.
+/// Drives the canary with `grant` and reports whether the elevation counted.
 async fn elevation_counts(app: &TestApp, bearer: &str, grant: &str) -> bool {
     let (status, body) = app
         .call_elevated("GET", SENSITIVE, Some(bearer), Some(grant), None)
@@ -131,7 +131,7 @@ async fn elevated_account(app: &TestApp, username: &str) -> (UserId, String, Str
 
 /// An elevation lapses, and a lapsed one buys nothing.
 ///
-/// The window is the only bound on a grant that is neither revoked nor spent — it is what stops
+/// The window is the only bound on a grant that is neither revoked nor spent: it is what stops
 /// one confirmation this morning from authorising a deletion this evening. It lives entirely in
 /// the `expires_at` predicate of `renew_step_up`; drop the predicate and every elevation the
 /// system has ever issued becomes permanent, silently, while every other test still passes.
@@ -163,13 +163,13 @@ async fn a_lapsed_elevation_buys_nothing() {
 
 /// Using an elevation slides its window forward; leaving it alone does not.
 ///
-/// The window is an *idle* one, because the absolute five minutes it replaced expired in the
-/// middle of the task it had been earned for — an operator working through a console panel was
-/// re-prompted every few clicks. What must not come with that is a grant nobody is using staying
-/// alive, so both halves are asserted against the same deadline: two grants minted to lapse at
-/// the same moment, one of them spent on a guarded route first.
+/// The window is an *idle* one, because an absolute one expires in the middle of the task it was
+/// earned for: an operator working through a console panel is re-prompted every few clicks. What
+/// must not come with that is a grant nobody is using staying alive, so both halves are asserted
+/// against the same deadline: two grants minted to lapse at the same moment, one of them spent on a
+/// guarded route first.
 ///
-/// Sleeps rather than mocks the clock because the renewal is a `now()` in SQL — the only way to
+/// Sleeps instead of mocking the clock because the renewal is a `now()` in SQL: the only way to
 /// be past a deadline here is to actually be past it.
 #[tokio::test]
 async fn using_an_elevation_slides_its_window_and_leaving_it_does_not() {
@@ -210,7 +210,7 @@ async fn using_an_elevation_slides_its_window_and_leaving_it_does_not() {
 /// long as anything on the page kept touching a guarded route, and "confirm it is you" would
 /// become a thing said once per sign-in.
 ///
-/// A zero lifetime is not a deployment — it is how the ceiling is observed without waiting hours
+/// A zero lifetime is not a deployment; it is how the ceiling is observed without waiting hours
 /// for one. The grant here is minted with a *live* `expires_at`, so the only thing that can
 /// refuse it is the cap.
 #[tokio::test]
@@ -247,7 +247,7 @@ async fn no_amount_of_use_carries_an_elevation_past_its_lifetime() {
 ///
 /// The scenario is a shared machine. Someone confirms themselves, signs out, and walks away;
 /// the next person at the keyboard signs in as themselves. If the grant outlived the sign-out
-/// it would be a live elevation nobody at the keyboard earned — and the SPA holds grants in
+/// it would be a live elevation nobody at the keyboard earned, and the SPA holds grants in
 /// memory precisely because they are meant to be that short-lived.
 #[tokio::test]
 async fn signing_out_ends_the_elevation_it_leaves_behind() {
@@ -286,8 +286,8 @@ async fn signing_out_ends_the_elevation_it_leaves_behind() {
 ///
 /// A password change is what someone does when they believe they have been compromised. It
 /// already revokes every session; leaving the elevations behind would hand the attacker the one
-/// credential that opens the *irreversible* routes — erase the account, change the email, enrol
-/// their own factor — for the rest of the window, from a session the owner has just killed.
+/// credential that opens the *irreversible* routes (erase the account, change the email, enrol
+/// their own factor) for the rest of the window, from a session the owner has just killed.
 #[tokio::test]
 async fn changing_the_password_ends_every_elevation() {
     let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
@@ -317,7 +317,7 @@ async fn changing_the_password_ends_every_elevation() {
 /// Removing the factor that earned an elevation ends the elevation.
 ///
 /// Otherwise removal is a laundering step: present the factor once, drop it, and keep an
-/// elevation nothing on the account can any longer produce — which is exactly the position an
+/// elevation nothing on the account can any longer produce, which is exactly the position an
 /// attacker who has borrowed a factor for one minute wants to be in. The account is left with a
 /// live proof of a credential it no longer holds.
 #[tokio::test]
@@ -352,8 +352,8 @@ async fn removing_the_factor_that_earned_it_ends_the_elevation() {
 
 /// A grant belonging to a suspended account is not an elevation.
 ///
-/// Suspension is checked in `AuthUser`, ahead of the elevation, so this holds today for free —
-/// which is the point of pinning it. An elevation resolved before the account status, or by a
+/// Suspension is checked in `AuthUser`, ahead of the elevation, so this holds for free, which
+/// is the point of pinning it. An elevation resolved before the account status, or by a
 /// handler that reached for the grant directly, would let a banned operator finish whatever they
 /// had confirmed themselves for on the way out.
 #[tokio::test]
@@ -389,7 +389,7 @@ async fn a_suspended_account_cannot_spend_the_elevation_it_already_held() {
 /// Two failure modes in one assertion. A value that reached an `unwrap` would be a `500` on a
 /// header an attacker fully controls; a value that satisfied the extractor without matching a
 /// row would make the *header itself* the credential. Both read as "unknown grant" here, and
-/// both must read as "no elevation" — the same answer as sending nothing at all.
+/// both must read as "no elevation": the same answer as sending nothing at all.
 #[tokio::test]
 async fn a_grant_nobody_issued_is_not_an_elevation() {
     let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;

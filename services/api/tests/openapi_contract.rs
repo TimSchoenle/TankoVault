@@ -1,4 +1,4 @@
-//! Self-consistency checks on the published `OpenAPI` document, not just that it matches the
+//! Tests the self-consistency of the published `OpenAPI` document, not just that it matches the
 //! code (`xtask openapi --check`'s job) but that it is internally coherent. Not behind
 //! `integration`: needs no database or router, so it runs in the fast CI job.
 
@@ -15,7 +15,7 @@ fn document() -> Value {
 /// # The bug this pins
 ///
 /// `DELETE /v1/me` and `GET /v1/me/export` declared `security(("bearer" = []))` while the only
-/// defined scheme is `bearer_auth` — an unresolvable name that a generator reads as no
+/// defined scheme is `bearer_auth`: an unresolvable name that a generator reads as no
 /// requirement, publishing two account-destroying endpoints as needing no authentication.
 /// `utoipa` takes the scheme name as a string, so the compiler can't catch this typo.
 #[test]
@@ -54,7 +54,7 @@ fn every_security_requirement_names_a_defined_scheme() {
 /// Every `/v1/me` and `/v1/admin` operation declares that it needs a session.
 ///
 /// A route that forgets this is documented as public even where enforcement is fine
-/// (`me_access_matrix.rs` covers that half) — the failure a client author trips over. No
+/// (`me_access_matrix.rs` covers that half), the failure a client author trips over. No
 /// exceptions: an operation that can't express how it's authenticated is a finding, not a
 /// special case.
 #[test]
@@ -87,9 +87,9 @@ fn every_private_operation_declares_a_security_requirement() {
 ///
 /// # The bug this pins
 ///
-/// `web/frontend/src/api.rs` hand-builds the `EventSource` URL outside any compiler that checks
-/// it against this scheme, and once sent `?token=…` while the handler required `?access_token=…`
-/// — every connection rejected with `400`, unnoticed because a stream failure degrades silently.
+/// `web/frontend/src/api.rs` hand-builds the `EventSource` URL outside any compiler that checks it
+/// against this scheme, and once sent `?token=…` while the handler required `?access_token=…`:
+/// every connection rejected with `400`, unnoticed because a stream failure degrades silently.
 #[test]
 fn the_stream_credential_is_declared_under_the_name_the_handler_reads() {
     let spec = document();

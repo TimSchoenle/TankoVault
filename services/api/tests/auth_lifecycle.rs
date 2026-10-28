@@ -1,4 +1,4 @@
-//! The credential lifecycle that only runs when a mailer is configured: email confirmation,
+//! Tests the credential lifecycle that only runs when a mailer is configured: email confirmation,
 //! resend, and password reset, driven end to end via [`RecordingMailer`]. Gated behind the
 //! `integration` feature; requires Docker.
 #![cfg(feature = "integration")]
@@ -17,10 +17,11 @@ const REFRESH_COOKIE: &str = "__Host-refresh_token";
 /// The unprefixed name the local-HTTP development opt-out keeps, at the narrow path.
 const DEV_REFRESH_COOKIE: &str = "refresh_token";
 
-/// Stand up a router whose mailer is configured, plus the recorder to read messages from.
+/// Stands up a router whose mailer is configured, and the recorder to read messages from.
 ///
 /// Rate limiting is off: `/v1/auth`'s budget (10/min, burst 5) is smaller than one full
-/// register/confirm/reset/sign-in lifecycle, and a throttle would otherwise read as an auth failure.
+/// register/confirm/reset/sign-in lifecycle, and a throttle would otherwise read as an auth
+/// failure.
 async fn app_with_mail() -> (TestApp, Arc<RecordingMailer>) {
     let mailer = Arc::new(RecordingMailer::enabled());
     let app = TestApp::spawn_with(
@@ -32,7 +33,7 @@ async fn app_with_mail() -> (TestApp, Arc<RecordingMailer>) {
     (app, mailer)
 }
 
-/// A router with no mailer — the branch where registration activates immediately.
+/// Stands up a router with no mailer: the branch where registration activates immediately.
 async fn app_without_mail() -> TestApp {
     TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await
 }
@@ -89,9 +90,10 @@ async fn json_body(resp: Response<Body>) -> Value {
     }
 }
 
-/// Wait for the next delivered message whose link points at `route`, and return its `?token=`.
+/// Waits for the next delivered message whose link points at `route`, and returns its
+/// `?token=`.
 ///
-/// Messages are pulled until one matches rather than assuming the next one does: confirming an
+/// Messages are pulled until one matches instead of assuming the next one does: confirming an
 /// address also queues the deferred welcome email, so the reset link is not always the message
 /// that arrives next.
 async fn next_link_token(mailer: &RecordingMailer, route: &str) -> String {
@@ -112,7 +114,7 @@ async fn next_link_token(mailer: &RecordingMailer, route: &str) -> String {
     panic!("no message carrying a {route} link was delivered");
 }
 
-/// Register `username`, returning the response so the caller can assert on its shape.
+/// Registers `username`, returning the response so the caller can assert on its shape.
 async fn register(app: &TestApp, username: &str) -> Response<Body> {
     app.request(post(
         "/v1/auth/register",
@@ -409,7 +411,7 @@ async fn a_reset_token_is_single_use() {
 #[tokio::test]
 async fn a_reset_token_past_its_ttl_is_refused() {
     // RESET_TOKEN_TTL is one hour, bounding the blast radius of a leaked inbox. Age the row
-    // rather than the clock; see the confirmation TTL test for why.
+    // instead of the clock; see the confirmation TTL test for why.
     let (app, mailer) = app_with_mail().await;
     register(&app, "sluggish").await;
 
@@ -480,8 +482,8 @@ async fn the_refresh_cookie_carries_every_attribute_the_host_prefix_requires() {
 
 #[tokio::test]
 async fn the_local_http_opt_out_keeps_the_unprefixed_cookie_at_the_narrow_path() {
-    // A `__Host-` name without `Secure` is refused rather than downgraded, so dev keeps the old
-    // spelling; the read side must accept only the name this deployment issues, never both.
+    // A `__Host-` name without `Secure` is refused, not downgraded, so dev keeps the unprefixed
+    // name; the read side must accept only the name this deployment issues, never both.
     let app = TestApp::spawn_with(
         TestConfig::new()
             .without_rate_limiting()
@@ -583,7 +585,7 @@ async fn an_unknown_identifier_is_indistinguishable_from_a_wrong_password() {
 /// # The bug this pins
 ///
 /// `forgot_password` returned a uniform `202`, but the known-address branch did a DB insert
-/// before answering while the unknown branch returned right after the lookup — response time
+/// before answering while the unknown branch returned right after the lookup; response time
 /// was the oracle the uniform status was meant to hide.
 #[tokio::test]
 async fn a_reset_request_answers_without_waiting_for_the_known_branch_work() {
@@ -628,7 +630,7 @@ async fn a_reset_request_answers_without_waiting_for_the_known_branch_work() {
 
 /// The confirmation resend had the same timing-oracle channel, worse: `resend_verification`
 /// inserted a token only for an address that exists *and is still unconfirmed*, so its timing
-/// separated three states rather than two. Both handlers are now spawned in full.
+/// separated three states, not two. Both handlers spawn their work in full.
 #[tokio::test]
 async fn a_confirmation_resend_answers_without_waiting_for_the_known_branch_work() {
     let mailer =
@@ -664,7 +666,7 @@ async fn a_confirmation_resend_answers_without_waiting_for_the_known_branch_work
     );
 }
 
-/// Issue one reset request and report its status and how long the caller waited.
+/// Issues one reset request and reports its status and how long the caller waited.
 async fn timed_forgot(app: &TestApp, email: &str) -> (StatusCode, std::time::Duration) {
     let started = std::time::Instant::now();
     let resp = app

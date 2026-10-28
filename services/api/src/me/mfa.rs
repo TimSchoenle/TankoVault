@@ -1,4 +1,5 @@
-//! Managing one's own second factor, and the step-up prompt that guards sensitive actions.
+//! Owns self-service second-factor management and the step-up prompt that guards sensitive
+//! actions.
 //!
 //! The verification itself lives in [`crate::mfa`], shared with the sign-in second leg. What is
 //! here is enrolment, revocation, and the endpoints a client calls to satisfy a `403
@@ -7,7 +8,7 @@
 //! # Why enrolment is itself a sensitive action
 //!
 //! Every write below demands a step-up **once a factor already exists**. An attacker holding a
-//! live access token but no factor would otherwise simply enrol their own — replacing the
+//! live access token but no factor would otherwise simply enrol their own, replacing the
 //! owner's second factor with theirs, and locking the owner out with the very mechanism that
 //! was supposed to protect them. The first enrolment cannot demand a factor that does not exist
 //! yet, so it falls back to the password, which is exactly the protection the account had a
@@ -72,7 +73,7 @@ pub struct SecurityKeyDto {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct MfaStatus {
     /// Whether any usable factor exists. The single answer the passkey gate and the privileged
-    /// requirement both consult — clients must not recompute it from the fields below.
+    /// requirement both consult; clients must not recompute it from the fields below.
     pub enrolled: bool,
     /// When the authenticator app was confirmed, or absent if there is none.
     ///
@@ -92,8 +93,8 @@ pub struct MfaStatus {
     /// Whether this deployment requires every account to enrol, not just privileged ones.
     pub required: bool,
     /// Whether authenticator-app enrolment is available at all. `false` when the operator has
-    /// configured no sealing key, in which case the client offers security keys only rather
-    /// than a button that answers `503`.
+    /// configured no sealing key, in which case the client offers security keys only instead
+    /// of a button that answers `503`.
     pub totp_available: bool,
 }
 
@@ -174,7 +175,7 @@ pub struct TotpConfirm {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct RecoveryCodes {
     /// The plaintext codes. Only the digests are stored, so this response is the only copy
-    /// that will ever exist — a client that does not show them has lost them.
+    /// that will ever exist: a client that does not show them has lost them.
     #[schema(value_type = Vec<String>)]
     #[serde(serialize_with = "crate::secret::expose_list_onto_wire")]
     pub codes: Vec<SecretString>,
@@ -185,7 +186,7 @@ pub struct RecoveryCodes {
 /// Issues a fresh shared secret and the `otpauth://` URI for it. Nothing is a usable factor
 /// until [`confirm_totp`] accepts a code generated from it.
 ///
-/// Restarting is allowed and simply replaces the pending secret — a user whose QR code never
+/// Restarting is allowed and simply replaces the pending secret: a user whose QR code never
 /// reached their phone asks again. Replacing a *confirmed* enrolment is refused; remove it
 /// first, which costs a step-up, so a stolen session cannot swap the owner's factor for its own.
 #[utoipa::path(
@@ -239,9 +240,9 @@ pub async fn begin_totp(
 ///
 /// Accepts a code generated from the pending secret, which is the only proof the user actually
 /// stored it. On success the enrolment becomes a live factor and a **recovery-code set is
-/// issued** — returned here and never again.
+/// issued**, returned here and never again.
 ///
-/// The codes come with the first factor rather than being a separate opt-in step, because a
+/// The codes come with the first factor, not as a separate opt-in step, because a
 /// second factor without an escape hatch is a way to lose an account, and an escape hatch
 /// nobody clicked through to is the same thing.
 #[utoipa::path(
@@ -276,7 +277,7 @@ pub async fn confirm_totp(
     }
 
     // Verified against the *unconfirmed* row, which `crate::mfa::verify_totp` deliberately
-    // refuses to look at — this is the one moment an unconfirmed secret is allowed to answer.
+    // refuses to look at; this is the one moment an unconfirmed secret is allowed to answer.
     let secret = crate::mfa::open_secret(&state, &enrolment.secret, user.user_id)?;
     let Some(step) = tankovault_auth::totp::verify(
         &secret,
@@ -297,7 +298,7 @@ pub async fn confirm_totp(
 
     if tankovault_db::repo::users::mfa::confirm_totp(&state.pool, user.user_id, step).await? == 0 {
         // Lost a race with another confirmation of the same pending enrolment. Answering
-        // "already enrolled" rather than re-issuing recovery codes matters: a second set would
+        // "already enrolled" instead of re-issuing recovery codes matters: a second set would
         // silently invalidate the first, which the winning request has already displayed.
         return Err(ApiError::BadRequest(
             "this authenticator app is already enrolled".to_owned(),
@@ -365,7 +366,7 @@ pub struct SecurityKeyRegisterStart {
     pub label: Option<String>,
 }
 
-/// The creation challenge, plus the handle the client echoes back.
+/// The creation challenge and the handle the client echoes back.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SecurityKeyRegisterChallenge {
     pub ceremony_id: Uuid,
@@ -400,7 +401,7 @@ struct StoredRegistration {
 ///
 /// Issues a `WebAuthn` creation challenge hinted toward a cross-platform authenticator.
 ///
-/// The exclusion list is every credential already registered to the account — passkeys
+/// The exclusion list is every credential already registered to the account, passkeys
 /// **included**. That cross-purpose exclusion is the point: an authenticator that already holds
 /// this account's passkey must not also become its second factor, or one touch would clear both
 /// legs of a sign-in that is supposed to need two independent proofs.
@@ -472,7 +473,7 @@ pub async fn security_key_register_start(
 /// Verifies the attestation and stores the credential as a second factor.
 ///
 /// When this is the caller's **first** factor, a recovery-code set is issued with it and
-/// returned once — the same rule authenticator-app enrolment follows, for the same reason.
+/// returned once: the same rule authenticator-app enrolment follows, for the same reason.
 #[utoipa::path(
     post,
     path = "/v1/me/mfa/security-keys/register/finish",
@@ -509,7 +510,7 @@ pub async fn security_key_register_finish(
         .map_err(|e| verification_failed(&e))?;
 
     // Read before the insert: afterwards the account always has a factor, and "was this the
-    // first" — the question that decides whether recovery codes are issued — is unanswerable.
+    // first", the question that decides whether recovery codes are issued, is unanswerable.
     let had_factor = crate::mfa::is_enrolled(&state, user.user_id).await?;
 
     let serialised = serde_json::to_value(&key).map_err(|e| {
@@ -552,7 +553,7 @@ pub async fn security_key_register_finish(
     }))
 }
 
-/// A newly registered security key, plus the recovery codes if it was the first factor.
+/// A newly registered security key, with the recovery codes if it was the first factor.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SecurityKeyRegistered {
     pub key: SecurityKeyDto,
@@ -685,7 +686,7 @@ pub async fn regenerate_recovery_codes(
 
 /// One factor, presented to earn an elevation.
 ///
-/// Exactly one field must be set. A flat struct rather than a tagged enum because the generated
+/// Exactly one field must be set. A flat struct, not a tagged enum, because the generated
 /// client renders a `oneOf` as an enum that is awkward to construct, and because "exactly one of
 /// these" is checked here in one place either way.
 #[derive(Debug, Deserialize, ToSchema)]
@@ -698,7 +699,7 @@ pub struct StepUpRequest {
     #[schema(value_type = Option<String>)]
     #[serde(default)]
     pub recovery_code: Option<SecretString>,
-    /// The account password. Accepted **only** while no second factor is enrolled — see the
+    /// The account password. Accepted **only** while no second factor is enrolled; see the
     /// handler.
     #[schema(value_type = Option<String>)]
     #[serde(default)]
@@ -713,7 +714,7 @@ pub struct StepUpRequest {
 /// # The password branch
 ///
 /// Accepted only while the account has **no** factor enrolled. Such an account has no stronger
-/// proof to offer, and refusing it would leave the sensitive routes unreachable — including the
+/// proof to offer, and refusing it would leave the sensitive routes unreachable, including the
 /// enrolment that would fix that. The moment a factor exists the branch is refused here, and
 /// grants it already issued stop being honoured (`crate::step_up`), so enrolling never leaves a
 /// weaker proof usable beside the stronger one.
@@ -790,7 +791,7 @@ pub async fn step_up(
     Ok(Json(grant))
 }
 
-/// Audit a refused elevation and answer `401`.
+/// Audits a refused elevation and answers `401`.
 ///
 /// Every refusal is recorded, not just the interesting ones: a run of failed step-ups against
 /// one account is the signal that somebody holds a session they should not, and an audit trail
@@ -873,10 +874,10 @@ pub async fn step_up_security_key_finish(
     Ok(Json(grant))
 }
 
-/// Trim a label, apply the default, and bound its length.
+/// Trims a label, applies the default, and bounds its length.
 ///
 /// # Errors
-/// [`ApiError::BadRequest`] when the label exceeds [`MAX_LABEL_LEN`] characters.
+/// Returns [`ApiError::BadRequest`] when the label exceeds [`MAX_LABEL_LEN`] characters.
 fn normalise_label(raw: Option<&str>) -> ApiResult<String> {
     let trimmed = raw.unwrap_or("").trim();
     let label = if trimmed.is_empty() {

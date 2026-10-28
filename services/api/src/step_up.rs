@@ -1,10 +1,10 @@
-//! Step-up ("sudo") elevation: the proof a sensitive route demands on top of a session.
+//! Owns step-up ("sudo") elevation: the proof a sensitive route demands on top of a session.
 //!
-//! # What this replaces, and why
+//! # Why a second factor
 //!
-//! Sensitive routes used to take a `current_password`. Against the threat they exist for —
-//! someone who *has* the password, or has stolen a live access token — that proved nothing: the
-//! attacker types the same password again and changes the email, enrols their own passkey, and
+//! A `current_password` check proves nothing against the threat sensitive routes exist for
+//! (someone who *has* the password, or has stolen a live access token): the attacker types the
+//! same password again and changes the email, enrols their own passkey, and
 //! the takeover survives the real owner's password reset. The elevation demanded here is a
 //! *second factor*, which by construction the password thief does not hold.
 //!
@@ -12,12 +12,12 @@
 //!
 //! [`Elevated`] is an extractor, not a helper a handler remembers to call. A route that needs
 //! elevation writes `Elevated(user): Elevated` instead of `user: AuthUser`, so the requirement
-//! is in the signature and cannot be dropped in a refactor — which is the failure mode of every
+//! is in the signature and cannot be dropped in a refactor, which is the failure mode of every
 //! convention-based version of this.
 //!
 //! The grant itself is a row (`step_up_grants`), resolved per request from an opaque token the
 //! client sends in `X-Step-Up`. Not a JWT claim: `AccessClaims` carries no authorization state
-//! on purpose, and an elevation must be revocable before it expires — a password change, a
+//! on purpose, and an elevation must be revocable before it expires: a password change, a
 //! sign-out or the removal of the factor that earned it all end it immediately. Not the refresh
 //! cookie either: the desktop build has no cookie jar to key on.
 //!
@@ -38,12 +38,12 @@ pub const STEP_UP_HEADER: &str = "x-step-up";
 /// An authenticated principal that has *also* presented a second factor within the step-up
 /// window.
 ///
-/// A newtype over [`AuthUser`] rather than a field beside it: `Elevated(user)` destructures to
+/// A newtype over [`AuthUser`], not a field beside it: `Elevated(user)` destructures to
 /// exactly the value every other handler takes, so converting a route costs one pattern in the
 /// signature and nothing in the body.
 ///
-/// Which factor was presented is deliberately not carried. It is recorded where it is known —
-/// the audit record written when the grant is issued — and a handler that could read it here
+/// Which factor was presented is deliberately not carried. It is recorded where it is known
+/// (the audit record written when the grant is issued), and a handler that could read it here
 /// would be a handler tempted to branch on it, re-deciding per route a policy that belongs in
 /// one place.
 pub struct Elevated(pub AuthUser);
@@ -67,22 +67,22 @@ impl FromRequestParts<AppState> for Elevated {
     }
 }
 
-/// Resolve the `X-Step-Up` header into the `elevated` bit `AuthUser` carries, sliding the
+/// Resolves the `X-Step-Up` header into the `elevated` bit `AuthUser` carries, sliding the
 /// grant's window forward as it goes.
 ///
 /// Called once per authenticated request, from the `AuthUser` extractor. The lookup is skipped
 /// entirely when the header is absent, which is every request but the handful that follow a
-/// re-authentication prompt — so the common path costs a header probe and no query.
+/// re-authentication prompt, so the common path costs a header probe and no query.
 ///
-/// The window is *idle* rather than absolute (`step_up_ttl`), because an operator working
-/// through a console panel was being asked to re-confirm mid-task while doing nothing but the
-/// work the elevation was earned for. `step_up_max_ttl` is the bound that survives the sliding:
+/// The window is *idle*, not absolute (`step_up_ttl`), because an absolute one asks an operator
+/// working through a console panel to re-confirm mid-task while doing nothing but the work the
+/// elevation was earned for. `step_up_max_ttl` is the bound that survives the sliding:
 /// it is measured from when the grant was earned and no amount of use moves it, so a walked-
-/// away-from console still stops being elevated. The renewing write is one statement — the same
-/// round trip the read was — and only on requests that actually present a grant.
+/// away-from console still stops being elevated. The renewing write is one statement (the same
+/// round trip the read was), and only on requests that actually present a grant.
 ///
 /// # Errors
-/// [`ApiError::Internal`] on a database failure. A missing, unknown, expired, revoked or
+/// Returns [`ApiError::Internal`] on a database failure. A missing, unknown, expired, revoked or
 /// past-its-lifetime grant is `Ok(false)`, not an error: this function answers "is this request
 /// elevated", and the handler that cares decides what to do about "no".
 pub(crate) async fn resolve(
@@ -112,22 +112,22 @@ pub(crate) async fn resolve(
         return Ok(false);
     };
 
-    // A grant earned by password — the fallback offered to an account with no factor — stops
+    // A grant earned by password (the fallback offered to an account with no factor) stops
     // counting the moment a factor exists. Without this, enrolling a second factor would leave
     // the weaker proof usable beside it, and every elevation would be worth exactly what the
     // password is worth: nothing, against someone who has it.
     Ok(!(method == StepUpMethod::Password && mfa_enrolled))
 }
 
-/// Demand an elevation only from an account that has a factor to elevate with.
+/// Demands an elevation only from an account that has a factor to elevate with.
 ///
 /// The enrolment routes need this instead of [`Elevated`]: a user adding their *first* factor
 /// cannot present one, and requiring it would make the feature unreachable. The moment a factor
 /// exists the requirement applies in full, which is what stops a stolen session from quietly
-/// adding its own second factor beside the owner's — or replacing it.
+/// adding its own second factor beside the owner's, or replacing it.
 ///
 /// # Errors
-/// [`ApiError::StepUpRequired`] when a factor exists and no valid grant was presented.
+/// Returns [`ApiError::StepUpRequired`] when a factor exists and no valid grant was presented.
 pub(crate) fn require_elevation_if_enrolled(user: &AuthUser) -> Result<(), ApiError> {
     if user.mfa_enrolled && !user.elevated {
         return Err(ApiError::StepUpRequired);

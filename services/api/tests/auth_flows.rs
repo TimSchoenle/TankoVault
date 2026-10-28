@@ -1,4 +1,4 @@
-//! End-to-end tests for refresh-token rotation and reuse-detection family revocation, run with
+//! Tests refresh-token rotation and reuse-detection family revocation, run with
 //! no mailer so registration activates immediately. Gated behind the `integration` feature;
 //! requires Docker.
 #![cfg(feature = "integration")]
@@ -12,13 +12,13 @@ use tankovault_api_test_support::TestApp;
 /// production.
 const REFRESH_COOKIE: &str = "__Host-refresh_token";
 
-/// Age every already-revoked token past `auth::session::ROTATION_GRACE` (60 s), so a replay
-/// exercises reuse detection rather than the grace-window recovery path. Skipping this silently
+/// Ages every already-revoked token past `auth::session::ROTATION_GRACE` (60 s), so a replay
+/// exercises reuse detection, not the grace-window recovery path. Skipping this silently
 /// turns a reuse test into a grace test instead.
 const AGE_REVOCATIONS_PAST_GRACE: &str = "UPDATE refresh_tokens \
      SET revoked_at = now() - interval '5 minutes' WHERE revoked_at IS NOT NULL";
 
-/// Build a POST request, optionally carrying a refresh cookie and/or a JSON body.
+/// Builds a POST request, optionally carrying a refresh cookie and/or a JSON body.
 fn post(
     path: &str,
     refresh_cookie: Option<&str>,
@@ -200,7 +200,7 @@ async fn a_raced_rotation_is_recovered_rather_than_ending_the_session() {
 ///
 /// Rotation was read-then-write: both requests found the token unrevoked, both revoked it (the
 /// second as a no-op) and both inserted a successor, forking the family into two live
-/// lineages — the second one invisible to reuse detection on the first.
+/// lineages, the second one invisible to reuse detection on the first.
 #[tokio::test]
 async fn concurrent_refreshes_of_one_token_do_not_fork_the_family() {
     let app = TestApp::spawn().await;
@@ -248,7 +248,7 @@ async fn concurrent_refreshes_of_one_token_do_not_fork_the_family() {
 /// The grace window requires a *live* family, not just a recent revocation.
 ///
 /// A time bound alone would let a deliberately shut-down lineage be re-opened by a token
-/// captured just before the shutdown — logout, then replay an older cookie, hands the session
+/// captured just before the shutdown: logout, then replay an older cookie, hands the session
 /// back. This is the liveness half of the test, which a timeout-only "simplification" would drop.
 #[tokio::test]
 async fn a_replay_into_a_dead_family_is_reuse_even_inside_the_grace_window() {

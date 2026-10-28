@@ -1,10 +1,10 @@
-//! The decision journals: why the automatic merge and the automatic sync did what they did, and
-//! the two operator actions that answer "it was wrong" — undo it, and say so durably.
+//! Owns the decision journals: why the automatic merge and the automatic sync did what they
+//! did, and the two operator actions that answer "it was wrong": undo it, and say so durably.
 //!
-//! Both surfaces sit behind their own permissions rather than the existing `merge.write` /
-//! `sync.admin.write`. Reading a journal discloses more than working the queue it belongs to (the
-//! sync one carries every reader's progress history), and undoing an automatic merge is the only
-//! action in the system that brings a deleted series back.
+//! Both surfaces sit behind their own permissions, not `merge.write` / `sync.admin.write`. Reading
+//! a journal discloses more than working the queue it belongs to (the sync one carries every
+//! reader's progress history), and undoing an automatic merge is the only action in the system that
+//! brings a deleted series back.
 
 use crate::audit::audit;
 use crate::error::{ApiError, ApiResult};
@@ -37,10 +37,10 @@ const MAX_REASON: usize = 1000;
 /// Longest search term the journal accepts; far above any title, and bounds the `ILIKE` pattern.
 const MAX_SEARCH: usize = 200;
 
-/// Reject an empty or oversized reason before it reaches the database.
+/// Rejects an empty or oversized reason before it reaches the database.
 ///
 /// A revert and a flag are both durable judgements that suppress a pair forever, and an unlabelled
-/// one is unattributable six months later — which is when it is read.
+/// one is unattributable six months later, which is when it is read.
 fn check_reason(reason: &str) -> ApiResult<()> {
     let trimmed = reason.trim();
     if trimmed.is_empty() {
@@ -67,7 +67,7 @@ pub struct MergeDecisionFilter {
     /// `distinct`, `deferred`.
     #[serde(default)]
     pub outcome: Option<String>,
-    /// Only decisions naming this series on either side. Survives the merge — an absorbed id is
+    /// Only decisions naming this series on either side. Survives the merge: an absorbed id is
     /// still on the row that absorbed it, which is the one you go looking for.
     ///
     /// A bare `Uuid`, not `SeriesId`: an optional newtype in a query parameter generates a
@@ -185,7 +185,7 @@ pub struct JudgementRequest {
 
 /// Revert a merge
 ///
-/// Undo one automatic merge: the absorbed series exists again under its **original id**, every
+/// Undoes one automatic merge: the absorbed series exists again under its **original id**, every
 /// row that moved is moved back, and every row the merge created on the survivor is removed.
 ///
 /// Two things happen alongside, in the same transaction, because a bare inverse does not survive
@@ -193,7 +193,7 @@ pub struct JudgementRequest {
 /// against the same titles. And the survivor is **disentangled**: the names both rows answered to
 /// are removed from it, and the sources whose provider title is one of those names go back to the
 /// restored series, taking their chapters with them. Without that second half the create-time
-/// attach path — which reads `series_titles` and knows nothing of the suppression — re-attaches
+/// attach path (which reads `series_titles` and knows nothing of the suppression) re-attaches
 /// on the next scan, and the chapters that prompted the revert never move at all.
 ///
 /// The survivor's own canonical title is never removed, and no reader's watchlist entry or read
@@ -227,7 +227,7 @@ pub async fn revert_merge_decision(
     ))
 }
 
-/// Revert one decision and audit it; shared by the single and the batch revert.
+/// Reverts one decision and audits it; shared by the single and the batch revert.
 async fn revert_one(
     state: &AppState,
     user: &AuthUser,
@@ -262,7 +262,7 @@ async fn revert_one(
             "restored": view.restored_id,
             "survivor": view.survivor_id,
             "rows": view.rows_restored,
-            // Recorded separately from `rows`: these came off the survivor rather than going back
+            // Recorded separately from `rows`: these came off the survivor instead of going back
             // onto the restored series, and an audit trail that conflated them would not show
             // that a revert had shrunk a row nobody asked it to touch.
             "titles_removed": view.titles_removed,
@@ -293,7 +293,7 @@ pub struct MergeRevertBatchRequest {
 
 /// Revert merges in a batch
 ///
-/// Revert a reviewed list of automatic merges, each exactly as the single revert does it
+/// Reverts a reviewed list of automatic merges, each exactly as the single revert does it
 /// (restore, suppress, disentangle), newest first: a merge whose survivor a later merge absorbed
 /// can only be reverted after that later one, so newest first lets a chain inside one batch
 /// unwind. One decision's refusal does not stop the others; each item reports its own outcome.
@@ -392,7 +392,7 @@ const fn batch_item(
 
 /// Flag a merge as wrong
 ///
-/// Record that an automatic merge was the wrong call, and suppress the pair permanently, without
+/// Records that an automatic merge was the wrong call, and suppress the pair permanently, without
 /// undoing it. Deliberately independent of the revert: a merge can be wrong and no longer worth
 /// the disruption of unpicking, and a merge can be undone as a precaution while still having been
 /// correct. Either way the flag is what stops the sweep re-making the same decision.
@@ -467,7 +467,7 @@ pub struct SyncDecisionFilter {
 /// List sync decisions
 ///
 /// The automatic-sync journal across every user, newest first. Covers what the per-user sync
-/// history never did: the remote entries that matched nothing, the series skipped as excluded,
+/// history does not: the remote entries that matched nothing, the series skipped as excluded,
 /// the fields both sides already agreed on, and the scored title match behind every mapping.
 #[utoipa::path(
     get,
@@ -507,13 +507,13 @@ pub async fn list_sync_decisions(
 
 /// Revert a sync decision
 ///
-/// Undo one journalled sync action. Forwarded to the sync service, which is the tier holding the
+/// Undoes one journalled sync action. Forwarded to the sync service, which is the tier holding the
 /// provider token: taking back a *push* means writing the remote's previous values back, and only
 /// that service can.
 ///
 /// Not every action has an inverse. A series the sync created on the remote cannot be removed
-/// from here — no provider in this system exposes a delete — and that case answers with an error
-/// saying so rather than silently doing half of it.
+/// from here (no provider in this system exposes a delete), and that case answers with an error
+/// saying so instead of silently doing half of it.
 #[utoipa::path(
     post,
     path = "/v1/admin/sync/decisions/{id}/revert",
@@ -572,8 +572,8 @@ pub struct SyncFlagRequest {
 
 /// Flag a sync decision as wrong
 ///
-/// Record that an automatic sync action was the wrong call without undoing it, and — with
-/// `block_match` — refuse the title match it made so no later run can re-make it.
+/// Records that an automatic sync action was the wrong call without undoing it, and, with
+/// `block_match`, refuses the title match it made so no later run can re-make it.
 #[utoipa::path(
     post,
     path = "/v1/admin/sync/decisions/{id}/flag",

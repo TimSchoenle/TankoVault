@@ -1,7 +1,7 @@
-//! `GET /v1/me/capabilities` — the caller's permissions and this deployment's enabled features,
-//! served together so a client never holds one stale against the other.
+//! Owns `GET /v1/me/capabilities`: the caller's permissions and this deployment's enabled
+//! features, served together so a client never holds one stale against the other.
 //!
-//! Not carried in the token (a revoked permission used to stay live until it expired); the
+//! Not carried in the token (a revoked permission would stay live until the token expired); the
 //! server never trusts this response for authorization.
 
 use crate::error::ApiResult;
@@ -21,24 +21,24 @@ pub struct Capabilities {
     pub permissions: PermissionSet,
     /// Every feature switched on for this deployment, in registry order.
     ///
-    /// Sent as the *enabled* list rather than a key→bool map: the client asks "may I show
+    /// Sent as the *enabled* list, not a key-to-bool map: the client asks "may I show
     /// this", which is a membership test, and a map would invite it to distinguish
-    /// "explicitly false" from "absent" — a distinction that exists in the control plane's
+    /// "explicitly false" from "absent", a distinction that exists in the control plane's
     /// override table and nowhere else.
     pub features: Vec<Feature>,
 }
 
 /// Get my capabilities
 ///
-/// The permissions the caller holds and the features this deployment has enabled — everything
+/// The permissions the caller holds and the features this deployment has enabled: everything
 /// a client needs to decide which navigation, panels and controls to render.
 ///
 /// Not cacheable: a permission revoked or a feature switched off must be reflected on the next
 /// fetch, and this is the endpoint a client polls to find out.
 ///
 /// The grants as stored, not as they resolve: a super user's list is the single
-/// `system.superuser` token, and a client must treat that token the way the server does —
-/// as holding everything — rather than reading the array as exhaustive.
+/// `system.superuser` token, and a client must treat that token the way the server does (as
+/// holding everything) instead of reading the array as exhaustive.
 #[utoipa::path(
     get,
     path = "/v1/me/capabilities",

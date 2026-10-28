@@ -1,4 +1,5 @@
-//! The batch merge revert unwinds a chain newest first and reports each decision on its own.
+//! Tests that the batch merge revert unwinds a chain newest first and reports each decision on its
+//! own.
 //!
 //! A merge whose survivor a later merge absorbed can only be reverted after that later one. A
 //! batch handled in the order given would refuse the earlier merge whenever an operator listed

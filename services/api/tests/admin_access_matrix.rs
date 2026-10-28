@@ -1,5 +1,5 @@
-//! The complete admin access-control matrix: every `/v1/admin` endpoint driven anonymous, holding
-//! every permission but the required one(s) (403, audited), and holding exactly it (not
+//! Tests the complete admin access-control matrix: every `/v1/admin` endpoint driven anonymous,
+//! holding every permission but the required one(s) (403, audited), and holding exactly it (not
 //! 401/403), reconciled against the published `OpenAPI` document. Gated behind the `integration`
 //! feature; requires Docker.
 #![cfg(feature = "integration")]
@@ -12,8 +12,8 @@ use serde_json::{Value, json};
 use tankovault_api_test_support::{TestApp, TestConfig};
 use tankovault_domain::{AccountStatus, Permission};
 
-/// A syntactically valid UUID that names nothing, so the leg-3 outcome is a clean `404` rather
-/// than a mutation of seeded state.
+/// A syntactically valid UUID that names nothing, so the leg-3 outcome is a clean `404`, not a
+/// mutation of seeded state.
 const ABSENT_A: &str = "00000000-0000-7000-8000-00000000000a";
 const ABSENT_B: &str = "00000000-0000-7000-8000-00000000000b";
 
@@ -40,7 +40,7 @@ fn empty() -> Option<Value> {
 
 /// Every permission-gated endpoint under `/v1/admin`, with the capability it declares.
 ///
-/// Kept as one data table rather than one test per route, and not split per module, so every
+/// Kept as one data table, not one test per route, and not split per module, so every
 /// route gets all three legs and none can fall out of the matrix unnoticed.
 #[expect(
     clippy::too_many_lines,
@@ -107,7 +107,7 @@ fn admin_gates() -> Vec<Gate> {
             path: "/v1/admin/recommendations/rebuild",
             required: &[Permission::RecsysWrite],
             // Forwarded to a control plane the harness points at `.invalid`, so the leg-3
-            // outcome is a `502` — after the permission check the matrix is here to assert.
+            // outcome is a `502`, after the permission check the matrix is here to assert.
             body: || Some(json!({ "mode": "incremental" })),
         },
         // --- catalogue maintenance ---
@@ -186,7 +186,7 @@ fn admin_gates() -> Vec<Gate> {
             path: "/v1/admin/merge-candidates/sweep",
             required: &[Permission::MergeWrite],
             // Forwarded to a control plane the harness points at `.invalid`, so the leg-3
-            // outcome is a `502` — after the permission check the matrix is here to assert.
+            // outcome is a `502`, after the permission check the matrix is here to assert.
             body: empty,
         },
         Gate {
@@ -195,7 +195,7 @@ fn admin_gates() -> Vec<Gate> {
             path: "/v1/admin/merge-candidates/sweep-all",
             required: &[Permission::MergeWrite],
             // Forwarded to a control plane the harness points at `.invalid`, so the leg-3
-            // outcome is a `502` — after the permission check the matrix is here to assert.
+            // outcome is a `502`, after the permission check the matrix is here to assert.
             body: empty,
         },
         // Starting the exhaustive run is `merge.write` and watching it is `merge.read`, the same
@@ -224,7 +224,7 @@ fn admin_gates() -> Vec<Gate> {
             path: "/v1/admin/matching/policy",
             required: &[Permission::MergeRead],
             // Forwarded to a control plane the harness points at `.invalid`, so the leg-3
-            // outcome is a `502` — after the permission check the matrix is here to assert.
+            // outcome is a `502`, after the permission check the matrix is here to assert.
             body: empty,
         },
         Gate {
@@ -299,7 +299,7 @@ fn admin_gates() -> Vec<Gate> {
             path: "/v1/admin/sync/decisions/00000000-0000-0000-0000-0000000000aa/revert",
             required: &[Permission::SyncRevert],
             // Forwarded to a sync service the harness points at `.invalid`, so the leg-3
-            // outcome is a `502` — after the permission check the matrix is here to assert.
+            // outcome is a `502`, after the permission check the matrix is here to assert.
             body: || Some(json!({ "reason": "wrong match" })),
         },
         Gate {
@@ -482,8 +482,8 @@ fn admin_gates() -> Vec<Gate> {
             required: &[Permission::ScansRead],
             body: empty,
         },
-        // Clearing changes what every other operator sees, so it sits with the run trigger
-        // rather than with the reads it filters.
+        // Clearing changes what every other operator sees, so it sits with the run trigger,
+        // not with the reads it filters.
         Gate {
             method: "POST",
             template: "/v1/admin/scan-failures/clear",
@@ -519,8 +519,8 @@ fn admin_gates() -> Vec<Gate> {
             required: &[Permission::ScansRead],
             body: empty,
         },
-        // Cancelling stops work every other operator can see, so it sits with the run trigger
-        // rather than with the reads beside it.
+        // Cancelling stops work every other operator can see, so it sits with the run trigger,
+        // not with the reads beside it.
         Gate {
             method: "POST",
             template: "/v1/admin/scans/{run_id}/cancel",
@@ -745,11 +745,11 @@ fn admin_gates() -> Vec<Gate> {
     ]
 }
 
-/// An administrative caller: a session, and the elevation every mutating route now demands.
+/// An administrative caller: a session, and the elevation every mutating route demands.
 ///
-/// Both are needed on every leg because the authorization funnel checks three things in order —
-/// the account holds a second factor, a mutating capability was elevated, and the grants are
-/// present — and a matrix that only supplied the third would fail every route on the first two
+/// Both are needed on every leg because the authorization funnel checks three things in order
+/// (the account holds a second factor, a mutating capability was elevated, and the grants are
+/// present), and a matrix that only supplied the third would fail every route on the first two
 /// with a `403` that says nothing about the capability under test.
 #[derive(Clone)]
 struct Caller {
@@ -757,13 +757,13 @@ struct Caller {
     step_up: String,
 }
 
-/// Mints (and caches) callers for a given capability set so the matrix seeds ~25 accounts
-/// rather than one per leg per route.
+/// Mints (and caches) callers for a given capability set so the matrix seeds ~25 accounts, not
+/// one per leg per route.
 ///
 /// Every seeded account is enrolled with an authenticator app and holds a live step-up. That is
 /// not incidental scaffolding: an administrator *without* a second factor is refused before any
 /// capability is consulted (`AuthUser::require_all`), which is a rule `mfa.rs` pins and this
-/// matrix must satisfy rather than re-test.
+/// matrix must satisfy, not re-test.
 struct Callers<'a> {
     app: &'a TestApp,
     cache: HashMap<Vec<Permission>, Caller>,
@@ -814,8 +814,9 @@ impl<'a> Callers<'a> {
     }
 }
 
-/// Drive one request and return its status **without draining the body** — `/v1/admin/scans/stream`
-/// is an open SSE stream that never ends, and `TestApp::call` drains fully, which would hang.
+/// Drives one request and returns its status **without draining the body**:
+/// `/v1/admin/scans/stream` is an open SSE stream that never ends, and `TestApp::call` drains
+/// fully, which would hang.
 async fn status_of(
     app: &TestApp,
     method: &str,
@@ -832,12 +833,12 @@ async fn status_of(
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Elevation {
     Presented,
-    /// The caller is enrolled and authorized but has not confirmed itself — the state every
+    /// The caller is enrolled and authorized but has not confirmed itself: the state every
     /// administrator is in before the console's prompt.
     Withheld,
 }
 
-/// Drive one request. See [`status_of`] for why the body is left undrained.
+/// Drives one request. See [`status_of`] for why the body is left undrained.
 async fn response_of(
     app: &TestApp,
     method: &str,
@@ -949,12 +950,11 @@ async fn every_admin_endpoint_admits_a_caller_holding_exactly_its_capability() {
 /// Every administrative **write** demands a confirmed identity; every read does not.
 ///
 /// The line is `Permission::is_mutating`, applied in `AuthUser::require_all`, so the whole
-/// surface inherits it from one place — which is exactly why it is worth sweeping the whole
-/// surface. A handler that resolves its capabilities some other way (as `/v1/me/stream` once
-/// did) escapes the funnel and every other leg of this matrix still passes: it holds a
-/// capability check, it just no longer holds the elevation one. The console's most destructive
-/// calls — erase a user, revert a merge, grant permissions — would then need nothing but a
-/// stolen token from an operator who was already signed in.
+/// surface inherits it from one place, which is exactly why it is worth sweeping the whole
+/// surface. A handler that resolves its capabilities some other way escapes the funnel and every
+/// other leg of this matrix still passes: it holds a capability check, just not the elevation
+/// one. The console's most destructive calls (erase a user, revert a merge, grant permissions)
+/// would then need nothing but a stolen token from an operator who was already signed in.
 ///
 /// `mfa.rs` pins the rule on one write and one read; this pins that no route slipped out of it.
 /// Reads are asserted in the same pass because the exemption is the tempting thing to widen:
@@ -1015,7 +1015,7 @@ async fn every_administrative_write_demands_a_confirmed_identity() {
 /// covered.
 ///
 /// The reconciliation test consults this list, so "not in the matrix" is always a decision
-/// somebody wrote down rather than an omission.
+/// somebody wrote down, never an omission.
 fn covered_elsewhere() -> Vec<(&'static str, &'static str)> {
     vec![(
         // Ticket-authenticated, not bearer: every leg of this matrix sends an `Authorization`
@@ -1028,8 +1028,8 @@ fn covered_elsewhere() -> Vec<(&'static str, &'static str)> {
 
 /// A bearer token does not open the console stream, and a session alone does not either.
 ///
-/// The credential rides in the query string, so this route skips `AuthUser` entirely — which
-/// means its permission check is hand-written rather than inherited, and hand-written checks
+/// The credential rides in the query string, so this route skips `AuthUser` entirely, which
+/// means its permission check is hand-written, not inherited, and hand-written checks
 /// are the ones a refactor drops. `403` is the signal that redemption succeeded and
 /// authorization then refused: a redeemed ticket proves a session existed, never authority.
 #[tokio::test]

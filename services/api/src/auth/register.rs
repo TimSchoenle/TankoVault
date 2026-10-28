@@ -1,4 +1,4 @@
-//! Account creation.
+//! Owns account creation.
 //!
 //! Two outcomes by design: with email delivery configured the account is created
 //! **unconfirmed** and no session is issued; without it the account is active immediately, so
@@ -45,7 +45,7 @@ pub struct RegisterResponse {
     /// `true` when a confirmation email was sent and the account must be verified before it
     /// can sign in. When `true`, no session was issued and `access_token` is absent.
     pub verification_required: bool,
-    /// The issued bearer access token — present only when the account was activated
+    /// The issued bearer access token, present only when the account was activated
     /// immediately (email delivery not configured). Mirrors [`TokenResponse::access_token`].
     // Includes the `expose_option_onto_wire` opt-in that lets this secret reach the client.
     #[serde(
@@ -62,7 +62,7 @@ pub struct RegisterResponse {
 /// Register a new account
 ///
 /// Validates the request and creates the user. When email delivery is configured the account
-/// is created **unconfirmed** and a confirmation link is emailed — the user must click it
+/// is created **unconfirmed** and a confirmation link is emailed; the user must click it
 /// before they can sign in, and no session is issued. When email is not configured the
 /// account is activated immediately and a session is issued exactly like [`login`], so
 /// development and SMTP-less self-hosting keep working.
@@ -92,7 +92,7 @@ pub async fn register(
     )
     .await?;
 
-    // Confirmation needs both a mailer and an operator who wants the step — a missing mailer
+    // Confirmation needs both a mailer and an operator who wants the step; a missing mailer
     // is the involuntary version of switching it off.
     if state.mailer.is_enabled()
         && state
@@ -112,8 +112,8 @@ pub async fn register(
         ));
     }
 
-    // Confirmation isn't in play: activate and sign in immediately, preserving the
-    // pre-confirmation experience for dev/CI and switched-off deployments.
+    // Confirmation isn't in play: activate and sign in immediately, so dev/CI and
+    // switched-off deployments keep a one-step sign-up.
     tankovault_db::repo::users::mark_email_verified(&state.pool, user.id).await?;
     mailer::send_in_background(
         &state,
@@ -130,7 +130,7 @@ pub async fn register(
     ))
 }
 
-/// Validate every field a registration writes, in the order the user filled them in.
+/// Validates every field a registration writes, in the order the user filled them in.
 fn validate_registration(req: &RegisterRequest) -> ApiResult<()> {
     validate_email(req.email.trim())?;
     validate_username(req.username.trim())?;

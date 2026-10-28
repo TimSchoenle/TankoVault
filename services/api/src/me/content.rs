@@ -1,4 +1,4 @@
-//! The reader's own half of the adult-content gate: their stored decision and the age
+//! Owns the reader's own half of the adult-content gate: their stored decision and the age
 //! attestation that has to precede it.
 //!
 //! The deployment's half is [`Feature::CatalogueAdultContent`], and these routes stay reachable
@@ -39,7 +39,7 @@ pub struct ContentPrefsDto {
     /// Whether this deployment permits adult content at all.
     ///
     /// Published so the client can explain an opted-in reader's empty shelf as an operator
-    /// decision rather than leaving it looking like the preference failed to save.
+    /// decision instead of leaving it looking like the preference failed to save.
     pub allowed_by_deployment: bool,
     /// The resolved answer: whether adult series are actually being shown to this caller.
     ///
@@ -57,7 +57,7 @@ pub struct ContentPrefsUpdate {
     ///
     /// Required to turn [`Self::adult_opt_in`] on for an account that has never attested;
     /// ignored when it already has, and ignored when opting out. It is a declaration the reader
-    /// makes, so it is a field on the request rather than something the server infers from
+    /// makes, so it is a field on the request, not something the server infers from
     /// having asked.
     #[serde(default)]
     pub confirm_age: bool,
@@ -91,8 +91,8 @@ pub async fn content_prefs(
 /// account has attested before; the attestation is recorded once and kept across later changes,
 /// so opting out and back in does not ask again.
 ///
-/// A `409` means the opt-in was refused for want of an attestation. The preference is unchanged
-/// — this endpoint does not partially apply.
+/// A `409` means the opt-in was refused for want of an attestation. The preference is
+/// unchanged: this endpoint does not partially apply.
 #[utoipa::path(
     put,
     path = "/v1/me/content-prefs",
@@ -125,8 +125,8 @@ pub async fn put_content_prefs(
     // request that established it, since every later change echoes the same stored timestamp.
     if prefs.adult_opt_in != before.adult_opt_in {
         // The shelf is cached per reader and keyed on their taste profile, which a content
-        // decision does not move. Without this, opting out leaves the previous shelf — adult
-        // recommendations included — being served until the TTL expires, which is the one
+        // decision does not move. Without this, opting out leaves the previous shelf (adult
+        // recommendations included) being served until the TTL expires, which is the one
         // moment a reader is most likely to be watching for the change to take effect.
         tankovault_db::repo::recsys::clear_shelf(&state.pool, user.user_id).await?;
     }
@@ -150,7 +150,7 @@ pub async fn put_content_prefs(
     Ok(Json(render(&state, prefs)))
 }
 
-/// Combine the stored preference with the deployment flag into the answer the client renders.
+/// Combines the stored preference with the deployment flag into the answer the client renders.
 fn render(state: &AppState, prefs: tankovault_db::repo::users::ContentPrefs) -> ContentPrefsDto {
     let allowed_by_deployment = state.features.is_enabled(Feature::CatalogueAdultContent);
     ContentPrefsDto {

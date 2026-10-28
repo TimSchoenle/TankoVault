@@ -1,10 +1,10 @@
-//! `GET /v1/client`, over the real router.
+//! Tests `GET /v1/client`, over the real router.
 //!
 //! # What these pin
 //!
 //! **That the deployment names a ceiling even when the operator did not.** The client treats an
-//! absent range as no range, which is the behaviour that existed before this endpoint — so a view
-//! that omitted `max_version` would compile, deserialise and quietly do nothing at all.
+//! absent range as no range, so a view that omitted `max_version` would compile, deserialise and
+//! quietly do nothing at all.
 //!
 //! **That it answers without a token.** The updater runs from the moment the app starts, before
 //! any session exists; behind auth it would fall back to no ceiling on every private deployment.
@@ -28,7 +28,7 @@ async fn an_unconfigured_deployment_publishes_the_upstream_channel() {
     );
     assert_eq!(body["release_repo"], "TimSchoenle/TankoVault");
     assert!(body["min_version"].is_null(), "{body}");
-    // Filled in from the running service rather than left absent: the client reads an absent
+    // Filled in from the running service, not left absent: the client reads an absent
     // ceiling as no ceiling, so an unset one has to resolve here or the range means nothing.
     assert!(
         body["max_version"].as_str().is_some_and(|v| !v.is_empty()),
@@ -53,8 +53,8 @@ async fn a_configured_deployment_publishes_its_own_channel() {
     assert_eq!(body["max_version"], "2.1.0");
 }
 
-/// A deployment that names no repository publishes none, rather than publishing the upstream one
-/// on its behalf — the client then stays on whichever repository it was built with, which for a
+/// A deployment that names no repository publishes none, instead of publishing the upstream one
+/// on its behalf; the client then stays on whichever repository it was built with, which for a
 /// fork's client is the fork's.
 #[tokio::test]
 async fn a_blank_repository_is_published_as_absent() {

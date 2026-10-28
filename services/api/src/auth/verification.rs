@@ -1,4 +1,4 @@
-//! Email confirmation: the link a new account must click, and resending it.
+//! Owns email confirmation: the link a new account must click, and resending it.
 
 use axum::Json;
 use axum::extract::State;
@@ -41,7 +41,7 @@ pub struct ResendVerificationRequest {
 /// Confirm an email address with a token
 ///
 /// Consumes a valid, unexpired, unused confirmation token, marks the address verified, and
-/// signs the user in — issuing an access token and a rotating refresh cookie exactly like
+/// signs the user in, issuing an access token and a rotating refresh cookie exactly like
 /// [`login`] so clicking the link lands the user in the app.
 #[utoipa::path(
     post,
@@ -93,12 +93,11 @@ pub async fn verify_email(
 /// confirmed, so the endpoint can't be used to probe which emails have accounts. A fresh
 /// link is only sent when the address exists, is still unconfirmed, and email is configured.
 ///
-/// Spawned in full, for the reason `auth::password::forgot_password` explains at length
-/// (SEC-10). This endpoint's channel was in fact the wider of the two: the known-and-unconfirmed
-/// branch performed the token `INSERT`, while both "no such address" *and* "already confirmed"
-/// returned straight after the lookup — so the timing separated three states rather than two,
-/// and "this address exists and has not been confirmed" is the more useful answer of the pair.
-/// The audit named `forgot_password`; this is the same defect in the sibling handler.
+/// Spawned in full, for the reason `auth::password::forgot_password` explains at length. This
+/// endpoint's channel is the wider of the two: the known-and-unconfirmed branch performs the
+/// token `INSERT`, while both "no such address" *and* "already confirmed" return straight after
+/// the lookup, so the timing would separate three states, not two, and "this address exists and
+/// has not been confirmed" is the more useful answer of the pair.
 #[utoipa::path(
     post,
     path = "/v1/auth/verify-email/resend",
@@ -120,7 +119,7 @@ pub async fn resend_verification(
     StatusCode::ACCEPTED
 }
 
-/// Send a fresh confirmation link for `email`, if it belongs to an unconfirmed account.
+/// Sends a fresh confirmation link for `email`, if it belongs to an unconfirmed account.
 ///
 /// Detached, so nothing here reaches the caller; a failure is logged and dropped.
 async fn deliver_verification_resend(state: AppState, email: String) {
@@ -131,7 +130,7 @@ async fn deliver_verification_resend(state: AppState, email: String) {
         tankovault_db::repo::users::find_by_email_with_verification(&state.pool, &email).await;
     let user = match found {
         Ok(Some((user, false))) => user,
-        // No such address, or already confirmed — indistinguishable from here.
+        // No such address, or already confirmed: indistinguishable from here.
         Ok(_) => return,
         Err(e) => {
             tracing::warn!(error = %e, "confirmation-resend lookup failed");
@@ -160,7 +159,7 @@ async fn deliver_verification_resend(state: AppState, email: String) {
     }
 }
 
-/// Issue and email a fresh single-use confirmation link for `user`, off the request path.
+/// Issues and emails a fresh single-use confirmation link for `user`, off the request path.
 ///
 /// For callers where a slow relay must not show up in the response: [`super::register`] and
 /// the address change in `me::account`.
@@ -173,10 +172,10 @@ pub(crate) async fn send_verification_email(state: &AppState, user: &User) -> Ap
     Ok(())
 }
 
-/// Mint a confirmation token for `user`, store its hash, and return the link to send.
+/// Mints a confirmation token for `user`, stores its hash, and returns the link to send.
 ///
-/// Split from [`send_verification_email`] so the delivery decision belongs to the caller —
-/// the resend path is already detached and awaits the send itself.
+/// Split from [`send_verification_email`] so the delivery decision belongs to the caller; the
+/// resend path is already detached and awaits the send itself.
 ///
 /// Reuses the high-entropy opaque-token generator; only the SHA-256 hash is stored.
 async fn issue_verification_link(state: &AppState, user: &User) -> ApiResult<String> {

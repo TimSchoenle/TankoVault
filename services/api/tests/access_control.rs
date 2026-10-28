@@ -1,4 +1,4 @@
-//! End-to-end HTTP access-control tests, run against the real router and an ephemeral Postgres.
+//! Tests HTTP access control end to end, against the real router and an ephemeral Postgres.
 //! Gated behind the `integration` feature because they require Docker.
 #![cfg(feature = "integration")]
 
@@ -8,7 +8,7 @@ use tankovault_api_test_support::TestApp;
 use tankovault_db::repo::users::mfa::StepUpMethod;
 use tankovault_domain::{AccountStatus, Permission};
 
-/// Seed an administrative account and return the two headers every privileged call now needs.
+/// Seeds an administrative account and returns the two headers every privileged call needs.
 ///
 /// A privileged account without a second factor is refused before any capability is consulted,
 /// and a *mutating* capability additionally needs a fresh step-up. Both rules live in
@@ -79,7 +79,7 @@ async fn permission_gated_routes_enforce_the_full_matrix() {
 
 /// One grant, every door. The super user holds a single stored token and no enumerated
 /// capability, so a build that lost the implication in `PermissionSet::has` would 403 the
-/// deployment owner out of the console they own — with a permission editor that cannot grant
+/// deployment owner out of the console they own, with a permission editor that cannot grant
 /// them their way back in.
 #[tokio::test]
 async fn the_super_user_passes_every_capability_check() {
@@ -139,7 +139,7 @@ async fn the_super_user_grant_cannot_be_handed_out_by_an_administrator() {
 }
 
 /// The owner's grant lives on one row of one account, cannot be minted through the API, and dies
-/// with the account it sits on — so suspending or erasing the owner ends the deployment's
+/// with the account it sits on, so suspending or erasing the owner ends the deployment's
 /// ownership for good.
 ///
 /// The last-administrator guard does not catch this: it waves the action through the moment a
@@ -233,7 +233,7 @@ async fn the_permission_catalogue_does_not_offer_the_super_user() {
     );
 }
 
-/// A refused privilege escalation is recorded, not merely rejected — and the record names the
+/// A refused privilege escalation is recorded, not merely rejected, and the record names the
 /// capability that was missing.
 ///
 /// The caller is enrolled and elevated deliberately. Without a second factor the authorization
@@ -302,8 +302,8 @@ async fn a_privacy_request_cannot_be_cancelled_by_another_user() {
     let app = TestApp::spawn().await;
     let owner = app.seed_user("subject", &[], AccountStatus::Active).await;
     let stranger = app.seed_user("meddler", &[], AccountStatus::Active).await;
-    // Filing and withdrawing are both behind a step-up now. Neither account has a factor, so a
-    // password-earned grant is the strongest proof each can offer — and the one the fallback
+    // Filing and withdrawing are both behind a step-up. Neither account has a factor, so a
+    // password-earned grant is the strongest proof each can offer, and the one the fallback
     // exists for.
     let owner_step_up = app.step_up(owner, StepUpMethod::Password).await;
     let stranger_step_up = app.step_up(stranger, StepUpMethod::Password).await;

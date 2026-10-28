@@ -1,14 +1,14 @@
-//! The `WebAuthn` relying party: how it is configured, and the two things every passkey
+//! Owns the `WebAuthn` relying party: how it is configured, and the two things every passkey
 //! handler needs from it.
 //!
-//! The handlers themselves live next to the flows they belong to — sign-in in
-//! `crate::auth::passkey`, credential management in `crate::me::passkeys` — because those
+//! The handlers themselves live next to the flows they belong to (sign-in in
+//! `crate::auth::passkey`, credential management in `crate::me::passkeys`), because those
 //! are the modules a reader looking for "how does one log in" or "how do I revoke a key"
 //! opens. What is here is the part both share and neither should re-decide: constructing the
 //! relying party from configuration, storing and consuming ceremony state, and turning a
 //! [`WebauthnError`] into an HTTP answer that discloses nothing.
 //!
-//! (`crate::me::passkeys` is written as a path rather than an intra-doc link because `me` is a
+//! (`crate::me::passkeys` is written as a path, not an intra-doc link, because `me` is a
 //! private module: rustdoc has no item to resolve, and `broken_intra_doc_links = "deny"` in the
 //! workspace lint table turns that into a failed `cargo doc`. `auth` is private too, but
 //! `auth::passkey` inside it is `pub`, which is enough for the link to resolve.)
@@ -18,13 +18,13 @@
 //! `WebAuthn` binds a credential to an **origin**, and the browser enforces that binding: a
 //! credential registered at `https://tanko.example.com` cannot be used anywhere else, and a
 //! relying-party id that does not match the page's origin makes the browser refuse the
-//! ceremony outright. So the origin cannot be guessed from a request — a `Host` header is
+//! ceremony outright. So the origin cannot be guessed from a request: a `Host` header is
 //! attacker-controlled, and trusting it would let anyone register credentials under a domain
 //! of their choosing. It has to be configured, and a deployment that has not configured it has
 //! no relying party at all.
 //!
 //! That is why [`RelyingParty::from_config`] returns `Option` and the boot path logs loudly
-//! rather than failing: passkeys are one feature of an application that must still start
+//! instead of failing: passkeys are one feature of an application that must still start
 //! without them. Every handler then answers `503` with a message naming the setting, which is
 //! the one failure mode an operator can act on.
 
@@ -47,17 +47,17 @@ const CEREMONY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300
 /// How long the *server* keeps the matching state.
 ///
 /// Deliberately longer than [`CEREMONY_TIMEOUT`]. The two deadlines are enforced by different
-/// clocks — the browser's and Postgres's — and if the server's were the shorter one, a response
+/// clocks (the browser's and Postgres's), and if the server's were the shorter one, a response
 /// the browser was still willing to produce would arrive to find its challenge already gone.
 /// The user would see the authenticator succeed and the sign-in fail, which is the least
 /// diagnosable outcome available. The extra minute is slack for clock skew and the round trip,
 /// not extra life for the challenge: the browser stops asking at five minutes regardless.
 const CEREMONY_GRACE: time::Duration = time::Duration::seconds(360);
 
-/// A configured relying party, plus the values it was built from so a failure can name them.
+/// A configured relying party, with the values it was built from so a failure can name them.
 pub struct RelyingParty {
     webauthn: Webauthn,
-    /// The relying-party id — the registrable domain credentials are bound to. Kept for
+    /// The relying-party id: the registrable domain credentials are bound to. Kept for
     /// diagnostics: a mismatch between this and the page's origin is the single most common
     /// way a passkey deployment fails, and the browser's error says nothing useful about it.
     rp_id: String,
@@ -66,7 +66,7 @@ pub struct RelyingParty {
 }
 
 /// Hand-written because [`Webauthn`] is not `Debug`, and because the useful debug output is
-/// the pair of values a misconfiguration turns on anyway — the relying party's internals are
+/// the pair of values a misconfiguration turns on anyway: the relying party's internals are
 /// a fixed policy, while `rp_id` and `origin` are what an operator got wrong.
 impl std::fmt::Debug for RelyingParty {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -78,7 +78,7 @@ impl std::fmt::Debug for RelyingParty {
 }
 
 impl RelyingParty {
-    /// Build the relying party from configuration, or `None` when this deployment has not
+    /// Builds the relying party from configuration, or `None` when this deployment has not
     /// configured one.
     ///
     /// `origin` is the public origin of the web app (`https://tanko.example.com`). `rp_id`
@@ -91,8 +91,8 @@ impl RelyingParty {
     /// has no business knowing.
     ///
     /// # Errors
-    /// When `origin` is not a URL, has no host, or `rp_id` does not cover it — reported at
-    /// boot rather than left to a browser's opaque `SecurityError`.
+    /// Returns an error when `origin` is not a URL, has no host, or `rp_id` does not cover it,
+    /// reported at boot instead of left to a browser's opaque `SecurityError`.
     pub fn from_config(
         origin: Option<&str>,
         rp_id: Option<&str>,
@@ -151,7 +151,7 @@ impl RelyingParty {
 
 /// The relying party for this request, or the `503` that says why there is none.
 ///
-/// Every passkey handler starts with this line. The error names the setting rather than saying
+/// Every passkey handler starts with this line. The error names the setting instead of saying
 /// "unavailable", because the operator reading it in a log is the only person who can fix it
 /// and the browser-side symptom of a missing origin gives them nothing to search for.
 pub(crate) fn relying_party(state: &AppState) -> ApiResult<&Webauthn> {
@@ -168,16 +168,16 @@ pub(crate) fn relying_party(state: &AppState) -> ApiResult<&Webauthn> {
         })
 }
 
-/// Persist an in-flight ceremony and return the handle the client echoes back.
+/// Persists an in-flight ceremony and returns the handle the client echoes back.
 ///
-/// The id is v4 rather than the v7 used for rows elsewhere: this is not a record, it is a
+/// The id is v4, not the v7 used for rows elsewhere: this is not a record, it is a
 /// short-lived handle travelling through a client, and v7's embedded timestamp would disclose
-/// when the ceremony started for no benefit. It is not a bearer credential either — holding it
-/// gets you nothing without an authenticator that can sign the challenge inside — but it costs
+/// when the ceremony started for no benefit. It is not a bearer credential either (holding it
+/// gets you nothing without an authenticator that can sign the challenge inside), but it costs
 /// nothing to keep it opaque.
 ///
 /// # Errors
-/// [`ApiError::Internal`] if serialising the ceremony state or the insert fails.
+/// Returns [`ApiError::Internal`] if serialising the ceremony state or the insert fails.
 pub(crate) async fn begin_ceremony<S: serde::Serialize>(
     state: &AppState,
     user_id: Option<tankovault_domain::UserId>,
@@ -201,14 +201,14 @@ pub(crate) async fn begin_ceremony<S: serde::Serialize>(
     Ok(id)
 }
 
-/// Consume a ceremony and deserialise its state.
+/// Consumes a ceremony and deserialises its state.
 ///
 /// Consuming is a single `DELETE ... RETURNING` in the repository, so a challenge cannot be
 /// used twice however this function returns.
 ///
 /// # Errors
-/// [`ApiError::Unauthorized`] for any lookup or deserialisation failure — collapsed into one
-/// answer so a client cannot enumerate ceremony state by the failure mode.
+/// Returns [`ApiError::Unauthorized`] for any lookup or deserialisation failure, collapsed into
+/// one answer so a client cannot enumerate ceremony state by the failure mode.
 pub(crate) async fn take_ceremony<S: serde::de::DeserializeOwned>(
     state: &AppState,
     id: Uuid,
@@ -227,7 +227,7 @@ pub(crate) async fn take_ceremony<S: serde::de::DeserializeOwned>(
     Ok((ceremony.user_id, parsed))
 }
 
-/// Turn a verification failure into an HTTP answer.
+/// Turns a verification failure into an HTTP answer.
 ///
 /// **Always `401`, whatever went wrong.** `WebauthnError` distinguishes a bad signature from a
 /// mismatched origin from an absent user-verification flag, and each of those is a fact about
@@ -250,7 +250,7 @@ pub(crate) fn ceremony_start_failed(error: &WebauthnError) -> ApiError {
     ApiError::Internal
 }
 
-/// Shorthand for the `Arc` [`AppState`] holds.
+/// The `Arc` [`AppState`] holds.
 pub type SharedRelyingParty = Arc<RelyingParty>;
 
 #[cfg(test)]

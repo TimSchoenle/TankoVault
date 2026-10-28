@@ -1,4 +1,4 @@
-//! Production-readiness resilience & probe checks.
+//! Tests production-readiness resilience and the probes.
 //!
 //! Confirms the operational surface the orchestrator and the degradation contract depend on:
 //! the liveness/readiness probes answer through the assembled router, and a dependency-down
@@ -33,7 +33,7 @@ async fn the_live_stream_degrades_to_503_when_the_bus_is_unreachable() {
     let app = TestApp::spawn().await;
     let user = app.seed_user("streamer", &[], AccountStatus::Active).await;
 
-    // A genuinely valid ticket, so the 503 is a degradation rather than an auth failure (401).
+    // A genuinely valid ticket, so the 503 is a degradation, not an auth failure (401).
     let ticket = app.stream_ticket(user).await;
     let (status, _) = app
         .call("GET", &format!("/v1/me/stream?ticket={ticket}"), None, None)

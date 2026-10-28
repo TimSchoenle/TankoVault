@@ -625,7 +625,7 @@ do not repeat it.
 | C: embedding write | ~256 MB via `COPY` | one batch |
 | C: HNSW build | **the dominant cost**: tens of minutes at 1M rows, and it wants `maintenance_work_mem` | see below |
 | D: co-occurrence | aggregated in Postgres, one user's list resident | `cooccurrence.max_list_entries` |
-| E (priors | pure SQL |) |
+| E: priors | pure SQL | none |
 
 **The HNSW build is now the bottleneck, and it moved into the database.** That is mostly good
 (Postgres parallelises it, it is restartable, and it is not our code), but it has two properties

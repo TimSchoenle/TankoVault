@@ -140,16 +140,18 @@ const HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(3
 
 /// Runs one build to completion.
 ///
-/// Returns `None` when another *live* build already holds the claim: the correct response to
-/// which is to do nothing, not to wait: the other build is doing this one's work.
+/// Returns `Some(BuildReport)` when this call took the claim and every stage completed, and
+/// `None` when another *live* build already holds the claim: the correct response to which is to
+/// do nothing, not to wait: the other build is doing this one's work.
 ///
 /// This awaits the whole build, so it belongs on a background loop. A request handler must use
 /// [`build_detached`] instead; see its documentation for what awaiting one inside a handler did.
 ///
 /// # Errors
-/// Returns an error on a database failure. Whatever a failed run had already written stays written
-/// and is coherent: every stage is idempotent and writes under a generation, so the next run redoes
-/// it.
+/// Returns an error on a database failure, on an incremental build with no stored projection
+/// basis, or when the basis solver task panics. Whatever a failed run had already written stays
+/// written and is coherent: every stage is idempotent and writes under a generation, so the next
+/// run redoes it.
 pub async fn build(
     pool: &PgPool,
     tuning: BuildTuning,

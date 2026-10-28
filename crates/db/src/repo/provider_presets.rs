@@ -1,9 +1,8 @@
 //! The preset catalogue mirror: the provider definitions this build ships, written down once
 //! per rollout by `bootstrap seed-providers` so every tier can read them as rows.
 //!
-//! Nothing here is operator state. The installer owns the table wholesale — it upserts what the
-//! build ships and retires what it no longer does — so an edit made here would survive exactly
-//! until the next rollout.
+//! Nothing here is operator state. The installer owns the table: it upserts what the build
+//! ships and retires the rest, so an edit made here survives only until the next rollout.
 
 use crate::error::DbResult;
 use serde_json::Value as Json;
@@ -55,7 +54,7 @@ pub struct NewPreset {
     pub politeness: Politeness,
 }
 
-/// Record one shipped preset, replacing whatever was there.
+/// Records one shipped preset, replacing whatever was there.
 ///
 /// # Errors
 /// `Sqlx` only.
@@ -78,12 +77,11 @@ pub async fn upsert<'e, E: PgExecutor<'e>>(exec: E, preset: &NewPreset) -> DbRes
     Ok(())
 }
 
-/// Drop catalogue entries this build no longer ships, returning their slugs for the install log.
+/// Drops catalogue entries this build no longer ships, returning their slugs for the install log.
 ///
-/// Providers installed from a retired preset are deliberately left alone: their `preset_slug`
-/// dangles, which is what the console reports as "no longer shipped". Deleting the row instead
-/// would take a working provider — and its whole catalogue — down with a preset the project
-/// merely stopped maintaining.
+/// Providers installed from a retired preset are left alone: their `preset_slug` dangles, which
+/// the console reports as "no longer shipped". Deleting them would take a working provider and
+/// its whole catalogue down with a preset the project stopped maintaining.
 ///
 /// # Errors
 /// `Sqlx` only.
@@ -100,10 +98,10 @@ pub async fn retire_missing<'e, E: PgExecutor<'e>>(
     Ok(rows)
 }
 
-/// The whole catalogue, by slug.
+/// Returns the whole catalogue, by slug.
 ///
 /// # Errors
-/// `Sqlx` only; a deployment whose install job has not run since the upgrade is `Ok(vec![])`.
+/// `Sqlx` only.
 pub async fn list<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<PresetDefinition>> {
     let rows = sqlx::query_as!(
         PresetRow,
@@ -117,7 +115,7 @@ pub async fn list<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<PresetDefiniti
     Ok(rows.into_iter().map(PresetDefinition::from).collect())
 }
 
-/// One catalogue entry, or `None` when this build no longer ships it.
+/// Returns one catalogue entry, or `None` when this build no longer ships it.
 ///
 /// # Errors
 /// `Sqlx` only.

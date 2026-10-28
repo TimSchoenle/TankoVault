@@ -1,4 +1,4 @@
-//! Recommender tuning overrides — the persistence behind [`tankovault_domain::Tunable`]. Holds
+//! Recommender tuning overrides, the persistence behind [`tankovault_domain::Tunable`]. Holds
 //! only deviations from the compiled registry, so an empty table is a fully tuned deployment.
 //!
 //! Resolution against the compiled default, and clamping to the registry's range, happen in
@@ -27,12 +27,12 @@ pub struct TunableOverrideRow {
     pub updated_by: Option<String>,
 }
 
-/// Every stored override, keyed by tunable.
+/// Returns every stored override, keyed by tunable.
 ///
-/// Raw rows, not a resolved map — pairing with the compiled registry is the caller's job.
+/// Raw rows, not a resolved map: pairing them with the compiled registry is the caller's job.
 ///
 /// # Errors
-/// `Sqlx` only; an empty table is `Ok(vec![])`.
+/// `Sqlx` only.
 pub async fn list_overrides<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<TunableOverrideRow>> {
     #[derive(FromRow)]
     struct Row {
@@ -65,15 +65,16 @@ pub async fn list_overrides<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<Tuna
         .collect())
 }
 
-/// The minimal `(key, value)` pairs the runtime snapshot needs.
+/// Returns the minimal `(key, value)` pairs the runtime snapshot needs.
 ///
 /// Narrower than [`list_overrides`]: no provenance or `users` join, since this is refreshed on
 /// a timer in every service.
 ///
+/// A caller must keep its previous snapshot on `Err`: read as an empty list, it would silently
+/// discard everything an operator has tuned.
+///
 /// # Errors
-/// `Sqlx` only. Callers must not collapse `Err` into `Ok(vec![])` — that reads as "no
-/// overrides" and would silently discard everything an operator has tuned; treat failure as
-/// keep-previous-snapshot.
+/// `Sqlx` only.
 pub async fn effective_overrides<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<(String, f64)>> {
     #[derive(FromRow)]
     struct Row {
@@ -86,15 +87,16 @@ pub async fn effective_overrides<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec
     Ok(rows.into_iter().map(|r| (r.key, r.value)).collect())
 }
 
-/// Record an explicit operator decision for `key`.
+/// Records an explicit operator decision for `key`.
 ///
 /// Always writes, even at the value it already has, so `updated_at`/`updated_by` show who last
 /// confirmed it. Range validation belongs to the caller: this layer stores what it is given, and
 /// every reader clamps regardless.
 ///
+/// A repeat write overwrites; an erased `updated_by` is a foreign-key violation (500).
+///
 /// # Errors
-/// `Sqlx` only; a repeat write is not [`crate::DbError::Conflict`], an erased `updated_by` is a
-/// foreign-key violation (500).
+/// `Sqlx` only.
 pub async fn set_override<'e, E: PgExecutor<'e>>(
     exec: E,
     key: &str,
@@ -120,14 +122,15 @@ pub async fn set_override<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Drop the override for `key`, returning the tunable to its compiled default.
+/// Drops the override for `key`, returning the tunable to its compiled default.
 ///
-/// Returns `false` when there was nothing to clear, so the caller can answer "reset" honestly
-/// rather than reporting a change that did not happen.
+/// Returns `false` when there was nothing to clear, so the caller does not report a change
+/// that did not happen.
+///
+/// "Nothing to clear" is `false`, deliberately indistinguishable from an unknown `key`.
 ///
 /// # Errors
-/// `Sqlx` only; "nothing to clear" is `Ok(false)`, deliberately indistinguishable from an
-/// unknown `key`.
+/// `Sqlx` only.
 pub async fn clear_override<'e, E: PgExecutor<'e>>(exec: E, key: &str) -> DbResult<bool> {
     let result = sqlx::query!("DELETE FROM tunable_overrides WHERE key = $1", key)
         .execute(exec)

@@ -68,14 +68,14 @@ pub struct NewProvider {
     pub config: Json,
     /// The crawl budget this provider starts at.
     pub politeness: Politeness,
-    /// The preset this row is being installed from, if any. A provider created from a preset
-    /// starts **locked** — the installer just wrote the shipped values, so there is nothing of
-    /// the operator's to protect yet. Everything else (the console's own registration form,
-    /// a clone) passes `None` and is never rewritten.
+    /// The preset this row is installed from, if any. A provider created from a preset starts
+    /// **locked**, since the installer just wrote the shipped values and nothing is the
+    /// operator's yet. Everything else, such as the console's registration form or a clone,
+    /// passes `None` and is never rewritten.
     pub preset_slug: Option<String>,
 }
 
-/// Insert a provider, returning the created row.
+/// Inserts a provider, returning the created row.
 ///
 /// # Errors
 /// `Conflict` on a duplicate slug, otherwise `Sqlx`.
@@ -83,9 +83,9 @@ pub async fn create<'e, E: PgExecutor<'e>>(exec: E, new: NewProvider) -> DbResul
     let id = ProviderId::new();
     let row = sqlx::query_as!(
         ProviderRow,
-        // `preset_locked` is derived from the slug rather than passed: "installed from a preset"
-        // and "follows that preset" are the same thing at creation, and one expression here is
-        // one fewer way for a caller to create a row that is linked but silently not synced.
+        // `preset_locked` is derived from the slug: at creation "installed from a preset" and
+        // "follows that preset" are the same, and a caller cannot create a row that is linked
+        // but silently not synced.
         "INSERT INTO providers (id, slug, name, base_url, adapter, config, politeness, \
                                 preset_slug, preset_locked, preset_synced_at) \
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8::text, $8::text IS NOT NULL, \
@@ -117,10 +117,10 @@ pub async fn create<'e, E: PgExecutor<'e>>(exec: E, new: NewProvider) -> DbResul
     Ok(row.into())
 }
 
-/// List all providers, most recently updated first.
+/// Lists all providers, most recently updated first.
 ///
 /// # Errors
-/// `Sqlx` only; an empty table is `Ok(vec![])`.
+/// `Sqlx` only.
 pub async fn list<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<Provider>> {
     let rows = sqlx::query_as!(
         ProviderRow,
@@ -136,7 +136,7 @@ pub async fn list<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<Provider>> {
     Ok(rows.into_iter().map(Provider::from).collect())
 }
 
-/// Fetch one provider by id.
+/// Fetches one provider by id.
 ///
 /// # Errors
 /// `NotFound` (404) when no provider has that id, otherwise `Sqlx`.
@@ -156,7 +156,7 @@ pub async fn get<'e, E: PgExecutor<'e>>(exec: E, id: ProviderId) -> DbResult<Pro
     Ok(row.ok_or(DbError::NotFound)?.into())
 }
 
-/// Fetch one provider by slug.
+/// Fetches one provider by slug.
 ///
 /// # Errors
 /// `NotFound` (404) when no provider has that slug, otherwise `Sqlx`.
@@ -176,12 +176,14 @@ pub async fn get_by_slug<'e, E: PgExecutor<'e>>(exec: E, slug: &str) -> DbResult
     Ok(row.ok_or(DbError::NotFound)?.into())
 }
 
-/// Update the mutable provider fields (name, `base_url`, config, politeness). Changing
-/// `base_url` re-resolves every stored relative link with zero data rewrite.
+/// Updates the mutable provider fields (name, `base_url`, config, politeness). Changing `base_url`
+/// re-resolves every stored relative link with zero data rewrite.
+///
+/// `politeness` is stored through [`Politeness::clamped`], so an out-of-range rate is corrected,
+/// not rejected.
 ///
 /// # Errors
-/// `NotFound` (404) when `id` matches no row, otherwise `Sqlx`. `politeness` is stored via
-/// [`Politeness::clamped`] — an out-of-range rate is corrected, not rejected.
+/// `NotFound` (404) when `id` matches no row, otherwise `Sqlx`.
 pub async fn update<'e, E: PgExecutor<'e>>(
     exec: E,
     id: ProviderId,
@@ -210,14 +212,13 @@ pub async fn update<'e, E: PgExecutor<'e>>(
     Ok(row.ok_or(DbError::NotFound)?.into())
 }
 
-/// Overwrite the preset-owned fields from `preset` and (re-)lock the row to it.
+/// Overwrites the preset-owned fields from `preset` and locks the row to it.
 ///
 /// The write set **is** the lock contract ([`tankovault_domain::PresetLink`]): `name`,
-/// `base_url`, `adapter`, `config`. `politeness` and `state` are not preset-owned and are not
-/// touched here — that is the whole reason an operator can tune a crawl budget on a managed
-/// provider without unlocking it. Both the installer's per-rollout sync and the console's
-/// "follow the preset again" action land here, so there is one implementation of "what the
-/// preset owns" rather than two that can drift.
+/// `base_url`, `adapter`, `config`. `politeness` and `state` are not preset-owned and are left
+/// alone, which is what lets an operator tune a crawl budget on a managed provider without
+/// unlocking it. The installer's per-rollout sync and the console's "follow the preset again"
+/// both land here, so one function defines what the preset owns.
 ///
 /// # Errors
 /// `NotFound` (404) when `id` matches no row, otherwise `Sqlx`.
@@ -249,7 +250,7 @@ pub async fn apply_preset<'e, E: PgExecutor<'e>>(
     Ok(row.ok_or(DbError::NotFound)?.into())
 }
 
-/// Set whether a provider follows its preset, without changing any preset-owned field.
+/// Sets whether a provider follows its preset, without changing any preset-owned field.
 ///
 /// Unlocking is the console's "edit freely" action: the row keeps naming the preset it came
 /// from, so the inspector can still offer a re-link, but no rollout rewrites it again.
@@ -279,7 +280,7 @@ pub async fn set_preset_lock<'e, E: PgExecutor<'e>>(
     Ok(row.ok_or(DbError::NotFound)?.into())
 }
 
-/// Adopt an existing row into the preset catalogue without rewriting it.
+/// Adopts an existing row into the preset catalogue without rewriting it.
 ///
 /// Used once per row by the installer, for providers that predate the preset link. `locked`
 /// decides whether it starts following updates; see the adoption rule in
@@ -313,8 +314,7 @@ pub async fn adopt_preset<'e, E: PgExecutor<'e>>(
     Ok(row.ok_or(DbError::NotFound)?.into())
 }
 
-/// Transition a provider's health state. Unconditional — legal-transition rules live in the
-/// caller, not here.
+/// Sets a provider's health state unconditionally; the caller enforces the legal transitions.
 ///
 /// # Errors
 /// `NotFound` (404) when `id` matches no row, otherwise `Sqlx`.
@@ -336,8 +336,8 @@ pub async fn set_state<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Delete a provider by id. `sources` cascade; `scan_runs` keep their history with
-/// `provider_id` set NULL.
+/// Deletes a provider by id. `sources` cascade; `scan_runs` keep their history with `provider_id`
+/// set NULL.
 ///
 /// # Errors
 /// `NotFound` if no provider has that id.
@@ -351,11 +351,13 @@ pub async fn delete<'e, E: PgExecutor<'e>>(exec: E, id: ProviderId) -> DbResult<
     Ok(())
 }
 
-/// Fetch several providers by id in one round trip (avoids an N+1 loop over [`get`]). Rows
-/// come back in planner order; callers look up by id.
+/// Fetches several providers by id in one round trip (avoids an N+1 loop over [`get`]). Rows come
+/// back in planner order; callers look up by id.
+///
+/// Ids with no row are absent from the result.
 ///
 /// # Errors
-/// `Sqlx` only; ids with no row are absent from the result.
+/// `Sqlx` only.
 pub async fn get_many<'e, E: PgExecutor<'e>>(
     exec: E,
     ids: &[ProviderId],
@@ -385,10 +387,12 @@ pub struct PublicProvider {
     pub series_count: i64,
 }
 
-/// List providers for the public Discover filter, richest first, hiding disabled ones.
+/// Lists providers for the public Discover filter, richest first, hiding disabled ones.
+///
+/// Unhealthy (but not disabled) providers still appear.
 ///
 /// # Errors
-/// `Sqlx` only; unhealthy (but not disabled) providers still appear.
+/// `Sqlx` only.
 pub async fn list_public<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<PublicProvider>> {
     let rows = sqlx::query_as!(
         PublicProvider,
@@ -406,7 +410,7 @@ pub async fn list_public<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<PublicP
 /// Stamp the completion time of a full scan.
 ///
 /// # Errors
-/// `Sqlx` only; a provider deleted mid-scan updates nothing and still returns `Ok(())`.
+/// `Sqlx` only.
 pub async fn mark_full_scanned<'e, E: PgExecutor<'e>>(exec: E, id: ProviderId) -> DbResult<()> {
     sqlx::query!(
         "UPDATE providers SET last_full_scan_at = now(), updated_at = now() WHERE id = $1",

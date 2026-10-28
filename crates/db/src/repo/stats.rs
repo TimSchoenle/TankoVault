@@ -28,7 +28,7 @@ pub struct SystemStats {
     pub sources_total: i64,
     /// Chapter links held, part releases counted separately.
     pub chapters_total: i64,
-    /// Chapters first seen in the last hour, by `discovered_at` rather than publication date.
+    /// Chapters first seen in the last hour, by `discovered_at`, not publication date.
     pub chapters_1h: i64,
     /// Chapters first seen in the last 24 hours.
     pub chapters_24h: i64,
@@ -95,12 +95,13 @@ pub struct ProviderStat {
     pub last_run_at: Option<OffsetDateTime>,
 }
 
-/// Compute the system-wide rollup for the console header.
+/// Computes the system-wide rollup for the console header.
+///
+/// Every column is a `count(*)` scalar subquery, so the row always exists and an empty
+/// database yields zeros.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Every column is a
-/// `count(*)` scalar subquery, so the row always exists and an empty database yields zeros
-/// rather than [`crate::DbError::NotFound`].
+/// [`crate::DbError::Sqlx`] only.
 pub async fn system_overview<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<SystemStats> {
     let stats = sqlx::query_as!(
         SystemStats,
@@ -133,11 +134,13 @@ pub async fn system_overview<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<SystemS
     Ok(stats)
 }
 
-/// Per-provider crawl statistics, richest (most chapters) first. Providers with no sources
-/// yet still appear with zeroed counts so newly-added ones are visible in the table.
+/// Returns per-provider crawl statistics, most chapters first.
+///
+/// A provider with no sources yet appears with zeroed counts, so a new one is visible in the
+/// table.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn provider_stats<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<ProviderStat>> {
     let rows = sqlx::query_as!(
         ProviderStat,

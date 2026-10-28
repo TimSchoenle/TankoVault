@@ -17,17 +17,15 @@ const CLIENT_CONNECTION_CHECK: &str = "2s";
 /// How long a released connection may take to answer a readiness probe before it is closed.
 ///
 /// A healthy connection answers in one round trip. One that is still busy was released with a
-/// statement in flight — its caller's future was dropped — and keeping it would make the next
-/// caller wait for that statement to finish before its own could start.
+/// statement in flight, because its caller's future was dropped, and keeping it would make the
+/// next caller wait for that statement to finish.
 const RELEASE_PROBE: Duration = Duration::from_secs(1);
 
 /// The embedded migration set (compiled from `migrations/`, validated at build time).
 ///
-/// Adding a file to `migrations/` does not rebuild this on its own — `sqlx::migrate!` registers
-/// no dependency on the directory — so `build.rs` declares one. Without it the compiled set stays
-/// at the previous migration while `migrations/` on disk says otherwise, and the failure is
-/// silent: `migrate` reports success having applied nothing, and the first query against the
-/// missing table is where it lands.
+/// `sqlx::migrate!` registers no dependency on the directory, so `build.rs` declares one.
+/// Without it, adding a migration leaves the compiled set one behind and `migrate` reports
+/// success having applied nothing; the first query against the missing table fails.
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations");
 
 /// How a pool is sized and how long its statements may run.
@@ -44,7 +42,7 @@ pub struct PoolSettings {
 }
 
 impl PoolSettings {
-    /// A pool with no statement ceiling.
+    /// Returns a pool with no statement ceiling.
     #[must_use]
     pub const fn new(max_connections: u32, acquire_timeout_secs: u64) -> Self {
         Self {
@@ -55,7 +53,7 @@ impl PoolSettings {
         }
     }
 
-    /// The same pool with every statement capped at `secs`; `0` removes the cap.
+    /// Returns the same pool with every statement capped at `secs`; `0` removes the cap.
     #[must_use]
     pub const fn with_statement_timeout_secs(mut self, secs: u64) -> Self {
         self.statement_timeout = if secs == 0 {
@@ -66,7 +64,7 @@ impl PoolSettings {
         self
     }
 
-    /// The same pool, planning every statement for the parameters it was given.
+    /// Returns the same pool, planning every statement for the parameters it was given.
     ///
     /// sqlx prepares each statement once per connection, and after five executions Postgres may
     /// switch it to a generic plan costed without parameter values. For a statement built from
@@ -82,7 +80,7 @@ impl PoolSettings {
     }
 }
 
-/// Build a Postgres connection pool.
+/// Builds a Postgres connection pool.
 ///
 /// `url` is a [`SecretString`], not `&str`: a DSN carries the password inline, and this is
 /// the one funnel every service goes through, so it can't reach a log line as a bare `String`.
@@ -141,7 +139,7 @@ pub async fn connect_with(options: PgConnectOptions, settings: PoolSettings) -> 
     Ok(pool)
 }
 
-/// Begin a transaction under the pool's own statement ceiling.
+/// Begins a transaction under the pool's own statement ceiling.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -149,19 +147,19 @@ pub async fn begin(pool: &PgPool) -> DbResult<sqlx::Transaction<'static, sqlx::P
     Ok(pool.begin().await?)
 }
 
-/// Commit `tx`.
+/// Commits `tx`, which is rolled back on failure.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; the transaction is rolled back.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn commit(tx: sqlx::Transaction<'static, sqlx::Postgres>) -> DbResult<()> {
     Ok(tx.commit().await?)
 }
 
-/// Begin a transaction whose statements run under `ceiling` rather than the pool's own.
+/// Begins a transaction whose statements run under `ceiling` in place of the pool's own.
 ///
-/// For work that is off the request path by design and slower than the route class it is
-/// reached through — a snapshot refresh that aggregates a whole table. The setting is
-/// transaction-local, so the connection returns to the pool with its own ceiling intact.
+/// For work off the request path that is slower than the route class it is reached through,
+/// such as a snapshot refresh that aggregates a whole table. The setting is transaction-local,
+/// so the connection returns to the pool with its own ceiling intact.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -179,8 +177,8 @@ pub async fn begin_with_statement_timeout(
     Ok(tx)
 }
 
-/// Run all pending migrations. Safe to call on every service boot; the `render`
-/// tier or a dedicated migration Job typically gates this before app rollout.
+/// Runs all pending migrations. Safe to call on every service boot; the `render` tier or a
+/// dedicated migration Job typically gates this before app rollout.
 ///
 /// # Errors
 /// Returns [`crate::DbError`] if a migration fails to apply.
@@ -189,8 +187,9 @@ pub async fn migrate(pool: &PgPool) -> DbResult<()> {
     Ok(())
 }
 
-/// Drop and recreate the `public` schema, then re-apply every migration. Destructive —
-/// local development only (`xtask reset`); no service calls this.
+/// Drops and recreates the `public` schema, then reapplies every migration.
+///
+/// Destructive, and for local development only (`xtask reset`); no service calls it.
 ///
 /// # Errors
 /// Returns [`crate::DbError`] if the schema can't be recreated or a migration fails.

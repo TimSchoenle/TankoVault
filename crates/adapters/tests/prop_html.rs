@@ -1,4 +1,4 @@
-//! Totality and algebraic properties of the HTML/text extraction helpers, run over arbitrary
+//! Checks totality and algebraic properties of the HTML/text extraction helpers, run over arbitrary
 //! Unicode input on every `cargo test`.
 
 use proptest::prelude::*;
@@ -7,21 +7,23 @@ use tankovault_adapters::html::{
     relativize, split_attr, unescape_entities,
 };
 
-/// A page URL of the shape the crawler actually holds when these are called.
+/// Generates a page URL of the shape the crawler actually holds when these are called.
 fn page_url() -> impl Strategy<Value = String> {
     "https://[a-z]{1,8}\\.test/manga/[a-z0-9-]{0,10}/"
 }
 
-/// An `href` as it appears in markup, excluding a scheme. Deliberately no `:` — see
-/// [`relativize_yields_a_rooted_path`] for why that case is called out separately.
+/// Generates an `href` as it appears in markup, excluding a scheme.
+///
+/// Deliberately no `:`; see [`relativize_yields_a_rooted_path`] for why that case is called out
+/// separately.
 fn scheme_less_href() -> impl Strategy<Value = String> {
     "[a-zA-Z0-9/._~%?&=#-]{0,32}"
 }
 
-/// Provider text carrying a digit run long enough to exhaust `f64`, optionally behind a chapter
-/// marker so both entry points are reached.
+/// Generates provider text carrying a digit run long enough to exhaust `f64`, optionally behind a
+/// chapter marker so both entry points are reached.
 ///
-/// Generated structurally rather than via regex: a regex strategy won't produce a 300-digit
+/// Generated structurally, not via regex: a regex strategy will not produce a 300-digit
 /// run at any realistic size, so simplifying this back to a plain `".*"`-style strategy would
 /// silently stop testing the overflow case.
 fn unrepresentable_number_text() -> impl Strategy<Value = String> {
@@ -43,8 +45,10 @@ fn unrepresentable_number_text() -> impl Strategy<Value = String> {
 }
 
 proptest! {
-    /// Guards against a `to_lowercase`-offset panic: `str::to_lowercase` isn't length-preserving
-    /// (`İ` grows a byte), so indexing across the two panics on some Unicode chapter titles.
+    /// Chapter-number parsing never panics on case-folded Unicode.
+    ///
+    /// The bug: `str::to_lowercase` is not length-preserving (`İ` grows a byte), so indexing
+    /// across the two panicked on some Unicode chapter titles.
     #[test]
     fn parse_chapter_number_never_panics(text in ".*") {
         let _ = parse_chapter_number(&text);
@@ -52,8 +56,8 @@ proptest! {
 
     /// Every number this module yields is finite.
     ///
-    /// Regression: `parse_number` used `.parse::<f64>().ok()`, and Rust's float parser returns
-    /// `Ok(inf)`, not `Err`, for a decimal outside `f64`'s range — so an overlong digit run
+    /// The bug: `parse_number` used `.parse::<f64>().ok()`, and Rust's float parser returns
+    /// `Ok(inf)`, not `Err`, for a decimal outside `f64`'s range, so an overlong digit run
     /// produced an infinite chapter number that froze `latest_chapter` and serialised to JSON
     /// `null`. Asserted over both the ordinary and overlong generator, since the invariant
     /// covers every input.
@@ -85,7 +89,7 @@ proptest! {
     }
 
     /// With no chapter/episode marker, `parse_chapter_number` must degrade to exactly
-    /// `parse_number` — divergence would parse the same listing differently depending on wording.
+    /// `parse_number`; divergence would parse the same listing differently depending on wording.
     #[test]
     fn without_a_marker_the_chapter_parser_is_the_plain_number_parser(text in ".*") {
         let lower = text.to_lowercase();
@@ -102,16 +106,16 @@ proptest! {
     /// it, silently pointing at the wrong page.
     ///
     /// The href strategy excludes `:` deliberately: a foreign scheme (e.g. `mailto:`) yields
-    /// an unrooted result since `Url::join` honours it — a known, harmless hole named here
-    /// rather than generated away silently.
+    /// an unrooted result since `Url::join` honours it: a known, harmless hole named here
+    /// instead of generated away silently.
     #[test]
     fn relativize_yields_a_rooted_path(page in page_url(), href in scheme_less_href()) {
         let path = relativize(&page, &href);
         prop_assert!(path.starts_with('/'), "{path:?} from href {href:?}");
     }
 
-    /// `absolutize` normalises through `Url`, so applying it to its own output must be a no-op
-    /// — covers are re-absolutized on several paths, and a non-idempotent version would mangle
+    /// `absolutize` normalises through `Url`, so applying it to its own output must be a no-op:
+    /// covers are re-absolutized on several paths, and a non-idempotent version would mangle
     /// a URL the second time round.
     #[test]
     fn absolutize_is_idempotent(page in page_url(), href in scheme_less_href()) {
@@ -120,7 +124,7 @@ proptest! {
     }
 
     /// Unescaping only ever replaces an entity with something shorter, so output can never
-    /// grow — a growing version would be an amplification primitive on an already-capped body.
+    /// grow; a growing version would be an amplification primitive on an already-capped body.
     #[test]
     fn unescape_entities_never_grows_its_input(text in ".*") {
         prop_assert!(unescape_entities(&text).len() <= text.len());
@@ -137,7 +141,7 @@ proptest! {
     }
 
     /// `split_attr` partitions its input: the selector is always a prefix of the spec, and a
-    /// split-off attribute is always the suffix after the final `@` — a dropped or duplicated
+    /// split-off attribute is always the suffix after the final `@`; a dropped or duplicated
     /// character here would silently select the wrong element.
     #[test]
     fn split_attr_partitions_the_spec(spec in "[a-zA-Z0-9@.# \\[\\]>-]{0,32}") {

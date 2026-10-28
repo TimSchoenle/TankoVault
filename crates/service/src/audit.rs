@@ -1,4 +1,4 @@
-//! The audit trail for privileged and privacy-relevant actions (`docs/ARCHITECTURE.md` §16).
+//! Owns the audit trail for privileged and privacy-relevant actions (`docs/ARCHITECTURE.md` §16).
 //!
 //! Recording is best-effort and non-blocking: a write failure is logged but never fails
 //! the audited action, since refusing a privileged action over a logging outage would trade
@@ -9,8 +9,10 @@ use serde_json::Value as Json;
 use std::borrow::Cow;
 use tankovault_domain::UserId;
 
-/// How the audited action ended. A denied action must still be recorded — refuse it after
-/// calling `record`, not before, or the attempt leaves no trace.
+/// How the audited action ended.
+///
+/// A denied action must still be recorded: refuse it after calling `record`, not before, or the
+/// attempt leaves no trace.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuditOutcome {
     /// The action was permitted and completed.
@@ -22,7 +24,7 @@ pub enum AuditOutcome {
 }
 
 impl AuditOutcome {
-    /// The stored discriminant. Matches the `audit_log_outcome_check` constraint.
+    /// Returns the stored discriminant, which matches the `audit_log_outcome_check` constraint.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -54,7 +56,7 @@ pub struct AuditEvent {
 }
 
 impl AuditEvent {
-    /// A successful, system-originated action. Refine with the builder methods.
+    /// Creates a successful, system-originated action; refine it with the builder methods.
     #[must_use]
     pub fn new(action: impl Into<Cow<'static, str>>) -> Self {
         Self {
@@ -68,47 +70,47 @@ impl AuditEvent {
         }
     }
 
-    /// Attribute the action to a user.
+    /// Attributes the action to a user.
     #[must_use]
     pub fn actor(mut self, actor: UserId) -> Self {
         self.actor = Some(actor);
         self
     }
 
-    /// Name the affected entity, cut to [`MAX_FIELD_LEN`] bytes.
+    /// Names the affected entity, cut to [`MAX_FIELD_LEN`] bytes.
     #[must_use]
     pub fn target(mut self, target: impl Into<String>) -> Self {
         self.target = Some(bounded(target.into()));
         self
     }
 
-    /// Attach structured context.
+    /// Attaches structured context.
     #[must_use]
     pub fn detail(mut self, detail: Json) -> Self {
         self.detail = detail;
         self
     }
 
-    /// Mark the outcome.
+    /// Sets the outcome.
     #[must_use]
     pub fn outcome(mut self, outcome: AuditOutcome) -> Self {
         self.outcome = outcome;
         self
     }
 
-    /// Mark the action as refused.
+    /// Marks the action as refused.
     #[must_use]
     pub fn denied(self) -> Self {
         self.outcome(AuditOutcome::Denied)
     }
 
-    /// Mark the action as attempted but failed.
+    /// Marks the action as attempted but failed.
     #[must_use]
     pub fn failed(self) -> Self {
         self.outcome(AuditOutcome::Failure)
     }
 
-    /// Attach the request's client context. The sink applies the operator's privacy
+    /// Attaches the request's client context. The sink applies the operator's privacy
     /// toggles, so callers may always pass what they have.
     #[must_use]
     pub fn client(mut self, ip: Option<String>, user_agent: Option<String>) -> Self {
@@ -124,7 +126,7 @@ impl AuditEvent {
 /// failed attempt is a row; unbounded, each one could write up to the request body cap.
 pub const MAX_FIELD_LEN: usize = 512;
 
-/// `value` cut to at most [`MAX_FIELD_LEN`] bytes, on a character boundary.
+/// Returns `value` cut to at most [`MAX_FIELD_LEN`] bytes, on a character boundary.
 fn bounded(mut value: String) -> String {
     if value.len() > MAX_FIELD_LEN {
         let mut end = MAX_FIELD_LEN;
@@ -139,8 +141,10 @@ fn bounded(mut value: String) -> String {
 /// Destination for audit records.
 #[async_trait]
 pub trait AuditSink: Send + Sync + 'static {
-    /// Record `event`. Implementations must not propagate failures — auditing never fails
-    /// the audited action (see the module docs).
+    /// Records `event`.
+    ///
+    /// Implementations must not propagate failures: auditing never fails the audited action (see
+    /// the module docs).
     async fn record(&self, event: AuditEvent);
 }
 
@@ -168,7 +172,7 @@ mod postgres {
     /// Appends events to the `audit_log` table.
     ///
     /// Holds the [`AuditConfig`] so the privacy toggles are enforced at the single point
-    /// where data is persisted, rather than trusted to every call site.
+    /// where data is persisted, not trusted to every call site.
     pub struct PostgresAuditSink {
         pool: PgPool,
         record_ip: bool,
@@ -176,7 +180,7 @@ mod postgres {
     }
 
     impl PostgresAuditSink {
-        /// Persist events to `pool`, honouring `cfg`'s privacy toggles.
+        /// Creates a sink that persists events to `pool`, honouring `cfg`'s privacy toggles.
         #[must_use]
         pub fn new(pool: PgPool, cfg: &AuditConfig) -> Self {
             Self {
@@ -235,8 +239,10 @@ mod tests {
 
     use super::*;
 
-    /// A failed sign-in stores the presented identifier, which used to be written whole — up to
-    /// the 1 MiB body cap per unauthenticated request.
+    /// Caller-chosen fields are cut to `MAX_FIELD_LEN` bytes on a character boundary.
+    ///
+    /// The bug: a failed sign-in stored the presented identifier whole, up to the 1 MiB body cap
+    /// per unauthenticated request.
     #[test]
     fn caller_chosen_fields_are_bounded_on_a_character_boundary() {
         let event = AuditEvent::new("auth.login")

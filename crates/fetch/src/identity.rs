@@ -1,21 +1,19 @@
-//! The browser a request claims to be, parsed from a user-agent string.
+//! Parses the browser a request claims to be from its user-agent string.
 //!
-//! Exists because a solved challenge session is only usable by a client that can reproduce the
-//! browser that earned it. The solver reports its user-agent and nothing else about itself, so
-//! that string is the only description of the identity our own fetch stack has to match — see
-//! `docs/CHALLENGE_HANDLING.md` §W5.
+//! A solved challenge session is usable only by a client that reproduces the browser that earned
+//! it, and the solver reports nothing about itself but its user agent (see
+//! `docs/CHALLENGE_HANDLING.md` §W5).
 //!
-//! Here rather than in `tankovault-domain`: [`BrowserEmulation`] is a stored and published type,
-//! while a parsed user-agent is crawl mechanics with exactly one consumer, the client selection
-//! in [`crate::base`].
+//! It lives here, not in `tankovault-domain`: [`BrowserEmulation`] is a stored and published
+//! type, while a parsed user agent is crawl mechanics with one consumer, the client selection in
+//! [`crate::base`].
 
 use tankovault_domain::BrowserEmulation;
 
-/// The operating system a user-agent claims.
+/// The operating system a user agent claims.
 ///
-/// Separate from [`BrowserEmulation`], which names a browser family and has historically implied
-/// one platform per variant. A solver that randomises the platform it presents — Camoufox does,
-/// per solve — makes the two independent facts they always were.
+/// Separate from [`BrowserEmulation`], which names a browser family: a solver can randomise the
+/// platform it presents per solve, as Camoufox does, so the two are independent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum BrowserPlatform {
     Windows,
@@ -25,7 +23,7 @@ pub(crate) enum BrowserPlatform {
     Ios,
 }
 
-/// A browser family, major version and claimed platform, together.
+/// A browser family, major version and claimed platform.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct BrowserIdentity {
     pub(crate) family: BrowserEmulation,
@@ -34,12 +32,11 @@ pub(crate) struct BrowserIdentity {
 }
 
 impl BrowserIdentity {
-    /// Parse the identity a user-agent claims, or `None` when it names no browser we can
+    /// Parses the identity a user agent claims, or `None` when it names no browser we can
     /// impersonate.
     ///
-    /// `None` is a usable answer, not a failure: the caller's correct response is to decline to
-    /// present that user-agent at all rather than pair it with a handshake belonging to some other
-    /// browser.
+    /// `None` is an answer, not a failure: the caller then declines to present that user agent,
+    /// instead of pairing it with another browser's handshake.
     #[must_use]
     pub(crate) fn from_user_agent(ua: &str) -> Option<Self> {
         let family = family_of(ua)?;
@@ -51,8 +48,10 @@ impl BrowserIdentity {
     }
 }
 
-/// Order matters: every Chromium user-agent also carries `Safari/537.36`, and Edge carries
-/// `Chrome/` as well as `Edg/`, so the most specific claim has to be tested first.
+/// Returns the browser family a user agent claims.
+///
+/// Order matters: every Chromium user agent also carries `Safari/537.36`, and Edge carries
+/// `Chrome/` as well as `Edg/`, so the most specific claim is tested first.
 fn family_of(ua: &str) -> Option<BrowserEmulation> {
     if ua.starts_with("okhttp/") {
         return Some(BrowserEmulation::OkHttp);
@@ -73,9 +72,9 @@ fn family_of(ua: &str) -> Option<BrowserEmulation> {
 }
 
 fn major_of(ua: &str, family: BrowserEmulation) -> Option<u32> {
-    // Firefox carries its real version twice — `rv:150.0` and `Firefox/150.0` — and Camoufox
-    // keeps both in step. `Version/` is Safari's, and is the *browser* version there while
-    // `Safari/` is the WebKit build, which is not what identifies the release.
+    // Firefox carries its version twice, `rv:150.0` and `Firefox/150.0`, and Camoufox keeps
+    // both in step. On Safari, `Version/` is the browser version; `Safari/` is the WebKit
+    // build, which does not identify the release.
     let token = match family {
         BrowserEmulation::Chrome => "Chrome/",
         BrowserEmulation::Firefox => "Firefox/",
@@ -88,8 +87,10 @@ fn major_of(ua: &str, family: BrowserEmulation) -> Option<u32> {
     digits.parse().ok()
 }
 
-/// Android before Linux, and iOS before macOS: an Android user-agent also says `Linux`, and an
-/// iPhone's also says `like Mac OS X`.
+/// Returns the platform a user agent claims.
+///
+/// Android is tested before Linux and iOS before macOS: an Android user agent also says `Linux`,
+/// and an iPhone's also says `like Mac OS X`.
 fn platform_of(ua: &str) -> BrowserPlatform {
     if ua.contains("Android") {
         BrowserPlatform::Android
@@ -108,14 +109,12 @@ fn platform_of(ua: &str) -> BrowserPlatform {
 mod tests {
     use super::*;
 
-    /// The two user-agents the deployed solver actually returned, captured 2026-08-12 from
-    /// `ghcr.io/germondai/trawl:1.3.1`.
+    /// The deployed solver's user agents parse to Firefox on two platforms.
     ///
-    /// They are the whole reason this module exists, and they carry two facts that a static
-    /// configuration constant cannot express. The solver is a **Firefox** (Camoufox) while every
-    /// provider defaults to a Chrome emulation profile; and it **randomises the platform it
-    /// presents per solve**, so consecutive solves against the same URL returned Windows and macOS.
-    /// A session's identity therefore has to be read off the session, never assumed.
+    /// They come from `ghcr.io/germondai/trawl:1.3.1` and carry two facts no static setting can
+    /// express: the solver is a **Firefox** (Camoufox) while providers default to a Chrome
+    /// profile, and it **randomises its platform per solve**. A session's identity has to be read
+    /// off the session.
     #[test]
     fn the_solvers_own_user_agents_parse_to_firefox_on_two_platforms() {
         let windows = BrowserIdentity::from_user_agent(
@@ -138,9 +137,10 @@ mod tests {
         );
     }
 
-    /// Every Chromium user-agent ends in `Safari/537.36`, and Edge's also contains `Chrome/`.
-    /// Testing in the wrong order reports Chrome as Safari and Edge as Chrome — a mismatch that
-    /// would then be presented to a provider as a deliberate disguise.
+    /// Chromium-family user agents are not confused for one another.
+    ///
+    /// Every Chromium user agent ends in `Safari/537.36`, and Edge's also contains `Chrome/`;
+    /// testing in the wrong order reports Chrome as Safari and Edge as Chrome.
     #[test]
     fn chromium_family_user_agents_are_not_confused_for_one_another() {
         let chrome = BrowserIdentity::from_user_agent(
@@ -200,8 +200,8 @@ mod tests {
         assert_eq!(BrowserIdentity::from_user_agent(""), None);
         assert_eq!(BrowserIdentity::from_user_agent("TankoVaultBot/0.1"), None);
         assert_eq!(BrowserIdentity::from_user_agent("curl/8.7.1"), None);
-        // A family we recognise but a version we cannot read is still unusable: the profile is
-        // chosen by major version, so "some Firefox" does not identify a handshake.
+        // A known family with an unreadable version is unusable: the profile is chosen by major
+        // version, so "some Firefox" does not identify a handshake.
         assert_eq!(
             BrowserIdentity::from_user_agent("Mozilla/5.0 Firefox/nightly"),
             None

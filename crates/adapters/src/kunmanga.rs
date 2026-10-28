@@ -1,5 +1,5 @@
-//! Custom adapter for kunmanga: Madara-shaped HTML for catalogue/series (delegated to
-//! [`GenericConfigAdapter`]), but catalogue enumeration and chapters are overridden — see
+//! Owns the custom adapter for kunmanga: Madara-shaped HTML for catalogue and series (delegated
+//! to [`GenericConfigAdapter`]), with catalogue enumeration and chapters overridden; see
 //! [`list_catalog`](KunMangaAdapter::list_catalog) and
 //! [`fetch_chapters`](KunMangaAdapter::fetch_chapters).
 
@@ -17,16 +17,19 @@ use serde::Deserialize;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
-/// Chapters requested per API page. The API caps `per_page`, but a generous value keeps
-/// the number of round-trips low; the loop still honours the API's own `last_page`.
+/// Chapters requested per API page.
+///
+/// The API caps `per_page`, but a generous value keeps the number of round-trips low; the loop
+/// still honours the API's own `last_page`.
 const CHAPTERS_PER_PAGE: u32 = 100;
 
 /// Hard safety cap on API pages walked per series, mirroring the catalogue page cap so a
 /// misbehaving paginator cannot loop unbounded.
 const MAX_CHAPTER_PAGES: u32 = 1000;
 
-/// The sitemap index advertised by the site's `robots.txt`. It lists one entry per shard;
-/// the series shards are the `sitemap-comic-{n}.xml` ones.
+/// The sitemap index advertised by the site's `robots.txt`.
+///
+/// It lists one entry per shard; the series shards are the `sitemap-comic-{n}.xml` ones.
 const SITEMAP_INDEX_PATH: &str = "/sitemap.xml";
 
 /// Marks the sitemap-index entries that enumerate **series** pages (as opposed to the
@@ -48,16 +51,15 @@ pub struct KunMangaAdapter {
     inner: GenericConfigAdapter,
     /// The series shard URLs from the sitemap index, resolved once per adapter instance.
     ///
-    /// The index used to be re-fetched for **every** catalogue page. That is not merely
-    /// wasteful — the origin is behind bot management, so each of those fetches can be
-    /// challenged, and a challenge that cannot be solved aborts the page. The catalogue walk
-    /// stops at the first failing page, so one unlucky re-fetch of a document that had already
-    /// been read silently truncated the catalogue to whatever shards came before it.
+    /// Fetching the index once matters beyond cost: the origin is behind bot management, so
+    /// every fetch can be challenged, and a challenge that cannot be solved aborts the page. The
+    /// catalogue walk stops at the first failing page, so re-fetching the index per page would
+    /// let one unlucky challenge silently truncate the catalogue to the shards before it.
     shards: tokio::sync::OnceCell<Vec<String>>,
 }
 
 impl KunMangaAdapter {
-    /// Build from the effective (Madara-default-merged) config used for HTML parsing.
+    /// Builds from the effective (Madara-default-merged) config used for HTML parsing.
     #[must_use]
     pub fn new(config: AdapterConfig) -> Self {
         Self {
@@ -66,11 +68,11 @@ impl KunMangaAdapter {
         }
     }
 
-    /// The series shard URLs, fetched on first use and reused for the rest of the walk.
+    /// Returns the series shard URLs, fetched on first use and reused for the rest of the walk.
     ///
     /// # Errors
-    /// Whatever the index fetch fails with, or [`AdapterError::Missing`] if the index lists no
-    /// series shards — which means the site changed its sitemap layout, not that it has no
+    /// Returns the index fetch's error, or [`AdapterError::Missing`] if the index lists no
+    /// series shards, which means the site changed its sitemap layout, not that it has no
     /// catalogue, and must not read as "zero series".
     async fn shards(&self, ctx: &Ctx) -> Result<&Vec<String>, AdapterError> {
         self.shards
@@ -102,7 +104,7 @@ impl KunMangaAdapter {
 /// The `/api/comics/{slug}/chapters` envelope.
 ///
 /// `data` is optional: the API answers an unservable request (unknown slug, withdrawn series)
-/// with `{"success": false, "message": …}` and no payload — modelling it as required would
+/// with `{"success": false, "message": …}` and no payload; modelling it as required would
 /// report every such reply as unparseable JSON instead of the provider's actual answer.
 #[derive(Debug, Deserialize)]
 struct ChaptersResponse {
@@ -115,7 +117,7 @@ struct ChaptersResponse {
 }
 
 impl ChaptersResponse {
-    /// What the API said about a response that carried no `data`, for the error message.
+    /// Returns what the API said about a response that carried no `data`, for the error message.
     fn refusal(&self) -> String {
         match (&self.message, self.success) {
             (Some(msg), _) if !msg.trim().is_empty() => msg.trim().to_owned(),
@@ -150,7 +152,7 @@ struct ApiChapter {
 }
 
 impl ApiChapter {
-    /// The chapter number, preferring the numeric `chapter_num`, then a string form, then
+    /// Returns the chapter number, preferring the numeric `chapter_num`, then a string form, then
     /// the marker in `chapter_name` (`"Chapter 57"`).
     fn number(&self) -> Option<f64> {
         match &self.chapter_num {
@@ -162,7 +164,7 @@ impl ApiChapter {
     }
 }
 
-/// Extract the last non-empty path segment of a series path (`/manga/monarch` → `monarch`).
+/// Extracts the last non-empty path segment of a series path (`/manga/monarch` → `monarch`).
 fn series_slug(path: &str) -> Option<&str> {
     path.split('?')
         .next()
@@ -173,7 +175,7 @@ fn series_slug(path: &str) -> Option<&str> {
         .filter(|s| !s.is_empty())
 }
 
-/// Extract every `<loc>` value from a sitemap document.
+/// Extracts every `<loc>` value from a sitemap document.
 ///
 /// Tolerates both shapes the fetch stack can return: raw XML from a plain fetch, and a
 /// solver-rendered XML viewer page (embedding the original document alongside an
@@ -189,7 +191,7 @@ fn sitemap_locs(body: &str) -> Vec<String> {
     }
 }
 
-/// Collect `<loc>…</loc>` contents in document order, without duplicates.
+/// Collects `<loc>…</loc>` contents in document order, without duplicates.
 fn scan_locs(doc: &str) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
@@ -205,8 +207,8 @@ fn scan_locs(doc: &str) -> Vec<String> {
     out
 }
 
-/// Turn one sitemap `<loc>` into a catalogue entry, rejecting anything that is not a
-/// series landing page (`/manga/{slug}` — chapter URLs carry a further segment).
+/// Turns one sitemap `<loc>` into a catalogue entry, rejecting anything that is not a
+/// series landing page (`/manga/{slug}`; chapter URLs carry a further segment).
 ///
 /// The provisional title is slug-derived, used only to seed a stub: it must collapse to the
 /// same [`normalize_title`](tankovault_domain::normalize_title) key as the real title, or
@@ -232,12 +234,12 @@ fn catalog_item(page_url: &str, loc: &str) -> Option<CatalogItem> {
     })
 }
 
-/// Render a URL slug as a provisional display title: `the-frontier-base` → `The Frontier Base`.
+/// Renders a URL slug as a provisional display title: `the-frontier-base` → `The Frontier Base`.
 ///
 /// A lone `s` segment glues onto the previous word as `'s`. This must collapse to the same
 /// [`normalize_title`] key as the site's real title: `normalize_title` elides apostrophes, so
 /// leaving `world-s-strongest` as three words keys differently than the site's `World's
-/// Strongest` — the whole reason this gluing exists.
+/// Strongest`, the whole reason this gluing exists.
 ///
 /// [`normalize_title`]: tankovault_domain::normalize_title
 fn title_from_slug(slug: &str) -> String {
@@ -260,7 +262,7 @@ fn title_from_slug(slug: &str) -> String {
     words.join(" ")
 }
 
-/// Whether a lone `s` following `word` reads as a flattened possessive.
+/// Returns whether a lone `s` following `word` reads as a flattened possessive.
 ///
 /// Usually yes, but `S` is also a rank (`the-s-rank-hunter`, `hunter-rank-s`): a determiner or
 /// rank noun before it rules out the possessive reading, since gluing there would invent
@@ -280,7 +282,7 @@ fn takes_possessive_s(word: &str) -> bool {
 
 #[async_trait]
 impl SourceAdapter for KunMangaAdapter {
-    /// Enumerate the catalogue from the site's sitemap, one `sitemap-comic-{n}.xml` shard per
+    /// Enumerates the catalogue from the site's sitemap, one `sitemap-comic-{n}.xml` shard per
     /// `page`, instead of the paginated HTML listing.
     ///
     /// The HTML listing clamps at a fixed page number server-side while its "Next" control
@@ -303,14 +305,14 @@ impl SourceAdapter for KunMangaAdapter {
         };
 
         // The shard URLs are absolute and `resolve_link` passes those through, so this needs no
-        // base to resolve against — which is what let the index fetch move out of this method.
+        // base to resolve against, which is what lets the index fetch live outside this method.
         let resp = ctx.fetch(shard).await?;
         let mut seen = std::collections::HashSet::new();
         let items: Vec<CatalogItem> = sitemap_locs(&resp.body)
             .iter()
             .filter_map(|loc| catalog_item(&resp.url, loc))
             // A solver-rendered shard embeds the document twice, so every URL arrives twice.
-            // Deduplicated here rather than upstream so a shard's reported size is its real one.
+            // Deduplicated here, not upstream, so a shard's reported size is its real one.
             .filter(|item| seen.insert(item.path.clone()))
             .collect();
 
@@ -335,10 +337,10 @@ impl SourceAdapter for KunMangaAdapter {
         self.inner.fetch_series(ctx, path).await
     }
 
-    /// Read every page of the chapters API for one series.
+    /// Reads every page of the chapters API for one series.
     ///
     /// Pagination terminates on the API's own `last_page`, backed by two independent guards
-    /// — a page that adds nothing new, and a hard page cap — so a paginator that lies about
+    /// (a page that adds nothing new, and a hard page cap), so a paginator that lies about
     /// `last_page` cannot hold a scan task open indefinitely.
     async fn fetch_chapters(
         &self,
@@ -503,7 +505,7 @@ mod tests {
 
     #[test]
     fn an_api_refusal_parses_and_carries_its_reason() {
-        // A payload-less envelope must parse; reporting it as unparseable JSON hid the message.
+        // A payload-less envelope must parse; reporting it as unparseable JSON hides the message.
         let env = parse(r#"{"success":false,"message":"Comic not found"}"#)
             .expect("refusal envelope parses");
         assert!(env.data.is_none());

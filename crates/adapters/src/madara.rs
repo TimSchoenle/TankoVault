@@ -1,9 +1,9 @@
-//! Madara `WordPress` theme defaults: most target sites share this markup, so onboarding one is
-//! a single config row overriding only what differs.
+//! Owns the Madara `WordPress` theme defaults: most target sites share this markup, so onboarding
+//! one is a single config row overriding only what differs.
 
 use serde_json::{Value, json};
 
-/// The default selector set for a Madara-themed provider.
+/// Returns the default selector set for a Madara-themed provider.
 #[must_use]
 pub fn madara_default_config() -> Value {
     json!({
@@ -16,9 +16,9 @@ pub fn madara_default_config() -> Value {
             "link": "a",
             "title": "h3 a",
             // No next-page marker by default. `a.nextpostslink` is the theme's own paginator
-            // and most installs render it nowhere — they paginate through an always-present
-            // AJAX "load more" button instead — so a preset that trusted it walked exactly one
-            // page and called the catalogue complete. Cleared, this falls back to "another page
+            // and most installs render it nowhere (they paginate through an always-present
+            // AJAX "load more" button instead), so a preset that trusted it would walk exactly
+            // one page and call the catalogue complete. Cleared, this falls back to "another page
             // exists while this one yielded items", which is exact here: past the last page
             // WordPress answers with a 404 shell carrying zero items.
             "next": null

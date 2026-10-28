@@ -1,11 +1,11 @@
-//! Sites with an adapter of their own in Rust.
+//! Owns the presets for sites with an adapter of their own in Rust.
 
 use serde_json::json;
 use tankovault_domain::{AdapterKind, Politeness};
 
 use super::{BuiltinPreset, bulk_budget};
 
-/// Providers driven by a bespoke adapter, each for a reason selectors cannot express.
+/// Returns the providers driven by a bespoke adapter, each for a reason selectors cannot express.
 pub(super) fn custom_code() -> Vec<BuiltinPreset> {
     vec![
         // Bespoke PHP layout, driven by `DemonicScansAdapter`, dispatched on this slug.
@@ -29,7 +29,7 @@ pub(super) fn custom_code() -> Vec<BuiltinPreset> {
                 // always-rendered "Next", so `list_catalog` walks the sitemap shards instead.
                 "latest": {
                     // This theme renders no `div.page-item-detail`, so the inherited Madara
-                    // defaults matched nothing and every fast scan read an empty feed. The
+                    // defaults match nothing and every fast scan would read an empty feed. The
                     // site's updates live in the home page's "Manga Updates!" slider.
                     "item": "div.manga-item",
                     // The anchor wraps only the cover image: no link text, so the title is
@@ -37,7 +37,7 @@ pub(super) fn custom_code() -> Vec<BuiltinPreset> {
                     "title": "img@alt",
                     // Explicitly none, to override the inherited `span.chapter a`: the slider
                     // carries no chapter label, and a selector that can never match reads as a
-                    // live rule rather than an absent one. Costs nothing downstream — both
+                    // live rule instead of an absent one. Costs nothing downstream: both
                     // consumers of `list_latest` re-ingest by `path` and ignore the rest.
                     "chapter": null
                 },
@@ -49,20 +49,20 @@ pub(super) fn custom_code() -> Vec<BuiltinPreset> {
             }),
             // Sized for KunManga's much larger catalogue. `rps`/`concurrency` are enforced per
             // worker process, so at the shipped two replicas this is 8 rps / 16 in flight
-            // aggregate — exactly `MAX_RPS`/`MAX_CONCURRENCY`. Raising replica count without
+            // aggregate, exactly `MAX_RPS`/`MAX_CONCURRENCY`. Raising replica count without
             // lowering these silently exceeds the policy ceiling. `crawl_delay_ms` stays 0:
-            // robots.txt sets no Crawl-delay, and 429/`Retry-After` now drives backoff.
+            // robots.txt sets no Crawl-delay, and 429/`Retry-After` drives backoff.
             politeness: Politeness {
                 rps: 4.0,
                 concurrency: 8,
                 ..Politeness::default()
             },
         },
-        // Two more installs of the platform `kunmanga` runs on, found by the shape of their
-        // sitemap index (`sitemap-comic-{n}.xml`) and confirmed by the chapter API answering.
+        // Two more installs of the platform `kunmanga` runs on, recognisable by the shape of
+        // their sitemap index (`sitemap-comic-{n}.xml`) and a chapter API that answers.
         // Same adapter, same reasons: the HTML listing is server-clamped and the series page
         // renders only the newest rows, so both the walk and the chapter list come from
-        // elsewhere. `zazamanga` is the same platform and is *not* here — that install still
+        // elsewhere. `zazamanga` is the same platform and is *not* here: that install still
         // server-renders its whole chapter list, so it stays a Madara config row.
         zinmanga_platform("zinmanga", "Zinmanga", "https://www.zinmanga.net"),
         zinmanga_platform(
@@ -121,7 +121,7 @@ pub(super) fn custom_code() -> Vec<BuiltinPreset> {
             politeness: Politeness::default(),
         },
         // The Init Manga WordPress theme. Selectors would cover catalogue, feed and metadata,
-        // but its series page server-renders only the newest 24 chapter rows — the rest are a
+        // but its series page server-renders only the newest 24 chapter rows; the rest are a
         // REST call keyed by the numeric post id, which only that page states.
         BuiltinPreset {
             slug: "mgread",
@@ -147,8 +147,8 @@ pub(super) fn custom_code() -> Vec<BuiltinPreset> {
     ]
 }
 
-/// A site on the platform `kunmanga` runs on: Madara-shaped series markup, a JSON chapter API,
-/// and a catalogue reachable only through the sitemap.
+/// Returns the preset for a site on the platform `kunmanga` runs on: Madara-shaped series markup, a
+/// JSON chapter API, and a catalogue reachable only through the sitemap.
 ///
 /// The config mirrors `kunmanga`'s because the platform is the same one; see that preset for why
 /// each override exists.
@@ -165,8 +165,8 @@ fn zinmanga_platform(
         config: json!({
             // No `latest` override, unlike `kunmanga`: these two installs render the theme's own
             // `div.page-item-detail` cards on the home page, where kunmanga.co.uk renders a
-            // bespoke slider. Inheriting kunmanga's override here read an empty feed on every
-            // fast scan — a valid parse of the wrong markup, which nothing reports.
+            // bespoke slider. Inheriting kunmanga's override here reads an empty feed on every
+            // fast scan: a valid parse of the wrong markup, which nothing reports.
             "series": { "release": "a[href*=\"manga-release\"]" }
         }),
         politeness: bulk_budget(),

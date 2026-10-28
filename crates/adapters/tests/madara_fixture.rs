@@ -1,4 +1,4 @@
-//! Fixture tests for the Madara config-driven adapter, using checked-in HTML so a provider
+//! Tests the Madara config-driven adapter against fixtures, using checked-in HTML so a provider
 //! markup change breaks a test, not production. No network is touched.
 
 use async_trait::async_trait;
@@ -56,8 +56,8 @@ async fn parses_series_metadata() {
     assert_eq!(meta.status, SeriesStatus::Ongoing);
     assert!(meta.tags.iter().any(|t| t == "Action"));
     assert!(meta.tags.iter().any(|t| t == "Fantasy"));
-    // Bug this pins: `alt` was the plain selector `div.summary-heading`, which matched every
-    // row's label, mislabelling Author(s)/Genre(s)/Status into `series_titles` too.
+    // The bug: `alt` as the plain selector `div.summary-heading` matched every row's label,
+    // mislabelling Author(s)/Genre(s)/Status into `series_titles` too.
     assert_eq!(
         meta.alt_titles,
         vec!["Only I Level Up".to_owned(), "나 혼자만 레벨업".to_owned()]
@@ -81,7 +81,7 @@ async fn parses_chapter_list_with_relative_paths() {
     assert_eq!(chapters.len(), 4);
     // Decimal chapter numbers are supported.
     assert!(chapters.iter().any(|c| (c.number - 10.5).abs() < 1e-9));
-    // Every stored path is RELATIVE — even the one that was absolute in the markup.
+    // Every stored path is **relative**, even the one that was absolute in the markup.
     assert!(chapters.iter().all(|c| c.path.starts_with('/')));
     assert!(
         chapters
@@ -100,7 +100,7 @@ async fn parses_catalog_page() {
 
     assert_eq!(page.items.len(), 3);
     // The family default names no next-page marker, so a populated page is what chains the
-    // next one — see `the_madara_family_does_not_inherit_a_paginator_nothing_renders`.
+    // next one; see `the_madara_family_does_not_inherit_a_paginator_nothing_renders`.
     assert!(page.has_next);
     assert_eq!(page.items[0].title, "Solo Leveling");
     assert!(page.items[0].path.starts_with("/manga/"));

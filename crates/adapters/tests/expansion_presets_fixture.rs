@@ -1,12 +1,13 @@
-//! Fixture tests for the 2026-08-26 source expansion.
+//! Tests the presets for the selector-only and aggregator sources against fixtures.
 //!
 //! Every fixture is markup trimmed from a live response and every assertion runs the **shipped**
-//! preset through `build_adapter`, so a layout change fails a test here rather than quietly
-//! writing wrong rows into `series`/`chapters`.
+//! preset through `build_adapter`, so a preset change that breaks the captured markup fails a
+//! test here instead of quietly writing wrong rows into `series`/`chapters`. A live layout change
+//! shows up only once its fixture is refreshed.
 //!
 //! What is pinned is deliberately narrow: the selector on each site that a plausible-looking
-//! alternative gets *silently* wrong. Nothing here re-tests the family defaults — those have
-//! their own suites — and nothing here asserts a value the site is free to change, like a title
+//! alternative gets *silently* wrong. Nothing here re-tests the family defaults (those have
+//! their own suites), and nothing here asserts a value the site is free to change, like a title
 //! or a chapter count that grows every week.
 
 use async_trait::async_trait;
@@ -39,7 +40,7 @@ impl SiteFetcher {
     }
 }
 
-/// Whether `url` addresses the site root itself (`https://host` or `https://host/`).
+/// Returns whether `url` addresses the site root itself (`https://host` or `https://host/`).
 fn is_site_root(url: &str) -> bool {
     url.split_once("://")
         .is_some_and(|(_, rest)| !rest.trim_end_matches('/').contains('/'))
@@ -75,7 +76,7 @@ impl Fetcher for SiteFetcher {
     }
 }
 
-/// Build the live adapter for a shipped preset, paired with a fixture-serving context.
+/// Builds the live adapter for a shipped preset, paired with a fixture-serving context.
 fn preset_adapter(
     slug: &str,
     fetcher: SiteFetcher,
@@ -95,7 +96,7 @@ fn preset_adapter(
     (adapter, ctx, fetcher)
 }
 
-/// How many of `chapters` the provider says are behind a paywall.
+/// Returns how many of `chapters` the provider says are behind a paywall.
 fn locked(chapters: &[tankovault_adapters::ChapterMeta]) -> usize {
     chapters
         .iter()
@@ -104,20 +105,22 @@ fn locked(chapters: &[tankovault_adapters::ChapterMeta]) -> usize {
 }
 
 // -----------------------------------------------------------------------------------------
-// Early access — the selectors that decide whether a reader is sent to a paywall
+// Early access: the selectors that decide whether a reader is sent to a paywall
 // -----------------------------------------------------------------------------------------
 
 const MADARASCANS_CATALOG: &str = include_str!("../fixtures/expansion/madarascans-catalog.html");
 const MADARASCANS_SERIES: &str = include_str!("../fixtures/expansion/madarascans-series.html");
 const ATHREASCANS_SERIES: &str = include_str!("../fixtures/expansion/athreascans-series.html");
 
-/// Regression: `madarascans` sells early access and marks a paid row with a lock glyph inside the
-/// number cell — nowhere else. On the family defaults every paid chapter parsed as free, which is
-/// the one parse error that reaches a reader: an unread count, a release-feed entry and a
-/// "next up" marker all pointing at a paywall.
+/// `madarascans` marks only the lock-glyphed rows as early access.
 ///
-/// The fixture carries both shapes on purpose. A selector that matched the row container rather
-/// than the glyph would mark all four locked and still pass a "locked > 0" assertion.
+/// The bug: the site marks a paid row with a lock glyph inside the number cell and nowhere else.
+/// On the family defaults every paid chapter parsed as free, which is the one parse error that
+/// reaches a reader: an unread count, a release-feed entry and a "next up" marker all pointing at
+/// a paywall.
+///
+/// The fixture carries both shapes on purpose. A selector that matched the row container instead
+/// of the glyph would mark all four locked and still pass a "locked > 0" assertion.
 #[tokio::test]
 async fn madarascans_marks_only_the_lock_glyphed_rows_as_early_access() {
     let (adapter, ctx, _) = preset_adapter(
@@ -192,7 +195,7 @@ async fn madarascans_catalogue_reads_the_rewritten_card() {
 /// `athreascans` runs the `MangaThemesia` coin plugin, and this is why its preset carries no
 /// `chapters.locked` selector: a paid row here is a modal trigger whose anchor has **no `href`**,
 /// so the row yields no chapter URL and is dropped before access is read. Only the free rows are
-/// ingested, which is the safe outcome — a paywalled chapter is never offered because it is never
+/// ingested, which is the safe outcome: a paywalled chapter is never offered because it is never
 /// stored.
 ///
 /// Pinned because the failure mode if the install changes is silent and one-directional: the day
@@ -216,8 +219,8 @@ async fn athreascans_drops_paid_rows_because_they_carry_no_chapter_link() {
 }
 
 /// The `table.infotable` override is what makes this install publish any metadata at all: on the
-/// theme's stock `div.imptdt` selectors it parsed a title, a cover and a description and nothing
-/// else — no status, no genres, no credits, and no error, because an optional row that matches
+/// theme's stock `div.imptdt` selectors it parses a title, a cover and a description and nothing
+/// else (no status, no genres, no credits, and no error), because an optional row that matches
 /// nothing is how the theme is meant to read.
 #[tokio::test]
 async fn athreascans_reads_the_infotable_metadata_block() {
@@ -245,9 +248,11 @@ async fn athreascans_reads_the_infotable_metadata_block() {
 const ZAZAMANGA_SERIES: &str = include_str!("../fixtures/expansion/zazamanga-series.html");
 const ZINMANGA_LATEST: &str = include_str!("../fixtures/expansion/zinmanga-latest.html");
 
-/// Regression: `zazamanga` renders the Madara chapter list as `div`, not the theme's `li`. On the
-/// family default the site parsed a full catalogue, a full feed and **zero** chapters — and an
-/// empty chapter list is a valid answer, so nothing failed.
+/// `zazamanga` reads chapter rows rendered as `div`.
+///
+/// The bug: the site renders the Madara chapter list as `div`, not the theme's `li`. On the family
+/// default it parsed a full catalogue, a full feed and **zero** chapters, and an empty chapter
+/// list is a valid answer, so nothing failed.
 #[tokio::test]
 async fn zazamanga_reads_chapter_rows_rendered_as_divs() {
     let (adapter, ctx, _) = preset_adapter("zazamanga", SiteFetcher::new("", ZAZAMANGA_SERIES));
@@ -259,10 +264,12 @@ async fn zazamanga_reads_chapter_rows_rendered_as_divs() {
     assert_eq!(chapters.len(), 3, "one chapter per div.wp-manga-chapter");
 }
 
-/// Regression: `zinmanga` runs the platform `kunmanga` does, and the first draft of its preset
-/// inherited kunmanga's `latest` override — a bespoke home-page slider that this install does not
-/// render. The feed parsed to zero items on every fast scan. It renders the theme's own cards, so
-/// the correct preset overrides nothing here.
+/// `zinmanga` reads its feed from the Madara default cards.
+///
+/// The bug: `zinmanga` runs the platform `kunmanga` does, and a preset that inherits kunmanga's
+/// `latest` override (a bespoke home-page slider this install does not render) parses the feed to
+/// zero items on every fast scan. It renders the theme's own cards, so the preset overrides
+/// nothing here.
 #[tokio::test]
 async fn zinmanga_reads_its_feed_from_the_madara_default_cards() {
     let (adapter, ctx, _) = preset_adapter(
@@ -315,11 +322,12 @@ async fn mgeko_fetches_the_all_chapters_route_and_not_the_series_page() {
     );
 }
 
-/// Regression: `kaliscan` nests each row's update time **inside** the chapter anchor, so the
-/// anchor's own text reads `Chapter 844 hours ago` for chapter 84 — and the number parsed as
-/// 844. It scrambled 99% of the numbers on the first live ingest: every value plausible, every
-/// reading order wrong, and nothing failed. `chapters.number` points the parse at the label
-/// element instead.
+/// `kaliscan` numbers chapters from the label, not the anchor's glued text.
+///
+/// The bug: the site nests each row's update time **inside** the chapter anchor, so the anchor's
+/// own text reads `Chapter 844 hours ago` for chapter 84 and the number parsed as 844: every value
+/// plausible, every reading order wrong, and nothing failed. `chapters.number` points the parse at
+/// the label element instead.
 ///
 /// The fixture is deliberately taken from a series whose labels END in the number. A series with
 /// subtitled chapters ("Chapter 135 - Bad Quality") cannot reproduce this at all, because the
@@ -341,7 +349,7 @@ async fn kaliscan_numbers_chapters_from_the_label_not_the_anchors_glued_text() {
 }
 
 /// `kaliscan` also renders a "LATEST CHAPTERS" preview strip above the real list with the same
-/// row markup. Selecting on the row class alone truncated every series to the newest three; the
+/// row markup. Selecting on the row class alone truncates every series to the newest three; the
 /// preset names the full list's container id.
 #[tokio::test]
 async fn kaliscan_reads_the_full_chapter_list_not_the_preview_strip() {
@@ -360,7 +368,7 @@ async fn kaliscan_reads_the_full_chapter_list_not_the_preview_strip() {
 
 const MANGATOWN_SERIES: &str = include_str!("../fixtures/expansion/mangatown-series.html");
 
-/// `mangatown` labels a chapter "<Series Title> 526" — no `Chapter`, `Ch.` or `#` marker at all,
+/// `mangatown` labels a chapter "<Series Title> 526", with no `Chapter`, `Ch.` or `#` marker,
 /// so the number comes from `parse_chapter_number`'s bare-number fallback. Pinned because it is
 /// the one site here relying on that path, and because a title carrying its own digits would
 /// break it: if this test starts reading a title's number, the preset needs a different source.

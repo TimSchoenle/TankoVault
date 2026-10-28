@@ -1,4 +1,4 @@
-//! The outbound half of distributed tracing, with a client actually bound.
+//! Checks the outbound half of distributed tracing, with a client actually bound.
 //!
 //! Its own test binary, and one test in it, because both halves are process-global: the unit
 //! tests in `src/sentry.rs` pin that `trace_headers()` is empty with **no** client, and
@@ -27,7 +27,7 @@ fn telemetry() -> TelemetryConfig {
 /// The claims the cross-service trace rests on, none of which the type system checks.
 ///
 /// Everything runs inside an instrumented span, because that is what gives this task a trace
-/// of its *own* — a transaction — rather than the process-wide propagation context every task
+/// of its *own* (a transaction) instead of the process-wide propagation context every task
 /// would otherwise share. Without that, each assertion below passes for the wrong reason.
 #[tokio::test]
 async fn a_trace_survives_every_hop_that_has_to_carry_it() {
@@ -43,7 +43,7 @@ async fn hops() {
     assert!(!here.is_empty(), "an empty header is not a trace");
 
     // 2. `propagate_trace` writes what `trace_headers` returns, *replacing* what was there.
-    //    The two are used on different hops — a `reqwest` builder, a proxied `HeaderMap` — so
+    //    The two are used on different hops (a `reqwest` builder, a proxied `HeaderMap`), so
     //    a divergence would break exactly one of them, silently. The replacement is what the
     //    frontend proxy relies on: an inbound value is a client's claim about the trace.
     let mut map = axum::http::HeaderMap::new();
@@ -59,8 +59,8 @@ async fn hops() {
     );
 
     // 3. `in_current_trace` survives a `tokio::spawn`. The Sentry hub is thread-local and a
-    //    spawned task starts with a fresh one, so detached work — the targeted sync push, a
-    //    transactional email — falls back to the process-wide context and reports under a
+    //    spawned task starts with a fresh one, so detached work (the targeted sync push, a
+    //    transactional email) falls back to the process-wide context and reports under a
     //    trace nothing else is in. This failing means every detached hop became an orphan.
     let carried = tokio::spawn(tankovault_service::in_current_trace(async { trace() }))
         .await
@@ -71,9 +71,9 @@ async fn hops() {
         "detached work must stay in the trace that spawned it"
     );
 
-    // ...and the other half of the same claim, which is what makes the wrapper load-bearing
-    // rather than decorative: a bare spawn does *not* keep it. Deterministic rather than racy
-    // — `Instrumented` exits the span before returning `Pending`, so the spawned task is polled
+    // ...and the other half of the same claim, which is what makes the wrapper load-bearing,
+    // not decorative: a bare spawn does *not* keep it. Deterministic, not racy:
+    // `Instrumented` exits the span before returning `Pending`, so the spawned task is polled
     // with no span on the thread whichever runtime this is.
     let dropped = tokio::spawn(async { trace() }).await.expect("the task ran");
     assert_ne!(
@@ -83,7 +83,7 @@ async fn hops() {
     );
 }
 
-/// The `sentry-trace` value for whatever hub is current on this task.
+/// Returns the `sentry-trace` value for whatever hub is current on this task.
 fn trace() -> Option<String> {
     tankovault_service::trace_headers()
         .into_iter()

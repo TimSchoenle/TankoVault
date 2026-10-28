@@ -1,12 +1,11 @@
-//! Framework-agnostic authentication primitives (`docs/ARCHITECTURE.md` §16): argon2id password hashing, HS256
-//! access tokens, opaque refresh tokens, AES-256-GCM sealing for tokens at rest, and the
-//! second-factor primitives (RFC 6238 TOTP, recovery codes). Every credential type is
-//! `secrecy`-wrapped; non-secret derived values (PHC hash, token digest, ciphertext) keep plain
-//! types deliberately.
+//! Owns the framework-agnostic authentication primitives (`docs/ARCHITECTURE.md` §16): argon2id
+//! password hashing, HS256 access tokens, opaque refresh tokens, AES-256-GCM sealing for tokens
+//! at rest, and the second factors (RFC 6238 TOTP, recovery codes).
 //!
-//! Nothing here knows about HTTP, axum or the database. The relying-party half of `WebAuthn` is
-//! deliberately *not* here — it lives in `services/api`, because this crate is a dependency of
-//! `services/sync`, `xtask` and the fuzz targets, none of which will ever verify a credential.
+//! Every credential is `secrecy`-wrapped; derived values that are not secrets (a PHC hash, a
+//! token digest, ciphertext) keep plain types on purpose. Nothing here knows about HTTP, axum or
+//! the database. The `WebAuthn` relying party lives in `services/api`, because `services/sync`,
+//! `xtask` and the fuzz targets depend on this crate and never verify a credential.
 
 mod crypto;
 mod error;

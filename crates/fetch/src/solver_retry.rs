@@ -1,16 +1,14 @@
-//! Retry a solve that failed because the *solver tier* was not there.
+//! Retries a solve that failed because the solver tier was not there.
 //!
-//! A decorator over [`ChallengeSolver`] rather than a branch inside [`crate::solving`], because
-//! the failure it covers is not the crawl's: a saturated browser pool or a restarting service is
-//! this deployment's own transient, and it is the same transient whichever back-end is mounted.
-//! Keeping it at the trait means the solving fetcher stays a single-purpose decorator and any
-//! back-end — the HTTP client, TRAWL in-process, a fake — inherits the policy unchanged.
+//! A decorator over [`ChallengeSolver`], not a branch in [`crate::solving`], because the failure
+//! is not the crawl's: a saturated browser pool or a restarting service is this deployment's own
+//! transient, whichever back-end is mounted. Every back-end (the HTTP client, TRAWL in-process, a
+//! fake) inherits the policy unchanged.
 //!
-//! Deliberately narrow. Only [`SolveError::is_transient`] is retried, so a challenge that held is
-//! never re-solved: a browser solve costs seconds and a real challenge produces the same verdict
-//! every time. The budget is small for the same reason a `429` wait is capped — this runs
-//! *inside* the provider's concurrency permit, so a long wait here is a permit no other request
-//! for that provider can use.
+//! Narrow on purpose. Only [`SolveError::is_transient`] is retried, so a challenge that held is
+//! never re-solved: a browser solve costs seconds and returns the same verdict. The budget is
+//! small because this runs inside the provider's concurrency permit, which no other request for
+//! that provider can use meanwhile.
 
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -26,8 +24,8 @@ pub struct RetryingSolver {
 }
 
 impl RetryingSolver {
-    /// `max_attempts` total tries (1 disables retrying), waiting `base_delay` doubling to
-    /// `max_delay`, each step jittered.
+    /// Wraps `inner` with up to `max_attempts` tries (1 disables retrying), waiting from
+    /// `base_delay` up to `max_delay` with jitter.
     #[must_use]
     pub fn new(
         inner: Arc<dyn ChallengeSolver>,
@@ -43,12 +41,13 @@ impl RetryingSolver {
         }
     }
 
-    /// The default budget: three tries over at most a few seconds.
+    /// Wraps `inner` with the default budget: three tries, with a few seconds of waits between
+    /// them.
     ///
-    /// Sized against what it is waiting for — a browser slot coming free, or a solver replica
-    /// finishing a restart — and against what it costs, which is one provider concurrency permit
-    /// held idle. Anything the budget does not cover is the task's retry ladder's business
-    /// (minutes, and no permit held).
+    /// Sized for a browser slot coming free or a solver replica finishing a restart, at the cost
+    /// of one provider permit held throughout. Each try can run to the solver's own timeout, so
+    /// the whole retry can last far longer than its waits. Longer outages are the task retry
+    /// ladder's business: minutes, with no permit held.
     #[must_use]
     pub fn with_default_budget(inner: Arc<dyn ChallengeSolver>) -> Self {
         Self::new(inner, 3, Duration::from_millis(500), Duration::from_secs(4))
@@ -99,7 +98,7 @@ mod tests {
     use std::time::Duration;
     use tankovault_solver::{ChallengeSolver, SolveError, SolveOutcome, SolveRequest};
 
-    /// Fails `failures` times with `error`, then succeeds. Counts every call.
+    /// Fails `failures` times with `error`, then succeeds, counting every call.
     struct FlakySolver {
         calls: AtomicU32,
         failures: u32,
@@ -147,14 +146,15 @@ mod tests {
     }
 
     fn retrying(inner: Arc<dyn ChallengeSolver>) -> RetryingSolver {
-        // Near-zero waits: the policy under test is which errors are repeated and how often, and
-        // the delay itself is `crate::jitter`'s, tested there.
+        // Near-zero waits: this tests which errors are repeated and how often; the delay is
+        // `crate::jitter`'s.
         RetryingSolver::new(inner, 3, Duration::from_millis(1), Duration::from_millis(2))
     }
 
-    /// The failure this exists for. Two providers spent a day reporting "solver could not bypass
-    /// the challenge" while their APIs answered `200` to a plain request — the solver tier was
-    /// briefly unavailable and nothing repeated the solve.
+    /// An unavailable tier is tried again.
+    ///
+    /// The bug: with nothing repeating the solve, a briefly unavailable solver tier reports
+    /// "solver could not bypass the challenge" for providers answering `200` to a plain request.
     #[tokio::test]
     async fn an_unavailable_tier_is_tried_again() {
         let inner = FlakySolver::new(2, SolveError::Unavailable);
@@ -165,8 +165,8 @@ mod tests {
         assert_eq!(inner.calls.load(Ordering::SeqCst), 3);
     }
 
-    /// The inverse, and the more important half: a challenge that held is the provider's answer.
-    /// Repeating it re-runs a full browser solve for a verdict that cannot change.
+    /// A challenge that held is not re-solved: it is the provider's answer, and repeating it
+    /// re-runs a full browser solve for the same verdict.
     #[tokio::test]
     async fn a_challenge_that_held_is_not_re_solved() {
         let inner = FlakySolver::new(1, SolveError::Unsolved);
@@ -178,8 +178,8 @@ mod tests {
         assert_eq!(inner.calls.load(Ordering::SeqCst), 1);
     }
 
-    /// The budget is a bound, not a loop: a tier that stays down must still surface the failure
-    /// rather than holding the provider's concurrency permit indefinitely.
+    /// The budget is finite: a tier that stays down surfaces the failure instead of holding the
+    /// provider's concurrency permit indefinitely.
     #[tokio::test]
     async fn the_attempt_budget_is_finite() {
         let inner = FlakySolver::new(u32::MAX, SolveError::Unavailable);
@@ -191,8 +191,8 @@ mod tests {
         assert_eq!(inner.calls.load(Ordering::SeqCst), 3);
     }
 
-    /// The decorator must not rename the back-end: `backend_name` is what the console reports as
-    /// the active solver, and "retrying" is not a back-end an operator can configure.
+    /// The decorator keeps the back-end's name: `backend_name` is what the console reports as
+    /// the active solver.
     #[test]
     fn the_wrapped_back_end_keeps_its_name() {
         let inner = FlakySolver::new(0, SolveError::Unavailable);

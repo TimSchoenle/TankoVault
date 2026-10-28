@@ -1,9 +1,9 @@
-//! The Manganato/Mangakakalot clone family: shared selector defaults, plus the custom adapter
+//! Owns the Manganato/Mangakakalot clone family: shared selector defaults, plus the custom adapter
 //! the family's chapter list forces.
 //!
 //! Three live domains share this markup byte for byte (`natomanga.com`, `mangakakalot.gg`,
 //! `nelomanga.net`), so the selectors are a family default and each site is a config row.
-//! Chapters are the exception and the reason [`ManganatoAdapter`] exists — see below.
+//! Chapters are the exception and the reason [`ManganatoAdapter`] exists; see below.
 
 use crate::config::AdapterConfig;
 use crate::error::AdapterError;
@@ -18,7 +18,7 @@ use serde_json::{Value, json};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
-/// The default selector set for a Manganato-family provider.
+/// Returns the default selector set for a Manganato-family provider.
 ///
 /// Derived from live markup (`natomanga.com`) and pinned by `tests/manganato_fixture.rs`.
 #[must_use]
@@ -88,15 +88,14 @@ struct ApiData {
 ///
 /// **The series page carries only the newest ~25 chapters.** The rest are fetched client-side
 /// from `/api/manga/{slug}/chapters`, so a selector-only adapter silently truncates every long
-/// series to its most recent page — the failure mode is not an error but a chapter count that
-/// looks plausible and is wrong, which is exactly the shape of bug the `KunManga` JSON chapter API
-/// produced before it was found.
+/// series to its most recent page. The failure mode is not an error but a chapter count that
+/// looks plausible and is wrong.
 pub struct ManganatoAdapter {
     inner: GenericConfigAdapter,
 }
 
 impl ManganatoAdapter {
-    /// Build from an effective (family defaults + provider overrides) config.
+    /// Builds from an effective (family defaults plus provider overrides) config.
     #[must_use]
     pub fn new(config: AdapterConfig) -> Self {
         Self {
@@ -104,7 +103,7 @@ impl ManganatoAdapter {
         }
     }
 
-    /// The series slug is the last path segment; the API is keyed by it.
+    /// Returns the series slug, the last path segment; the API is keyed by it.
     fn slug_of(series_path: &str) -> &str {
         series_path
             .rsplit('/')

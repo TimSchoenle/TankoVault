@@ -1,4 +1,4 @@
-//! Service-to-service authentication and authorisation for the internal tier.
+//! Owns service-to-service authentication and authorisation for the internal tier.
 //!
 //! `sync`, `control-plane`, `worker`, `render` and `challenge-solver` serve privileged routes
 //! that are reachable by service name from anywhere on the network. Two questions are answered
@@ -7,7 +7,7 @@
 //!
 //! Only the first question has a mode-dependent answer. Authorisation reads the same table
 //! whichever way the caller was identified, so a deployment cannot end up authorised differently
-//! by virtue of running `token` rather than `mtls`. That invariant is held by
+//! by virtue of running `token` instead of `mtls`. That invariant is held by
 //! `authorisation_does_not_depend_on_how_the_caller_was_identified` below and by each service's
 //! own matrix test.
 //!
@@ -25,7 +25,7 @@ use tankovault_config::{IdentityMode, ResolvedInternalAuth};
 
 /// The header a caller presents under [`IdentityMode::Token`].
 ///
-/// Named for the tier rather than the caller: which caller it is, is what the *value* says now.
+/// Named for the tier, not the caller: which caller it is, is what the *value* says.
 pub const INTERNAL_TOKEN_HEADER: HeaderName = HeaderName::from_static("x-internal-token");
 
 /// A credential this service presents when calling a peer.
@@ -37,13 +37,13 @@ pub const INTERNAL_TOKEN_HEADER: HeaderName = HeaderName::from_static("x-interna
 pub struct InternalToken(Arc<SecretString>);
 
 impl InternalToken {
-    /// Wrap a resolved token.
+    /// Wraps a resolved token.
     #[must_use]
     pub fn new(token: impl Into<SecretString>) -> Self {
         Self(Arc::new(token.into()))
     }
 
-    /// Constant-time equality against a presented value.
+    /// Returns whether `presented` equals the token, compared in constant time.
     #[must_use]
     pub fn matches(&self, presented: &str) -> bool {
         // The plain `len()` check is safe pre-filtering, not a leak: lengths are already
@@ -68,17 +68,17 @@ impl ExposeSecret<str> for InternalToken {
 pub struct Caller(Arc<str>);
 
 impl Caller {
-    /// The caller's configured name.
+    /// Returns the caller's configured name.
     #[must_use]
     pub fn name(&self) -> &str {
         &self.0
     }
 
-    /// The stand-in used under [`IdentityMode::Off`], where nobody is identified.
+    /// Returns the stand-in used under [`IdentityMode::Off`], where nobody is identified.
     ///
-    /// Deliberately a name no peer entry can hold — [`ResolvedPeer`](tankovault_config::ResolvedPeer)
-    /// names are trimmed and non-empty — so an audit record can never confuse a real caller with
-    /// an unauthenticated one.
+    /// The angle brackets keep it unlike any name an operator would choose, but nothing reserves
+    /// it: [`ResolvedPeer`](tankovault_config::ResolvedPeer) names are only trimmed and non-empty,
+    /// so a peer configured as `<unidentified>` reads the same in an audit record.
     #[must_use]
     pub fn anonymous() -> Self {
         Self(Arc::from("<unidentified>"))
@@ -94,7 +94,7 @@ impl std::fmt::Display for Caller {
 /// One internal route and the callers permitted to reach it.
 ///
 /// `path` is the axum route pattern (`/internal/providers/{id}/test`), matched through
-/// [`axum::extract::MatchedPath`] rather than by string comparison against the request URI, so a
+/// [`axum::extract::MatchedPath`], not by string comparison against the request URI, so a
 /// path parameter cannot be crafted to look like a different route.
 #[derive(Debug, Clone)]
 pub struct InternalRoute {
@@ -110,13 +110,14 @@ pub struct InternalRoute {
 /// Every internal route a service serves, and who may reach each one.
 ///
 /// Deny by default: a request whose matched route has no entry is refused. That is what makes a
-/// forgotten route fail closed and loudly rather than inheriting whatever the last `.route()`
+/// forgotten route fail closed and loudly instead of inheriting whatever the last `.route()`
 /// call happened to allow.
 #[derive(Debug, Clone, Copy)]
 pub struct RouteTable(pub &'static [InternalRoute]);
 
 impl RouteTable {
-    /// The callers permitted on `method path`, or `None` when the route is not in the table.
+    /// Returns the callers permitted on `method path`, or `None` when the route is not in the
+    /// table.
     #[must_use]
     pub fn callers_for(self, method: &Method, path: &str) -> Option<&'static [&'static str]> {
         self.0
@@ -125,7 +126,7 @@ impl RouteTable {
             .map(|r| r.callers)
     }
 
-    /// Whether `caller` may reach `method path`.
+    /// Returns whether `caller` may reach `method path`.
     #[must_use]
     pub fn allows(self, caller: &str, method: &Method, path: &str) -> bool {
         self.callers_for(method, path)
@@ -150,7 +151,7 @@ struct Peer {
 }
 
 impl InternalAuth {
-    /// Build from a validated configuration plus this service's route table.
+    /// Builds from a validated configuration plus this service's route table.
     #[must_use]
     pub fn new(resolved: &ResolvedInternalAuth, routes: RouteTable) -> Self {
         let peers = resolved
@@ -170,13 +171,13 @@ impl InternalAuth {
         }
     }
 
-    /// The active identity mode.
+    /// Returns the active identity mode.
     #[must_use]
     pub fn mode(&self) -> IdentityMode {
         self.mode
     }
 
-    /// Identify the caller behind `req`, or `None` if no credential matched.
+    /// Identifies the caller behind `req`, or `None` if no credential matched.
     ///
     /// Under [`IdentityMode::Token`] every peer is compared even after a match, so the work done
     /// does not depend on which peer matched or on how many entries precede it.
@@ -199,7 +200,7 @@ impl InternalAuth {
             IdentityMode::Mtls => {
                 // Absent means the connection was not mutually authenticated. The verifier
                 // requires a client certificate, so this is unreachable through the mTLS
-                // listener — and returning `None` rather than trusting the request is what
+                // listener, and returning `None` instead of trusting the request is what
                 // keeps it unreachable if the service is ever mounted on a plain one.
                 let sans = req.extensions().get::<crate::tls::PeerSans>()?;
                 self.peers
@@ -211,14 +212,14 @@ impl InternalAuth {
     }
 }
 
-/// Identify the caller, authorise the route, and record who it was.
+/// Identifies the caller, authorises the route, and records who it was.
 ///
 /// Mount with `axum::middleware::from_fn_with_state(auth, identify)` inside the service's
 /// [`crate::http::HttpStack`], so refusals still carry the security headers and request id.
 ///
 /// A refusal is a bare status with no body: the caller is a service with static configuration,
 /// not a human debugging. `401` means "I do not know who you are", `403` means "I know, and no".
-/// Only the matched route pattern is logged, never the URI — `/v1/me/stream` carries a token in
+/// Only the matched route pattern is logged, never the URI: `/v1/me/stream` carries a token in
 /// its query string, and a path parameter can carry a user id.
 pub async fn identify(State(auth): State<InternalAuth>, mut req: Request, next: Next) -> Response {
     let Some(caller) = auth.identify(&req) else {
@@ -276,7 +277,7 @@ const KNOWN_PLACEHOLDERS: [(&str, &str); 1] = [(
     "development internal-tier token",
 )];
 
-/// The name of the published placeholder `value` is, if it is one.
+/// Returns the name of the published placeholder `value` is, if it is one.
 fn known_placeholder(value: &str) -> Option<&'static str> {
     let trimmed = value.trim();
     KNOWN_PLACEHOLDERS
@@ -285,15 +286,15 @@ fn known_placeholder(value: &str) -> Option<&'static str> {
         .map(|(_, name)| *name)
 }
 
-/// Validate this service's internal-auth configuration.
+/// Validates this service's internal-auth configuration.
 ///
 /// A **published placeholder is refused in every profile**, not only production: a check a
 /// deployment can skip by forgetting one environment variable is not a check. Every credential
-/// is checked, inbound and outbound — a placeholder is no safer as a peer's token than as this
+/// is checked, inbound and outbound: a placeholder is no safer as a peer's token than as this
 /// service's own.
 ///
 /// # Errors
-/// [`tankovault_config::ConfigError::Invalid`] for anything
+/// Returns [`tankovault_config::ConfigError::Invalid`] for anything
 /// [`tankovault_config::InternalAuthConfig::resolve`] refuses, or any credential that is a
 /// published placeholder.
 pub fn resolve(
@@ -334,9 +335,9 @@ pub fn resolve(
     }
 
     if let Some(paths) = &resolved.tls {
-        // Read now rather than at first connection. A missing mount is a deployment error, and
-        // discovering it when the listener binds — before anything can be routed to this
-        // replica — is the difference between a crash-looping pod and a running one that
+        // Read now, not at first connection. A missing mount is a deployment error, and
+        // discovering it when the listener binds, before anything can be routed to this
+        // replica, is the difference between a crash-looping pod and a running one that
         // refuses every request.
         crate::tls::client_material(paths).map_err(|e| {
             tankovault_config::ConfigError::Invalid(format!(
@@ -348,19 +349,19 @@ pub fn resolve(
     Ok(resolved)
 }
 
-/// Refuse an upstream URL that contradicts the active identity mode.
+/// Refuses an upstream URL that contradicts the active identity mode.
 ///
 /// The failure this exists for is silent: under `mtls`, an upstream still spelled `http://`
 /// connects, works, and carries every internal call in plaintext with no client certificate
-/// offered — a deployment that believes it has mutual TLS and does not. Nothing else notices,
+/// offered: a deployment that believes it has mutual TLS and does not. Nothing else notices,
 /// because the *server* side is configured correctly and simply never sees these requests.
 ///
 /// The scheme stays whatever the operator wrote; silently upgrading it would hide the same
 /// misconfiguration one layer down.
 ///
 /// # Errors
-/// [`tankovault_config::ConfigError::Invalid`] when `mode` is [`IdentityMode::Mtls`] and `url`
-/// is not `https://`.
+/// Returns [`tankovault_config::ConfigError::Invalid`] when `mode` is [`IdentityMode::Mtls`] and
+/// `url` is not `https://`.
 pub fn check_upstream_scheme(
     mode: IdentityMode,
     name: &str,
@@ -427,8 +428,10 @@ mod tests {
             .expect("a header-only request builds")
     }
 
-    /// `deploy/docker-compose.yml` published a default token that production only refused
-    /// when *missing*, not when equal to this one — refused in every profile now.
+    /// The published placeholder token is refused in every profile.
+    ///
+    /// The bug: `deploy/docker-compose.yml` published a default token that production refused
+    /// only when missing, not when equal to this one.
     #[test]
     fn the_published_placeholder_is_refused_in_every_profile() {
         for (placeholder, _) in KNOWN_PLACEHOLDERS {
@@ -485,7 +488,7 @@ mod tests {
         assert!(!token.matches(""));
     }
 
-    /// Asserted as "the secret does not appear" rather than an exact rendering, so a
+    /// Asserted as "the secret does not appear", not as an exact rendering, so a
     /// cosmetic change in `secrecy`'s redaction format doesn't fail a test that shouldn't care.
     #[test]
     fn debug_is_redacted() {
@@ -495,9 +498,8 @@ mod tests {
         assert!(rendered.contains("REDACTED"), "{rendered}");
     }
 
-    /// The whole point of per-caller credentials: a token identifies *which* peer, not merely
-    /// that some peer presented something. Before this, one shared secret meant `challenge-solver`
-    /// and `api` were indistinguishable to every callee.
+    /// A token identifies which peer presented it, not merely that some peer presented
+    /// something; that is the whole point of per-caller credentials.
     #[test]
     fn a_token_names_the_caller_that_presented_it() {
         let auth = auth(
@@ -522,7 +524,7 @@ mod tests {
         );
     }
 
-    /// Deny by default. A route nobody classified must be refused rather than inheriting the
+    /// Deny by default: a route nobody classified must be refused instead of inheriting the
     /// permissions of whatever else the service mounts.
     #[test]
     fn an_unclassified_route_is_refused() {
@@ -555,7 +557,7 @@ mod tests {
     }
 
     /// mTLS names the caller from the verified SAN, and a request that arrives without one was
-    /// not verified — it must not fall through to "some peer".
+    /// not verified; it must not fall through to "some peer".
     #[test]
     fn mtls_identifies_by_san_and_refuses_an_unverified_request() {
         let auth = auth(
@@ -594,7 +596,7 @@ mod tests {
         assert_eq!(auth.identify(&wrong), None, "an unlisted SAN is not a peer");
     }
 
-    /// The invariant the whole design rests on: authorisation is mode-independent. If these
+    /// Authorisation is mode-independent, the invariant the whole design rests on. If these
     /// diverge, "works outside Kubernetes" stops being true without anything failing.
     #[test]
     fn authorisation_does_not_depend_on_how_the_caller_was_identified() {
@@ -614,7 +616,7 @@ mod tests {
     }
 
     /// `off` is for local development, so it identifies nobody but must still let every request
-    /// through — including routes that are in no table, which is how a service under test keeps
+    /// through, including routes that are in no table, which is how a service under test keeps
     /// working before its table is written.
     #[test]
     fn off_identifies_nobody_and_authorises_everything() {
@@ -654,10 +656,12 @@ mod tests {
         );
     }
 
-    /// The silent failure this guard exists for: under `mtls`, an `http://` upstream connects
-    /// and works, carrying every internal call in plaintext with no client certificate offered.
-    /// The peer's own configuration still says it requires both, so nothing on either side
-    /// reports a problem — the requests simply never arrive at the mTLS listener.
+    /// A plaintext upstream is refused under `mtls`.
+    ///
+    /// Otherwise an `http://` upstream connects and works, carrying every internal call in
+    /// plaintext with no client certificate offered. The peer's own configuration still says it
+    /// requires both, so nothing on either side reports a problem: the requests simply never
+    /// arrive at the mTLS listener.
     #[test]
     fn a_plaintext_upstream_is_refused_under_mtls() {
         assert!(check_upstream_scheme(IdentityMode::Mtls, "sync", "http://sync:8083").is_err());

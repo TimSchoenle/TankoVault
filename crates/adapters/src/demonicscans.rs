@@ -1,6 +1,8 @@
-//! Custom adapter for demonicscans.org's bespoke PHP layout, which
-//! [`GenericConfigAdapter`](crate::GenericConfigAdapter) selectors can't express (SEO-prefixed
-//! synopsis, label/value metadata rows). Selectors are pinned by the `demonicscans` fixtures.
+//! Owns the custom adapter for demonicscans.org's bespoke PHP layout, which
+//! [`GenericConfigAdapter`](crate::GenericConfigAdapter) selectors cannot express (SEO-prefixed
+//! synopsis, label/value metadata rows).
+//!
+//! Selectors are pinned by the `demonicscans` fixtures.
 
 use crate::error::AdapterError;
 use crate::html::{
@@ -19,7 +21,7 @@ use tankovault_domain::{ContentType, SeriesStatus};
 pub struct DemonicScansAdapter;
 
 impl DemonicScansAdapter {
-    /// Construct the adapter. It is stateless — all context arrives via [`Ctx`].
+    /// Creates the adapter; it is stateless, and all context arrives via [`Ctx`].
     #[must_use]
     pub fn new() -> Self {
         Self
@@ -32,8 +34,11 @@ impl Default for DemonicScansAdapter {
     }
 }
 
-/// Read a value from the `#manga-info-stats` label/value rows, e.g. `stat_value(root,
-/// "Status")` over `<div class="flex flex-row"><li>Status</li><li>Ongoing</li></div>`.
+/// Reads a value from the `#manga-info-stats` label/value rows.
+///
+/// For example `stat_value(root, "Status")` over
+/// `<div class="flex flex-row"><li>Status</li><li>Ongoing</li></div>`.
+///
 /// Returns `None` when the label is absent or its value cell is empty (`&nbsp;`).
 fn stat_value(root: ElementRef<'_>, label: &str) -> Option<String> {
     let row_sel = parse_selector("#manga-info-stats div.flex-row").ok()?;
@@ -49,7 +54,7 @@ fn stat_value(root: ElementRef<'_>, label: &str) -> Option<String> {
     None
 }
 
-/// Extract the synopsis from `div.white-font`, dropping the SEO boilerplate that precedes
+/// Extracts the synopsis from `div.white-font`, dropping the SEO boilerplate that precedes
 /// the `"The Summary is"` marker when present.
 fn clean_description(root: ElementRef<'_>) -> Option<String> {
     let sel = parse_selector("div.white-font").ok()?;
@@ -61,13 +66,13 @@ fn clean_description(root: ElementRef<'_>) -> Option<String> {
     (!body.is_empty()).then(|| body.to_owned())
 }
 
-/// Whether a feed link points at a comic rather than one of the site's text novels.
+/// Returns whether a feed link points at a comic, not one of the site's text novels.
 ///
 /// The catalogue (`/advanced.php`) yields `/manga/` and nothing else, but the home page's
-/// updates strip also lists prose at `/novel/<slug>` — pages the site does not actually serve.
-/// Ingested, each became a series whose every rescan spent its whole retry budget on a 404;
-/// four of them accounted for over a thousand recorded failures. Matching the catalogue's own
-/// prefix keeps the two entry points agreeing on what this provider carries.
+/// updates strip also lists prose at `/novel/<slug>`, pages the site does not actually serve.
+/// Ingested, each becomes a series whose every rescan spends its whole retry budget on a 404.
+/// Matching the catalogue's own prefix keeps the two entry points agreeing on what this provider
+/// carries.
 fn is_comic(path: &str) -> bool {
     path.starts_with("/manga/")
 }

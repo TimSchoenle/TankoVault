@@ -1,4 +1,5 @@
-//! Typed view of `providers.config` (JSONB) for the config-driven adapters (`docs/ARCHITECTURE.md` §7).
+//! Owns the typed view of `providers.config` (JSONB) for the config-driven adapters
+//! (`docs/ARCHITECTURE.md` §7).
 
 use crate::error::AdapterError;
 use serde::Deserialize;
@@ -31,7 +32,7 @@ pub struct CatalogCfg {
     /// Optional selector whose presence indicates a next page.
     #[serde(default)]
     pub next: Option<String>,
-    /// Rows per page, for sites that paginate by offset rather than page number. Only read to
+    /// Rows per page, for sites that paginate by offset instead of page number. Only read to
     /// expand `{offset}`.
     #[serde(default)]
     pub page_size: Option<u32>,
@@ -43,8 +44,8 @@ pub struct CatalogCfg {
     /// `"sitemap"` reads `<loc>` URLs from an XML sitemap shard instead of selecting items from
     /// a listing page; anything else (or absent) is the ordinary HTML listing.
     ///
-    /// Sites whose own listing cannot enumerate the catalogue — clamped paginators, or search
-    /// as the only browse surface — advertise a sitemap in `robots.txt` that can. `item` then
+    /// Sites whose own listing cannot enumerate the catalogue (clamped paginators, or search
+    /// as the only browse surface) advertise a sitemap in `robots.txt` that can. `item` then
     /// names the substring a `<loc>` must contain to be a series, and `title`/`link` are unused
     /// because a sitemap carries neither: the title is derived from the slug, and the
     /// per-series enrichment task replaces it with the real one.
@@ -69,7 +70,7 @@ pub struct LatestCfg {
 /// How a multi-valued text field is located on a page.
 ///
 /// Most fields are a plain CSS selector; Madara's summary block is not, because Alternative,
-/// Author(s), Artist(s) and Genre(s) render as identical rows differing only in the label text —
+/// Author(s), Artist(s) and Genre(s) render as identical rows differing only in the label text;
 /// matching by label alone silently mislabels those rows into `series_titles`.
 ///
 /// `untagged`: a JSON string is [`Self::Selector`], an object is [`Self::LabelledRow`]; a
@@ -96,14 +97,14 @@ pub struct LabelledRowCfg {
     #[serde(default)]
     pub label: Option<String>,
     /// The label text to match. Compared case-insensitively, ignoring surrounding whitespace
-    /// and a trailing `:` — themes are inconsistent about both.
+    /// and a trailing `:`, since themes are inconsistent about both.
     #[serde(rename = "match")]
     pub match_label: String,
     /// Selector (relative to the row) for the value cell; text is split on `,`/`;` into values
     /// (a literal comma in a value also splits, matching `DemonicScansAdapter`).
     ///
     /// Omitted where label and value share one text node (`<li>Author(s) : Park Hae-nae</li>`).
-    /// The row's own text is then used with the matched label, and any `:` after it, stripped —
+    /// The row's own text is then used with the matched label, and any `:` after it, stripped;
     /// without that the label would be stored as part of the first value.
     #[serde(default)]
     pub value: Option<String>,
@@ -147,10 +148,10 @@ pub struct ChaptersCfg {
     /// Optional selector (relative to row) for the element carrying the chapter *label*, when
     /// the anchor's own text is not it.
     ///
-    /// Needed only for one markup shape, and it corrupts data silently rather than failing:
+    /// Needed only for one markup shape, and it corrupts data silently instead of failing:
     /// a row that nests its update time **inside** the chapter anchor renders
     /// `<a><strong>Chapter 1</strong><time>7 days ago</time></a>`, whose concatenated text is
-    /// `Chapter 17 days ago` — so the number parses as 17, every row gets a plausible wrong
+    /// `Chapter 17 days ago`, so the number parses as 17, every row gets a plausible wrong
     /// number, and reading order is scrambled. Absent, the anchor's full text is used, which is
     /// right everywhere the date sits outside the link.
     #[serde(default)]
@@ -162,28 +163,28 @@ pub struct ChaptersCfg {
     /// one separately from the "Chapter N" label.
     #[serde(default)]
     pub title: Option<String>,
-    /// Optional path template for a chapter list served from a URL of its own rather than the
+    /// Optional path template for a chapter list served from a URL of its own instead of the
     /// series page. `{path}` expands to the series path and `{slug}` to its last non-empty
     /// segment. Absent means "the chapter rows are on the series page".
     #[serde(default)]
     pub path: Option<String>,
     /// Optional selector (relative to row) whose **presence** marks the chapter as early
-    /// access. Absence of a match means free — so this must select something that appears only
+    /// access. Absence of a match means free, so this must select something that appears only
     /// on locked rows, never a container that is always rendered and merely empty.
     #[serde(default)]
     pub locked: Option<String>,
     /// Optional selector (relative to row) for when a locked chapter unlocks. Read only when
     /// `locked` matched; an unparseable or missing value leaves the unlock time unknown, which
-    /// keeps the chapter locked rather than silently freeing it.
+    /// keeps the chapter locked instead of silently freeing it.
     #[serde(default)]
     pub unlock: Option<String>,
 }
 
 impl AdapterConfig {
-    /// Parse from a `providers.config` JSON value.
+    /// Parses from a `providers.config` JSON value.
     ///
     /// # Errors
-    /// [`AdapterError::Config`] if the shape does not match.
+    /// Returns [`AdapterError::Config`] if the shape does not match.
     pub fn from_value(value: &serde_json::Value) -> Result<Self, AdapterError> {
         serde_json::from_value(value.clone()).map_err(|e| AdapterError::Config(e.to_string()))
     }

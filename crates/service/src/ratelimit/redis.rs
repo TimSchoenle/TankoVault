@@ -1,4 +1,4 @@
-//! Redis-backed rate-limit counters, shared across replicas.
+//! Owns the Redis-backed rate-limit counters, shared across replicas.
 //!
 //! The in-memory store multiplies the configured limit by the replica count. This one
 //! holds a single token bucket per (class, client) in Redis, so the limit means what it
@@ -16,8 +16,8 @@ use tankovault_config::{RateLimitConfig, RateLimitPolicy};
 /// Token-bucket check-and-consume, evaluated atomically inside Redis.
 ///
 /// Atomic: separate round trips would let concurrent requests each observe the
-/// pre-decrement count and all be allowed. Time is passed in as an argument rather than
-/// read via `redis.call('TIME')`, keeping the script deterministic and safe to replicate.
+/// pre-decrement count and all be allowed. Time is passed in as an argument, not read via
+/// `redis.call('TIME')`, keeping the script deterministic and safe to replicate.
 ///
 /// Returns `{allowed, remaining, retry_after_ms}`.
 const TOKEN_BUCKET: &str = r"
@@ -61,12 +61,12 @@ pub struct RedisStore {
     client: Client,
     policies: [RateLimitPolicy; RouteClass::COUNT],
     /// Per-replica buckets used while Redis is unreachable, so an outage weakens the limit
-    /// (multiplied by the replica count) instead of removing it — the auth class included.
+    /// (multiplied by the replica count) instead of removing it, the auth class included.
     fallback: MemoryStore,
 }
 
 impl RedisStore {
-    /// Use `client` for counters, with the per-class policies from `cfg`.
+    /// Creates a store that uses `client` for counters, with the per-class policies from `cfg`.
     ///
     /// The client must already be initialised (`Client::init`); this store does not manage
     /// its lifecycle, since the same connection is typically shared with other Redis users
@@ -80,8 +80,8 @@ impl RedisStore {
         }
     }
 
-    /// Namespaced key, so rate-limit state cannot collide with the scheduler's leader
-    /// lease or any other user of the same Redis.
+    /// Returns the namespaced key, so rate-limit state cannot collide with the scheduler's
+    /// leader lease or any other user of the same Redis.
     fn redis_key(class: RouteClass, key: &str) -> String {
         format!("tankovault:ratelimit:{}:{key}", class.as_str())
     }
@@ -156,7 +156,7 @@ impl RateLimitStore for RedisStore {
     }
 }
 
-/// Milliseconds since the Unix epoch.
+/// Returns milliseconds since the Unix epoch.
 ///
 /// A clock before the epoch would mean a catastrophically misconfigured host; treating it
 /// as `0` keeps the script's arithmetic well-defined instead of panicking on the edge.

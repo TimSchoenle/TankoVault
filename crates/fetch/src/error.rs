@@ -1,9 +1,10 @@
-//! Fetch stack error type.
+//! Defines [`FetchError`].
 
 use crate::ssrf::SsrfError;
 use tankovault_solver::ChallengeKind;
 
-/// A fetch failure. `is_transient` decides whether [`crate::RetryingFetcher`] retries.
+/// A fetch failure; [`Self::is_transient`] decides whether [`crate::RetryingFetcher`]
+/// retries.
 #[derive(Debug, thiserror::Error)]
 pub enum FetchError {
     /// Blocked by the SSRF guard.
@@ -18,12 +19,12 @@ pub enum FetchError {
     /// The solver ran and the challenge held.
     #[error("solver error: {0}")]
     Solver(String),
-    /// The solver tier could not serve the solve at all — the service is down, its browser pool
-    /// is saturated, or it is shedding load.
+    /// The solver tier could not serve the solve: the service is down, its browser pool is
+    /// saturated, or it is shedding load.
     ///
-    /// Separate from [`Self::Solver`] because the two say opposite things about the provider.
-    /// This one says nothing about it: the request never reached a browser. Reported as one
-    /// failure, a solver outage read as every gated provider having turned hostile at once.
+    /// Separate from [`Self::Solver`] because this says nothing about the provider: the request
+    /// never reached a browser. Merged, a solver outage would read as every gated provider
+    /// turning hostile at once.
     #[error("solver unavailable: {0}")]
     SolverUnavailable(String),
     /// The request timed out.
@@ -32,7 +33,8 @@ pub enum FetchError {
     /// The redirect cap was exceeded.
     #[error("too many redirects")]
     TooManyRedirects,
-    /// The response body exceeded the size cap (guards memory + the no-content invariant).
+    /// The response body exceeded the size cap, which guards memory and the no-content
+    /// invariant.
     #[error("response body exceeded the size cap")]
     BodyTooLarge,
     /// A transport-level failure.
@@ -44,13 +46,12 @@ pub enum FetchError {
 }
 
 impl FetchError {
-    /// Whether a retry could plausibly succeed (timeouts, transport blips, 5xx).
+    /// Returns whether a retry could succeed: timeouts, transport blips, 5xx.
     ///
-    /// Scoped to what [`crate::RetryingFetcher`] can act on, which is the innermost layer — below
-    /// the solver. [`Self::SolverUnavailable`] is therefore deliberately absent even though it is
-    /// transient in the ordinary sense: it is raised *above* the retrying layer, and repeating it
-    /// is [`crate::RetryingSolver`]'s job in-stack and `AdapterError::is_transient`'s across task
-    /// deliveries. Listing it here would read as a policy nothing implements.
+    /// Scoped to what [`crate::RetryingFetcher`] acts on, the innermost layer below the solver.
+    /// [`Self::SolverUnavailable`] is absent although transient: it is raised above that layer,
+    /// and [`crate::RetryingSolver`] retries it in the stack, `AdapterError::is_transient` across
+    /// task deliveries.
     #[must_use]
     pub fn is_transient(&self) -> bool {
         matches!(

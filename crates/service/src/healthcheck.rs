@@ -1,4 +1,4 @@
-//! Container healthcheck, as an argv branch in the service binary itself.
+//! Owns the container healthcheck, an argv branch in the service binary itself.
 //!
 //! Backend services ship on `scratch` with no shell, so the binary probes itself instead of
 //! a `CMD-SHELL` healthcheck: a plain TCP connect to the ops listener, since "the listener
@@ -10,11 +10,13 @@ use std::time::Duration;
 /// The argv flag a service checks for before doing anything else.
 pub const HEALTHCHECK_FLAG: &str = "--healthcheck";
 
-/// How long the probe waits for the connection. Well under Docker's own `timeout`, so the
-/// process exits with a verdict rather than being killed without one.
+/// How long the probe waits for the connection.
+///
+/// Well under Docker's own `timeout`, so the process exits with a verdict before it can be killed
+/// without one.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// Whether this process was invoked as a healthcheck rather than as the service.
+/// Returns whether this process was invoked as a healthcheck, not as the service.
 ///
 /// Call at the very top of `main`, before config loading or telemetry: the probe must be
 /// cheap and independent of whether the service's own configuration still parses.
@@ -23,15 +25,15 @@ pub fn requested() -> bool {
     std::env::args().any(|arg| arg == HEALTHCHECK_FLAG)
 }
 
-/// Probe `addr` and exit the process: `0` if the listener accepted, `1` otherwise.
+/// Probes `addr` and exits the process: `0` if the listener accepted, `1` otherwise.
 ///
-/// Never returns — a healthcheck's only output is its exit status.
+/// Never returns: a healthcheck's only output is its exit status.
 pub fn run_and_exit(addr: &str) -> ! {
     let code = i32::from(!probe(addr));
     std::process::exit(code);
 }
 
-/// Connect to `addr`, returning whether the listener accepted.
+/// Connects to `addr` and returns whether the listener accepted.
 fn probe(addr: &str) -> bool {
     // `0.0.0.0` is a bind address, not a destination: connecting to it is only meaningful by
     // accident. Rewrite to loopback, which is what "probe myself" means.
@@ -77,8 +79,10 @@ mod tests {
         assert!(!probe(&addr));
     }
 
-    /// Services bind `0.0.0.0`, which is not a destination. Probing it verbatim is either a
-    /// platform-specific accident or a failure; rewriting to loopback is the intent.
+    /// An unspecified bind address is probed on loopback.
+    ///
+    /// Services bind `0.0.0.0`, which is not a destination; probing it verbatim is either a
+    /// platform-specific accident or a failure.
     #[test]
     fn an_unspecified_bind_address_is_probed_on_loopback() {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind an ephemeral port");

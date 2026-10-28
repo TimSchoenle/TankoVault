@@ -1,25 +1,21 @@
 //! Properties of the in-band challenge classifier.
 //!
-//! The classifier runs on **every** response the crawler receives, so its input is entirely
-//! provider- (or solver-) controlled and includes bodies that are not markup at all. Two
-//! things matter and neither is checked by an example test:
+//! The classifier runs on every response, so its input is provider- or solver-controlled and
+//! includes bodies that are not markup at all. Two properties matter that no example test
+//! checks:
 //!
-//! 1. It cannot panic. `is_rate_limit_page` walks backwards with `is_char_boundary` to cut a
-//!    prefix by *byte* count — correct today, and exactly the shape of the defect this audit
-//!    found in `parse_chapter_number`, where a byte offset from one string was applied to
-//!    another. A property over arbitrary Unicode is what keeps it correct.
-//! 2. The narrow body-only classifier must never accept what the broad envelope-aware one
-//!    rejects. `detect_challenge_body` is used where there is no status or header to
-//!    corroborate the markers; if it could fire on a body that `detect_challenge` calls clean,
-//!    the fetch stack would report "still challenged" for a page the same code considers
-//!    ordinary, and the two would disagree about the same bytes.
+//! 1. It cannot panic. `is_rate_limit_page` cuts a prefix by byte count and walks back with
+//!    `is_char_boundary`; a property over arbitrary Unicode keeps that correct.
+//! 2. The narrow body-only classifier never accepts what the envelope-aware one rejects.
+//!    Otherwise the fetch stack would report "still challenged" for a page the same code
+//!    considers ordinary.
 
 use proptest::prelude::*;
 use tankovault_solver::{
     ResponseView, detect_challenge, detect_challenge_body, is_rate_limit_page,
 };
 
-/// The minimal response the classifier needs, under our control.
+/// A minimal response the test controls.
 struct Resp {
     status: u16,
     server: Option<String>,
@@ -42,18 +38,17 @@ impl ResponseView for Resp {
     }
 }
 
-/// Bodies built from the markers the classifier looks for, interleaved with arbitrary text.
+/// Generates bodies from the markers the classifier looks for, mixed with arbitrary text.
 ///
-/// Uniform random strings would essentially never contain `cf-turnstile` or `<title>Too Many
-/// Requests`, so a naive `".*"` strategy would only ever exercise the negative path. This
-/// generates the fragments that actually decide the outcome.
+/// Uniform random strings almost never contain `cf-turnstile` or `<title>Too Many Requests`, so
+/// a plain `".*"` strategy would only exercise the negative path.
 fn marker_body() -> impl Strategy<Value = String> {
     let fragment = prop::sample::select(vec![
         "cf-turnstile",
         "challenges.cloudflare.com/turnstile",
         "/cdn-cgi/challenge-platform/h/b/orchestrate/chl_page/v1?ray=x",
-        // The JS Detections beacon, which rides on ordinary content pages: it shares the
-        // interstitial's path prefix and must not decide the outcome on its own.
+        // The JS Detections beacon rides on ordinary pages: it shares the interstitial's path
+        // prefix and must not decide the outcome on its own.
         "/cdn-cgi/challenge-platform/scripts/jsd/main.js",
         "cf_chl_opt",
         "<title>Just a moment",
@@ -79,9 +74,10 @@ proptest! {
         let _ = is_rate_limit_page(&body);
     }
 
-    /// The same, with the cut deliberately landing inside a multi-byte character: a string of
-    /// three-byte characters is long enough to be truncated and cannot be cut at 4096 without
-    /// the backwards walk doing its job.
+    /// The title-scan cut never splits a character.
+    ///
+    /// A run of three-byte characters long enough to be truncated cannot be cut at 4096 without
+    /// the backwards walk.
     #[test]
     fn the_title_scan_cut_never_splits_a_character(repeats in 1350usize..1400usize) {
         let body = "€".repeat(repeats);
@@ -98,12 +94,11 @@ proptest! {
         let _ = detect_challenge(&Resp { status, server, body });
     }
 
-    /// The differential invariant: whatever the narrow classifier accepts, the broad one
-    /// accepts too, given an envelope that lets it look at the body at all.
+    /// Whatever the narrow classifier accepts, the broad one accepts too, given an envelope that
+    /// lets it read the body.
     ///
-    /// If this ever fails, the fetch stack and the adapter layer disagree about the same
-    /// bytes — one reporting a challenge the other calls content — and the symptom downstream
-    /// is an inscrutable parse failure rather than "still challenged".
+    /// If this fails, the fetch stack and the adapter layer disagree about the same bytes, and
+    /// the symptom is an inscrutable parse failure instead of "still challenged".
     #[test]
     fn whatever_the_body_classifier_accepts_the_envelope_classifier_also_accepts(
         body in marker_body(),
@@ -120,12 +115,11 @@ proptest! {
         );
     }
 
-    /// A rendered rate-limit notice is the origin answering, not an interstitial in front of
-    /// it, so it must never buy a solve. Two of the three challenge statuses are also the
-    /// rate-limit statuses, which is exactly how this regressed before: every 429 from a
-    /// Cloudflare-fronted origin fell through to the managed-challenge fallback, the
-    /// provider's `Retry-After` was replaced by a solver-invented 200, and the backoff layer
-    /// never fired.
+    /// A rendered rate-limit notice never buys a solve.
+    ///
+    /// The bug: two of the three challenge statuses are also rate-limit statuses, so a 429 from a
+    /// Cloudflare-fronted origin reaches the managed-challenge fallback. The solver's invented
+    /// 200 then replaces the provider's `Retry-After`, and backoff never fires.
     #[test]
     fn a_rate_limit_notice_is_never_mistaken_for_a_challenge(
         noise in "[a-z <>/]{0,200}",
@@ -156,10 +150,11 @@ proptest! {
         }
     }
 
-    /// An ordinary 200 from a host that is not behind Cloudflare short-circuits before the
-    /// body is read at all. That is the happy path for every page the crawler fetches, and a
-    /// change that started scanning bodies there would put a substring search on the hot path
-    /// of the whole crawl.
+    /// An ordinary 200 from a host not behind Cloudflare is classified without reading the
+    /// body.
+    ///
+    /// That is the happy path of the whole crawl, and scanning bodies there would put a substring
+    /// search on it.
     #[test]
     fn an_ordinary_response_is_classified_without_consulting_its_body(body in ".*") {
         let resp = Resp { status: 200, server: Some("nginx".to_owned()), body };

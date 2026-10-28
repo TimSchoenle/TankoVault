@@ -1,13 +1,12 @@
-//! Per-provider rate limiting: a `governor` cell rate for requests/second, a semaphore for the
-//! concurrency ceiling, a crawl-delay floor, and a penalty the limiter imposes on **itself**
-//! when the provider signals its budget is too high.
+//! Owns per-provider rate limiting: a `governor` cell rate for requests per second, a semaphore
+//! for the concurrency ceiling, a crawl-delay floor, and a penalty the limiter imposes on
+//! **itself** when the provider signals its budget is too high.
 //!
-//! This is a per-provider limiter only if the whole stack is built once per provider and
-//! shared: a fresh stack per task turns `rps`/`concurrency` into a per-*task* budget and
-//! discards the self-imposed penalty each time. `Engine::fetcher_for` caches per provider id;
-//! anything else constructing a fetch stack must do the same. The budget is per worker
-//! *process*; an aggregate cross-replica limiter is a follow-up, so N replicas crawl a
-//! provider at N times the configured rate.
+//! It limits per provider only if the stack is built once per provider and shared: a fresh
+//! stack per task makes `rps` and `concurrency` a per-task budget and discards the penalty each
+//! time. `Engine::fetcher_for` caches per provider id, and anything else building a fetch stack
+//! must too. The budget is per worker process, so N replicas crawl a provider at N times the
+//! configured rate.
 
 use crate::error::FetchError;
 use crate::fetcher::Fetcher;
@@ -19,17 +18,16 @@ use std::time::{Duration, Instant};
 use tankovault_domain::{MAX_RPS, MIN_RPS, Pacer};
 use tokio::sync::Semaphore;
 
-/// Statuses that mean the configured budget is above what the provider will serve.
+/// The statuses that mean the configured budget is above what the provider will serve.
 const THROTTLE_STATUSES: [u16; 2] = [429, 503];
 
-/// How the limiter reacts to a provider answering "too many requests".
+/// Sets how the limiter reacts to a provider answering "too many requests".
 ///
-/// Re-exported from `tankovault_domain::pacing`, the single implementation of outbound pacing
-/// in this workspace — kept there so `services/sync`, which cannot pull in the wreq/BoringSSL
-/// stack, can share the same policy.
+/// Re-exported from `tankovault_domain::pacing`, the one implementation of outbound pacing, which
+/// lives there so `services/sync` can share it without the `wreq` and `BoringSSL` stack.
 pub use tankovault_domain::PacingPolicy as ThrottlePolicy;
 
-/// Wraps an inner fetcher with rate + concurrency + crawl-delay controls.
+/// Wraps an inner fetcher with rate, concurrency and crawl-delay controls.
 pub struct RateLimitedFetcher<F> {
     inner: F,
     limiter: Arc<DefaultDirectRateLimiter>,
@@ -49,18 +47,16 @@ fn period_for(rps: f64) -> Duration {
 }
 
 impl<F> RateLimitedFetcher<F> {
-    /// Build a limiter allowing `rps` requests/second and at most `concurrency` in flight,
-    /// with a `crawl_delay_ms` floor between requests, adapting to `throttle` when the
-    /// provider pushes back. Inputs are assumed pre-clamped to policy ceilings by
-    /// [`tankovault_domain::Politeness::clamped`].
+    /// Builds a limiter allowing `rps` requests per second, at most `concurrency` in flight and
+    /// a `crawl_delay_ms` floor between requests, adapting to `throttle` on push-back.
+    ///
+    /// Inputs are expected pre-clamped by [`tankovault_domain::Politeness::clamped`].
     ///
     /// # Panics
-    /// Never, for any `f64` — including `0.0`, a negative, a `NaN` and infinity. The clamp below
-    /// is what makes that true, and it deliberately repeats
-    /// [`tankovault_domain::Politeness::clamped`] rather than trusting it: the consequence of an
-    /// out-of-range rate here is not a wrong crawl rate but a **panic**, inside
-    /// `Duration::from_secs_f64` below the floor or at the zero-period `expect` above the
-    /// ceiling, and a guard one crate away is the wrong distance from a panic.
+    /// Never, for any `f64`, including `0.0`, a negative, `NaN` and infinity. `period_for`
+    /// repeats the clamp in [`tankovault_domain::Politeness::clamped`] on purpose: out of range
+    /// here is a **panic** in `Duration::from_secs_f64` or the zero-period `expect`, not a
+    /// wrong crawl rate, and a guard one crate away is too far from it.
     #[must_use]
     pub fn new(
         inner: F,
@@ -75,8 +71,8 @@ impl<F> RateLimitedFetcher<F> {
             limiter: Arc::new(RateLimiter::direct(quota)),
             concurrency: Arc::new(Semaphore::new(concurrency.max(1) as usize)),
             crawl_delay: Duration::from_millis(crawl_delay_ms),
-            // Zero minimum interval: this stack's own floor is the provider's configured crawl
-            // delay, applied below, so the pacer contributes only the adaptive penalty.
+            // A zero minimum interval: the floor is the provider's crawl delay, applied below, so
+            // the pacer contributes only the adaptive penalty.
             throttle: Arc::new(Pacer::new(Duration::ZERO, throttle)),
         }
     }
@@ -85,13 +81,11 @@ impl<F> RateLimitedFetcher<F> {
 #[async_trait]
 impl<F: Fetcher> Fetcher for RateLimitedFetcher<F> {
     async fn get(&self, req: FetchRequest) -> Result<FetchResponse, FetchError> {
-        // Concurrency gate first, then the token rate, then the spacing floor — whichever of
-        // the crawl delay and the current penalty is wider.
+        // The concurrency gate first, then the token rate, then the spacing floor: the wider of
+        // the crawl delay and the current penalty.
         //
-        // Measured as one span, not three: everything between here and the send is the request
-        // waiting for permission rather than for the provider, and that total is what explains a
-        // scan that is polite rather than stuck. Splitting it further would name which gate held
-        // the request without changing what an operator does about it.
+        // Measured as one span: everything until the send is waiting for permission, not for
+        // the provider, and that total is what tells a polite scan from a stuck one.
         let gate_entered = Instant::now();
         let _permit = self
             .concurrency
@@ -113,9 +107,8 @@ impl<F: Fetcher> Fetcher for RateLimitedFetcher<F> {
 
         let provider = req.provider_slug.clone();
         let resp = self.inner.get(req).await;
-        // Only a response can carry the signal; a transport failure says nothing about the
-        // provider's budget, and treating it as if it did would slow every crawl on a flaky
-        // network.
+        // Only a response carries the signal: a transport failure says nothing about the
+        // provider's budget, and counting it would slow every crawl on a flaky network.
         if let Ok(resp) = &resp
             && THROTTLE_STATUSES.contains(&resp.status)
         {
@@ -135,17 +128,16 @@ impl<F: Fetcher> Fetcher for RateLimitedFetcher<F> {
     }
 }
 
-// Penalty behaviour itself is tested in `tankovault_domain::pacing`. What's worth pinning
-// here is the wiring: crawl delay and penalty compose as "whichever is wider", which is this
-// crate's decision, not the pacer's.
+// The penalty itself is tested in `tankovault_domain::pacing`. This pins the wiring: crawl
+// delay and penalty compose as the wider of the two, which is this crate's decision.
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// A provider with a generous crawl delay and no push-back must be paced by the crawl delay,
-    /// not by the pacer — and a throttled provider by whichever is wider. Inverting this (taking
-    /// the pacer's value unconditionally) would silently discard every provider's configured
-    /// politeness the moment it answered a single 429.
+    /// The crawl delay and the penalty compose as the wider of the two.
+    ///
+    /// Taking the pacer's value unconditionally would discard a provider's configured politeness
+    /// the moment it answered a single 429.
     #[test]
     fn the_crawl_delay_and_the_penalty_compose_as_the_wider_of_the_two() {
         let crawl_delay = Duration::from_secs(3);
@@ -168,9 +160,9 @@ mod tests {
         );
     }
 
-    /// The statuses that count as push-back. 429 is the obvious one; 503 is included because a
-    /// provider shedding load is asking for the same thing. Both are also challenge statuses,
-    /// which is why this layer sits *outside* the solver — see `crate::backoff`.
+    /// Only 429 and 503 count as push-back: a provider shedding load asks for the same thing as
+    /// one rate-limiting. Both are also challenge statuses, which is why this layer sits outside
+    /// the solver.
     #[test]
     fn only_the_throttle_statuses_signal_push_back() {
         assert!(THROTTLE_STATUSES.contains(&429));

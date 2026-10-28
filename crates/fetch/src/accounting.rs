@@ -1,30 +1,29 @@
-//! Per-unit-of-work accounting for provider traffic: how many requests, how long they took, and
-//! **how much of the wall clock was spent waiting for permission to send one**.
+//! Owns per-unit-of-work accounting for provider traffic: how many requests, how long they took,
+//! and **how much of the wall clock went to waiting for permission to send one**.
 //!
-//! ## Why a task-local rather than a parameter
+//! ## Why a task-local
 //!
-//! The interesting number is per *scan task*, and the code that knows it is the rate limiter,
-//! four decorator layers below whoever started the task and behind a `dyn Fetcher` that every
-//! adapter is written against. Threading an accumulator down would mean changing the adapter
-//! trait — a public surface with a dozen implementations — to carry a diagnostic.
+//! The figure that matters is per scan task, and the code that knows it is the rate limiter,
+//! four decorator layers down and behind the `dyn Fetcher` every adapter is written against.
+//! Threading an accumulator through would change the adapter trait, a public surface with a
+//! dozen implementations, to carry a diagnostic.
 //!
-//! A `tokio::task_local` reaches the same place with no signature changes, and it is sound here
-//! for one specific reason: the worker runs each scan task as its own spawned tokio task, so a
-//! scope entered there covers exactly the futures that task awaits and nothing else. Anything
-//! outside a scope simply records nothing — [`record`] is a no-op when no scope is active, which
-//! is what keeps the one-shot CLI path and the tests from having to opt in.
+//! A `tokio::task_local` reaches the same place with no signature changes. It is sound because
+//! the worker runs each scan task as its own spawned tokio task, so a scope entered there covers
+//! exactly the futures that task awaits. Outside a scope, [`record`] is a no-op, so the one-shot
+//! CLI path and the tests need not opt in.
 
 use std::cell::Cell;
 use std::future::Future;
 use std::time::Duration;
 
-/// One accumulated figure. Which one [`record`] is adding to.
+/// Names the figure [`record`] adds to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Metered {
     /// A completed request, and the time inside it.
     Request(Duration),
-    /// Time spent held by the concurrency gate, the token rate, the crawl delay or the adaptive
-    /// throttle penalty — i.e. not sending yet.
+    /// Time held back before sending, by the concurrency gate, the token rate, the crawl delay
+    /// or the adaptive throttle penalty.
     PaceWait(Duration),
     /// A challenge solve, and the time it took.
     Solve(Duration),
@@ -35,27 +34,26 @@ pub enum Metered {
 /// What one unit of work spent on provider traffic.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct FetchAccounting {
-    /// Requests the base layer sent, failures included: a task that spent its time on requests
-    /// that all timed out still spent it.
+    /// The requests the base layer sent, failures included: time spent on requests that timed
+    /// out was still spent.
     pub requests: i64,
-    /// Milliseconds inside those requests, pacing excluded.
+    /// The milliseconds inside those requests, pacing excluded.
     pub fetch_ms: i64,
-    /// Milliseconds spent held back before sending: the concurrency gate, the token rate, the
-    /// crawl delay and the adaptive penalty together.
+    /// The milliseconds held back before sending, by every pacing layer together.
     pub pace_wait_ms: i64,
-    /// Milliseconds spent inside the challenge solver.
+    /// The milliseconds spent inside the challenge solver.
     pub solver_ms: i64,
-    /// Solve attempts, successful or not.
+    /// The solve attempts, successful or not.
     pub solver_calls: i64,
-    /// Responses that came back carrying a throttling status.
+    /// The responses that carried a throttling status.
     pub throttled: i64,
 }
 
-/// The live accumulator, as `Cell`s rather than atomics.
+/// Holds the live figures in `Cell`s, not atomics.
 ///
-/// A task-local is reachable only from the tokio task that entered the scope, and a tokio task is
-/// never polled from two threads at once — so there is no contention to synchronise, and `Cell`
-/// keeps [`record`] to a load and a store on a path that runs per request.
+/// A task-local is reachable only from the task that entered the scope, and a tokio task is never
+/// polled from two threads at once, so there is nothing to synchronise. `Cell` keeps [`record`]
+/// to a load and a store on a per-request path.
 #[derive(Default)]
 struct Meter {
     requests: Cell<i64>,
@@ -70,8 +68,7 @@ tokio::task_local! {
     static METER: Meter;
 }
 
-/// Milliseconds, saturating rather than wrapping: an absurd duration should read as a large
-/// number, not as a negative one.
+/// Converts to milliseconds, saturating so an absurd duration reads as large, not negative.
 #[expect(
     clippy::cast_possible_truncation,
     reason = "the min() below bounds the value inside i64 before the cast"
@@ -80,7 +77,7 @@ fn millis(d: Duration) -> i64 {
     d.as_millis().min(i64::MAX as u128) as i64
 }
 
-/// Add one figure to the accounting of the enclosing [`measured`] scope.
+/// Adds one figure to the enclosing [`measured`] scope.
 ///
 /// A no-op outside one, so instrumenting a fetch layer never obliges its callers to opt in.
 pub fn record(what: Metered) {
@@ -101,11 +98,11 @@ pub fn record(what: Metered) {
     });
 }
 
-/// Run `work` with a fresh accounting scope, returning what it produced alongside what its
-/// provider traffic cost.
+/// Runs `work` in a fresh accounting scope, returning its output and what its provider traffic
+/// cost.
 ///
-/// Scopes do not nest usefully: an inner one shadows the outer, so the outer would under-count.
-/// Enter one per unit of work you intend to report — for the worker, that is one scan task.
+/// Scopes do not nest usefully: an inner one shadows the outer, which then under-counts. Enter
+/// one per reported unit of work; for the worker, that is one scan task.
 pub async fn measured<F: Future>(work: F) -> (F::Output, FetchAccounting) {
     METER
         .scope(Meter::default(), async move {
@@ -146,9 +143,10 @@ mod tests {
         assert_eq!(totals.throttled, 1);
     }
 
-    /// Recording outside a scope has to be silent, not a panic: every fetch layer calls it
-    /// unconditionally, and the one-shot CLI scan and most tests never open one. A `with` instead
-    /// of a `try_with` here would abort the process on the path that has no accounting to do.
+    /// Recording outside a scope is silent, not a panic.
+    ///
+    /// Every fetch layer records unconditionally, and the CLI scan and most tests open no scope.
+    /// A `with` in place of `try_with` would abort the process there.
     #[tokio::test]
     async fn recording_without_a_scope_does_nothing() {
         record(Metered::Request(Duration::from_millis(5)));
@@ -156,8 +154,8 @@ mod tests {
         assert_eq!(totals, FetchAccounting::default());
     }
 
-    /// A scope covers the futures its own task awaits and nothing else, which is the property the
-    /// worker relies on to attribute traffic to one scan task while several run concurrently.
+    /// A scope covers only the futures its own task awaits, which lets the worker attribute
+    /// traffic to one scan task while several run concurrently.
     #[tokio::test]
     async fn concurrent_scopes_do_not_leak_into_each_other() {
         let one = tokio::spawn(measured(async {

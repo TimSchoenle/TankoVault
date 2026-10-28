@@ -1,10 +1,9 @@
-//! # tankovault-fetch
-//!
-//! The **only** place network egress to providers happens (`docs/ARCHITECTURE.md` §9): `wreq` wrapped in
+//! Owns the **only** network egress to providers (`docs/ARCHITECTURE.md` §9): `wreq` wrapped in
 //! backoff, rate-limiting, challenge-solving and retry decorators, outer to inner.
 //!
-//! Hard invariant: **no image/content fetch path exists**. [`FetchResponse::body`] is
-//! bounded UTF-8 text for HTML/JSON parsing only.
+//! Hard invariant: **no image or content fetch path exists**. [`FetchResponse::body`] is UTF-8
+//! text for HTML and JSON parsing only. The direct fetch caps it at 16 MiB; a page the solver
+//! rendered arrives uncapped.
 
 pub mod accounting;
 mod backoff;

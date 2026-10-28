@@ -1,10 +1,9 @@
-//! Inbound HTTP rate limiting, distinct from the *outbound* crawl politeness in
+//! Owns inbound HTTP rate limiting, distinct from the *outbound* crawl politeness in
 //! `tankovault-fetch`.
 //!
-//! Buckets are keyed by **client IP**, never by anything the client supplies — a bearer
-//! token or an untrusted header would let an attacker mint a fresh bucket per request —
-//! unless a verified [`Principal`] extension is present, which the limiter prefers outside
-//! [`RouteClass::Auth`].
+//! Buckets are keyed by **client IP**, never by anything the client supplies (a bearer token or
+//! an untrusted header would let an attacker mint a fresh bucket per request), unless a verified
+//! [`Principal`] extension is present, which the limiter prefers outside [`RouteClass::Auth`].
 
 pub mod memory;
 #[cfg(feature = "redis")]
@@ -20,16 +19,16 @@ use std::sync::Arc;
 use std::time::Duration;
 use tankovault_config::{RateLimitConfig, RateLimitPolicy};
 
-/// A verified principal, for per-user rather than per-IP accounting.
+/// A verified principal, for per-user instead of per-IP accounting.
 ///
 /// Inserted as a request extension by a service's own authentication layer. The limiter
-/// never derives this from client-supplied data itself — see the module docs.
+/// never derives this from client-supplied data itself; see the module docs.
 #[derive(Debug, Clone)]
 pub struct Principal(pub String);
 
 /// The budget a route draws from.
 ///
-/// A small closed set rather than per-route configuration: operators tune three numbers,
+/// A small closed set instead of per-route configuration: operators tune three numbers,
 /// and a new endpoint inherits a sensible class instead of silently defaulting to
 /// unlimited because nobody added it to a config map.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -54,7 +53,7 @@ impl RouteClass {
         }
     }
 
-    /// Label used in metrics and log lines.
+    /// Returns the label used in metrics and log lines.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -64,7 +63,7 @@ impl RouteClass {
         }
     }
 
-    /// The policy this class draws from.
+    /// Returns the policy this class draws from.
     #[must_use]
     pub const fn policy(self, cfg: &RateLimitConfig) -> RateLimitPolicy {
         match self {
@@ -99,29 +98,29 @@ pub struct RouteClassifier {
 }
 
 impl RouteClassifier {
-    /// An empty classifier: everything is [`RouteClass::Global`].
+    /// Creates an empty classifier: everything is [`RouteClass::Global`].
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Classify routes under `prefix` as credential handling.
+    /// Classifies routes under `prefix` as credential handling.
     #[must_use]
     pub fn auth(self, prefix: impl Into<String>) -> Self {
         self.rule(prefix, RouteClass::Auth, false)
     }
 
-    /// Classify all routes under `prefix` as expensive, regardless of method.
+    /// Classifies all routes under `prefix` as expensive, regardless of method.
     ///
-    /// Use for a path that is expensive however it is called — a data export or a
+    /// Use for a path that is expensive however it is called: a data export or a
     /// POST-only trigger whose pattern no cheap read shares.
     #[must_use]
     pub fn expensive(self, prefix: impl Into<String>) -> Self {
         self.rule(prefix, RouteClass::Expensive, false)
     }
 
-    /// Classify only *mutating* requests under `prefix` as expensive, leaving reads on the
-    /// broader budget — for a route pattern shared with a cheap read the UI polls.
+    /// Classifies only *mutating* requests under `prefix` as expensive, leaving reads on the
+    /// broader budget, for a route pattern shared with a cheap read the UI polls.
     #[must_use]
     pub fn expensive_write(self, prefix: impl Into<String>) -> Self {
         self.rule(prefix, RouteClass::Expensive, true)
@@ -143,7 +142,7 @@ impl RouteClassifier {
         self
     }
 
-    /// The class for a matched route pattern and request method.
+    /// Returns the class for a matched route pattern and request method.
     ///
     /// A `writes_only` rule is skipped for a safe method (`GET`/`HEAD`/`OPTIONS`/`TRACE`),
     /// so matching continues to any broader rule and, failing that, falls back to
@@ -174,7 +173,7 @@ pub struct RateLimitDecision {
 }
 
 impl RateLimitDecision {
-    /// An allowing decision, for stores that cannot report exact remaining capacity.
+    /// Creates an allowing decision, for stores that cannot report exact remaining capacity.
     #[must_use]
     pub const fn allow(limit: u32, remaining: u32) -> Self {
         Self {
@@ -185,7 +184,7 @@ impl RateLimitDecision {
         }
     }
 
-    /// A denying decision.
+    /// Creates a denying decision.
     #[must_use]
     pub const fn deny(limit: u32, retry_after: Duration) -> Self {
         Self {
@@ -200,11 +199,11 @@ impl RateLimitDecision {
 /// Where rate-limit counters live.
 #[async_trait]
 pub trait RateLimitStore: Send + Sync + 'static {
-    /// Charge one request against `key` in `class`.
+    /// Charges one request against `key` in `class`.
     ///
     /// A counter-store outage must never deny by itself: a denied request is a deliberate
     /// decision, never a side effect of infrastructure trouble. A shared store degrades to
-    /// per-replica limits rather than to none.
+    /// per-replica limits, never to none.
     async fn check(&self, class: RouteClass, key: &str) -> RateLimitDecision;
 }
 
@@ -217,7 +216,7 @@ pub struct RateLimiter {
 }
 
 impl RateLimiter {
-    /// Bind `store` and `classifier` into a mountable limiter.
+    /// Binds `store` and `classifier` into a mountable limiter.
     #[must_use]
     pub fn new(
         store: Arc<dyn RateLimitStore>,
@@ -231,11 +230,11 @@ impl RateLimiter {
         }
     }
 
-    /// Build the limiter described by `cfg`, returning `None` when limiting is disabled.
+    /// Builds the limiter described by `cfg`, returning `None` when limiting is disabled.
     ///
     /// If [`RateLimitBackend::Redis`](tankovault_config::RateLimitBackend::Redis) is selected
     /// but unavailable (no client, or the feature is off), falls back to in-memory with a
-    /// warning rather than starting with no limiting at all.
+    /// warning instead of starting with no limiting at all.
     #[must_use]
     // On the function, not the parameter: a `cfg_attr` allow attached to an argument is
     // accepted by the parser but does not reach the lint, so the parameter-level form
@@ -302,14 +301,14 @@ impl RateLimiter {
         Some(Self::new(store, classifier, cfg))
     }
 
-    /// Derive the bucket key for a request in `class`.
+    /// Derives the bucket key for a request in `class`.
     ///
     /// Prefers a verified [`Principal`] extension, then the proxy-supplied client IP when
-    /// trusted, then the peer address, then a single shared `unknown` bucket — an
+    /// trusted, then the peer address, then a single shared `unknown` bucket: an
     /// unidentifiable caller is exactly the one that should not get a free pass.
     ///
     /// [`RouteClass::Auth`] is always keyed by address: accounts are free to create, so keying
-    /// sign-in and reset by principal gave one address a fresh budget per self-registered
+    /// sign-in and reset by principal would give one address a fresh budget per self-registered
     /// account.
     fn key(&self, class: RouteClass, req: &Request) -> String {
         if class != RouteClass::Auth
@@ -331,8 +330,10 @@ impl RateLimiter {
     }
 }
 
-/// The **right-most** entry of `X-Forwarded-For`, or `X-Real-IP`. Only consulted when
-/// `trust_forwarded_for` is enabled — otherwise these headers are client-controlled.
+/// Returns the **right-most** entry of `X-Forwarded-For`, or `X-Real-IP`.
+///
+/// Only consulted when `trust_forwarded_for` is enabled; otherwise these headers are
+/// client-controlled.
 ///
 /// Right-most, not left-most: the reverse proxy appends the peer it accepted the connection
 /// from, so entries to its left are client-supplied and forgeable. Assumes exactly one
@@ -354,7 +355,7 @@ fn forwarded_client_ip(headers: &HeaderMap) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Collapse an address to the unit an attacker cannot cheaply multiply: IPv6 masked to its
+/// Collapses an address to the unit an attacker cannot cheaply multiply: IPv6 masked to its
 /// routed /64 (else one attacker gets 2^64 budgets), IPv4 kept exact.
 fn canonicalise(ip: IpAddr) -> String {
     match ip {
@@ -366,7 +367,7 @@ fn canonicalise(ip: IpAddr) -> String {
     }
 }
 
-/// [`canonicalise`] for a header-sourced string, falling back to the raw value (bounded, so
+/// Applies [`canonicalise`] to a header-sourced string, falling back to the raw value (bounded, so
 /// a junk header cannot be used to mint unlimited keys) when it does not parse as an address.
 fn bucket_ip(raw: &str) -> String {
     raw.parse::<IpAddr>().map_or_else(
@@ -388,7 +389,7 @@ pub struct RedisStoreHandle {
 
 #[cfg(feature = "redis")]
 impl RedisStoreHandle {
-    /// Wrap an initialised client.
+    /// Wraps an initialised client.
     #[must_use]
     pub fn new(client: fred::clients::Client) -> Self {
         Self { client }
@@ -399,7 +400,9 @@ impl RedisStoreHandle {
 #[cfg(not(feature = "redis"))]
 pub struct RedisStoreHandle(());
 
-/// The axum middleware. Mount with `axum::middleware::from_fn_with_state(limiter, enforce)`.
+/// Enforces the limit as axum middleware.
+///
+/// Mount with `axum::middleware::from_fn_with_state(limiter, enforce)`.
 ///
 /// On denial, answers `429` with an RFC 9457 `problem+json` body matching the shape the
 /// API's own error type produces, so a client parses one error format everywhere.
@@ -440,11 +443,11 @@ pub async fn enforce(
 
 /// The [`crate::problem::Problem::kind`] this layer answers with.
 ///
-/// Named because it is the one problem token no service's error enum produces — a client's
+/// Named because it is the one problem token no service's error enum produces: a client's
 /// vocabulary has to carry it anyway, and `services/api` reconciles against this constant.
 pub const RATE_LIMITED_KIND: &str = "rate_limited";
 
-/// `429` with `Retry-After` and the standard problem body.
+/// Builds the `429` with `Retry-After` and the standard problem body.
 fn too_many_requests(decision: &RateLimitDecision) -> Response {
     // Round up: a `Retry-After: 0` invites an immediate retry that is certain to fail.
     let retry_secs = decision.retry_after.as_secs().max(1);
@@ -465,7 +468,7 @@ fn too_many_requests(decision: &RateLimitDecision) -> Response {
     response
 }
 
-/// Advertise the budget so a well-behaved client can pace itself instead of discovering
+/// Advertises the budget so a well-behaved client can pace itself instead of discovering
 /// the limit by being refused.
 fn insert_limit_headers(headers: &mut HeaderMap, decision: &RateLimitDecision) {
     if let Ok(value) = decision.limit.to_string().parse() {
@@ -531,8 +534,8 @@ mod tests {
         );
     }
 
-    /// Pins that the limiter prefers a [`Principal`] over IP, and that two callers behind
-    /// one address get separate budgets once identified.
+    /// The limiter prefers a [`Principal`] over IP, so two callers behind one address get
+    /// separate budgets once identified.
     #[test]
     fn an_identified_caller_is_bucketed_per_account_not_per_address() {
         let cfg = RateLimitConfig::default();
@@ -595,8 +598,10 @@ mod tests {
         );
     }
 
-    /// Regression: reading the left-most entry let any caller mint a fresh bucket per
-    /// request by sending their own `X-Forwarded-For`, which removed the auth limiter.
+    /// The right-most `X-Forwarded-For` entry is the one used.
+    ///
+    /// The bug: reading the left-most entry let any caller mint a fresh bucket per request by
+    /// sending their own `X-Forwarded-For`, which removed the auth limiter.
     #[test]
     fn forwarded_for_takes_the_rightmost_entry() {
         let mut headers = HeaderMap::new();
@@ -631,8 +636,10 @@ mod tests {
         );
     }
 
-    /// A routed /64 is the standard residential and VPS allocation, so bucketing on the full
-    /// v6 address gave one attacker 2^64 budgets and 2^64 Redis keys.
+    /// IPv6 addresses bucket on their /64 prefix.
+    ///
+    /// The bug: a routed /64 is the standard residential and VPS allocation, so bucketing on the
+    /// full v6 address gave one attacker 2^64 budgets and 2^64 Redis keys.
     #[test]
     fn ipv6_buckets_collapse_to_the_64_prefix() {
         let a = bucket_ip("2001:db8:1:2:3:4:5:6");

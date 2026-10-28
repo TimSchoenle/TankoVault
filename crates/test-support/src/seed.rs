@@ -1,9 +1,8 @@
-//! Entity builders for the `crates/db` suites (TEST F-09).
+//! Owns the entity builders for the `crates/db` suites.
 //!
 //! Use these instead of writing another one-off `a_provider`/`a_user`/`a_series` fixture:
-//! duplicated fixtures drift silently (`repo_ingest.rs`'s copy once diverged on adapter and base
-//! URL with nothing to say whether that was deliberate), and a builder keeps the common case one
-//! line while making the uncommon case explicit at the call site:
+//! duplicated fixtures drift silently, and a builder keeps the common case one line while making
+//! the uncommon case explicit at the call site:
 //!
 //! ```ignore
 //! let provider = seed::provider(&db, "alpha").create().await;
@@ -12,8 +11,8 @@
 //! ```
 //!
 //! Each terminal `create` calls the same `repo::` entry point the suite would call by hand, so
-//! seeding through a builder still exercises the real write path rather than a hand-rolled
-//! insert that could pass while the repository is broken. Every failure here panics — it is a
+//! seeding through a builder still exercises the real write path, not a hand-rolled insert that
+//! could pass while the repository is broken. Every failure here panics: it is a
 //! broken fixture, not a behaviour under test.
 
 use crate::TestDb;
@@ -28,11 +27,11 @@ use tankovault_domain::{
     UserId, normalize_title,
 };
 
-/// Start building a provider identified by `slug`.
+/// Starts building a provider identified by `slug`.
 ///
-/// Defaults: the slug doubles as the display name, the base URL is `https://{slug}.invalid` —
-/// a reserved TLD, so a fixture that leaks into a real fetch fails to resolve rather than
-/// reaching somebody's site — the adapter is [`AdapterKind::GenericConfig`], and the politeness
+/// Defaults: the slug doubles as the display name, the base URL is `https://{slug}.invalid` (a
+/// reserved TLD, so a fixture that leaks into a real fetch fails to resolve instead of reaching
+/// somebody's site), the adapter is [`AdapterKind::GenericConfig`], and the politeness
 /// is the default.
 #[must_use]
 pub fn provider<'a>(db: &'a TestDb, slug: &'a str) -> ProviderBuilder<'a> {
@@ -59,43 +58,45 @@ pub struct ProviderBuilder<'a> {
 }
 
 impl<'a> ProviderBuilder<'a> {
-    /// Override the display name, which otherwise repeats the slug.
+    /// Overrides the display name, which otherwise repeats the slug.
     #[must_use]
     pub fn name(mut self, name: &'a str) -> Self {
         self.name = Some(name);
         self
     }
 
-    /// Override the base URL. Only worth doing when the test asserts something *about* the URL —
-    /// link resolution, or the SSRF guard — since the default is already unreachable.
+    /// Overrides the base URL.
+    ///
+    /// Only worth doing when the test asserts something *about* the URL (link resolution, or the
+    /// SSRF guard), since the default is already unreachable.
     #[must_use]
     pub fn base_url(mut self, base_url: impl Into<String>) -> Self {
         self.base_url = Some(base_url.into());
         self
     }
 
-    /// Override the adapter kind.
+    /// Overrides the adapter kind.
     #[must_use]
     pub fn adapter(mut self, adapter: AdapterKind) -> Self {
         self.adapter = adapter;
         self
     }
 
-    /// Override the adapter configuration blob.
+    /// Overrides the adapter configuration blob.
     #[must_use]
     pub fn config(mut self, config: serde_json::Value) -> Self {
         self.config = config;
         self
     }
 
-    /// Override the crawl politeness.
+    /// Overrides the crawl politeness.
     #[must_use]
     pub fn politeness(mut self, politeness: Politeness) -> Self {
         self.politeness = politeness;
         self
     }
 
-    /// Write the row through `repo::providers::create` and return its id.
+    /// Writes the row through `repo::providers::create` and return its id.
     ///
     /// # Panics
     /// If the insert fails, which in a test always means the fixture is wrong.
@@ -124,10 +125,10 @@ impl<'a> ProviderBuilder<'a> {
     }
 }
 
-/// Start building a user identified by `username`.
+/// Starts building a user identified by `username`.
 ///
 /// The email is derived as `{username}@example.test` and the password hash is a placeholder,
-/// matching [`TestDb::seed_user`] — which remains the one to reach for when the test needs
+/// matching [`TestDb::seed_user`], which remains the one to reach for when the test needs
 /// capabilities or a non-active account status, since that is what it exists to set.
 #[must_use]
 pub fn user<'a>(db: &'a TestDb, username: &'a str) -> UserBuilder<'a> {
@@ -146,18 +147,18 @@ pub struct UserBuilder<'a> {
 }
 
 impl<'a> UserBuilder<'a> {
-    /// Override the derived email address.
+    /// Overrides the derived email address.
     ///
-    /// Worth doing for exactly one family of test: `users.email` is `citext`, and F-05c was a
-    /// total lockout caused by comparing it case-sensitively, so a suite that pins case
-    /// insensitivity has to control the stored casing rather than take it from a username.
+    /// Worth doing for exactly one family of test: `users.email` is `citext`, and comparing it
+    /// case-sensitively locks users out, so a suite that pins case insensitivity has to control
+    /// the stored casing instead of taking it from a username.
     #[must_use]
     pub fn email(mut self, email: &'a str) -> Self {
         self.email = Some(email);
         self
     }
 
-    /// Write the row through `repo::users::create` and return its id.
+    /// Writes the row through `repo::users::create` and return its id.
     ///
     /// # Panics
     /// If the insert fails, which in a test always means the fixture is wrong.
@@ -173,7 +174,7 @@ impl<'a> UserBuilder<'a> {
     }
 }
 
-/// Start building a canonical series carried by `provider_id`.
+/// Starts building a canonical series carried by `provider_id`.
 ///
 /// The normalized title is derived with the real [`normalize_title`], and the source path from
 /// it, so two series with different titles never collide on `(provider_id, source_path)` and a
@@ -213,21 +214,21 @@ pub struct SeriesBuilder<'a> {
 }
 
 impl<'a> SeriesBuilder<'a> {
-    /// The chapter numbers to ingest. Each becomes a chapter at `/c/{number}`.
+    /// Sets the chapter numbers to ingest. Each becomes a chapter at `/c/{number}`.
     #[must_use]
     pub fn chapters(mut self, chapters: &'a [f64]) -> Self {
         self.chapters = chapters;
         self
     }
 
-    /// Override the source path, which otherwise derives from the normalized title.
+    /// Overrides the source path, which otherwise derives from the normalized title.
     #[must_use]
     pub fn source_path(mut self, source_path: impl Into<String>) -> Self {
         self.source_path = Some(source_path.into());
         self
     }
 
-    /// Alternative titles, normalized with the real [`normalize_title`] so the search and
+    /// Sets alternative titles, normalized with the real [`normalize_title`] so the search and
     /// matching paths see what production would.
     #[must_use]
     pub fn alt_titles(mut self, titles: &[&str]) -> Self {
@@ -238,45 +239,45 @@ impl<'a> SeriesBuilder<'a> {
         self
     }
 
-    /// Genre/tag names.
+    /// Sets genre/tag names.
     #[must_use]
     pub fn tags(mut self, tags: &[&str]) -> Self {
         self.tags = tags.iter().map(|t| (*t).to_owned()).collect();
         self
     }
 
-    /// Author/artist credits.
+    /// Sets author/artist credits.
     #[must_use]
     pub fn authors(mut self, authors: &[&str]) -> Self {
         self.authors = authors.iter().map(|a| (*a).to_owned()).collect();
         self
     }
 
-    /// Override the content type, which defaults to [`ContentType::Manga`].
+    /// Overrides the content type, which defaults to [`ContentType::Manga`].
     #[must_use]
     pub fn content_type(mut self, content_type: ContentType) -> Self {
         self.content_type = content_type;
         self
     }
 
-    /// Override the publication status, which defaults to [`SeriesStatus::Ongoing`].
+    /// Overrides the publication status, which defaults to [`SeriesStatus::Ongoing`].
     #[must_use]
     pub fn status(mut self, status: SeriesStatus) -> Self {
         self.status = status;
         self
     }
 
-    /// Set the release year, which defaults to absent.
+    /// Sets the release year, which defaults to absent.
     #[must_use]
     pub fn release_year(mut self, year: i32) -> Self {
         self.release_year = Some(year);
         self
     }
 
-    /// Set the release year from a value that may already be absent.
+    /// Sets the release year from a value that may already be absent.
     ///
     /// Exists so a table-driven fixture whose rows carry `Option<i32>` can stay one chain
-    /// instead of breaking out of it to conditionally call [`Self::release_year`] — and the
+    /// instead of breaking out of it to conditionally call [`Self::release_year`], and the
     /// year *is* load-bearing for those fixtures, since `matcher::score` bonuses an exact
     /// match and a year-bounded browse filter excludes a series that has none.
     #[must_use]
@@ -285,16 +286,20 @@ impl<'a> SeriesBuilder<'a> {
         self
     }
 
-    /// Override the scan content hash. Only matters to a test about change detection, where two
-    /// ingests of the same source must differ (or agree) in this value.
+    /// Overrides the scan content hash.
+    ///
+    /// Only matters to a test about change detection, where two ingests of the same source must
+    /// differ (or agree) in this value.
     #[must_use]
     pub fn content_hash(mut self, hash: Vec<u8>) -> Self {
         self.content_hash = hash;
         self
     }
 
-    /// Ingest and return the full outcome, including the source id and the genuinely-new chapter
-    /// numbers. Use this when the test is *about* ingest; [`Self::create`] when it only needs a
+    /// Ingests and returns the full outcome, including the source id and the genuinely-new
+    /// chapter numbers.
+    ///
+    /// Use this when the test is *about* ingest; [`Self::create`] when it only needs a
     /// series to exist.
     ///
     /// # Panics
@@ -351,7 +356,7 @@ impl<'a> SeriesBuilder<'a> {
         .expect("seed series")
     }
 
-    /// Ingest and return only the canonical series id.
+    /// Ingests and returns only the canonical series id.
     ///
     /// # Panics
     /// If the ingest fails, which in a test always means the fixture is wrong.

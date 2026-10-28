@@ -1,9 +1,9 @@
-//! A deterministic in-process solver.
+//! Provides a deterministic in-process solver.
 //!
-//! Doubles as (a) the fixture for the trait-level "swap the back-end" test the `DoD`
-//! requires — proving the fetch pipeline is solver-agnostic — and (b) a safe default
-//! when no real solver is configured (returns an empty session so callers degrade
-//! gracefully rather than panic).
+//! It is the fixture for the test that the fetch pipeline is solver-agnostic, and a safe default
+//! when no real solver is configured. It returns an empty session, so a challenged fetch is
+//! retried once without one and fails with `FetchError::Challenge` if still challenged; it never
+//! bypasses a challenge.
 
 use crate::types::{ChallengeSolver, SolveError, SolveOutcome, SolveRequest};
 use async_trait::async_trait;
@@ -14,13 +14,13 @@ pub struct StaticSolver {
 }
 
 impl StaticSolver {
-    /// Build a solver that always yields `outcome`.
+    /// Builds a solver that always yields `outcome`.
     #[must_use]
     pub fn new(outcome: SolveOutcome) -> Self {
         Self { outcome }
     }
 
-    /// A solver that returns an empty (cleared) session with the given user-agent.
+    /// Builds a solver that returns an empty session with the given user agent.
     #[must_use]
     pub fn cleared(user_agent: impl Into<String>, ttl_secs: u64) -> Self {
         Self {
@@ -52,8 +52,8 @@ mod tests {
     use super::*;
     use crate::types::ChallengeKind;
 
-    // The fetch pipeline depends only on `dyn ChallengeSolver`; this proves an arbitrary
-    // back-end can be dropped in without any pipeline change (design DoD §21).
+    // The fetch pipeline depends only on `dyn ChallengeSolver`, so any back-end drops in
+    // without a pipeline change.
     async fn drive(solver: &dyn ChallengeSolver, url: &str) -> SolveOutcome {
         solver
             .solve(SolveRequest {

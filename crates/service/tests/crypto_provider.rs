@@ -1,8 +1,9 @@
-//! The rustls crypto provider is installed by the code that needs it, not by convention.
+//! Checks that the rustls crypto provider is installed by the code that needs it, not by
+//! convention.
 //!
 //! Its own test binary on purpose: the assertion is about a *process-wide* install, so it can
 //! only observe the absence it starts from if nothing else in the binary has run first. Keep
-//! this file to one test for the same reason — `cargo test` runs a binary's tests in parallel
+//! this file to one test for the same reason: `cargo test` runs a binary's tests in parallel
 //! threads of one process.
 
 use std::path::PathBuf;
@@ -10,15 +11,17 @@ use std::path::PathBuf;
 use tankovault_config::ResolvedTls;
 use tankovault_service::ReloadingTls;
 
-/// Pins the boot crash of 2026-08-10: with mutual TLS switched on, every service panicked at
-/// startup — after the metrics listener was already up — inside `ServerConfig::builder()`.
-/// `rustls` picks a provider by itself only when exactly one of its `ring` and `aws-lc-rs`
-/// features is enabled, and this graph enables both (lettre pulls `ring`, quinn-proto pulls
-/// `aws-lc-rs` through `wreq`), so it panicked instead of choosing.
+/// Loading TLS material installs the crypto provider it needs.
+///
+/// The bug: with mutual TLS switched on, every service panicked at startup, after the metrics
+/// listener was already up, inside `ServerConfig::builder()`. `rustls` picks a provider by
+/// itself only when exactly one of its `ring` and `aws-lc-rs` features is enabled, and this graph
+/// enables both (lettre pulls `ring`, quinn-proto pulls `aws-lc-rs` through `wreq`), so it
+/// panicked instead of choosing.
 ///
 /// The paths below do not exist, so this stops at the file read: reaching a named
 /// [`tankovault_service::TlsError`] *and* leaving a provider behind is the whole claim. If the
-/// install moves back out to the callers, the second assertion fails here rather than in a
+/// install moves back out to the callers, the second assertion fails here, not in a
 /// container.
 #[test]
 fn loading_tls_material_installs_the_provider_it_needs() {

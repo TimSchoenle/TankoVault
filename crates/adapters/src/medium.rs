@@ -1,8 +1,8 @@
-//! Telling a site's prose apart from its comics.
+//! Owns telling a site's prose apart from its comics.
 //!
 //! Scanlator sites routinely sell text novels from the same catalogue, under the same URL
-//! prefix, as the comics they are known for. There is nothing here to track — a novel has no
-//! pages — so the rows have to be dropped before they are registered.
+//! prefix, as the comics they are known for. There is nothing here to track (a novel has no
+//! pages), so the rows have to be dropped before they are registered.
 //!
 //! Two shapes of signal, one vocabulary. A platform that publishes a medium field is read by
 //! its own adapter through [`is_prose_medium`]; a site that publishes none marks prose in the
@@ -24,8 +24,8 @@ const PROSE_MEDIA: &[&str] = &[
     "ln",
 ];
 
-/// Lower-case, with `_`/`-`/whitespace folded to single spaces, so a platform's `LIGHT_NOVEL`
-/// and a title's `[Light Novel]` are the same token.
+/// Returns `label` in lower case, with `_`/`-`/whitespace folded to single spaces, so a platform's
+/// `LIGHT_NOVEL` and a title's `[Light Novel]` are the same token.
 fn normalise(label: &str) -> String {
     let mut out = String::with_capacity(label.len());
     for ch in label.chars() {
@@ -41,17 +41,17 @@ fn normalise(label: &str) -> String {
     out
 }
 
-/// Whether a medium label the provider itself publishes names prose.
+/// Returns whether a medium label the provider itself publishes names prose.
 pub(crate) fn is_prose_medium(label: &str) -> bool {
     PROSE_MEDIA.contains(&normalise(label).as_str())
 }
 
-/// Whether a listed title carries the site's own prose marker — `The Former Supreme Master
-/// [Novel]`, as `thunderscans` lists all seven of its novels.
+/// Returns whether a listed title carries the site's own prose marker: `The Former Supreme
+/// Master [Novel]`, as `thunderscans` lists all seven of its novels.
 ///
 /// Only a bracketed tag counts, and only when the whole tag is a medium. The word alone is not
 /// a marker: *The Novel's Extra* and *Novel Instructor* are comics, and a substring test drops
-/// them. `[Novel Adaptation]` is likewise kept — it describes the source, not the medium.
+/// them. `[Novel Adaptation]` is likewise kept: it describes the source, not the medium.
 pub(crate) fn is_prose_title(title: &str) -> bool {
     let mut rest = title;
     while let Some(open) = rest.find(['[', '(']) {
@@ -61,7 +61,7 @@ pub(crate) fn is_prose_title(title: &str) -> bool {
             ')'
         };
         let after = &rest[open + 1..];
-        // An unmatched bracket is markup noise: step past it and keep looking, rather than
+        // An unmatched bracket is markup noise: step past it and keep looking, instead of
         // letting it hide a marker further along the title.
         let Some(close) = after.find(closing) else {
             rest = after;
@@ -77,19 +77,19 @@ pub(crate) fn is_prose_title(title: &str) -> bool {
 
 /// A [`SourceAdapter`] with the prose rows dropped from both of its listings.
 ///
-/// Applied to every adapter rather than to the config-driven one alone: the marker is a
+/// Applied to every adapter, not to the config-driven one alone: the marker is a
 /// convention of the sites, not of a theme, and a guard only some adapters carry is one the
 /// next provider silently does without.
 pub(crate) struct ProseFiltered(Box<dyn SourceAdapter>);
 
 impl ProseFiltered {
-    /// Wrap `inner`, which is where every built adapter passes exactly once.
+    /// Wraps `inner`, which is where every built adapter passes exactly once.
     pub(crate) fn wrap(inner: Box<dyn SourceAdapter>) -> Box<dyn SourceAdapter> {
         Box::new(Self(inner))
     }
 }
 
-/// Drop the prose rows from a listing, logging how many went and for which provider.
+/// Drops the prose rows from a listing, logging how many went and for which provider.
 fn retain_comics<T>(ctx: &Ctx, rows: &mut Vec<T>, title: impl Fn(&T) -> &str) {
     let before = rows.len();
     rows.retain(|row| !is_prose_title(title(row)));
@@ -148,10 +148,12 @@ mod tests {
         assert!(!is_prose_medium(""));
     }
 
-    /// Regression: `thunderscans` sells prose from the `/comics/` catalogue that carries its
-    /// comics, marking it in the title alone — `The Former Supreme Master [Novel]`, whose
-    /// chapters are text pages this application cannot track. All seven of its novels were
-    /// ingested as series.
+    /// A bracketed medium marks the title as prose.
+    ///
+    /// The bug: `thunderscans` sells prose from the `/comics/` catalogue that carries its comics,
+    /// marking it in the title alone (`The Former Supreme Master [Novel]`, whose chapters are
+    /// text pages this application cannot track), and all seven of its novels were ingested as
+    /// series.
     #[test]
     fn a_bracketed_medium_marks_the_title_as_prose() {
         assert!(is_prose_title("The Former Supreme Master [Novel]"));

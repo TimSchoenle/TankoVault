@@ -1,16 +1,16 @@
-//! Togglable Sentry error reporting and performance tracing.
+//! Owns togglable Sentry error reporting and performance tracing.
 //!
-//! Off unless `telemetry.sentry.enabled` is set, and then only with a DSN: a client that
-//! reports nowhere is the failure mode `telemetry.otlp_endpoint` was removed for, so the
-//! combination is refused at boot rather than logged and ignored.
+//! Off unless `telemetry.sentry.enabled` is set, and then only with a DSN: a client that reports
+//! nowhere looks configured and is not, so the combination is refused at boot, not logged and
+//! ignored.
 //!
 //! Three sinks, all fed from the one client this module installs:
-//! - **`tracing`** — [`tracing_layer`] turns records into issues and breadcrumbs, under the
+//! - **`tracing`**: [`tracing_layer`] turns records into issues and breadcrumbs, under the
 //!   thresholds in [`SentryConfig`].
-//! - **panics** — the SDK's own hook, added by `sentry::init`. Complementary to the
+//! - **panics**: the SDK's own hook, added by `sentry::init`. Complementary to the
 //!   `CatchPanicLayer` in [`crate::http`], which turns the same panic into a 500: one reports
 //!   it, the other keeps the replica serving.
-//! - **HTTP** — [`http_layers`], mounted by [`crate::HttpStack`].
+//! - **HTTP**: [`http_layers`], mounted by [`crate::HttpStack`].
 //!
 //! The extern crate is always spelled `::sentry`; the bare path is ambiguous with this module.
 
@@ -43,16 +43,15 @@ struct HttpOptions {
     transactions: bool,
 }
 
-/// Install the process-wide Sentry client, or nothing when it is switched off.
+/// Installs the process-wide Sentry client, or nothing when it is switched off.
 ///
 /// Returns the guard that flushes queued events on drop; the caller must hold it for the
-/// lifetime of the process, which is why [`crate::init_tracing`] hands it back rather than
+/// lifetime of the process, which is why [`crate::init_tracing`] hands it back instead of
 /// leaking it into a static.
 ///
 /// # Errors
-/// [`ServiceError::Sentry`] when `enabled` is set without a DSN, when the DSN does not parse,
-/// or when a sample rate is outside `0.0..=1.0`. All three are configuration mistakes whose
-/// only other outcome is a service that silently reports nothing.
+/// Returns [`ServiceError::Sentry`] when `enabled` is set without a DSN, the DSN does not parse,
+/// or a sample rate is outside `0.0..=1.0`.
 pub(crate) fn init(
     cfg: &SentryConfig,
     service_name: &str,
@@ -67,7 +66,7 @@ pub(crate) fn init(
 
     // Empty is absent, not a value. `TANKOVAULT_TELEMETRY__SENTRY__DSN=""` is what a
     // compose pass-through or an unfilled chart value produces, and it has to land on the
-    // message below rather than on the parse error, which would send an operator looking
+    // message below, not on the parse error, which would send an operator looking
     // at their URL.
     let dsn = cfg
         .dsn
@@ -81,7 +80,7 @@ pub(crate) fn init(
                 .to_owned(),
         ));
     };
-    // Parsed here rather than through `ClientOptions::dsn`, which panics on a malformed value.
+    // Parsed here, not through `ClientOptions::dsn`, which panics on a malformed value.
     // The error deliberately does not quote the DSN: it is a credential, and this message
     // reaches the log stream.
     let dsn = dsn.parse::<::sentry::types::Dsn>().map_err(|e| {
@@ -120,7 +119,7 @@ pub(crate) fn init(
         .environment(environment)
         .release(release)
         // Marks our own frames as application code, so a stack trace opens on the handler
-        // rather than on an axum internal.
+        // instead of on an axum internal.
         .in_app_include(vec!["tankovault"]);
     options.dsn = Some(dsn);
     if let Some(server) = cfg.server_name.clone() {
@@ -145,7 +144,7 @@ pub(crate) fn init(
     Ok(Some(guard))
 }
 
-/// The `tracing` layer feeding the client, or `None` when Sentry is off.
+/// Returns the `tracing` layer feeding the client, or `None` when Sentry is off.
 ///
 /// Sits under the subscriber's `EnvFilter`, which is the one surprise worth knowing: a record
 /// `telemetry.log_filter` (or `RUST_LOG`) drops never reaches this layer, so tightening the log
@@ -185,7 +184,7 @@ where
     Some(layer)
 }
 
-/// The per-request hub and the request-metadata layer, or `None` when Sentry is off.
+/// Returns the per-request hub and the request-metadata layer, or `None` when Sentry is off.
 ///
 /// The hub layer is not optional decoration: without a hub per request, breadcrumbs from
 /// concurrently served requests all land on the main hub and every issue arrives with a trail
@@ -213,8 +212,8 @@ pub(crate) fn http_layers() -> Option<(
     ))
 }
 
-/// The trace-continuation headers for the request currently in scope: `sentry-trace`, and
-/// whatever else the SDK adds to that set later.
+/// Returns the trace-continuation headers for the request currently in scope: `sentry-trace`,
+/// and whatever else the SDK adds to that set.
 ///
 /// Empty when Sentry is off, so a caller can attach the result unconditionally.
 ///
@@ -225,14 +224,14 @@ pub(crate) fn http_layers() -> Option<(
 pub fn trace_headers() -> Vec<(&'static str, String)> {
     let mut headers = Vec::new();
     // `configure_scope` returns `()`, so the iterator has to be drained into a binding the
-    // closure captures rather than returned through it.
+    // closure captures, not returned through it.
     ::sentry::configure_scope(|scope| headers.extend(scope.iter_trace_propagation_headers()));
     headers
 }
 
-/// Overwrite the trace-continuation headers of an outbound request with this process's.
+/// Overwrites the trace-continuation headers of an outbound request with this process's.
 ///
-/// Overwrite rather than merge: on a proxy hop the inbound value is the *client's* claim about
+/// Overwrite, not merge: on a proxy hop the inbound value is the *client's* claim about
 /// the trace, and the span the next service should continue is this one's.
 pub fn propagate_trace(headers: &mut axum::http::HeaderMap) {
     for (name, value) in trace_headers() {
@@ -246,11 +245,11 @@ pub fn propagate_trace(headers: &mut axum::http::HeaderMap) {
     }
 }
 
-/// Carry the caller's trace onto a `tokio::spawn`ed future.
+/// Carries the caller's trace onto a `tokio::spawn`ed future.
 ///
 /// The Sentry hub is thread-local and a spawned task starts with a fresh one, so work detached
-/// from a request — the targeted sync push, a transactional email, an operator-triggered sweep
-/// — otherwise reports as an orphan with nothing above it, which is exactly the request that
+/// from a request (the targeted sync push, a transactional email, an operator-triggered sweep)
+/// otherwise reports as an orphan with nothing above it, which is exactly the request that
 /// explains why it ran.
 ///
 /// Must be called on the **spawning** task: it binds the hub that is current *now*, so
@@ -265,7 +264,7 @@ where
     ::sentry::SentryFutureExt::bind_hub(fut, ::sentry::Hub::current())
 }
 
-/// Whether a record at `level` is at least as severe as `threshold`.
+/// Returns whether a record at `level` is at least as severe as `threshold`.
 ///
 /// `tracing::Level` orders `ERROR` lowest, so "at least as severe" is `<=`.
 fn accepts(threshold: SentryLevel, level: Level) -> bool {
@@ -290,8 +289,10 @@ fn check_rate(name: &str, rate: f32) -> Result<(), ServiceError> {
     }
 }
 
-/// First writer wins, matching the client itself: a second `init` in one process is a test
-/// harness, not a reconfiguration.
+/// Records the HTTP options once; the first writer wins.
+///
+/// That matches the client itself: a second `init` in one process is a test harness, not a
+/// reconfiguration.
 fn record_http(options: HttpOptions) {
     let _ = HTTP.set(options);
 }
@@ -300,9 +301,11 @@ fn record_http(options: HttpOptions) {
 mod tests {
     use super::*;
 
-    /// `tracing::Level` sorts `ERROR` *below* `TRACE`, so a severity threshold reads as `<=`
-    /// and not `>=`. Inverting it turned `capture_level = "error"` into "capture everything",
-    /// which is a bill rather than a compile error.
+    /// A threshold accepts only levels at least as severe as itself.
+    ///
+    /// `tracing::Level` sorts `ERROR` below `TRACE`, so the comparison is `<=`. The bug: inverting
+    /// it turned `capture_level = "error"` into "capture everything", a bill and not a compile
+    /// error.
     #[test]
     fn a_threshold_accepts_only_levels_at_least_as_severe() {
         assert!(accepts(SentryLevel::Error, Level::ERROR));
@@ -327,7 +330,7 @@ mod tests {
     }
 
     /// With no client bound there is no trace to continue, and the caller attaches the result
-    /// unconditionally — so this has to be empty rather than a header with an empty value,
+    /// unconditionally, so this has to be empty, not a header with an empty value,
     /// which downstream would parse as a malformed trace and log about on every request.
     #[test]
     fn trace_headers_are_empty_without_a_client() {
@@ -342,7 +345,7 @@ mod tests {
         assert!(check_rate("sample_rate", 1.1).is_err());
     }
 
-    /// The disabled path must install no client at all — not a client with an empty DSN,
+    /// The disabled path must install no client at all, not a client with an empty DSN,
     /// which still starts a transport thread and still queues events.
     #[test]
     fn disabled_installs_no_client() {
@@ -363,8 +366,8 @@ mod tests {
         assert!(err.to_string().contains("dsn"), "{err}");
     }
 
-    /// A pass-through that resolved to nothing — `TANKOVAULT_TELEMETRY__SENTRY__DSN=""`
-    /// from the compose file, an unfilled chart value — must read as *absent*, not as a
+    /// A pass-through that resolved to nothing (`TANKOVAULT_TELEMETRY__SENTRY__DSN=""`
+    /// from the compose file, an unfilled chart value) must read as *absent*, not as a
     /// DSN that fails to parse. The two produce very different messages, and only one of
     /// them sends the operator to the right place.
     #[test]

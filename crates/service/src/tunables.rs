@@ -1,12 +1,12 @@
-//! The runtime tuning snapshot: resolving [`Tunable`] values and handing them to the pipeline
+//! Owns the runtime tuning snapshot: resolving [`Tunable`] values and handing them to the pipeline
 //! already clamped.
 //!
 //! Sits beside [`crate::flags::FeatureGate`] and refreshes on the same timer, with the same
-//! rule: **a failed refresh keeps the previous snapshot** rather than reverting to compiled
+//! rule: **a failed refresh keeps the previous snapshot** instead of reverting to compiled
 //! defaults, which would silently discard everything an operator had tuned.
 //!
 //! Every read clamps to the registry's range. The API refuses an out-of-range write, so a row
-//! outside it should not exist — but "should not exist" is not "cannot exist", and one of these
+//! outside it should not exist, but "should not exist" is not "cannot exist", and one of these
 //! bounds (`recsys.cooccurrence.min_support`) is a k-anonymity threshold. Clamping here is what
 //! makes that bound hold against a hand-edited database as well as against a bad request.
 
@@ -21,13 +21,13 @@ struct Snapshot {
     values: HashMap<Tunable, f64>,
     /// The tunables a row actually stood behind, as opposed to those sitting at their compiled
     /// default. Kept apart from the values because a caller layering this over a *configured*
-    /// baseline — the duplicate sweep does — cannot otherwise tell an operator's deliberate
+    /// baseline (the duplicate sweep does) cannot otherwise tell an operator's deliberate
     /// `0.97` from the compiled one, and would silently discard the configured value.
     overridden: HashSet<Tunable>,
 }
 
 impl Snapshot {
-    /// Every tunable at its compiled default. The state before any successful load.
+    /// Returns every tunable at its compiled default, the state before any successful load.
     fn from_defaults() -> Self {
         Self {
             values: Tunable::all()
@@ -38,10 +38,10 @@ impl Snapshot {
         }
     }
 
-    /// Apply stored overrides on top of the compiled defaults.
+    /// Applies stored overrides on top of the compiled defaults.
     ///
     /// An unknown key is ignored, not fatal (schema and binary can disagree across a rollback).
-    /// An out-of-range value is clamped rather than dropped: the operator's *intent* was to move
+    /// An out-of-range value is clamped, not dropped: the operator's *intent* was to move
     /// in that direction, and honouring it as far as the range allows is closer to that intent
     /// than silently reverting to the shipped value.
     fn resolve(overrides: &[(String, f64)]) -> Self {
@@ -71,7 +71,7 @@ impl Snapshot {
 /// Where a [`TunableSet`] reads overrides from.
 #[async_trait::async_trait]
 pub trait TunableSource: Send + Sync + 'static {
-    /// The currently stored `(key, value)` overrides.
+    /// Returns the currently stored `(key, value)` overrides.
     ///
     /// # Errors
     /// Any failure is returned as a message; the set logs it and keeps its previous snapshot.
@@ -98,7 +98,7 @@ pub struct PostgresTunableSource {
 
 #[cfg(feature = "db")]
 impl PostgresTunableSource {
-    /// Reads overrides through `pool`, one query per refresh.
+    /// Creates a source that reads overrides through `pool`, one query per refresh.
     #[must_use]
     pub fn new(pool: tankovault_db::PgPool) -> Self {
         Self { pool }
@@ -126,7 +126,7 @@ pub struct TunableSet {
 }
 
 impl TunableSet {
-    /// A set at the compiled defaults, reading from `source` on each [`Self::refresh`].
+    /// Creates a set at the compiled defaults, reading from `source` on each [`Self::refresh`].
     ///
     /// Does not load: construction is synchronous and infallible, so a boot-time database
     /// hiccup cannot stop the process starting with a sane (defaults) view.
@@ -138,13 +138,13 @@ impl TunableSet {
         }
     }
 
-    /// A set pinned to the compiled defaults with no source at all.
+    /// Creates a set pinned to the compiled defaults with no source at all.
     #[must_use]
     pub fn defaults() -> Self {
         Self::new(Arc::new(TunableDefaultsOnly))
     }
 
-    /// A set with explicit values, for tests that need a knob moved.
+    /// Creates a set with explicit values, for tests that need a knob moved.
     ///
     /// Values are clamped exactly as a stored override would be, so a test cannot assert against
     /// a value the production reader would never produce.
@@ -163,9 +163,9 @@ impl TunableSet {
         set
     }
 
-    /// The current value of `tunable`, clamped to its registry range.
+    /// Returns the current value of `tunable`, clamped to its registry range.
     ///
-    /// Recovers from a poisoned lock rather than propagating it: the snapshot is plain data with
+    /// Recovers from a poisoned lock instead of propagating it: the snapshot is plain data with
     /// no invariant a panic could break half-way, and refusing to answer would take the service
     /// down over a bookkeeping detail.
     #[must_use]
@@ -185,8 +185,9 @@ impl TunableSet {
         tunable.spec().clamp(raw)
     }
 
-    /// The stored override for `tunable`, clamped — `None` while it sits at its compiled
-    /// default.
+    /// Returns the stored override for `tunable`, clamped, or `None` when none is stored.
+    ///
+    /// An override equal to the compiled default is still `Some`.
     ///
     /// The distinction only matters to a caller that has a baseline of its own; everything else
     /// wants [`Self::get`], which resolves the same value without the caller thinking about it.
@@ -205,7 +206,7 @@ impl TunableSet {
             .map(|&value| tunable.spec().clamp(value))
     }
 
-    /// The override if an operator has stored one, else `baseline` — both clamped to the
+    /// Returns the override if an operator has stored one, else `baseline`, both clamped to the
     /// registry's range.
     ///
     /// For the values that also have a *configured* baseline, which the compiled default is
@@ -219,14 +220,14 @@ impl TunableSet {
             .unwrap_or_else(|| tunable.spec().clamp(baseline))
     }
 
-    /// [`Self::resolve`] for a [`tankovault_domain::TunableKind::Toggle`].
+    /// Applies [`Self::resolve`] to a [`tankovault_domain::TunableKind::Toggle`].
     #[must_use]
     pub fn resolve_bool(&self, tunable: Tunable, baseline: bool) -> bool {
         self.override_for(tunable)
             .map_or(baseline, |value| tunable.is_on(value))
     }
 
-    /// [`Self::get`] as an `f32`, for the ranking maths, which is `f32` throughout.
+    /// Returns [`Self::get`] as an `f32`, for the ranking maths, which is `f32` throughout.
     #[must_use]
     #[expect(
         clippy::cast_possible_truncation,
@@ -236,7 +237,7 @@ impl TunableSet {
         self.get(tunable) as f32
     }
 
-    /// [`Self::get`] rounded to a count, saturating at both ends.
+    /// Returns [`Self::get`] rounded to a count, saturating at both ends.
     #[must_use]
     pub fn get_usize(&self, tunable: Tunable) -> usize {
         let rounded = self.get(tunable).round();
@@ -252,7 +253,7 @@ impl TunableSet {
         usize::try_from(value).unwrap_or(usize::MAX)
     }
 
-    /// [`Self::get`] rounded to an `i64`, for query limits.
+    /// Returns [`Self::get`] rounded to an `i64`, for query limits.
     #[must_use]
     pub fn get_i64(&self, tunable: Tunable) -> i64 {
         #[expect(
@@ -263,7 +264,7 @@ impl TunableSet {
         value
     }
 
-    /// [`Self::get`] rounded to an `i32`, for index parameters and day counts.
+    /// Returns [`Self::get`] rounded to an `i32`, for index parameters and day counts.
     #[must_use]
     pub fn get_i32(&self, tunable: Tunable) -> i32 {
         i32::try_from(self.get_i64(tunable)).unwrap_or(i32::MAX)
@@ -276,7 +277,7 @@ impl TunableSet {
         }
     }
 
-    /// Reload the snapshot from the source now.
+    /// Reloads the snapshot from the source now.
     ///
     /// Called by the tuning-write endpoint so the operator's own change is live immediately, and
     /// by the refresh loop. On failure the previous snapshot stands (see module docs).
@@ -300,7 +301,7 @@ impl TunableSet {
         }
     }
 
-    /// Load once, then refresh on `interval` until `shutdown`.
+    /// Loads once, then refreshes on `interval` until `shutdown`.
     ///
     /// The initial load is awaited so the listener never serves a shelf built from compiled
     /// defaults while the operator's stored tuning sits unread.
@@ -353,9 +354,9 @@ mod tests {
 
     /// **The k-anonymity floor must survive a row the API would never have written.**
     ///
-    /// The bug this pins: enforcing `min_support >= 5` only in the request handler. A row
+    /// The bug: enforcing `min_support >= 5` only in the request handler. A row
     /// written by a hand-edited database, a restored backup or a rollback to a build with a
-    /// wider range would then publish co-occurrence edges backed by a single reader — a
+    /// wider range would then publish co-occurrence edges backed by a single reader, a
     /// membership disclosure with nothing anywhere reporting a problem.
     #[test]
     fn a_stored_value_below_the_privacy_floor_still_reads_as_the_floor() {
@@ -371,9 +372,9 @@ mod tests {
 
     /// **A value nobody overrode must not displace the caller's own baseline.**
     ///
-    /// The bug this pins: resolving the duplicate sweep's policy through `get`, which answers
+    /// The bug: resolving the duplicate sweep's policy through `get`, which answers
     /// with the compiled default when no row exists. A deployment that had configured
-    /// `matching.auto_merge` would have had it silently replaced by the shipped `0.97` — a
+    /// `matching.auto_merge` would have had it silently replaced by the shipped `0.97`, a
     /// policy change with nothing anywhere to report it.
     #[test]
     fn a_baseline_stands_until_an_override_replaces_it() {
@@ -424,7 +425,7 @@ mod tests {
         assert_eq!(set.get_i64(Tunable::ServeShelfSize), 12);
     }
 
-    /// A ratio floored at zero must be readable as zero, not silently lifted to one — that is
+    /// A ratio floored at zero must be readable as zero, not silently lifted to one: that is
     /// how "switch this path off" is expressed.
     #[test]
     fn a_zero_valued_count_reads_as_zero() {
@@ -443,9 +444,9 @@ mod tests {
 
     /// **A failed refresh keeps the previous snapshot.**
     ///
-    /// The bug this pins: treating a query error as "no overrides". An operator has narrowed the
+    /// The bug: treating a query error as "no overrides". An operator has narrowed the
     /// diversity lambda, the database blips, and every replica silently reverts to the shipped
-    /// value — a deployment-wide behaviour change caused by a transient error, with nothing but
+    /// value, a deployment-wide behaviour change caused by a transient error, with nothing but
     /// a warning line to say it happened.
     #[tokio::test]
     async fn a_failed_refresh_keeps_the_previous_snapshot() {
@@ -477,9 +478,9 @@ mod tests {
             "recsys.serve.shelf_size".to_owned(),
             25.0,
         )])));
-        // Read from the registry rather than written out: what this pins is that a refresh
-        // *adopts* the source's value, not what any particular knob ships as. Hard-coding the
-        // default made a deliberate change to it look like a broken refresh.
+        // Read from the registry, not written out: what this pins is that a refresh adopts the
+        // source's value, not what any particular knob ships as. A hard-coded default would make
+        // a deliberate change to it look like a broken refresh.
         #[expect(
             clippy::cast_possible_truncation,
             reason = "a `Count` tunable's default is a small whole number by construction"
@@ -491,8 +492,10 @@ mod tests {
         assert_eq!(set.get_i64(Tunable::ServeShelfSize), 25);
     }
 
-    /// A `TunableDefaultsOnly` that returned one override would move the whole fleet off its
-    /// defaults with nothing to notice.
+    /// `TunableDefaultsOnly` contributes no overrides.
+    ///
+    /// One that returned an override would move the whole fleet off its defaults with nothing to
+    /// notice.
     #[tokio::test]
     async fn defaults_only_contributes_no_overrides() {
         assert_eq!(TunableDefaultsOnly.overrides().await, Ok(Vec::new()));

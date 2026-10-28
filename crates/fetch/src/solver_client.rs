@@ -1,33 +1,31 @@
-//! An HTTP [`ChallengeSolver`] that delegates to the `challenge-solver` microservice.
+//! Provides an HTTP [`ChallengeSolver`] that delegates to the `challenge-solver` service.
 //!
-//! Workers hold one of these; the service fronts the real back-end (TRAWL by
-//! default). Keeping the solve behind the same trait means the worker-side pipeline is
-//! identical whether the solver runs in-process or over the network.
+//! Workers hold one; the service fronts the real back-end, TRAWL by default. The same trait means
+//! the worker pipeline is identical whether the solver runs in-process or over the network.
 
 use async_trait::async_trait;
 use secrecy::{ExposeSecret as _, SecretString};
 use std::time::Duration;
 use tankovault_solver::{ChallengeSolver, SolveError, SolveOutcome, SolveRequest};
 
-/// Client for the `challenge-solver` service `POST /v1/solve` endpoint.
+/// Calls the `challenge-solver` service's `POST /v1/solve` endpoint.
 pub struct HttpChallengeSolver {
     client: wreq::Client,
     endpoint: String,
-    /// Presented as `X-Internal-Token`. The solver refuses unauthenticated callers, so this
-    /// is not optional in a production deployment — it is `Option` only because the token is
-    /// allowed to be absent outside the production profile.
+    /// The token presented as `X-Internal-Token`.
+    ///
+    /// The solver refuses unauthenticated callers, so production requires it; it is an `Option`
+    /// because other profiles may omit it.
     token: Option<SecretString>,
 }
 
 impl HttpChallengeSolver {
-    /// Build a client for `endpoint` (e.g. `http://challenge-solver:8080`) with an
-    /// overall solve timeout, presenting `token` to the solver.
+    /// Builds a client for `endpoint`, such as `http://challenge-solver:8080`, with an overall
+    /// solve timeout, presenting `token`.
     ///
     /// # Panics
-    /// If the HTTP client cannot be built. That needs the bundled TLS backend to fail to
-    /// initialise, which is a broken binary rather than a runtime condition — so it is a panic
-    /// at construction, where the process has not started serving, rather than a `Result` every
-    /// caller would `unwrap`.
+    /// If the HTTP client cannot be built, which means the bundled TLS backend failed to
+    /// initialise: a broken binary, caught before the process serves.
     #[must_use]
     pub fn new(
         endpoint: impl Into<String>,
@@ -37,22 +35,18 @@ impl HttpChallengeSolver {
         Self::build(endpoint, timeout, token, None)
     }
 
-    /// As [`Self::new`], additionally presenting a client certificate.
+    /// Builds a client like [`Self::new`] that also presents a client certificate, for
+    /// `internal.identity = "mtls"`.
     ///
-    /// The mTLS counterpart, used when `internal.identity = "mtls"`. This hop runs on `wreq`
-    /// rather than `reqwest` because the crate it lives in is the crawl stack; the two take
-    /// their PEM differently, which is why `tankovault_service::ClientMaterial` hands over bytes
-    /// rather than a built client.
+    /// This hop runs on `wreq`, the crawl stack's client, which takes PEM differently from
+    /// `reqwest`; that is why `tankovault_service::ClientMaterial` hands over bytes, not a built
+    /// client. `from_pkcs8_pem` accepts only PKCS#8 keys, so `ClientMaterial` re-encodes the key
+    /// as PKCS#8, and a mount this would reject has already failed when the configuration
+    /// resolved.
     ///
     /// # Panics
-    /// As [`Self::new`], and additionally if `material` is not valid PEM — which is a
-    /// misconfigured mount, caught at boot before the process serves anything.
-    ///
-    /// `from_pkcs8_pem` is the strictest consumer of the three in this workspace: it tests the
-    /// first bytes of the key against the `PRIVATE KEY` banner PKCS#8 carries, where rustls and
-    /// reqwest take PKCS#1 and SEC1 keys as well. `ClientMaterial` therefore hands over a key already
-    /// re-encoded as PKCS#8, and a mount this rejects has already failed when the configuration
-    /// resolved, with the path in the message.
+    /// As [`Self::new`], and if `material` is not valid PEM: a misconfigured mount, caught at
+    /// boot.
     #[must_use]
     pub fn with_mtls(
         endpoint: impl Into<String>,
@@ -68,8 +62,8 @@ impl HttpChallengeSolver {
         token: Option<SecretString>,
         material: Option<&tankovault_service::ClientMaterial>,
     ) -> Self {
-        // Deliberately no emulation profile and no SSRF resolver: this talks to our own
-        // service on the internal network, not to a provider.
+        // No emulation profile and no SSRF resolver: this talks to our own service on the
+        // internal network, not to a provider.
         let mut builder = wreq::Client::builder().timeout(timeout);
 
         if let Some(material) = material {
@@ -105,8 +99,8 @@ impl ChallengeSolver for HttpChallengeSolver {
         if let Some(token) = &self.token {
             request = request.header("x-internal-token", token.expose_secret());
         }
-        // So the solve appears under the scan that asked for it rather than as its own trace.
-        // Empty unless Sentry is configured.
+        // So the solve appears under the scan that asked for it; empty unless Sentry is
+        // configured.
         for (name, value) in tankovault_service::trace_headers() {
             request = request.header(name, value);
         }
@@ -121,12 +115,10 @@ impl ChallengeSolver for HttpChallengeSolver {
         let status = resp.status();
         if !status.is_success() {
             let described = format!("challenge-solver returned {status}");
-            // The service answers `5xx` (and a saturated gateway's `429`) when the tier could not
-            // serve the solve, and `4xx` when it served it and the challenge held —
-            // `tankovault_solver::http` owns that mapping and documents why the two ranges are
-            // kept apart. Reading every non-success as `Unsolved` is what reported a solver
-            // outage as "solver could not bypass the challenge" against providers that were, at
-            // that moment, answering `200` to a plain request.
+            // The service answers `5xx`, or a saturated gateway's `429`, when the tier could not
+            // serve the solve, and `4xx` when the challenge held; `tankovault_solver::http` owns
+            // that mapping. Reading every non-success as `Unsolved` would report a solver outage
+            // as unbeatable challenges.
             return Err(if status.is_server_error() || status.as_u16() == 429 {
                 SolveError::Unavailable(described)
             } else {
@@ -160,7 +152,7 @@ mod tests {
         }
     }
 
-    /// A body the service would send back for a fully-solved page.
+    /// Returns the body the service sends for a fully solved page.
     fn solved_body() -> serde_json::Value {
         serde_json::json!({
             "cookies": [["cf_clearance", "abc"]],
@@ -181,13 +173,11 @@ mod tests {
             .await;
     }
 
-    /// The whole round trip: the request document, the path, and every field of the outcome.
+    /// A solve posts the request and returns every field of the outcome.
     ///
-    /// `status` and `headers` are asserted deliberately. They exist so a provider's *rendered*
-    /// `429` reaches the backoff and rate-limit layers instead of arriving as a successful fetch
-    /// of an unparseable document, and this hop is where they would be lost — both are
-    /// `#[serde(default)]`, so a name that stopped matching would decode to `None`/empty and
-    /// every other assertion here would still pass (F-09).
+    /// `status` and `headers` let a provider's rendered `429` reach the backoff and rate-limit
+    /// layers. Both are `#[serde(default)]`, so a name that stopped matching would decode to
+    /// empty and every other assertion would still pass.
     #[tokio::test]
     async fn a_solve_posts_the_request_and_returns_every_field_of_the_outcome() {
         let server = MockServer::start().await;
@@ -226,10 +216,11 @@ mod tests {
         );
     }
 
-    /// The solver refuses unauthenticated callers (SEC-1/SEC-2), and this client is the only
-    /// thing that presents the credential. Nothing checked that it does — a token accepted by the
-    /// constructor and then dropped would fail every solve in production with a `403` while every
-    /// test in the workspace passed.
+    /// The internal token is presented when one is configured.
+    ///
+    /// The solver refuses unauthenticated callers, and this client alone presents the credential.
+    /// A token accepted by the constructor and then dropped would fail every production solve with
+    /// a `403` while other tests passed.
     #[tokio::test]
     async fn the_internal_token_is_presented_when_one_is_configured() {
         let server = MockServer::start().await;
@@ -258,9 +249,8 @@ mod tests {
         );
     }
 
-    /// The inverse leg. `None` is legal outside the production profile, and it must mean *no
-    /// header* rather than an empty one — a solver comparing an empty token against an empty
-    /// configured value would authenticate anybody.
+    /// No token means no header, not an empty one: a solver comparing an empty token against an
+    /// empty configured value would authenticate anybody.
     #[tokio::test]
     async fn no_token_means_no_header_rather_than_an_empty_one() {
         let server = MockServer::start().await;
@@ -279,8 +269,8 @@ mod tests {
         assert!(requests[0].headers.get("x-internal-token").is_none());
     }
 
-    /// The endpoint comes from configuration, where a trailing slash is the most ordinary typo
-    /// there is. Without the trim it produces `//v1/solve`, which axum does not route.
+    /// A trailing slash on the configured endpoint does not produce `//v1/solve`, which axum does
+    /// not route.
     #[tokio::test]
     async fn a_trailing_slash_on_the_endpoint_does_not_double_up() {
         let server = MockServer::start().await;
@@ -299,8 +289,8 @@ mod tests {
         assert_eq!(requests[0].url.path(), "/v1/solve");
     }
 
-    /// A refused or failed solve is [`SolveError::Unsolved`], not [`SolveError::Transport`]: the
-    /// service answered, so the network is fine and retrying the *transport* would be wrong.
+    /// A `4xx` is [`SolveError::Unsolved`], not [`SolveError::Transport`]: the service answered,
+    /// so the network is fine.
     #[tokio::test]
     async fn a_non_success_status_is_unsolved_and_names_the_status() {
         let server = MockServer::start().await;
@@ -318,8 +308,8 @@ mod tests {
         }
     }
 
-    /// A `200` carrying something that is not a [`SolveOutcome`] is the service's contract
-    /// breaking, which is a different fact from the challenge being unbeatable.
+    /// A `200` carrying something other than a [`SolveOutcome`] is malformed: the service's
+    /// contract broke, which differs from an unbeatable challenge.
     ///
     /// [`SolveOutcome`]: tankovault_solver::SolveOutcome
     #[tokio::test]
@@ -341,10 +331,10 @@ mod tests {
         );
     }
 
-    /// A timeout is its own variant rather than a `Transport` string, because the caller treats
-    /// them differently: a solve that ran out of budget may be worth another attempt on a longer
-    /// one, a transport failure means the service is not there. The distinction is made by
-    /// `wreq::Error::is_timeout`, and the branch that reads it is what this pins.
+    /// Exceeding the timeout is [`SolveError::Timeout`], not a transport error.
+    ///
+    /// A solve that ran out of budget may be worth a longer attempt; a transport failure means the
+    /// service is not there. This pins the branch that reads `wreq::Error::is_timeout`.
     #[tokio::test]
     async fn exceeding_the_timeout_is_timeout_rather_than_a_transport_error() {
         let server = MockServer::start().await;

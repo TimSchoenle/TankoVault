@@ -1,9 +1,8 @@
-//! `HeanCMS`, the platform several scanlator sites run (here: Omega Scans).
+//! Owns the adapter for `HeanCMS`, the platform several scanlator sites run (here: Omega Scans).
 //!
-//! This is the first source in the workspace that publishes its paywall as **data** rather than
-//! as a rendered lock icon: a chapter carries `price` and `free_at`, so the early-access model
-//! in [`ChapterAccess`] can be filled in exactly rather than inferred. That makes it the
-//! reference implementation for the other paid sources.
+//! The platform publishes its paywall as **data**, not as a rendered lock icon: a chapter carries
+//! `price` and `free_at`, so the early-access model in [`ChapterAccess`] is filled in exactly, not
+//! inferred. That makes it the reference implementation for the other paid sources.
 
 use crate::error::AdapterError;
 use crate::json::parse_json_body;
@@ -18,7 +17,7 @@ use tankovault_domain::{ContentType, SeriesStatus};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
-/// Rows per page. The API accepts larger values but answers slowly above this.
+/// Rows per page; the API accepts larger values but answers slowly above this.
 const PAGE_SIZE: u32 = 50;
 
 /// Chapter pages fetched per series before giving up on a feed that never ends.
@@ -90,7 +89,7 @@ struct ChapterRow {
     created_at: Option<String>,
 }
 
-/// Map the platform's `series_type` to the medium.
+/// Maps the platform's `series_type` to the medium.
 fn content_type_of(series_type: Option<&str>) -> ContentType {
     match series_type.map(str::to_ascii_lowercase).as_deref() {
         Some("manga") => ContentType::Manga,
@@ -101,11 +100,11 @@ fn content_type_of(series_type: Option<&str>) -> ContentType {
     }
 }
 
-/// Read the access state a `HeanCMS` chapter row advertises.
+/// Reads the access state a `HeanCMS` chapter row advertises.
 ///
-/// `price > 0` is the paywall. `free_at` is when it lifts — parsed when present, and left
-/// unknown when absent or unparseable, which keeps the chapter locked rather than freeing it
-/// on a date nobody published.
+/// `price > 0` is the paywall. `free_at` is when it lifts: parsed when present, and left unknown
+/// when absent or unparseable, which keeps the chapter locked instead of freeing it on a date
+/// nobody published.
 fn access_of(row: &ChapterRow) -> ChapterAccess {
     if row.price <= 0 {
         return ChapterAccess::Free;
@@ -120,17 +119,17 @@ fn access_of(row: &ChapterRow) -> ChapterAccess {
 
 /// A HeanCMS-backed provider.
 pub struct HeanCmsAdapter {
-    /// API host, from the preset's `config.api` — the platform serves its JSON from a
+    /// API host, from the preset's `config.api`: the platform serves its JSON from a
     /// dedicated subdomain, and there is no way to derive it from the reader host.
     api: String,
 }
 
 impl HeanCmsAdapter {
-    /// Build from the provider config.
+    /// Builds from the provider config.
     ///
     /// # Errors
-    /// [`AdapterError::Config`] when `api` is missing: the adapter cannot invent the host, and
-    /// failing here names the problem instead of every request 404ing later.
+    /// Returns [`AdapterError::Config`] when `api` is missing: the adapter cannot invent the host,
+    /// and failing here names the problem instead of every request 404ing later.
     pub fn new(config: &Value) -> Result<Self, AdapterError> {
         let api = config
             .get("api")
@@ -147,7 +146,7 @@ impl HeanCmsAdapter {
         Ok(Self { api })
     }
 
-    /// The series slug out of a stored `/series/{slug}` path.
+    /// Returns the series slug out of a stored `/series/{slug}` path.
     fn slug_of(series_path: &str) -> &str {
         series_path
             .trim_end_matches('/')
@@ -342,7 +341,7 @@ mod tests {
     }
 
     /// A paid chapter with no announced date must stay locked. Reading the missing date as
-    /// "unlocks now" would put a chapter the reader cannot open into their unread count — the
+    /// "unlocks now" would put a chapter the reader cannot open into their unread count: the
     /// exact failure the early-access model exists to prevent.
     #[test]
     fn a_paid_chapter_without_a_date_stays_locked() {

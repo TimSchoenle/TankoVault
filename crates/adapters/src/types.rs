@@ -1,4 +1,4 @@
-//! The `SourceAdapter` contract and its value types (`docs/ARCHITECTURE.md` §7).
+//! Owns the `SourceAdapter` contract and its value types (`docs/ARCHITECTURE.md` §7).
 
 use crate::error::AdapterError;
 use async_trait::async_trait;
@@ -11,32 +11,36 @@ use time::OffsetDateTime;
 
 /// Per-call context bundling the provider identity and the injected transport.
 ///
-/// Adapters own no transport — the fetch stack is injected here, so they are testable
-/// with a fake fetcher and swappable in production (design Appendix A §5).
+/// Adapters own no transport: the fetch stack is injected here, so they are testable with a
+/// fake fetcher and swappable in production (`docs/ARCHITECTURE.md` Appendix A §5).
 pub struct Ctx {
     /// Provider domain root. All stored paths resolve against this.
     pub base_url: String,
-    /// Provider slug (rate-limit + session-cache key).
+    /// Provider slug, the rate-limit and session-cache key.
     pub provider_slug: String,
     /// The composed fetch stack.
     pub fetcher: Arc<dyn Fetcher>,
 }
 
 impl Ctx {
-    /// Fetch a page identified by a **relative** path, returning the response (with its
-    /// final URL, used to relativise links found on the page).
+    /// Fetches a page by a path relative to [`Self::base_url`] or by an absolute `http(s)` URL,
+    /// returning the response (with its final URL, used to relativise links found on the page).
     ///
     /// # Errors
-    /// [`AdapterError`] on resolve/transport failure or a non-success status.
+    /// Returns [`AdapterError::Resolve`] if the path cannot be resolved, [`AdapterError::Fetch`]
+    /// if the fetch stack fails, and for a non-success status [`AdapterError::Challenged`],
+    /// [`AdapterError::Throttled`], [`AdapterError::Unserved`] or [`AdapterError::Http`], as
+    /// [`AdapterError::from_response`] classifies the body. [`AdapterError::is_transient`] holds
+    /// for `Challenged`, `Throttled` and an `Http` 429 or 5xx, never for `Unserved`.
     pub async fn fetch(&self, relative_path: &str) -> Result<FetchResponse, AdapterError> {
         self.fetch_with(relative_path, &[]).await
     }
 
-    /// [`fetch`](Self::fetch) with extra request headers, for XHR-only provider APIs that
+    /// Runs [`fetch`](Self::fetch) with extra request headers, for XHR-only provider APIs that
     /// content-negotiate or gate on them.
     ///
     /// # Errors
-    /// [`AdapterError`] on resolve/transport failure or a non-success status.
+    /// Returns the same variants as [`fetch`](Self::fetch).
     pub async fn fetch_with(
         &self,
         relative_path: &str,
@@ -65,12 +69,12 @@ pub struct CatalogPage {
     /// the end.
     pub items: Vec<CatalogItem>,
     /// Whether a page after this one exists. The full-scan walk chains one more page task while
-    /// this holds, so an adapter that cannot tell reports `false` and stops the walk rather than
+    /// this holds, so an adapter that cannot tell reports `false` and stops the walk instead of
     /// re-ingesting the catalogue forever.
     pub has_next: bool,
 }
 
-/// A catalogue entry: a series' relative path + its listed title.
+/// A catalogue entry: a series' relative path and its listed title.
 pub struct CatalogItem {
     /// Relative to [`Ctx::base_url`]. The scan fans out one series task per path.
     pub path: String,
@@ -94,7 +98,7 @@ pub struct LatestUpdate {
 /// Full metadata for one series.
 ///
 /// Every text field arrives unbounded from a scraped page. `services/worker`'s `bound_series`
-/// clips each one before ingest, so a mis-scraped selector costs a truncated string rather than
+/// clips each one before ingest, so a mis-scraped selector costs a truncated string, not
 /// a megabyte in a trigram index.
 pub struct SeriesMeta {
     /// The provider's canonical title for the series.
@@ -125,7 +129,7 @@ pub struct SeriesMeta {
 /// One chapter entry: number, optional title, and the **relative** chapter-page link.
 pub struct ChapterMeta {
     /// The chapter number, fractional for `.5` side chapters. Always finite: a listing whose
-    /// label does not parse to a finite number is skipped rather than clamped.
+    /// label does not parse to a finite number is skipped, not clamped.
     pub number: f64,
     /// The chapter's own title, absent when the provider numbers chapters and names nothing.
     pub title: Option<String>,
@@ -133,7 +137,7 @@ pub struct ChapterMeta {
     pub path: String,
     /// Publication timestamp when the provider states one. A relative label ("3 days ago")
     /// resolves against a clock sampled once for the whole listing, so re-scanning the same page
-    /// yields a later value; a label in no recognised shape leaves this `None` rather than
+    /// yields a later value; a label in no recognised shape leaves this `None` instead of
     /// guessing, because a wrong date reorders the release feed.
     pub published_at: Option<OffsetDateTime>,
     /// What the provider says about reading it right now.
@@ -143,7 +147,7 @@ pub struct ChapterMeta {
 /// A provider's access verdict for one chapter, as advertised on the page or in its API.
 ///
 /// [`EarlyAccess`](Self::EarlyAccess) carries the unlock time when the provider states one.
-/// `None` there is not "unlocks now" — it is "the provider showed a lock and no date", which
+/// `None` there is not "unlocks now"; it is "the provider showed a lock and no date", which
 /// the read paths must keep treating as locked until a later scan says otherwise.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ChapterAccess {
@@ -159,7 +163,7 @@ pub enum ChapterAccess {
 }
 
 impl ChapterAccess {
-    /// The provider's verdict split into the two columns `chapters` stores it in.
+    /// Returns the provider's verdict split into the two columns `chapters` stores it in.
     #[must_use]
     pub fn to_columns(self) -> (DomainChapterAccess, Option<OffsetDateTime>) {
         match self {
@@ -168,8 +172,8 @@ impl ChapterAccess {
         }
     }
 
-    /// Locked from `now`'s point of view: early access whose stated unlock time has not passed
-    /// (or which carries no unlock time at all).
+    /// Returns whether the chapter is locked from `now`'s point of view: early access whose stated
+    /// unlock time has not passed (or which carries no unlock time at all).
     #[must_use]
     pub fn is_locked_at(self, now: OffsetDateTime) -> bool {
         match self {
@@ -182,16 +186,29 @@ impl ChapterAccess {
 /// The behavioural contract every provider satisfies (config-driven or custom).
 #[async_trait]
 pub trait SourceAdapter: Send + Sync {
-    /// Enumerate the provider catalogue one page at a time (full scan).
+    /// Enumerates the provider catalogue one page at a time (full scan).
+    ///
+    /// # Errors
+    /// Returns what [`Ctx::fetch`] returns, or [`AdapterError::Missing`],
+    /// [`AdapterError::Parse`] or [`AdapterError::Selector`] for a page the adapter cannot read.
     async fn list_catalog(&self, ctx: &Ctx, page: u32) -> Result<CatalogPage, AdapterError>;
 
-    /// The provider's "latest updates" feed (fast scan).
+    /// Returns the provider's "latest updates" feed (fast scan).
+    ///
+    /// # Errors
+    /// Returns the same variants as [`list_catalog`](Self::list_catalog).
     async fn list_latest(&self, ctx: &Ctx) -> Result<Vec<LatestUpdate>, AdapterError>;
 
-    /// Full metadata for one series, given its RELATIVE path.
+    /// Returns full metadata for one series, given its **relative** path.
+    ///
+    /// # Errors
+    /// Returns the same variants as [`list_catalog`](Self::list_catalog).
     async fn fetch_series(&self, ctx: &Ctx, path: &str) -> Result<SeriesMeta, AdapterError>;
 
-    /// The chapter list (numbers + relative links) for one series.
+    /// Returns the chapter list (numbers and relative links) for one series.
+    ///
+    /// # Errors
+    /// Returns the same variants as [`list_catalog`](Self::list_catalog).
     async fn fetch_chapters(&self, ctx: &Ctx, path: &str)
     -> Result<Vec<ChapterMeta>, AdapterError>;
 }

@@ -1,4 +1,4 @@
-//! A production-shaped workload fixture, for suites that assert on *query plans* rather than on
+//! Owns the production-shaped workload fixture, for suites that assert on *query plans*, not on
 //! rows.
 //!
 //! # Why this is not `seed`
@@ -8,7 +8,7 @@
 //! thousand rows a sequential scan is genuinely cheaper, so a "does not scan" assertion over a
 //! seed-sized table would pass for a query that scans everything in production and fail for one
 //! that does not. **Volume is the fixture here**, and a table left empty is a table whose plans
-//! carry no information at all — not a table that passed.
+//! carry no information at all, not a table that passed.
 //!
 //! Row counts are production's, divided by the same factor throughout ([`SERIES`] against the
 //! ~54 000 series the real catalogue holds), so the *ratios* the planner reasons about survive.
@@ -31,8 +31,9 @@ use sqlx::PgPool;
 pub(crate) const SERIES: usize = 20_000;
 /// Alternative titles per series (production: 95 815 / 54 551).
 const ALT_TITLES_PER_SERIES: usize = 2;
-/// Chapters per source (production: 2 837 534 / 54 551). The single largest table, and the one
-/// whose plans are worthless without volume.
+/// Chapters per source (production: 2 837 534 / 54 551).
+///
+/// The single largest table, and the one whose plans are worthless without volume.
 const CHAPTERS_PER_SOURCE: i64 = 25;
 /// Tag links per series (production: 170 753 / 54 551).
 const TAGS_PER_SERIES: i64 = 3;
@@ -43,21 +44,24 @@ const USERS: i64 = 200;
 const WATCHED_PER_USER: i64 = 50;
 const NOTIFICATIONS_PER_USER: i64 = 100;
 const AUDIT_ROWS: i64 = 5_000;
-/// Scan runs, spread over [`SCAN_HISTORY_DAYS`]. Every triage query aggregates this history, so
-/// an empty table would plan every one of them as free.
+/// Scan runs, spread over [`SCAN_HISTORY_DAYS`].
+///
+/// Every triage query aggregates this history, so an empty table would plan every one of them as
+/// free.
 const SCAN_RUNS: i64 = 6_000;
 /// Tasks per run: 300 000 in all, a fifth of them failed.
 const SCAN_TASKS_PER_RUN: i64 = 50;
-/// How far back the scan history reaches — the default retention.
+/// How far back the scan history reaches: the default retention.
 const SCAN_HISTORY_DAYS: i64 = 30;
 
-/// Fixed seed for [`Lcg`]. Any value works; it is pinned so every machine and every run builds a
-/// byte-identical fixture.
+/// Fixed seed for [`Lcg`].
+///
+/// Any value works; it is pinned so every machine and every run builds a byte-identical fixture.
 const SEED: u64 = 0x5461_6E6B_6F56_6175;
 
 /// A small linear congruential generator, so the fixture needs no `rand` dependency.
 ///
-/// The constants are Knuth's MMIX values. Quality is irrelevant — the only requirement is that
+/// The constants are Knuth's MMIX values. Quality is irrelevant: the only requirement is that
 /// the output be well spread and identical on every run.
 struct Lcg(u64);
 
@@ -66,7 +70,7 @@ impl Lcg {
         Self(seed)
     }
 
-    /// The high bits of the next state, which are the well-mixed ones in an LCG.
+    /// Returns the high bits of the next state, which are the well-mixed ones in an LCG.
     fn next(&mut self) -> u64 {
         self.0 = self
             .0
@@ -75,7 +79,7 @@ impl Lcg {
         self.0 >> 33
     }
 
-    /// A value in `0..n`.
+    /// Returns a value in `0..n`.
     fn below(&mut self, n: usize) -> usize {
         usize::try_from(self.next()).unwrap_or(usize::MAX) % n
     }
@@ -85,7 +89,7 @@ const ONSETS: &[u8] = b"bcdfghjklmnprstvwyz";
 const VOWELS: &[u8] = b"aeiou";
 const CODAS: &[u8] = b"nrslt";
 
-/// A pronounceable pseudo-word of two to four syllables.
+/// Returns a pronounceable pseudo-word of two to four syllables.
 fn word(rng: &mut Lcg) -> String {
     let syllables = 2 + rng.below(3);
     let mut out = String::with_capacity(syllables * 3);
@@ -99,7 +103,7 @@ fn word(rng: &mut Lcg) -> String {
     out
 }
 
-/// A title of two to four [`word`]s, in the shape `tankovault_domain::normalize` produces:
+/// Returns a title of two to four [`word`]s, in the shape `tankovault_domain::normalize` produces:
 /// lowercase, single-space separated.
 fn title(rng: &mut Lcg) -> String {
     let words = 2 + rng.below(3);
@@ -113,7 +117,7 @@ fn title(rng: &mut Lcg) -> String {
     out
 }
 
-/// Fill the schema with a production-shaped workload and `ANALYZE` it.
+/// Fills the schema with a production-shaped workload and `ANALYZE`s it.
 ///
 /// The `ANALYZE` is not optional: `CREATE DATABASE … TEMPLATE` copies statistics along with the
 /// data, so analysing once here is what lets every cloned test database plan like production
@@ -129,10 +133,10 @@ pub(crate) async fn seed(pool: &PgPool) {
     analyse(pool).await;
 }
 
-/// Series and their alternative titles: the trigram-searched half of the schema.
+/// Seeds series and their alternative titles: the trigram-searched half of the schema.
 async fn seed_catalogue(pool: &PgPool, rng: &mut Lcg) {
     let titles: Vec<String> = (0..SERIES).map(|_| title(rng)).collect();
-    // The description is derived server-side rather than sent: it exists only to make the row
+    // The description is derived server-side, not sent: it exists only to make the row
     // production-width, and repeating the title is enough for that.
     sqlx::query(
         "INSERT INTO series (canonical_title, normalized_title, description) \
@@ -164,8 +168,10 @@ async fn seed_catalogue(pool: &PgPool, rng: &mut Lcg) {
     .expect("seed alternative titles");
 }
 
-/// Providers, one source per series, and the chapters under them — by far the largest table, and
-/// generated entirely server-side because sending a million rows over the wire is not worth it.
+/// Seeds providers, one source per series, and the chapters under them.
+///
+/// Chapters are by far the largest table, generated entirely server-side because sending a
+/// million rows over the wire is not worth it.
 async fn seed_sources_and_chapters(pool: &PgPool) {
     sqlx::query(
         "INSERT INTO providers (slug, name, base_url, adapter) \
@@ -194,7 +200,7 @@ async fn seed_sources_and_chapters(pool: &PgPool) {
     // the tracking queries page by is the ordering the data actually has.
     sqlx::query(
         // `path` is stored relative to the source's own path (migration 0055), so a value with no
-        // leading slash is the compressed form — which is what the ingest writes for a provider
+        // leading slash is the compressed form, which is what the ingest writes for a provider
         // whose chapters nest under the series page.
         "INSERT INTO chapters (series_source_id, number_milli, path, published_at, discovered_at) \
          SELECT ss.id, g * 10000, 'chapter/' || g, \
@@ -207,7 +213,7 @@ async fn seed_sources_and_chapters(pool: &PgPool) {
     .expect("seed chapters");
 }
 
-/// Tag and author links, which the candidate queries aggregate per series.
+/// Seeds tag and author links, which the candidate queries aggregate per series.
 async fn seed_tags_and_authors(pool: &PgPool, rng: &mut Lcg) {
     let tags: Vec<String> = (0..200).map(|_| word(rng)).collect();
     let authors: Vec<String> = (0..5_000).map(|_| title(rng)).collect();
@@ -253,8 +259,9 @@ async fn seed_tags_and_authors(pool: &PgPool, rng: &mut Lcg) {
     .expect("seed series authors");
 }
 
-/// Accounts and everything hung off them: the user-scoped half of the schema, whose queries are
-/// the other place a missing index costs a page load.
+/// Seeds accounts and everything hung off them: the user-scoped half of the schema.
+///
+/// Its queries are the other place a missing index costs a page load.
 async fn seed_readers(pool: &PgPool) {
     sqlx::query(
         "INSERT INTO users (email, username, password_hash, email_verified_at) \
@@ -267,7 +274,7 @@ async fn seed_readers(pool: &PgPool) {
     .expect("seed users");
 
     // Each reader watches a contiguous slice of the catalogue, offset by their own index, so the
-    // slices overlap the way real libraries do rather than partitioning the table.
+    // slices overlap the way real libraries do instead of partitioning the table.
     sqlx::query(
         "INSERT INTO watchlist_entries (user_id, series_id, status) \
          SELECT u.id, s.id, 'reading' \
@@ -318,7 +325,7 @@ async fn seed_readers(pool: &PgPool) {
     .expect("seed audit log");
 }
 
-/// Scan runs and their tasks: the history the console's triage queries aggregate.
+/// Seeds scan runs and their tasks: the history the console's triage queries aggregate.
 ///
 /// A fifth of the tasks failed and a tenth of those were cleared, so the failure feed's partial
 /// indexes have the selectivity they have in a deployment that scans continuously.
@@ -359,7 +366,7 @@ async fn seed_scan_history(pool: &PgPool) {
     .expect("seed scan tasks");
 }
 
-/// `VACUUM` then `ANALYZE` the whole database, so no table is left planning from defaults.
+/// Runs `VACUUM` then `ANALYZE` on the whole database, so no table is left planning from defaults.
 ///
 /// # The `VACUUM` is load-bearing, and its absence is a race
 ///
@@ -367,25 +374,24 @@ async fn seed_scan_history(pool: &PgPool) {
 /// (`fastupdate`, on by default). `gincostestimate` reads the pending-list size from the index
 /// metapage **at plan time** and charges a page fetch for every page of it, because a scan
 /// really would have to read them all. Bulk-seeding this fixture leaves ~765 such pages, which
-/// adds ~765 to the estimated cost of *every* trigram index scan — enough that the planner
+/// adds ~765 to the estimated cost of *every* trigram index scan, enough that the planner
 /// prefers a sequential scan of `series_titles` (970) and the trigram assertions in
 /// `crates/db/tests/repo_query_plans.rs` fail.
 ///
-/// Nothing in the fixture flushed that list, so whether it was still there when the plan was
-/// taken came down to whether autovacuum's 60-second naptime happened to fire first — which
-/// made the suite pass on a slow machine (the build takes ~150 s) and fail on a fast CI runner
-/// (~38 s). `VACUUM` flushes the list outright, which is also the state a production catalogue
-/// is in, autovacuum having long since run.
+/// Without an explicit flush, whether that list is still there when the plan is taken comes down
+/// to whether autovacuum's 60-second naptime fires first, so the suite passes on a slow machine
+/// and fails on a fast CI runner. `VACUUM` flushes the list outright, which is also the state a
+/// production catalogue is in, autovacuum having long since run.
 ///
-/// `default_statistics_target = 1000` first, and it is doing real work rather than being
-/// thorough for its own sake. `ANALYZE` reads a *sample* — 300 rows per unit of the target — and
+/// `default_statistics_target = 1000` first, and it is doing real work, not being thorough for
+/// its own sake. `ANALYZE` reads a *sample* (300 rows per unit of the target), and
 /// a different sample means different estimates, so cost figures drift every time the fixture is
 /// rebuilt and any assertion about them drifts with it. At 1000 the sample is 300 000 rows, more
 /// than every table here except `chapters` holds, so all of those are read whole.
 ///
-/// It reduces the drift rather than removing it: `chapters` is still sampled, and estimates for
-/// the queries that touch it were still observed moving by ~12% between runs. Anything asserting
-/// on a cost needs headroom for that — see the `Budget` ceilings in
+/// It reduces the drift without removing it: `chapters` is still sampled, and estimates for the
+/// queries that touch it move by ~12% between runs. Anything asserting on a cost needs headroom
+/// for that; see the `Budget` ceilings in
 /// `crates/db/tests/repo_query_plans.rs`.
 ///
 /// All three statements go over one connection because the setting is per-session; on a pool

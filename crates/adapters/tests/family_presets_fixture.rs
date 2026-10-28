@@ -1,10 +1,11 @@
-//! Fixture tests for the provider families added alongside the 2026-08 source expansion —
-//! `MangaThemesia`, Manganato and the two config-only sites that are not on a shared theme.
+//! Tests the provider family presets against fixtures: `MangaThemesia`, Manganato, Keyoapp and
+//! the config-only sites that are not on a shared theme.
 //!
 //! Every fixture is markup trimmed from a live response (solver-fetched where the origin is
 //! behind bot management), and every assertion runs the *shipped* preset config through
-//! `build_adapter`. A site that changes its layout therefore fails a test here rather than
-//! quietly writing wrong rows into `series`/`chapters`.
+//! `build_adapter`. A preset change that breaks the captured markup therefore fails a test here
+//! instead of quietly writing wrong rows into `series`/`chapters`. A live layout change shows up
+//! only once its fixture is refreshed.
 
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -20,11 +21,11 @@ struct SiteFetcher {
     series: &'static str,
     /// Body for the Manganato family's JSON chapter endpoint (`/api/manga/{slug}/chapters`).
     chapters_api: &'static str,
-    /// Body for a feed served from a URL of its own — for Keyoapp that is the site root.
+    /// Body for a feed served from a URL of its own; for Keyoapp that is the site root.
     latest: &'static str,
 }
 
-/// Whether `url` addresses the site root itself (`https://host` or `https://host/`).
+/// Returns whether `url` addresses the site root itself (`https://host` or `https://host/`).
 fn is_site_root(url: &str) -> bool {
     url.split_once("://")
         .is_some_and(|(_, rest)| !rest.trim_end_matches('/').contains('/'))
@@ -71,7 +72,7 @@ impl Fetcher for SiteFetcher {
     }
 }
 
-/// Build the live adapter for a shipped preset, paired with a fixture-serving context.
+/// Builds the live adapter for a shipped preset, paired with a fixture-serving context.
 fn preset_adapter(slug: &str, fetcher: SiteFetcher) -> (Box<dyn SourceAdapter>, Ctx) {
     let preset = builtin_presets()
         .into_iter()
@@ -87,7 +88,7 @@ fn preset_adapter(slug: &str, fetcher: SiteFetcher) -> (Box<dyn SourceAdapter>, 
     (adapter, ctx)
 }
 
-/// Build a family's adapter on its defaults alone, against the origin the fixture was taken from.
+/// Builds a family's adapter on its defaults alone, against the origin the fixture was taken from.
 fn family_adapter(
     kind: AdapterKind,
     base_url: &str,
@@ -104,7 +105,7 @@ fn family_adapter(
 }
 
 // -----------------------------------------------------------------------------------------
-// MangaThemesia — family defaults
+// MangaThemesia: family defaults
 // -----------------------------------------------------------------------------------------
 
 /// Origin of the two fixtures below; their links are absolute to it.
@@ -164,7 +165,7 @@ async fn mangathemesia_series_reads_the_labelled_info_rows() {
     assert!(!meta.tags.is_empty(), "genres come from span.mgen a");
     // `div.imptdt` renders Status, Type, Released, Author and Artist as structurally identical
     // rows whose only distinguishing feature is their leading text. Selecting the row without
-    // matching that text stores the label itself as the value — the bug `madara`'s `alt` row
+    // matching that text stores the label itself as the value: the bug `madara`'s `alt` row
     // documents, reproduced here because this theme has the same shape.
     assert!(
         meta.authors
@@ -214,11 +215,13 @@ async fn mangathemesia_chapters_carry_number_title_and_date() {
     );
 }
 
-/// Regression: `rokaricomics` sells early access through a coin plugin the stock theme knows
-/// nothing about, and its preset carried no `locked` selector — so every paid chapter ingested
-/// as free, and the reader's next unread page was a paywall. A paid row keeps a working chapter
-/// link and differs from a free one by one `span.text-gold` carrying the coin glyph and price,
-/// which is why that badge, and not the link, has to be what decides access.
+/// `rokaricomics` reads the coin badge as a lock.
+///
+/// The bug: the site sells early access through a coin plugin the stock theme knows nothing about,
+/// and a preset with no `locked` selector ingests every paid chapter as free, and the reader's next
+/// unread page was a paywall. A paid row keeps a working chapter link and differs from a free one
+/// by one `span.text-gold` carrying the coin glyph and price, which is why that badge, and not the
+/// link, has to be what decides access.
 #[tokio::test]
 async fn rokari_reads_the_coin_badge_as_a_lock() {
     let (adapter, ctx) = preset_adapter(
@@ -246,8 +249,8 @@ async fn rokari_reads_the_coin_badge_as_a_lock() {
         .iter()
         .find(|c| (c.number - 37.0).abs() < f64::EPSILON)
         .expect("chapter 37 is in the fixture");
-    // The badge prices the chapter and never dates it, so the unlock time stays unknown — which
-    // keeps the chapter locked rather than freeing it on a date nobody published.
+    // The badge prices the chapter and never dates it, so the unlock time stays unknown, which
+    // keeps the chapter locked instead of freeing it on a date nobody published.
     assert_eq!(
         badged.access,
         tankovault_adapters::ChapterAccess::EarlyAccess { unlocks_at: None },
@@ -273,19 +276,18 @@ async fn rokari_reads_the_coin_badge_as_a_lock() {
 }
 
 // -----------------------------------------------------------------------------------------
-// MangaThemesia — the `table.infotable` installs (rokaricomics, kingofshojo, mangatrend,
+// MangaThemesia: the `table.infotable` installs (rokaricomics, kingofshojo, mangatrend,
 // athreascans)
 // -----------------------------------------------------------------------------------------
 
 const THEMESIA_TABLE_AUTHOR: &str =
     include_str!("../fixtures/mangathemesia/series_infotable_author.html");
 
-/// Four installs in this family render the series info block as a two-column `table.infotable`
-/// and the genres as `div.seriestugenre`, so the theme's `div.imptdt` / `span.mgen` defaults
-/// selected nothing on them: every series ingested with `Unknown` status, no genres, no
-/// alternative titles and no year, while title, cover and description parsed perfectly. Nothing
-/// reported it, because an unmatched selector is also how the theme's genuinely *optional* rows
-/// are meant to read.
+/// Four installs in this family render the series info block as a two-column `table.infotable` and
+/// the genres as `div.seriestugenre`, so the theme's `div.imptdt` / `span.mgen` defaults select
+/// nothing on them: every series ingests with `Unknown` status, no genres, no alternative titles
+/// and no year, while title, cover and description parse perfectly. Nothing reports it, because an
+/// unmatched selector is also how the theme's genuinely *optional* rows are meant to read.
 #[tokio::test]
 async fn mangathemesia_infotable_install_reads_the_table_rows() {
     let (adapter, ctx) = preset_adapter(
@@ -308,8 +310,8 @@ async fn mangathemesia_infotable_install_reads_the_table_rows() {
     assert_eq!(meta.tags, vec!["Fantasy".to_owned(), "Romance".to_owned()]);
     assert_eq!(meta.alt_titles, vec!["천마신교 최강하녀".to_owned()]);
     // The only credit-shaped row this install renders is `Posted By`, and it holds the
-    // WordPress account that uploaded the post — `enegma` here, the site's own name on the
-    // sibling installs. Storing it would put one handle on every series the site carries, which
+    // WordPress account that uploaded the post (`enegma` here, the site's own name on the
+    // sibling installs). Storing it would put one handle on every series the site carries, which
     // is both wrong and the strongest signal the recommender would then see.
     assert!(
         meta.authors.is_empty(),
@@ -320,7 +322,7 @@ async fn mangathemesia_infotable_install_reads_the_table_rows() {
     // publication, so this shape has no release year to read at all.
     assert_eq!(meta.release_year, None);
     // Unchanged from the stock template, and asserted here because the override touches
-    // `series` alone — a merge that clobbered the section would take these with it.
+    // `series` alone; a merge that clobbered the section would take these with it.
     assert!(
         meta.cover_url
             .as_deref()
@@ -339,7 +341,7 @@ async fn mangathemesia_infotable_install_reads_the_table_rows() {
 
 /// The trap the whole labelled-row shape exists for: `value` must name the row's *second* cell.
 /// `td` selects the first one, so the config that looks right stores `Status`, `Alternative
-/// Names` and `Author` as the values themselves — and `alt` feeds `series_titles`, whose
+/// Names` and `Author` as the values themselves, and `alt` feeds `series_titles`, whose
 /// `normalized` column the trigram matcher and catalogue search both score against.
 ///
 /// The fixture comes from `akazascans.org`, an install in this shape that fills an `Author` row;
@@ -390,7 +392,7 @@ async fn mangathemesia_infotable_reads_the_value_cell_not_the_label_cell() {
 }
 
 // -----------------------------------------------------------------------------------------
-// Manganato — natomanga
+// Manganato: natomanga
 // -----------------------------------------------------------------------------------------
 
 const NATO_CATALOG: &str = include_str!("../fixtures/manganato/catalog.html");
@@ -435,7 +437,7 @@ async fn manganato_series_splits_the_label_off_its_value() {
         .expect("series parses");
 
     assert_eq!(meta.title, "Your Regrets Mean Nothing to Me");
-    // This family renders `<li>Author(s) : Park Hae-nae</li>` — label and value in one text
+    // This family renders `<li>Author(s) : Park Hae-nae</li>`: label and value in one text
     // node. Reading the row verbatim stores `Author(s) : Park Hae-nae` as the author name, and
     // the same shape feeds `series_titles` for alternatives, where a wrong key reaches the
     // trigram matcher and catalogue search.
@@ -459,10 +461,12 @@ async fn manganato_series_splits_the_label_off_its_value() {
     assert!(!meta.tags.is_empty(), "genres come from li.genres a");
 }
 
-/// Regression guard for the family's defining trap: the series page carries only the newest
-/// ~25 chapters and the rest arrive from a JSON endpoint. An adapter that reads the markup
-/// instead silently truncates every long series — a chapter count that looks plausible and is
-/// wrong, which no error path would ever report.
+/// Manganato chapters come from the JSON endpoint, not the page.
+///
+/// The family's defining trap: the series page carries only the newest ~25 chapters and the rest
+/// arrive from a JSON endpoint. An adapter that reads the markup instead silently truncates every
+/// long series: a chapter count that looks plausible and is wrong, which no error path would ever
+/// report.
 #[tokio::test]
 async fn manganato_chapters_come_from_the_json_endpoint_not_the_page() {
     let (adapter, ctx) = preset_adapter(
@@ -509,7 +513,7 @@ async fn manganato_chapters_come_from_the_json_endpoint_not_the_page() {
 }
 
 // -----------------------------------------------------------------------------------------
-// Toonily — Madara with a different listing path
+// Toonily: Madara with a different listing path
 // -----------------------------------------------------------------------------------------
 
 const TOONILY_CATALOG: &str = include_str!("../fixtures/toonily/catalog.html");
@@ -530,7 +534,7 @@ async fn toonily_catalogue_walks_the_search_listing() {
         .expect("catalogue parses");
 
     assert_eq!(page.items.len(), 3);
-    // `/manga/` is not a listing on this site — `/search/` is. A preset pointed at the Madara
+    // `/manga/` is not a listing on this site; `/search/` is. A preset pointed at the Madara
     // default path yields an empty catalogue and a scan that succeeds having found nothing.
     assert!(
         page.items.iter().all(|i| i.path.starts_with("/serie/")),
@@ -558,11 +562,11 @@ async fn toonily_series_reads_the_lazy_loaded_cover() {
         .expect("series parses");
 
     // The `<h1>` also contains the theme's `END` badge. `@text` reads the heading's own text
-    // nodes only — without it the canonical title, and therefore the matching key this series
+    // nodes only; without it the canonical title, and therefore the matching key this series
     // is found by, becomes `Solo Leveling END`.
     assert_eq!(meta.title, "Solo Leveling");
     // This origin is always solver-rendered, so the cover arrives as a resolved `src`. The
-    // `data-src` override that manhuaplus needs would find nothing here — hence no override,
+    // `data-src` override that manhuaplus needs would find nothing here, hence no override,
     // and hence this assertion, which fails if one is ever added by analogy.
     let cover = meta.cover_url.expect("a cover must be found");
     assert!(
@@ -575,24 +579,24 @@ async fn toonily_series_reads_the_lazy_loaded_cover() {
         .await
         .expect("chapters parse");
     assert_eq!(chapters.len(), 3);
-    // `May 31, 23` — a month-name date, which is what the Madara themes render and what
-    // `parse_date_label` was extended to read.
+    // `May 31, 23`: a month-name date, which is what the Madara themes render and what
+    // `parse_date_label` reads.
     assert!(
         chapters.iter().any(|c| c.published_at.is_some()),
         "month-name release dates must parse"
     );
 }
 
-/// Regression: a catalogue that does not paginate must say so, or the walk never terminates.
+/// A catalogue that does not paginate must say so, or the walk never terminates.
 ///
 /// `mangatx` answers every page number with the byte-identical page 1. The `MangaThemesia` family
-/// default clears `catalog.next`, so `has_next` falls back to "this page yielded items" — which is
+/// default clears `catalog.next`, so `has_next` falls back to "this page yielded items", which is
 /// true forever on a site like this. A full scan re-fetches and re-ingests page 1 until the
 /// planner's page cap: twenty thousand requests for forty series, with no error anywhere, because
 /// every page genuinely succeeded.
 ///
-/// Found only by walking the catalogue: a single-page probe and a fast scan both see a healthy
-/// page 1, and the fast path never calls `list_catalog` at all.
+/// Only a catalogue walk shows it: a single-page probe and a fast scan both see a healthy page 1,
+/// and the fast path never calls `list_catalog` at all.
 #[tokio::test]
 async fn a_single_page_catalogue_reports_no_next_page() {
     let (adapter, mut ctx) = preset_adapter(
@@ -613,10 +617,10 @@ async fn a_single_page_catalogue_reports_no_next_page() {
     );
 }
 
-/// Regression: in sitemap mode a 404 on shard `n+1` is how the catalogue ends, not a failure.
+/// In sitemap mode a 404 on shard `n+1` is how the catalogue ends, not a failure.
 ///
-/// `MangaPill` publishes one shard. Reported as an error, the walk ended *and* the run was marked
-/// degraded — a scan failure logged on every full scan, forever, for a provider behaving
+/// The bug: `MangaPill` publishes one shard. Reported as an error, the walk ended *and* the run
+/// was marked degraded, a scan failure logged on every full scan for a provider behaving
 /// perfectly. Restricted to 404 on purpose: a 403 or a 5xx means part of the catalogue was not
 /// seen, and must keep surfacing.
 #[tokio::test]
@@ -632,7 +636,7 @@ async fn a_missing_sitemap_shard_ends_the_walk_without_failing_it() {
 }
 
 // -----------------------------------------------------------------------------------------
-// Keyoapp — asmotoon
+// Keyoapp: asmotoon
 // -----------------------------------------------------------------------------------------
 
 const KEYO_CATALOG: &str = include_str!("../fixtures/keyoapp/catalog.html");
@@ -640,8 +644,8 @@ const KEYO_LATEST: &str = include_str!("../fixtures/keyoapp/latest.html");
 const KEYO_SERIES: &str = include_str!("../fixtures/keyoapp/series.html");
 
 /// The platform renders its whole catalogue into one document and filters it in the browser, so
-/// `pages: 1` is what ends the walk. Without it the yielded-items fallback never goes false —
-/// the same document answers every page number — and the walk re-ingests it until the planner's
+/// `pages: 1` is what ends the walk. Without it the yielded-items fallback never goes false (the
+/// same document answers every page number), and the walk re-ingests it until the planner's
 /// cap, with every request "succeeding".
 #[tokio::test]
 async fn keyoapp_catalogue_is_one_page_and_says_so() {
@@ -679,11 +683,13 @@ async fn keyoapp_catalogue_is_one_page_and_says_so() {
     );
 }
 
-/// Regression: the feed read `/latest/`, which every install answers with its **entire**
-/// catalogue re-sorted by update time — 729 cards on the largest — so a fast scan fanned out a
-/// child task per series in the catalogue, every cycle. Production also saw eight of the nine
-/// installs answer that route with an origin `404` while `/series/` on the same host succeeded.
-/// The home page's `#latest` strip is a dozen cards and cannot 404.
+/// The Keyoapp latest feed is the home page's latest strip only.
+///
+/// The bug: the feed read `/latest/`, which every install answers with its **entire** catalogue
+/// re-sorted by update time (729 cards on the largest), so a fast scan fanned out a child task per
+/// series in the catalogue, every cycle. Most installs also answer that route with an origin `404`
+/// while `/series/` on the same host succeeds. The home page's `#latest` strip is a dozen cards
+/// and cannot 404.
 ///
 /// The scoping is the load-bearing part: `div.latest-poster` is the card class for Trending,
 /// Pinned and Recently Added as well, and none of those is an update.
@@ -715,7 +721,7 @@ async fn keyoapp_latest_feed_is_the_home_pages_latest_strip_only() {
         updates.iter().map(|u| &u.path).collect::<Vec<_>>()
     );
     // Read off the anchor's `title`, not an `h3`: several installs render the name in a plain
-    // `span` and the card then had no title at all.
+    // `span` and the card then has no title at all.
     assert!(updates.iter().all(|u| !u.title.is_empty()));
     assert!(
         updates.iter().all(|u| u.latest_chapter > 0.0),
@@ -748,7 +754,7 @@ async fn keyoapp_series_reads_the_labelled_info_rows() {
     assert_eq!(meta.status, SeriesStatus::Ongoing);
     // Author, Artist, Type and Status render as structurally identical two-cell grids whose
     // only distinguishing feature is the label text. Selecting the row without matching that
-    // text stores the labels themselves — into `series_titles` for `alt`, whose `normalized`
+    // text stores the labels themselves, into `series_titles` for `alt`, whose `normalized`
     // column the trigram matcher and catalogue search both score against.
     assert_eq!(meta.authors, vec!["NKMR".to_owned()]);
     assert!(
@@ -800,8 +806,8 @@ async fn keyoapp_chapters_carry_the_row_attribute_date_and_the_paywall() {
         "every row states a date in `d`: {:?}",
         chapters.iter().map(|c| c.published_at).collect::<Vec<_>>()
     );
-    // The platform states a price and never a date, so a locked chapter has no unlock time —
-    // and must stay locked rather than being read as "unlocks now".
+    // The platform states a price and never a date, so a locked chapter has no unlock time
+    // and must stay locked instead of being read as "unlocks now".
     let locked: Vec<_> = chapters
         .iter()
         .filter(|c| c.access != tankovault_adapters::ChapterAccess::Free)
@@ -822,7 +828,7 @@ async fn keyoapp_chapters_carry_the_row_attribute_date_and_the_paywall() {
                 == tankovault_adapters::ChapterAccess::EarlyAccess { unlocks_at: None }),
         "a price is not a date, so a paid row must stay locked indefinitely"
     );
-    // And the unbadged row must still read as free — a marker that matched every row would
+    // And the unbadged row must still read as free: a marker that matched every row would
     // empty the unread count for the whole provider.
     assert!(
         chapters

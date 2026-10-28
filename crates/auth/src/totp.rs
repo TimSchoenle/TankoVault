@@ -1,17 +1,16 @@
 //! Time-based one-time passwords (RFC 6238), the second factor an authenticator app provides.
 //!
-//! Implemented here rather than taken from a crate because the algorithm is an HMAC, a
-//! truncation and a modulo, and RFC 6238 Appendix B publishes the vectors that prove an
-//! implementation correct — which the tests at the bottom of this file run. A dependency whose
-//! job is those three lines buys a supply-chain edge and saves nothing.
+//! Implemented here, not taken from a crate: the algorithm is an HMAC, a truncation and a
+//! modulo, and the tests below run the RFC 6238 Appendix B vectors that prove it correct. A
+//! dependency for those three steps would add a supply-chain edge and save nothing.
 //!
 //! # What this module does not decide
 //!
-//! Replay is the caller's business, and it is not optional. A code is valid for its whole
+//! Replay protection is the caller's job, and it is not optional. A code is valid for its whole
 //! 30-second step, and [`verify`] accepts one step of skew either side, so the same six digits
-//! answer for up to 90 seconds. [`verify`] therefore takes the last step this secret was
-//! accepted at and refuses anything at or below it — but only the caller can persist that value
-//! (`user_totp.last_step`). Passing `None` every time re-opens the replay window.
+//! answer for up to 90 seconds. [`verify`] takes the last accepted step and refuses anything at
+//! or below it, but only the caller can persist that value (`user_totp.last_step`). Passing
+//! `None` every time re-opens the replay window.
 
 use hmac::{Hmac, KeyInit as _, Mac as _};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
@@ -21,46 +20,45 @@ use sha1::Sha1;
 use subtle::ConstantTimeEq as _;
 use time::OffsetDateTime;
 
-/// Length of a generated shared secret, in bytes.
+/// The length of a generated shared secret, in bytes.
 ///
-/// 160 bits: the size RFC 4226 §4 requires as a minimum, the HMAC-SHA1 block-relevant size, and
-/// the size every authenticator app is known to accept. Longer secrets are legal and are
-/// silently truncated or rejected by some apps, which is a support ticket rather than a
-/// security gain.
+/// 160 bits: the RFC 4226 §4 minimum, the HMAC-SHA1 output size, and the size every
+/// authenticator app accepts. Some apps silently truncate or reject longer secrets, which gains
+/// no security and costs a support ticket.
 pub const SECRET_LEN: usize = 20;
 
-/// Digits in a generated code.
+/// The digits in a generated code.
 pub const DIGITS: usize = 6;
 
-/// `10^DIGITS`, the modulus the truncated HMAC is reduced by. Spelled out rather than computed
-/// so the reduction is a constant; a test asserts the two agree, because a modulus that drifts
-/// from the digit count produces codes of the right length and the wrong value.
+/// `10^DIGITS`, the modulus the truncated HMAC is reduced by.
+///
+/// Spelled out so the reduction is a constant. A test asserts it matches [`DIGITS`], because a
+/// drifted modulus produces codes of the right length and the wrong value.
 const MODULUS: u32 = 1_000_000;
 
-/// Seconds per time step.
+/// The seconds per time step.
 pub const STEP_SECONDS: i64 = 30;
 
 /// How many steps either side of the current one are accepted.
 ///
-/// One, i.e. a 90-second acceptance window. The phone generating the code and the server
-/// checking it keep independent clocks and neither is guaranteed to run NTP; zero skew makes a
-/// device a few seconds fast fail every time, which users read as "2FA is broken" and operators
-/// cannot diagnose. Wider than one step is how a shoulder-surfed code stays usable for minutes.
+/// One, a 90-second window. The phone and the server keep independent clocks, and neither is
+/// guaranteed to run NTP: zero skew fails a device a few seconds fast every time. More than one
+/// step keeps a shoulder-surfed code usable for minutes.
 const SKEW_STEPS: i64 = 1;
 
-/// The characters escaped in the `otpauth://` label and issuer.
+/// The characters escaped in the `otpauth://` label and issuer: everything outside the URI
+/// unreserved set.
 ///
-/// Everything outside the URI unreserved set. Deliberately aggressive: the label is
-/// `issuer:account`, so an unescaped `:` in either half silently re-splits the label and the
-/// authenticator files the entry under the wrong name — and both halves are text this service
-/// does not choose (an operator's issuer string, a user's username).
+/// The label is `issuer:account`, so an unescaped `:` in either half re-splits it and the
+/// authenticator files the entry under the wrong name. Both halves are text this service does
+/// not choose: an operator's issuer, a user's username.
 const LABEL_ESCAPE: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'-')
     .remove(b'.')
     .remove(b'_')
     .remove(b'~');
 
-/// Generate a fresh shared secret.
+/// Generates a fresh shared secret.
 #[must_use]
 pub fn generate_secret() -> SecretSlice<u8> {
     let mut bytes = [0u8; SECRET_LEN];
@@ -68,22 +66,21 @@ pub fn generate_secret() -> SecretSlice<u8> {
     SecretSlice::from(bytes.to_vec())
 }
 
-/// The secret as base32 (RFC 4648, unpadded, upper-case) — what a user types into an
+/// Returns the secret as unpadded upper-case base32 (RFC 4648), for typing into an
 /// authenticator app that cannot scan a QR code.
 #[must_use]
 pub fn encode_secret(secret: &SecretSlice<u8>) -> SecretString {
     SecretString::from(data_encoding::BASE32_NOPAD.encode(secret.expose_secret()))
 }
 
-/// The `otpauth://` provisioning URI a QR code encodes.
+/// Returns the `otpauth://` provisioning URI a QR code encodes.
 ///
-/// Carries the shared secret in a query parameter, so it is a [`SecretString`]: it is exactly
-/// as sensitive as the secret itself and must not reach a log line or an error body.
+/// It carries the shared secret in a query parameter, so it is a [`SecretString`] and must not
+/// reach a log line or an error body.
 ///
-/// `algorithm`, `digits` and `period` are stated explicitly even though all three are this
-/// function's defaults. Several authenticators default differently from the RFC, and a
-/// mismatch produces codes that are wrong every time with no error anywhere — the single most
-/// common way a TOTP rollout fails.
+/// `algorithm`, `digits` and `period` are stated even though they are the defaults: several
+/// authenticators default differently from the RFC, and a mismatch produces wrong codes every
+/// time with no error anywhere.
 #[must_use]
 pub fn provisioning_uri(issuer: &str, account: &str, secret: &SecretSlice<u8>) -> SecretString {
     let issuer_esc = utf8_percent_encode(issuer, LABEL_ESCAPE);
@@ -96,21 +93,20 @@ pub fn provisioning_uri(issuer: &str, account: &str, secret: &SecretSlice<u8>) -
     ))
 }
 
-/// The time step `at` falls in.
+/// Returns the time step `at` falls in.
 #[must_use]
 pub fn step_at(at: OffsetDateTime) -> i64 {
     at.unix_timestamp().div_euclid(STEP_SECONDS)
 }
 
-/// The code this secret produces at `step`.
+/// Returns the code this secret produces at `step`.
 ///
-/// Public because a test that has to drive a live sign-in needs to produce a code the server
-/// will accept, and computing one by hand in the test is a second implementation that can
-/// disagree with this one.
+/// Public so a test driving a live sign-in can produce an accepted code without a second
+/// implementation that could disagree with this one.
 #[must_use]
 pub fn code_at_step(secret: &SecretSlice<u8>, step: i64) -> SecretString {
-    // `new_from_slice` rejects no key length for HMAC — any length is valid, short keys are
-    // zero-padded and long ones are hashed — so the error arm is unreachable by construction.
+    // HMAC accepts any key length (short keys are padded, long ones hashed), so
+    // `new_from_slice` cannot fail here.
     let mut mac = <Hmac<Sha1>>::new_from_slice(secret.expose_secret())
         .unwrap_or_else(|_| unreachable!("HMAC accepts a key of any length"));
     mac.update(&step.to_be_bytes());
@@ -129,15 +125,13 @@ pub fn code_at_step(secret: &SecretSlice<u8>, step: i64) -> SecretString {
     SecretString::from(format!("{:0width$}", binary % MODULUS, width = DIGITS))
 }
 
-/// Check `code` against `secret`, returning the time step it was accepted at.
+/// Checks `code` against `secret`, returning the time step it was accepted at.
 ///
-/// `last_step` is the step this secret was last accepted at, or `None` if it never has been;
-/// anything at or below it is refused as a replay. The returned step is what the caller
-/// persists — see the module doc.
+/// `last_step` is the step this secret was last accepted at, or `None` if never; anything at or
+/// below it is refused as a replay. The caller persists the returned step (see the module doc).
 ///
-/// Returns `None` for a wrong, malformed or replayed code, deliberately without distinguishing
-/// them: the caller answers "that code is not valid" either way, and a caller that could tell
-/// a replay from a miss would be tempted to say so.
+/// A wrong, malformed or replayed code is `None`, without saying which: the caller answers
+/// "that code is not valid" either way.
 #[must_use]
 pub fn verify(
     secret: &SecretSlice<u8>,
@@ -155,8 +149,8 @@ pub fn verify(
         if last_step.is_some_and(|seen| step <= seen) {
             continue;
         }
-        // Constant-time against the *code*, which is derived from the secret. Which step
-        // matched is not itself a secret — it is the clock — so the loop exits early.
+        // Constant-time against the code, which derives from the secret. Which step matched
+        // is the clock, not a secret, so the loop may exit early.
         let expected = code_at_step(secret, step);
         if bool::from(
             expected
@@ -190,12 +184,9 @@ mod tests {
 
     /// RFC 6238 Appendix B, the HMAC-SHA1 column, truncated to this module's six digits.
     ///
-    /// This is the test that makes hand-rolling the algorithm defensible. A TOTP
-    /// implementation that drifts from the RFC — a signed truncation, the wrong byte order on
-    /// the counter, a modulo off by a power of ten — does not fail loudly. It produces codes
-    /// no authenticator app in the world agrees with, and the symptom reaches the operator as
-    /// "2FA rejects every code", with the server confident it is right. These vectors are the
-    /// only thing standing between that and a release.
+    /// An implementation that drifts from the RFC (a signed truncation, the wrong counter byte
+    /// order, a modulo off by a power of ten) does not fail loudly: it produces codes no
+    /// authenticator agrees with. These vectors are what catch it.
     #[test]
     fn the_rfc_6238_test_vectors_reproduce_exactly() {
         // (unix time, the RFC's 8-digit value; the low six digits are what this module emits)
@@ -221,11 +212,9 @@ mod tests {
 
     /// A code accepted at one step must never be accepted at that step again.
     ///
-    /// The bug this pins: without the `last_step` guard, a code observed once — read off a
-    /// screen, captured by a proxy, replayed from a log — stays valid for the rest of its
-    /// 30-second window plus the skew either side. Ninety seconds is ample for an attacker who
-    /// already holds the password, which is the only situation in which a second factor is
-    /// doing any work at all.
+    /// The bug: without the `last_step` guard, a code observed once (read off a screen,
+    /// captured by a proxy, replayed from a log) stays valid for the rest of its window plus
+    /// the skew either side. That is ample for an attacker who already holds the password.
     #[test]
     fn a_code_is_refused_at_a_step_already_accepted() {
         let secret = rfc_secret();
@@ -311,9 +300,8 @@ mod tests {
 
     /// The provisioning URI states every parameter, and escapes both halves of the label.
     ///
-    /// The escaping is the part worth pinning: an issuer or username containing `:` would
-    /// otherwise re-split the `issuer:account` label and file the entry under a name neither
-    /// the user nor the operator chose.
+    /// Without the escaping, an issuer or username containing `:` re-splits the
+    /// `issuer:account` label and files the entry under the wrong name.
     #[test]
     fn the_provisioning_uri_states_its_parameters_and_escapes_the_label() {
         let uri = provisioning_uri("Tanko Vault", "ast:er", &rfc_secret());

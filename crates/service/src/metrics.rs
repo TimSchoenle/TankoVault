@@ -1,10 +1,10 @@
-//! Togglable Prometheus metrics, and the catalogue of everything this workspace measures.
+//! Owns togglable Prometheus metrics and the catalogue of everything this workspace measures.
 //!
 //! [`MetricsRegistry`] is the on/off switch: when disabled, no recorder is installed and
 //! `metrics::counter!` calls dispatch to a no-op, so domain code needs no `if`.
 //!
-//! [`CATALOGUE`] is the vocabulary, and it lives here — above the services, rather than beside
-//! each call site — for two reasons that decide where a *new* metric goes. `crates/fetch` and
+//! [`CATALOGUE`] is the vocabulary, and it lives here, above the services and not beside each
+//! call site, for two reasons that decide where a *new* metric goes. `crates/fetch` and
 //! `crates/solver` sit below this crate and cannot import it, so a per-crate table could never
 //! be the whole list. And `# HELP`, `# TYPE` and the unit come from a `describe_*` call that
 //! must run at start-up, before the first measurement, or every panel built on the series has
@@ -32,8 +32,8 @@ const LATENCY_BUCKETS: &[f64] = &[
 /// fan-out, one provider fetch.
 ///
 /// Separate from [`LATENCY_BUCKETS`], which tops out at 10s. Every one of these routinely runs
-/// longer than that, so on the HTTP buckets they would all land in `+Inf` — which makes a
-/// quantile unanswerable rather than merely coarse.
+/// longer than that, so on the HTTP buckets they would all land in `+Inf`, which makes a
+/// quantile unanswerable, not merely coarse.
 const WORK_BUCKETS: &[f64] = &[0.05, 0.25, 1.0, 5.0, 15.0, 60.0, 300.0, 900.0, 3600.0];
 
 /// Every metric name in the workspace, so a call site and [`CATALOGUE`] cannot drift apart by
@@ -65,7 +65,7 @@ pub mod names {
     pub const DEPENDENCY_UP: &str = "service_dependency_up";
     /// Postgres pool connections, by state.
     pub const DB_POOL_CONNECTIONS: &str = "db_pool_connections";
-    /// The pool's configured ceiling, so saturation is a ratio rather than a guess.
+    /// The pool's configured ceiling, so saturation is a ratio, not a guess.
     pub const DB_POOL_MAX: &str = "db_pool_max_connections";
 
     /// Provider HTTP requests, by provider and response class.
@@ -89,7 +89,7 @@ pub mod names {
     pub const SCAN_TASK_PACE_WAIT: &str = "scan_task_pace_wait_seconds";
     /// The same wait, per request, at the layer that imposes it.
     pub const PROVIDER_PACE_WAIT: &str = "provider_pace_wait_seconds";
-    /// Scan tasks a worker is executing right now — one per provider in flight.
+    /// Scan tasks a worker is executing right now, one per provider in flight.
     pub const SCAN_TASKS_INFLIGHT: &str = "scan_tasks_inflight";
     /// Chapters a scan accepted and recorded as new.
     pub const CHAPTERS_DISCOVERED: &str = "chapters_discovered_total";
@@ -165,7 +165,7 @@ pub mod names {
     pub const RENDER_REQUESTS: &str = "render_requests_total";
 }
 
-/// How a metric is recorded — its `# TYPE`, and for a histogram its bucket boundaries.
+/// How a metric is recorded: its `# TYPE`, and for a histogram its bucket boundaries.
 #[derive(Clone, Copy)]
 pub enum Kind {
     /// Monotonic; read with `rate()`.
@@ -185,8 +185,8 @@ pub struct Metric {
     pub kind: Kind,
     /// Published as the exposition's unit hint.
     pub unit: Unit,
-    /// Which services emit it. Documentation, and the answer to "does my alert have coverage
-    /// on this job" — the column `docs/OBSERVABILITY.md` previously got wrong by hand.
+    /// Which services emit it: documentation, and the answer to "does my alert have coverage
+    /// on this job".
     pub emitted_by: &'static str,
     /// The `# HELP` line, written for whoever reads it on a panel mid-incident: what the
     /// number means and what moves it, not what the code does.
@@ -196,7 +196,7 @@ pub struct Metric {
 /// Every metric the workspace emits.
 ///
 /// Adding a `counter!`/`gauge!`/`histogram!` call without adding its row here fails
-/// `xtask repo-lint`, which is the only thing that can catch it — the compiler sees a string.
+/// `xtask repo-lint`, which is the only thing that can catch it: the compiler sees a string.
 pub const CATALOGUE: &[Metric] = &[
     Metric {
         name: names::HTTP_REQUESTS,
@@ -592,7 +592,7 @@ pub const CATALOGUE: &[Metric] = &[
     },
 ];
 
-/// Publish `# HELP`, `# TYPE` and the unit for every metric in [`CATALOGUE`].
+/// Publishes `# HELP`, `# TYPE` and the unit for every metric in [`CATALOGUE`].
 ///
 /// Runs at install time, before any measurement: a `describe_*` after the first record is
 /// ignored by the exporter, which is how a series ends up on a dashboard with no
@@ -609,7 +609,7 @@ fn describe_all() {
     }
 }
 
-/// A cheap, cloneable handle onto the process's metrics facility — or onto nothing, when
+/// A cheap, cloneable handle onto the process's metrics facility, or onto nothing when
 /// metrics are switched off.
 #[derive(Clone)]
 pub struct MetricsRegistry {
@@ -624,12 +624,12 @@ pub struct MetricsRegistry {
 }
 
 impl MetricsRegistry {
-    /// Install the process-wide Prometheus recorder if `cfg` enables it, publish the
-    /// [`CATALOGUE`] metadata, and record [`names::BUILD_INFO`] for `service`.
+    /// Installs the process-wide Prometheus recorder if `cfg` enables it, publishes the
+    /// [`CATALOGUE`] metadata, and records [`names::BUILD_INFO`] for `service`.
     ///
     /// `service` is the only place a service names itself in the metric stream. Every other
-    /// metric stays unlabelled by service on purpose — Prometheus' `job` is what identifies
-    /// the emitter — but a `build_info` series is what lets a dashboard annotate a panel with
+    /// metric stays unlabelled by service on purpose (Prometheus' `job` is what identifies
+    /// the emitter), but a `build_info` series is what lets a dashboard annotate a panel with
     /// the running version, and it gives even an idle service one series to prove it is
     /// scrapable at all.
     ///
@@ -642,9 +642,9 @@ impl MetricsRegistry {
             return Ok(Self::disabled());
         }
 
-        // Buckets are registered from the catalogue rather than one call per histogram, so a
-        // new histogram cannot be added with the exporter's default summary behaviour by
-        // omission — the row that documents it is also the row that configures it.
+        // Buckets are registered from the catalogue, not one call per histogram, so a new
+        // histogram cannot be added with the exporter's default summary behaviour by
+        // omission: the row that documents it is also the row that configures it.
         let mut builder = PrometheusBuilder::new();
         for metric in CATALOGUE {
             if let Kind::Histogram(buckets) = metric.kind {
@@ -678,7 +678,7 @@ impl MetricsRegistry {
         })
     }
 
-    /// A registry that records nothing — for tests and for services that opt out.
+    /// Returns a registry that records nothing, for tests and for services that opt out.
     #[must_use]
     pub fn disabled() -> Self {
         Self {
@@ -689,7 +689,7 @@ impl MetricsRegistry {
         }
     }
 
-    /// A disabled registry with an explicit scrape `route` and optional `listen` address,
+    /// Returns a disabled registry with an explicit scrape `route` and optional `listen` address,
     /// for exercising the router-wiring decisions without installing a global recorder.
     #[cfg(test)]
     pub(crate) fn disabled_with_listen(route: &str, listen: Option<&str>) -> Self {
@@ -701,42 +701,42 @@ impl MetricsRegistry {
         }
     }
 
-    /// Whether a recorder is installed and the scrape endpoint should serve.
+    /// Returns whether a recorder is installed and the scrape endpoint should serve.
     #[must_use]
     pub fn is_enabled(&self) -> bool {
         self.handle.is_some()
     }
 
-    /// Whether the per-request HTTP middleware should be mounted.
+    /// Returns whether the per-request HTTP middleware should be mounted.
     #[must_use]
     pub fn records_http_requests(&self) -> bool {
         self.handle.is_some() && self.http_requests
     }
 
-    /// Path the scrape endpoint is mounted at.
+    /// Returns the path the scrape endpoint is mounted at.
     #[must_use]
     pub fn route(&self) -> &str {
         &self.route
     }
 
-    /// The dedicated address the scrape endpoint should bind to, when it is isolated to its
-    /// own port. `None` means the scrape stays merged onto the service's primary port.
+    /// Returns the dedicated address the scrape endpoint should bind to, when it is isolated to
+    /// its own port. `None` means the scrape stays merged onto the service's primary port.
     #[must_use]
     pub fn listen(&self) -> Option<&str> {
         self.listen.as_deref()
     }
 
-    /// Render the Prometheus exposition text, or `None` when metrics are disabled.
+    /// Renders the Prometheus exposition text, or `None` when metrics are disabled.
     #[must_use]
     pub fn render(&self) -> Option<String> {
         self.handle.as_ref().map(PrometheusHandle::render)
     }
 }
 
-/// Record the outcome of a readiness probe.
+/// Records the outcome of a readiness probe.
 ///
 /// Called from [`crate::health::Health::report`], so every service gets it without wiring:
-/// the gauges track whatever probes `/ready`, and go stale — not to zero — if nothing does.
+/// the gauges track whatever probes `/ready`, and go stale (not to zero) if nothing does.
 /// That is why the availability alerts key on `up`, and these answer *which dependency*.
 pub(crate) fn record_readiness(report: &crate::health::HealthReport) {
     metrics::gauge!(names::SERVICE_READY).set(f64::from(u8::from(report.is_ready())));
@@ -747,14 +747,16 @@ pub(crate) fn record_readiness(report: &crate::health::HealthReport) {
     }
 }
 
-/// How often the pool gauges are refreshed. Well under any alert's `for:` window, and cheap —
-/// both readings are atomics on the pool, not a query.
+/// How often the pool gauges are refreshed.
+///
+/// Well under any alert's `for:` window, and cheap: both readings are atomics on the pool, not a
+/// query.
 #[cfg(feature = "db")]
 const POOL_SAMPLE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
 
-/// Sample `pool` onto [`names::DB_POOL_CONNECTIONS`] until `shutdown`.
+/// Samples `pool` onto [`names::DB_POOL_CONNECTIONS`] until `shutdown`.
 ///
-/// Sampled rather than recorded at acquire/release: the interesting quantity is the standing
+/// Sampled, not recorded at acquire and release: the interesting quantity is the standing
 /// level, and instrumenting every checkout would put a metrics call on the hot path of every
 /// query to measure something a 10-second poll already answers.
 #[cfg(feature = "db")]
@@ -771,7 +773,7 @@ pub fn spawn_pool_sampler(pool: tankovault_db::PgPool, shutdown: crate::Cancella
                     let idle = f64::from(u32::try_from(pool.num_idle()).unwrap_or(u32::MAX));
                     metrics::gauge!(names::DB_POOL_CONNECTIONS, "state" => "idle").set(idle);
                     // `size` counts established connections, so in-use is what is left of it.
-                    // Deriving rather than publishing `size` keeps the two states summing to it.
+                    // Deriving instead of publishing `size` keeps the two states summing to it.
                     metrics::gauge!(names::DB_POOL_CONNECTIONS, "state" => "in_use")
                         .set((size - idle).max(0.0));
                     metrics::gauge!(names::DB_POOL_MAX)
@@ -786,8 +788,8 @@ pub fn spawn_pool_sampler(pool: tankovault_db::PgPool, shutdown: crate::Cancella
 /// Holds one unit of [`HTTP_IN_FLIGHT`] for as long as it is alive.
 ///
 /// Decrement lives in `Drop`, not at the end of [`track_request`]: a client disconnect
-/// drops the service future mid-`await`, skipping any statement placed after it, which
-/// previously leaked one unit per disconnect on every SSE stream.
+/// drops the service future mid-`await`, skipping any statement placed after it, which would
+/// leak one unit per disconnect on every SSE stream.
 struct InFlightGuard;
 
 impl InFlightGuard {
@@ -803,7 +805,7 @@ impl Drop for InFlightGuard {
     }
 }
 
-/// Record per-request metrics around the rest of the stack.
+/// Records per-request metrics around the rest of the stack.
 ///
 /// Labels use axum's [`MatchedPath`], not the concrete URI, so cardinality stays bounded by
 /// the route table; unmatched (attacker-controlled) paths fold into `unmatched`. An abandoned
@@ -875,7 +877,7 @@ mod tests {
     }
 
     /// A histogram with no explicit buckets falls back to the exporter's summary quantiles,
-    /// which cannot be aggregated across replicas — the reason `LATENCY_BUCKETS` exists.
+    /// which cannot be aggregated across replicas: the reason `LATENCY_BUCKETS` exists.
     #[test]
     fn every_histogram_carries_buckets() {
         for metric in CATALOGUE {
@@ -890,7 +892,7 @@ mod tests {
     /// Two failures this pins, both silent and both invisible in the source. A `describe_*`
     /// that runs after the first measurement is dropped by the exporter, and the series then
     /// appears on a dashboard with no `# HELP` at all. And a histogram whose buckets were not
-    /// registered on the builder renders as `# TYPE … summary` — still a working panel, but
+    /// registered on the builder renders as `# TYPE … summary`: still a working panel, but
     /// carrying per-replica quantiles that no recording rule can aggregate, which is the exact
     /// thing every latency rule in the chart depends on not happening.
     #[test]
@@ -918,7 +920,7 @@ mod tests {
         );
     }
 
-    /// The builder [`MetricsRegistry::install`] assembles, without installing it globally.
+    /// Returns the builder [`MetricsRegistry::install`] assembles, without installing it globally.
     fn build_recorder_with_catalogue_buckets() -> metrics_exporter_prometheus::PrometheusRecorder {
         let mut builder = PrometheusBuilder::new();
         for metric in CATALOGUE {
@@ -931,8 +933,10 @@ mod tests {
         builder.build_recorder()
     }
 
-    /// Bug pinned: an inline decrement after `next.run(req).await` never ran on a dropped
-    /// future, leaking one unit per abandoned SSE stream. Do not move it back inline.
+    /// The in-flight gauge is released when the request future is dropped.
+    ///
+    /// The bug: an inline decrement after `next.run(req).await` never ran on a dropped future,
+    /// leaking one unit per abandoned SSE stream. Do not move it back inline.
     #[test]
     fn in_flight_gauge_is_released_when_the_request_future_is_dropped() {
         // A local recorder, so this test observes real gauge values without installing the
@@ -958,7 +962,7 @@ mod tests {
         });
     }
 
-    /// The unlabelled `http_requests_in_flight` sample from a Prometheus exposition body.
+    /// Returns the unlabelled `http_requests_in_flight` sample from a Prometheus exposition body.
     fn in_flight_value(exposition: &str) -> Option<f64> {
         exposition
             .lines()

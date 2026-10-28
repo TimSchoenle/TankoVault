@@ -1,5 +1,6 @@
-//! Built-in provider presets, ready to seed (`xtask seed`). Each Madara preset stores only the
-//! selector overrides where the site deviates from
+//! Owns the built-in provider presets, ready to seed (`xtask seed`).
+//!
+//! Each Madara preset stores only the selector overrides where the site deviates from
 //! [`madara_default_config`](crate::madara_default_config).
 
 mod aggregators;
@@ -27,7 +28,7 @@ use themesia::mangathemesia_family;
 /// Identity, domain and adapter kind, the selector overrides merged onto the adapter defaults
 /// (empty for a fully custom adapter), and the crawl budget the site's size warrants.
 pub struct BuiltinPreset {
-    /// Stable slug (rate-limit + custom-adapter dispatch key).
+    /// Stable slug, the rate-limit and custom-adapter dispatch key.
     pub slug: &'static str,
     /// Human-readable display name.
     pub name: &'static str,
@@ -35,16 +36,18 @@ pub struct BuiltinPreset {
     pub base_url: &'static str,
     /// Which adapter drives the site.
     pub adapter: AdapterKind,
-    /// `providers.config` overrides (merged onto Madara defaults; ignored for `Custom`).
+    /// `providers.config` overrides, merged onto the family defaults. A `Custom` adapter on a
+    /// family (`kunmanga`, `mgread`) merges them the same way, `HeanCMS` and Iken take them whole
+    /// and require `api`, and the remaining custom adapters ignore them.
     pub config: Value,
     /// Seed crawl budget. Operators may tune it downward in the console at any time; the
     /// hard ceilings in [`tankovault_domain::Politeness`] bound it upward regardless.
     pub politeness: Politeness,
 }
 
-/// Every provider preset bundled with this build.
+/// Returns every provider preset bundled with this build.
 ///
-/// Grouped by how each is onboarded — the grouping is the point: a site on a shared theme is a
+/// Grouped by how each is onboarded, and the grouping is the point: a site on a shared theme is a
 /// config row, and only a genuinely bespoke one costs a Rust module.
 ///
 /// This is the definition side of the preset link: `bootstrap seed-providers` records the list

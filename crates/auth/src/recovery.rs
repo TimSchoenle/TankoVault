@@ -1,39 +1,37 @@
-//! Recovery codes: the escape hatch that makes enrolling a second factor safe to do.
+//! Owns recovery codes, the escape hatch that makes enrolling a second factor safe.
 //!
-//! Without them, "add 2FA" reads as "risk losing your account to a lost phone", and the
-//! rational response is not to enrol. A set is issued when the first factor is confirmed,
-//! displayed exactly once, and consumed one code at a time.
+//! Without them, "add 2FA" means "risk losing your account to a lost phone", and the rational
+//! response is not to enrol. A set is issued when the first factor is confirmed, displayed
+//! exactly once, and consumed one code at a time.
 
 use rand::Rng as _;
 use secrecy::{ExposeSecret as _, SecretString};
 
-/// Codes issued per set.
+/// The codes issued per set.
 ///
 /// Ten is enough to print, keep in a wallet and lose a few of, and few enough that the account
-/// page's "3 of 10 remaining" is a prompt to regenerate rather than background noise.
+/// page's "3 of 10 remaining" prompts a regeneration.
 pub const CODE_COUNT: usize = 10;
 
-/// Random bytes behind one code — 80 bits, rendered as sixteen base32 characters.
+/// The random bytes behind one code: 80 bits, rendered as sixteen base32 characters.
 ///
-/// Sized against the fact that these are checked by an *online* endpoint holding a whole set:
-/// there is no offline attack to resist, only the request budget, and 80 bits is far past
-/// anything that budget permits. It is also short enough to read aloud, which matters because
-/// recovery codes get used over the phone to a support desk.
+/// Codes are checked by an online endpoint, so the only attack is the request budget, and 80
+/// bits is far beyond it. The code is also short enough to read aloud to a support desk.
 const CODE_BYTES: usize = 10;
 
-/// Characters per group in the displayed form.
+/// The characters per group in the displayed form.
 const GROUP_LEN: usize = 4;
 
-/// Generate a fresh set of codes, in the form the user is shown (`xxxx-xxxx-xxxx-xxxx`).
+/// Generates a fresh set of codes in the displayed form, `xxxx-xxxx-xxxx-xxxx`.
 ///
 /// The plaintext exists only in this return value: the caller shows it once and stores
-/// [`hash_code`] of each. There is no path back.
+/// [`hash_code`] of each.
 #[must_use]
 pub fn generate_codes() -> Vec<SecretString> {
     (0..CODE_COUNT).map(|_| generate_code()).collect()
 }
 
-/// One code, grouped for legibility.
+/// Generates one code, grouped for legibility.
 fn generate_code() -> SecretString {
     let mut bytes = [0u8; CODE_BYTES];
     rand::rng().fill_bytes(&mut bytes);
@@ -49,18 +47,16 @@ fn generate_code() -> SecretString {
     SecretString::from(grouped)
 }
 
-/// The stored representation of a code.
+/// Returns the stored representation of a code.
 ///
-/// **A fast hash on purpose.** These are server-generated 80-bit tokens, not user-chosen
-/// secrets, so there is no dictionary for argon2 to slow down — and argon2 here would mean one
-/// deliberately expensive hash *per candidate row*, ten of them for every verification
-/// attempt, which is a denial of service an unauthenticated caller gets to trigger.
-/// `hash_refresh_token` is hashed the same way for the same reason. Do not "upgrade" this to
-/// argon2 without also changing the lookup to be able to target a single row.
+/// **A fast hash on purpose.** These are server-generated 80-bit tokens, so there is no
+/// dictionary for argon2 to slow down. Argon2 here would cost one deliberately expensive hash
+/// per candidate row, ten per verification attempt: a denial of service an unauthenticated
+/// caller can trigger. Do not switch to argon2 without changing the lookup to target one row.
 ///
-/// Normalises before hashing — case-folded, with grouping separators and whitespace removed —
-/// so a code typed as `abcd efgh` matches one displayed as `ABCD-EFGH`. Normalisation is part
-/// of the stored form's definition: changing it invalidates every issued code.
+/// The code is normalised first (case-folded, separators and whitespace removed), so `abcd
+/// efgh` matches `ABCD-EFGH`. Normalisation is part of the stored form: changing it invalidates
+/// every issued code.
 #[must_use]
 pub fn hash_code(code: &SecretString) -> String {
     let normalised: String = code
@@ -95,10 +91,8 @@ mod tests {
 
     /// The forms a user might type all hash to one value.
     ///
-    /// The bug this pins: hashing the displayed string verbatim means a user who types their
-    /// code without the dashes — which is what happens when it is read off paper — is told the
-    /// code is wrong. They then burn the rest of the set trying, and the escape hatch that
-    /// justified enrolling a second factor is gone.
+    /// The bug: hashing the displayed string verbatim rejects a code typed without the dashes,
+    /// as it is when read off paper. The user then burns the rest of the set trying.
     #[test]
     fn the_typed_forms_of_one_code_all_match() {
         let canonical = SecretString::from("ABCD-EFGH-IJKL-MNOP");

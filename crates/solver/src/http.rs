@@ -1,11 +1,9 @@
-//! The `POST /v1/solve` contract, defined once.
+//! Defines the `POST /v1/solve` contract once.
 //!
 //! `challenge-solver` and `render` both expose it, and `tankovault_fetch::HttpChallengeSolver`
-//! assumes the two are interchangeable, so neither may drift from the other in status, metric
-//! label or error shape.
-//!
-//! Behind the `axum` feature so the crate stays usable by consumers that only want the
-//! [`ChallengeSolver`] trait and the detection helpers.
+//! treats them as interchangeable, so neither may drift in status, metric label or error shape.
+//! It sits behind the `axum` feature for consumers that want only the [`ChallengeSolver`] trait
+//! and the detection helpers.
 
 use crate::types::{ChallengeSolver, SolveRequest};
 use axum::extract::State;
@@ -18,24 +16,24 @@ use tankovault_service::InternalRoute;
 use tankovault_service::problem::Problem;
 
 /// The one path [`solver_router`] mounts, named so the route and its authorisation entry
-/// cannot be spelled differently.
+/// cannot differ.
 pub const SOLVE_PATH: &str = "/v1/solve";
 
-/// The router fragment both solver-hosting services merge.
+/// Returns the router fragment both solver-hosting services merge: exactly one route.
 ///
-/// The caller keeps ownership of everything else — its own middleware stack, its ops probes,
-/// its readiness policy. This contributes exactly one route.
+/// The caller owns everything else: its middleware stack, its ops probes, its readiness
+/// policy.
 pub fn solver_router(solver: Arc<dyn ChallengeSolver>) -> Router {
     Router::new()
         .route(SOLVE_PATH, post(solve))
         .with_state(solver)
 }
 
-/// The internal-auth entry for the route [`solver_router`] contributes.
+/// Returns the internal-auth entry for the route [`solver_router`] contributes.
 ///
-/// Declared beside the router for the reason the router itself is shared: this endpoint fetches
-/// a caller-supplied URL, so a service that mounts it and authorises a *different* path has
-/// published an arbitrary-URL fetch primitive to anything that can reach the port.
+/// It is declared beside the router because this endpoint fetches a caller-supplied URL: a
+/// service that mounts it and authorises a different path has published an arbitrary-URL fetch
+/// primitive to anything that can reach the port.
 #[must_use]
 pub const fn solve_route(callers: &'static [&'static str]) -> InternalRoute {
     InternalRoute {
@@ -45,12 +43,12 @@ pub const fn solve_route(callers: &'static [&'static str]) -> InternalRoute {
     }
 }
 
-/// Validate the target, solve it, and report the outcome.
+/// Validates the target, solves it, and reports the outcome.
 ///
-/// The URL check is not optional and not the caller's business to remember: this endpoint
-/// fetches a caller-supplied URL, which is an arbitrary-URL fetch primitive for anything
-/// that can reach the port. It resolves the host, because the back-end resolves it again on
-/// its own: a literal-only check let `http://redis:6379/` and `http://localhost/` through.
+/// The URL check lives here so no caller has to remember it: this endpoint fetches a
+/// caller-supplied URL. It resolves the host, because the back-end resolves it again on its
+/// own, and a literal-only check would let `http://redis:6379/` and `http://localhost/`
+/// through.
 async fn solve(
     State(solver): State<Arc<dyn ChallengeSolver>>,
     Json(req): Json<SolveRequest>,
@@ -58,8 +56,8 @@ async fn solve(
     if let Err(e) = tankovault_domain::ssrf::validate_unpinned(&req.url).await {
         metrics::counter!("solve_attempts_total", "result" => "rejected").increment(1);
         tracing::warn!(url = %req.url, error = %e, "refused a solve target");
-        // The reason names only the caller's own URL and the policy rule that refused it, which
-        // is what makes a misconfigured provider debuggable.
+        // The reason names only the caller's own URL and the rule that refused it, which keeps
+        // a misconfigured provider debuggable.
         return Problem::new(
             StatusCode::FORBIDDEN,
             "refused_target",
@@ -83,17 +81,13 @@ async fn solve(
             .increment(1);
             tracing::warn!(%provider, error = %e, transient, "solve failed");
             // The cause is in the log; the caller gets the one RFC 9457 shape every service
-            // emits, so `tankovault_fetch::HttpChallengeSolver` only ever parses one format.
+            // emits, so `tankovault_fetch::HttpChallengeSolver` parses one format.
             //
-            // The *status* is the only part of that shape the caller can act on, so it has to
-            // carry the one distinction that changes what it does, and it has to survive an
-            // intermediary. `5xx` means this tier could not serve the solve and the same request
-            // is worth repeating; `4xx` means the exchange happened and produced no session,
-            // which repeating only pays for again. The unprocessable status is deliberate rather
-            // than `502`: a gateway in front of this service emits `502`/`504` of its own, and
-            // those are unavailability, so the terminal answer must not share their range.
-            // Answering `502` to both is what made a solver outage indistinguishable from nine
-            // providers turning hostile.
+            // The status is the part the caller acts on, so it carries the one distinction that
+            // matters and must survive an intermediary. `5xx` means this tier could not serve
+            // the solve and a repeat is worthwhile; `4xx` means the exchange produced no
+            // session and a repeat only pays for it again. `422`, not `502`, because a gateway
+            // in front of this service emits `502` and `504` of its own for unavailability.
             if transient {
                 Problem::new(
                     StatusCode::SERVICE_UNAVAILABLE,
@@ -128,8 +122,10 @@ mod tests {
         solve(State(solver), Json(req)).await.status()
     }
 
-    /// Regression: the solve route checked only IP literals, so a hostname naming loopback or a
-    /// compose peer reached TRAWL, which then fetched it from inside the network.
+    /// A hostname resolving to loopback is refused.
+    ///
+    /// The bug: checking only IP literals let a hostname naming loopback or a compose peer reach
+    /// TRAWL, which then fetched it from inside the network.
     #[tokio::test]
     async fn refuses_a_hostname_that_resolves_to_loopback() {
         assert_eq!(

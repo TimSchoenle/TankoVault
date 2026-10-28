@@ -1,8 +1,9 @@
-//! Flame Comics — a Next.js site whose pages embed their own data as `__NEXT_DATA__`.
+//! Owns the adapter for Flame Comics, a Next.js site whose pages embed their own data as
+//! `__NEXT_DATA__`.
 //!
 //! The site does publish a JSON API, and its `robots.txt` disallows `/api/` for every agent.
 //! So this adapter reads the *pages*, which are allowed, and takes their data from the
-//! `__NEXT_DATA__` script the page ships anyway rather than from the Mantine-generated class
+//! `__NEXT_DATA__` script the page ships anyway, not from the Mantine-generated class
 //! names, which carry no stable hooks.
 
 use crate::error::AdapterError;
@@ -17,7 +18,7 @@ use serde_json::Value;
 use tankovault_domain::{ContentType, SeriesStatus};
 use time::OffsetDateTime;
 
-/// The embedded state Next.js writes into every page.
+/// Reads the embedded state Next.js writes into every page.
 ///
 /// Returns the `props.pageProps` object, which is where this site's payload lives; the outer
 /// document also carries build metadata that is of no use here.
@@ -29,7 +30,7 @@ fn page_props(root: ElementRef<'_>) -> Option<Value> {
     parsed.get("props")?.get("pageProps").cloned()
 }
 
-/// Read the first present non-empty string field out of `candidates`.
+/// Reads the first present non-empty string field out of `candidates`.
 fn first_str(value: &Value, candidates: &[&str]) -> Option<String> {
     candidates
         .iter()
@@ -39,13 +40,13 @@ fn first_str(value: &Value, candidates: &[&str]) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// A Unix timestamp field as a `time` value; the site publishes seconds since the epoch.
+/// Reads a Unix timestamp field as a `time` value; the site publishes seconds since the epoch.
 fn epoch_seconds(value: &Value, key: &str) -> Option<OffsetDateTime> {
     let seconds = value.get(key)?.as_i64()?;
     OffsetDateTime::from_unix_timestamp(seconds).ok()
 }
 
-/// Map the site's medium vocabulary onto the domain's.
+/// Maps the site's medium vocabulary onto the domain's.
 fn content_type_of(value: &Value) -> ContentType {
     match first_str(value, &["type", "series_type"])
         .map(|s| s.to_ascii_lowercase())
@@ -62,6 +63,8 @@ fn content_type_of(value: &Value) -> ContentType {
 pub struct FlameComicsAdapter;
 
 impl FlameComicsAdapter {
+    /// Creates the adapter.
+    ///
     /// Stateless: the provider's base URL and the fetch stack arrive per call in [`Ctx`], so
     /// one instance serves every provider configured against this adapter.
     #[must_use]
@@ -69,7 +72,7 @@ impl FlameComicsAdapter {
         Self
     }
 
-    /// The numeric series id out of a stored `/series/{id}` path.
+    /// Returns the numeric series id out of a stored `/series/{id}` path.
     fn id_of(series_path: &str) -> &str {
         series_path
             .trim_end_matches('/')
@@ -78,7 +81,7 @@ impl FlameComicsAdapter {
             .unwrap_or(series_path)
     }
 
-    /// Series rows out of a browse page's props.
+    /// Returns the series rows out of a browse page's props.
     fn series_rows(props: &Value) -> Vec<CatalogItem> {
         ["series", "allSeries", "seriesList"]
             .iter()
@@ -107,8 +110,8 @@ impl Default for FlameComicsAdapter {
 #[async_trait]
 impl SourceAdapter for FlameComicsAdapter {
     async fn list_catalog(&self, ctx: &Ctx, page: u32) -> Result<CatalogPage, AdapterError> {
-        // `/browse` renders the whole catalogue into one document — the site has ~300 series and
-        // no server-side paging — so page 1 is the entire catalogue and there is never a page 2.
+        // `/browse` renders the whole catalogue into one document (the site has ~300 series and
+        // no server-side paging), so page 1 is the entire catalogue and there is never a page 2.
         // Reporting `has_next` from "this page had rows" would re-ingest all of it, forever.
         if page > 1 {
             return Ok(CatalogPage {
@@ -130,7 +133,7 @@ impl SourceAdapter for FlameComicsAdapter {
 
     async fn list_latest(&self, ctx: &Ctx) -> Result<Vec<LatestUpdate>, AdapterError> {
         // `/browse`, not `/`: the home page's `pageProps` carries a "latest chapters" list keyed
-        // by chapter, with no series array, so reading it yielded an empty feed — a valid
+        // by chapter, with no series array, so reading it yields an empty feed: a valid
         // answer that reports no error while every fast scan does nothing.
         let resp = ctx.fetch("/browse").await?;
         parse_blocking(resp, move |root, _| {
@@ -239,7 +242,7 @@ impl SourceAdapter for FlameComicsAdapter {
                     path: format!("/series/{series_id}/{token}"),
                     published_at: epoch_seconds(row, "release_date"),
                     // A chapter still inside its early-access window is not listed here at all
-                    // — the payload only carries released ones — so every row that reaches this
+                    // (the payload only carries released ones), so every row that reaches this
                     // point is readable. Marking them locked would hide the whole catalogue.
                     access: ChapterAccess::Free,
                 });

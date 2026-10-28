@@ -1,5 +1,7 @@
-//! HTML extraction helpers shared by the config-driven adapters. Selector syntax: a plain CSS
-//! selector takes the element's inner text; a `sel@attr` suffix takes an attribute instead.
+//! Owns the HTML extraction helpers shared by the config-driven adapters.
+//!
+//! Selector syntax: a plain CSS selector takes the element's inner text; a `sel@attr` suffix
+//! takes an attribute instead.
 
 use crate::error::AdapterError;
 use scraper::{ElementRef, Selector};
@@ -19,20 +21,21 @@ use url::Url;
 static SELECTOR_CACHE: LazyLock<RwLock<HashMap<String, Arc<Selector>>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
 
-/// Upper bound on distinct cached selectors — a guard against a pathological config turning
-/// the memo into a leak, not a working-set limit. Past this, later selectors are parsed each
-/// time instead of cached: slower, never wrong.
+/// Upper bound on distinct cached selectors.
+///
+/// A guard against a pathological config turning the memo into a leak, not a working-set limit.
+/// Past this, later selectors are parsed each time instead of cached: slower, never wrong.
 const SELECTOR_CACHE_CAP: usize = 4096;
 
-/// Parse a CSS selector, mapping failures to a typed error.
+/// Parses a CSS selector, mapping failures to a typed error.
 ///
 /// Memoised by source text up to `SELECTOR_CACHE_CAP` distinct selectors; past that, later
 /// selectors are parsed on every call.
 ///
-/// Returns an `Arc` so a cache hit is a refcount bump; call sites are unchanged.
+/// Returns an `Arc` so a cache hit is a refcount bump.
 ///
 /// # Errors
-/// [`AdapterError::Selector`] if `spec` is not a valid selector.
+/// Returns [`AdapterError::Selector`] if `spec` is not a valid selector.
 pub fn parse_selector(spec: &str) -> Result<Arc<Selector>, AdapterError> {
     if let Ok(cache) = SELECTOR_CACHE.read()
         && let Some(hit) = cache.get(spec)
@@ -53,16 +56,16 @@ pub fn parse_selector(spec: &str) -> Result<Arc<Selector>, AdapterError> {
     Ok(parsed)
 }
 
-/// Parse a response body as HTML and run `extract` over it on the blocking thread pool.
+/// Parses a response body as HTML and runs `extract` over it on the blocking thread pool.
 ///
 /// `Html::parse_document` is uninterruptible CPU (5-50 ms for a large page); run inline on a
 /// Tokio worker it stalls every other async task on that thread, including queue heartbeats.
 /// The parse-and-extract phase must move together since `scraper::Html`/`ElementRef` are not
-/// `Send` — the closure returns owned data, and gets the [`FetchResponse`] since
+/// `Send`: the closure returns owned data, and gets the [`FetchResponse`] since
 /// [`AdapterError::missing`] needs the envelope.
 ///
 /// # Errors
-/// Whatever `extract` returns, or [`AdapterError::Parse`] if the blocking task panicked.
+/// Returns whatever `extract` returns, or [`AdapterError::Parse`] if the blocking task panicked.
 pub async fn parse_blocking<T, F>(resp: FetchResponse, extract: F) -> Result<T, AdapterError>
 where
     T: Send + 'static,
@@ -78,10 +81,10 @@ where
     .map_err(|e| AdapterError::Parse(format!("HTML parse task failed: {e}")))?
 }
 
-/// Flatten a **short** HTML fragment to its text, collapsing whitespace.
+/// Flattens a **short** HTML fragment to its text, collapsing whitespace.
 ///
-/// For markup that arrives inside a JSON field — a synopsis a platform stores as `<p>` blocks —
-/// rather than for a document: it parses inline, so the caller must keep the input small.
+/// For markup that arrives inside a JSON field (a synopsis a platform stores as `<p>` blocks),
+/// not for a document: it parses inline, so the caller must keep the input small.
 /// A page body belongs in [`parse_blocking`], which moves the parse off the async worker.
 #[must_use]
 pub fn text_from_fragment(markup: &str) -> String {
@@ -95,7 +98,7 @@ pub fn text_from_fragment(markup: &str) -> String {
         .join(" ")
 }
 
-/// Split a `sel@attr` spec into `(selector, Some(attr))`, or `(selector, None)`.
+/// Splits a `sel@attr` spec into `(selector, Some(attr))`, or `(selector, None)`.
 #[must_use]
 pub fn split_attr(spec: &str) -> (&str, Option<&str>) {
     match spec.rsplit_once('@') {
@@ -106,7 +109,7 @@ pub fn split_attr(spec: &str) -> (&str, Option<&str>) {
 
 /// Pseudo-attribute selecting an element's **own** text, excluding text inside child elements.
 ///
-/// Themes decorate a heading with sibling elements rather than a separate field — Madara puts
+/// Themes decorate a heading with sibling elements instead of a separate field: Madara puts
 /// its `HOT`/`NEW`/`END` badge inside the `<h1>`, so the default "all descendant text" reading
 /// stores `Solo Leveling END` as the canonical title. That title is normalised into the
 /// matching key, so the badge does not stay cosmetic: it changes which sources a series
@@ -127,10 +130,10 @@ fn value_of(el: ElementRef<'_>, attr: Option<&str>) -> String {
     }
 }
 
-/// Split a label/value cell (`Author(s)`, `Artist(s)`, …) into its entries on `,`/`;`.
+/// Splits a label/value cell (`Author(s)`, `Artist(s)`, …) into its entries on `,`/`;`.
 ///
 /// Themes render these as one joined string; a value that legitimately contains a comma also
-/// splits, which is accepted. **Not** for alternative titles — see [`split_titles`].
+/// splits, which is accepted. **Not** for alternative titles; see [`split_titles`].
 #[must_use]
 pub fn split_list(value: &str) -> Vec<String> {
     value
@@ -141,18 +144,18 @@ pub fn split_list(value: &str) -> Vec<String> {
         .collect()
 }
 
-/// Split an `Alternative` cell into the titles it lists, refusing to shred one title that
+/// Splits an `Alternative` cell into the titles it lists, refusing to shred one title that
 /// happens to contain a comma.
 ///
 /// A fragment of a sentence is not an inert row in `series_titles`: `find_candidates` searches
 /// those keys and `best_title_match` scores an exact hit on one as a name the series answers
-/// to, so `a prince` — cut out of "…Reincarnated as a Mere Villager, a Prince, a Saint? Nay…"
-/// by an unconditional comma split — pulled every unrelated series whose title normalises to
-/// those two words onto one row. One live series absorbed 281 sources that way.
+/// to, so `a prince`, cut out of "…Reincarnated as a Mere Villager, a Prince, a Saint? Nay…"
+/// by an unconditional comma split, would pull every unrelated series whose title normalises to
+/// those two words onto one row.
 ///
 /// The rule: `;`/`|` are unambiguous list separators and always split. A comma splits only
 /// when *every* resulting fragment could stand alone as a title, which a fragment starting
-/// with a lower-case letter cannot — it was cut out of the middle of a sentence. Scripts
+/// with a lower-case letter cannot: it was cut out of the middle of a sentence. Scripts
 /// without case are unaffected, since they have no lower-case letters to start with.
 #[must_use]
 pub fn split_titles(value: &str) -> Vec<String> {
@@ -173,7 +176,7 @@ pub fn split_titles(value: &str) -> Vec<String> {
     titles
 }
 
-/// Collapse an element's inner text to a single, whitespace-normalised line.
+/// Collapses an element's inner text to a single, whitespace-normalised line.
 #[must_use]
 pub fn text_of(el: ElementRef<'_>) -> String {
     el.text()
@@ -184,17 +187,17 @@ pub fn text_of(el: ElementRef<'_>) -> String {
 }
 
 /// The spec meaning "the container element itself", for rows whose own attributes carry the
-/// value — a list item that *is* the anchor, or a chapter row holding its date in an attribute.
+/// value: a list item that *is* the anchor, or a chapter row holding its date in an attribute.
 ///
 /// `scraper::select` only ever walks descendants, so without this there is no way to express
 /// "read it off the element the `item`/`container` selector already matched", and rewriting that
 /// selector to the parent is not equivalent when the parent holds several rows.
 pub const SELF_SPEC: &str = "self";
 
-/// Extract the first match of `spec` under `root` (text or `@attr`); [`SELF_SPEC`] reads `root`.
+/// Extracts the first match of `spec` under `root` (text or `@attr`); [`SELF_SPEC`] reads `root`.
 ///
 /// # Errors
-/// [`AdapterError::Selector`] on an invalid selector.
+/// Returns [`AdapterError::Selector`] on an invalid selector.
 pub fn extract_first(root: ElementRef<'_>, spec: &str) -> Result<Option<String>, AdapterError> {
     let (sel_str, attr) = split_attr(spec);
     if sel_str == SELF_SPEC {
@@ -208,10 +211,10 @@ pub fn extract_first(root: ElementRef<'_>, spec: &str) -> Result<Option<String>,
         .filter(|s| !s.is_empty()))
 }
 
-/// Extract all non-empty matches of `spec` under `root`; [`SELF_SPEC`] reads `root` alone.
+/// Extracts all non-empty matches of `spec` under `root`; [`SELF_SPEC`] reads `root` alone.
 ///
 /// # Errors
-/// [`AdapterError::Selector`] on an invalid selector.
+/// Returns [`AdapterError::Selector`] on an invalid selector.
 pub fn extract_all(root: ElementRef<'_>, spec: &str) -> Result<Vec<String>, AdapterError> {
     let (sel_str, attr) = split_attr(spec);
     if sel_str == SELF_SPEC {
@@ -225,10 +228,10 @@ pub fn extract_all(root: ElementRef<'_>, spec: &str) -> Result<Vec<String>, Adap
         .collect())
 }
 
-/// Parse the first numeric run in `text` (e.g. `"10.5"` from `"Chapter 10.5"`).
+/// Parses the first numeric run in `text` (e.g. `"10.5"` from `"Chapter 10.5"`).
 ///
-/// Only ever yields a **finite** value: a digit run too long for `f64` parses to `inf` rather
-/// than failing, and an infinite value cannot be compared, ordered or serialised.
+/// Only ever yields a **finite** value: a digit run too long for `f64` parses to `inf` instead
+/// of failing, and an infinite value cannot be compared, ordered or serialised.
 #[must_use]
 pub fn parse_number(text: &str) -> Option<f64> {
     let mut num = String::new();
@@ -249,8 +252,8 @@ pub fn parse_number(text: &str) -> Option<f64> {
     value.is_finite().then_some(value)
 }
 
-/// Parse a bare release year (e.g. `"2025"`) from extracted text, discarding anything
-/// outside a representable `i32` range rather than silently wrapping.
+/// Parses a bare release year (e.g. `"2025"`) from extracted text, discarding anything
+/// outside a representable `i32` range instead of silently wrapping.
 #[must_use]
 #[expect(
     clippy::cast_possible_truncation,
@@ -258,7 +261,7 @@ pub fn parse_number(text: &str) -> Option<f64> {
 )]
 pub fn parse_year(text: &str) -> Option<i32> {
     let y = parse_number(text)?;
-    // Redundant with `parse_number`'s guarantee, but this is what makes the cast below sound —
+    // Redundant with `parse_number`'s guarantee, but this is what makes the cast below sound;
     // removing it silently reopens the bug `parse_chapter_number`'s regression test pins.
     if y.is_finite() && y >= f64::from(i32::MIN) && y <= f64::from(i32::MAX) {
         Some(y as i32)
@@ -267,7 +270,7 @@ pub fn parse_year(text: &str) -> Option<i32> {
     }
 }
 
-/// Parse a chapter number from listing text, preferring the number after a
+/// Parses a chapter number from listing text, preferring the number after a
 /// chapter/episode marker so `"Volume 2 Chapter 10.5"` yields `10.5`, not `2`.
 ///
 /// Marker search and slicing both use the lowercased copy: indexing the original with an
@@ -307,12 +310,12 @@ pub fn parse_chapter_number(text: &str) -> Option<f64> {
     parse_number(&lower)
 }
 
-/// Resolve `href` against the absolute `page_url` and reduce it to a **relative** path
+/// Resolves `href` against the absolute `page_url` and reduces it to a **relative** path
 /// (`/path?query`) suitable for storage. Handles absolute, root-relative, and
 /// document-relative hrefs.
 ///
 /// The host is dropped since this is stored in `chapters.path`/`sources.path` and resolved
-/// later against the provider's `base_url` — a provider that changes domain must not require
+/// later against the provider's `base_url`: a provider that changes domain must not require
 /// a data migration.
 ///
 /// ```
@@ -356,7 +359,7 @@ pub fn relativize(page_url: &str, href: &str) -> String {
     }
 }
 
-/// Resolve `href` against the absolute `page_url` into an **absolute** URL string.
+/// Resolves `href` against the absolute `page_url` into an **absolute** URL string.
 ///
 /// Unlike [`relativize`], preserves the host: an already-absolute href (e.g. a CDN-hosted
 /// cover) passes through unchanged. Falls back to trimmed `href` if `page_url` is
@@ -369,7 +372,7 @@ pub fn absolutize(page_url: &str, href: &str) -> String {
         .map_or_else(|| href.trim().to_owned(), String::from)
 }
 
-/// Map a free-text provider status label to a normalised [`SeriesStatus`].
+/// Maps a free-text provider status label to a normalised [`SeriesStatus`].
 ///
 /// Matching is substring-based and case-insensitive, so wording variants
 /// (ongoing/publishing, completed, hiatus, dropped/cancelled) all classify correctly.
@@ -389,7 +392,7 @@ pub fn map_status(text: &str) -> SeriesStatus {
     }
 }
 
-/// Parse an ISO `YYYY-MM-DD` date, a common chapter release-date shape, into an
+/// Parses an ISO `YYYY-MM-DD` date, a common chapter release-date shape, into an
 /// [`OffsetDateTime`] at midnight UTC.
 ///
 /// `None` for any other shape, so a relative label ("7 hours ago") or an empty cell leaves the
@@ -418,13 +421,13 @@ const MONTHS: [&str; 12] = [
     "december",
 ];
 
-/// Parse a chapter release label in any of the shapes providers actually publish, relative to
+/// Parses a chapter release label in any of the shapes providers actually publish, relative to
 /// `now`.
 ///
 /// The four shapes, tried in order: RFC 3339 (`2026-08-09T15:05:06.175797Z`, what the JSON APIs
 /// and Astro islands carry), ISO `YYYY-MM-DD`, a month-name date (`August 9, 2026`, the Madara
 /// themes), and a relative label (`3 days ago`). Anything else yields `None`, leaving the date
-/// unset rather than guessed — a wrong `published_at` reorders the release feed.
+/// unset instead of guessed: a wrong `published_at` reorders the release feed.
 ///
 /// Relative labels resolve to whole units before `now`, which is as precise as the label is.
 ///
@@ -457,7 +460,7 @@ pub fn parse_date_label(text: &str, now: OffsetDateTime) -> Option<OffsetDateTim
     parse_relative_label(trimmed, now)
 }
 
-/// `August 9, 2026` / `Aug 9 2026` / `9 August 2026`.
+/// Parses `August 9, 2026`, `Aug 9 2026` or `9 August 2026`.
 fn parse_month_name_date(text: &str) -> Option<OffsetDateTime> {
     let lower = text.to_lowercase();
     // Matched on the three-letter prefix so both `August` and `Aug` resolve. A false positive
@@ -465,7 +468,7 @@ fn parse_month_name_date(text: &str) -> Option<OffsetDateTime> {
     let month = MONTHS.iter().position(|m| lower.contains(&m[..3]))?;
     // Two bare numbers remain once the month word is out: the day (1-31) and the year. The
     // year is always last in every shape providers use (`August 9, 2026`, `9 August 2026`,
-    // and Toonily's two-digit `May 31, 23`), which is what disambiguates them — `23` is not
+    // and Toonily's two-digit `May 31, 23`), which is what disambiguates them: `23` is not
     // distinguishable from a day by range alone.
     let numbers: Vec<u32> = lower
         .split(|c: char| !c.is_ascii_digit())
@@ -488,7 +491,7 @@ fn parse_month_name_date(text: &str) -> Option<OffsetDateTime> {
         .map(|d| d.midnight().assume_utc())
 }
 
-/// `3 days ago`, `an hour ago`, `just now`.
+/// Parses `3 days ago`, `an hour ago` or `just now`.
 fn parse_relative_label(text: &str, now: OffsetDateTime) -> Option<OffsetDateTime> {
     let lower = text.to_lowercase();
     if !lower.contains("ago") && !lower.contains("now") {
@@ -497,7 +500,7 @@ fn parse_relative_label(text: &str, now: OffsetDateTime) -> Option<OffsetDateTim
     if lower.contains("now") {
         return Some(now);
     }
-    // "an hour"/"a day" carry no digits and mean one. Read as an integer directly rather than
+    // "an hour"/"a day" carry no digits and mean one. Read as an integer directly, not
     // through `parse_number`, so no float ever has to be cast back down to a count.
     let count: i32 = lower
         .split(|c: char| !c.is_ascii_digit())
@@ -519,7 +522,7 @@ fn parse_relative_label(text: &str, now: OffsetDateTime) -> Option<OffsetDateTim
     unit.checked_mul(count).and_then(|d| now.checked_sub(d))
 }
 
-/// Unescape the five predefined XML/HTML entities (`&amp;` resolved last so a
+/// Unescapes the five predefined XML/HTML entities (`&amp;` resolved last so a
 /// double-encoded `&amp;lt;` decodes one level, not two).
 ///
 /// Only needed for markup re-encoded by a challenge solver or XML viewer; real page text is
@@ -539,10 +542,12 @@ mod tests {
     use super::*;
     use scraper::Html;
 
-    /// Regression: an unconditional comma split shredded one long alternative title into
-    /// sentence fragments (`a prince`, `a beautiful girl`, `a saint? nay`), and every fragment
-    /// became a key `find_candidates` searches and `best_title_match` scores as identity — the
-    /// mechanism behind one live series absorbing 281 unrelated sources.
+    /// A sentence that contains commas stays one alternative title.
+    ///
+    /// The bug: an unconditional comma split shredded one long alternative title into sentence
+    /// fragments (`a prince`, `a beautiful girl`, `a saint? nay`), and every fragment became a
+    /// key `find_candidates` searches and `best_title_match` scores as identity, so one live
+    /// series absorbed 281 unrelated sources.
     #[test]
     fn a_sentence_that_contains_commas_stays_one_alternative_title() {
         let sentence = "A Mere Villager Was Reincarnated, a Prince, a Saint? Nay, a Beautiful Girl";
@@ -565,9 +570,10 @@ mod tests {
         assert_eq!(split_titles(""), Vec::<String>::new());
     }
 
-    /// Regression: a byte offset found in the lowercased copy must never index the original —
-    /// `to_lowercase` isn't length-preserving (`İ` grows a byte), which used to split a
-    /// multi-byte character.
+    /// A byte offset found in the lowercased copy never indexes the original.
+    ///
+    /// The bug: `to_lowercase` is not length-preserving (`İ` grows a byte), so indexing the
+    /// original with such an offset split a multi-byte character.
     #[test]
     fn parse_chapter_number_survives_non_length_preserving_case_folding() {
         assert_eq!(parse_chapter_number("İİİİ Chapter 12"), Some(12.0));
@@ -578,13 +584,14 @@ mod tests {
         assert_eq!(parse_chapter_number("İİİ"), None);
     }
 
-    /// Regression: a digit run too long for `f64` used to parse as infinity
-    /// (`"9".repeat(320).parse::<f64>()` is `Ok(inf)`) — a non-finite chapter number never
-    /// compares greater than anything and serialises to JSON `null`, so `latest_chapter` froze
-    /// and the chapter-discovered notification silently stopped firing. Fixed in
-    /// `parse_number`, guarded by `parse_number_is_always_finite` in `tests/prop_html.rs`.
+    /// A digit run too long for `f64` is no number at all.
     ///
-    /// A rejected number is skipped, not clamped — correct for a label no ordering can place.
+    /// The bug: it parsed as infinity (`"9".repeat(320).parse::<f64>()` is `Ok(inf)`). A
+    /// non-finite chapter number never compares greater than anything and serialises to JSON
+    /// `null`, so `latest_chapter` froze and the chapter-discovered notification silently stopped
+    /// firing. `parse_number_is_always_finite` in `tests/prop_html.rs` guards `parse_number`.
+    ///
+    /// A rejected number is skipped, not clamped: correct for a label no ordering can place.
     #[test]
     fn an_unrepresentable_digit_run_is_no_number_at_all() {
         let overlong = "9".repeat(320);
@@ -605,10 +612,10 @@ mod tests {
         );
     }
 
-    /// `self` reads the matched element rather than a descendant. Without it a row that carries
-    /// its own data — Keyoapp puts a chapter's date in a `d` attribute on the anchor — is
-    /// unreachable, because `scraper::select` only ever walks downwards; the nearest selector
-    /// picks up a sibling badge instead and stores the wrong value.
+    /// `self` reads the matched element, not a descendant. Without it a row that carries its own
+    /// data (Keyoapp puts a chapter's date in a `d` attribute on the anchor) is unreachable,
+    /// because `scraper::select` only ever walks downwards; the nearest selector picks up a sibling
+    /// badge instead and stores the wrong value.
     #[test]
     fn the_self_spec_reads_the_element_itself() {
         let doc = scraper::Html::parse_fragment(

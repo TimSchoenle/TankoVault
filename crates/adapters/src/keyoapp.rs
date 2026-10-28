@@ -1,17 +1,16 @@
-//! Keyoapp theme defaults: the hosted platform a cluster of scanlator sites runs on.
+//! Owns the Keyoapp theme defaults: the hosted platform a cluster of scanlator sites runs on.
 //!
-//! Server-rendered Tailwind, so the markup carries almost no semantic classes — what it *does*
+//! Server-rendered Tailwind, so the markup carries almost no semantic classes; what it *does*
 //! carry is stable ids (`#searched_series_page`, `#chapters`, `#expand_content`) and data on the
 //! elements themselves, which is what the selectors below key on. Like [`madara`](crate::madara),
 //! a site on this platform is a config row carrying only its deviations.
 
 use serde_json::{Value, json};
 
-/// The default selector set for a Keyoapp-hosted provider.
+/// Returns the default selector set for a Keyoapp-hosted provider.
 ///
-/// Pinned by `tests/family_presets_fixture.rs`. The `latest` block was verified against nine
-/// live installs rather than the one it was first derived from — deriving it from `asmotoon`
-/// alone is what shipped a feed path the other eight answer with a 404.
+/// Pinned by `tests/family_presets_fixture.rs`. The `latest` block holds across nine live
+/// installs; a feed path derived from one install alone can 404 on the others.
 #[must_use]
 pub fn keyoapp_default_config() -> Value {
     json!({
@@ -32,12 +31,11 @@ pub fn keyoapp_default_config() -> Value {
         },
         "latest": {
             // The home page's "Latest Updates" strip, not `/latest/`. That route renders the
-            // *entire* catalogue re-sorted by update time — 729 cards and ~3 MB on the largest
-            // install — so a fast scan read it every cycle and fanned out a child task per
-            // series, which is a full scan wearing a fast scan's name. It is also the route
-            // production sees answered with an origin `404` on eight of the nine installs while
-            // `/series/` on the same host succeeds. `/` cannot 404, costs one small document,
-            // and names only what actually changed.
+            // *entire* catalogue re-sorted by update time (729 cards and ~3 MB on the largest
+            // install), so a fast scan would read it every cycle and fan out a child task per
+            // series: a full scan wearing a fast scan's name. Most installs also answer it with
+            // an origin `404` while `/series/` on the same host succeeds. `/` cannot 404, costs
+            // one small document, and names only what actually changed.
             "path": "/",
             // Scoped to the `#latest` container: `div.latest-poster` alone also matches the
             // Trending, Pinned and Recently Added strips on the same page, and none of those is
@@ -57,8 +55,8 @@ pub fn keyoapp_default_config() -> Value {
             "cover": "meta[property=\"og:image\"]@content",
             "tags": "a[href*=\"genre=\"]@title",
             // Status, Type, Author and Artist render as identical two-cell grids whose only
-            // distinguishing feature is the label text, so each is a labelled row rather than a
-            // positional selector — the trap `madara`'s `alt` documents.
+            // distinguishing feature is the label text, so each is a labelled row, not a
+            // positional selector: the trap `madara`'s `alt` documents.
             "status": {
                 "row": "div.grid.gap-2",
                 "label": "div.font-medium",

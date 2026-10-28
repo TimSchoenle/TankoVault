@@ -1,15 +1,13 @@
-//! Compose the provider fetch stack.
+//! Composes the provider fetch stack.
 //!
-//! The stack is built **per provider** (each carries its own politeness and browser
-//! identity), outer → inner:
-//! `Backoff → RateLimited → Solving → Retry → Base`.
+//! The stack is built **per provider**, since each carries its own politeness and browser
+//! identity. Outer to inner: `Backoff`, `RateLimited`, `Solving`, `Retry`, `Base`.
 //!
-//! The two waiting layers answer different questions and are deliberately not merged.
-//! `RateLimited` enforces the budget **we** chose (rps/concurrency/crawl-delay); `Backoff`
-//! honours the one the **provider** asks for (`429`/`503` + `Retry-After`). `Backoff` is
-//! outside the limiter so a retry re-acquires a token instead of slipping past the budget,
-//! and outside `Solving` because 429/503 are also challenge statuses — below the solver it
-//! could not tell "slow down" from "solve this".
+//! The two waiting layers answer different questions and stay separate. `RateLimited` enforces
+//! the budget **we** chose (rps, concurrency, crawl delay); `Backoff` honours the one the
+//! **provider** asks for (`429` or `503` with `Retry-After`). `Backoff` is outside the limiter
+//! so a retry re-acquires a token, and outside `Solving` because 429 and 503 are also challenge
+//! statuses: below the solver it could not tell "slow down" from "solve this".
 
 use crate::backoff::BackoffFetcher;
 use crate::base::BaseHttpFetcher;
@@ -23,47 +21,52 @@ use std::time::Duration;
 use tankovault_domain::BrowserEmulation;
 use tankovault_solver::ChallengeSolver;
 
-/// Everything needed to build a provider's fetch stack.
+/// Holds everything needed to build a provider's fetch stack.
 pub struct ProviderFetchConfig {
-    /// Default user-agent for ordinary requests. Ignored while `emulation` is `Some`, where
-    /// the profile's own user-agent must be used to match the TLS/HTTP2 fingerprint.
+    /// The default user agent for ordinary requests.
+    ///
+    /// Ignored while `emulation` is `Some`, where only the profile's user agent matches the
+    /// TLS and HTTP/2 fingerprint.
     pub user_agent: String,
-    /// Browser to impersonate, or `None` to crawl as an identifiable bot.
+    /// The browser to impersonate, or `None` to crawl as an identifiable bot.
     pub emulation: Option<BrowserEmulation>,
-    /// Requests per second (already clamped to policy).
+    /// Requests per second, already clamped to policy.
     pub rps: f64,
-    /// Max concurrent requests.
+    /// The most concurrent requests.
     pub concurrency: u32,
-    /// Crawl-delay floor between requests, ms.
+    /// The crawl-delay floor between requests, in milliseconds.
     pub crawl_delay_ms: u64,
-    /// TCP connect timeout.
+    /// The TCP connect timeout.
     pub connect_timeout: Duration,
-    /// Whole-request timeout.
+    /// The whole-request timeout.
     pub request_timeout: Duration,
-    /// Max total fetch attempts for transient transport/5xx errors (inner retry cap).
+    /// The most attempts for transient transport and 5xx errors, the inner retry cap.
     pub max_attempts: u32,
-    /// Max total attempts when the provider answers `429`/`503` (server-directed backoff).
+    /// The most attempts when the provider answers `429` or `503`, for server-directed
+    /// backoff.
     ///
-    /// Kept small and separate from `max_attempts`: these waits are seconds-to-minutes, not
-    /// milliseconds, and they occupy a concurrency permit for the whole time.
+    /// Small and separate from `max_attempts`: these waits run to seconds or minutes. They run
+    /// outside the rate limiter, so they hold no concurrency permit, but they hold the task.
     pub max_backoff_attempts: u32,
-    /// First wait after a `429`/`503` with no usable `Retry-After`; doubles per attempt.
+    /// The first wait after a `429` or `503` with no usable `Retry-After`; doubles per
+    /// attempt.
     pub backoff_base: Duration,
-    /// Ceiling on any single backoff wait, including a server-supplied `Retry-After`.
+    /// The ceiling on any single backoff wait, a server-supplied `Retry-After` included.
     pub backoff_max: Duration,
-    /// How the rate limiter narrows its own budget when the provider answers `429`/`503`.
+    /// How the rate limiter narrows its own budget when the provider answers `429` or `503`.
     ///
-    /// Complements `backoff_*`, which waits out one throttled *request*: this changes the
-    /// pace of every subsequent request, so a scan that tripped a limit stops re-tripping it.
+    /// `backoff_*` waits out one throttled request; this changes the pace of every later
+    /// request, so a scan that tripped a limit stops re-tripping it.
     pub throttle: ThrottlePolicy,
-    /// The challenge solver back-end (HTTP client to the service, or a fake in tests).
+    /// The challenge solver back-end: the HTTP client to the service, or a fake in tests.
     pub solver: Arc<dyn ChallengeSolver>,
-    /// Solved-session cache.
+    /// The solved-session cache.
     pub session_store: Arc<dyn SessionStore>,
 }
 
 impl ProviderFetchConfig {
-    /// Sensible defaults for a provider, given its UA and solver/session wiring.
+    /// Builds the default config for a provider from its user agent, solver and session
+    /// store.
     #[must_use]
     pub fn new(
         user_agent: impl Into<String>,
@@ -79,9 +82,9 @@ impl ProviderFetchConfig {
             connect_timeout: Duration::from_secs(10),
             request_timeout: Duration::from_secs(30),
             max_attempts: 4,
-            // Three tries spans roughly a minute of server-directed waiting before the task
-            // fails and is rescheduled — long enough to ride out a rate-limit window,
-            // short enough not to pin a worker on a host that is genuinely down.
+            // Three tries span about a minute of server-directed waiting before the task fails
+            // and is rescheduled: enough to ride out a rate-limit window, short enough not to
+            // pin a worker on a host that is down.
             max_backoff_attempts: 3,
             backoff_base: Duration::from_secs(2),
             backoff_max: Duration::from_secs(60),
@@ -92,10 +95,10 @@ impl ProviderFetchConfig {
     }
 }
 
-/// Build the composed, provider-scoped fetch stack.
+/// Builds the composed, provider-scoped fetch stack.
 ///
 /// # Errors
-/// Returns [`FetchError`] if the base HTTP client cannot be constructed.
+/// [`FetchError::Transport`] if the base HTTP client cannot be built.
 pub fn build_provider_fetcher(cfg: ProviderFetchConfig) -> Result<Arc<dyn Fetcher>, FetchError> {
     let base = BaseHttpFetcher::new(
         cfg.user_agent,

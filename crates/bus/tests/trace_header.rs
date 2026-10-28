@@ -1,16 +1,15 @@
-//! The one invariant that connects the broker hop to the SDK.
+//! Pins the header name shared by the broker hop and the Sentry SDK.
 //!
-//! Its own test binary because `sentry::init` binds a process-global client.
+//! A separate test binary, because `sentry::init` binds a process-global client.
 
 use tankovault_config::{SentryConfig, TelemetryConfig};
 
-/// [`tankovault_bus::TRACE_HEADER`] must be the header the SDK actually emits.
+/// [`tankovault_bus::TRACE_HEADER`] is the header the SDK emits.
 ///
-/// The two are written in different crates and nothing links them: `crates/bus` spells the name
-/// as a constant, and `tankovault_service::trace_headers` gets it from the Sentry SDK. If the
-/// SDK ever renames or adds to that set, every publish would keep carrying the new name while
-/// every consumer kept looking for the old one — and the failure is a trace that silently stops
-/// at the broker, with no error anywhere and every service still reporting normally.
+/// Nothing else links them: `crates/bus` spells the name as a constant, and
+/// `tankovault_service::trace_headers` gets it from the SDK. If the SDK renamed the header,
+/// publishers would send the new name while consumers looked for the old one, and every trace
+/// would stop at the broker with no error anywhere.
 #[test]
 fn the_broker_header_is_the_one_the_sdk_emits() {
     let cfg = TelemetryConfig {

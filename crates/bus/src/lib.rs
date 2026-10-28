@@ -1,12 +1,11 @@
-//! Thin `JetStream` helpers shared by the control-plane, workers, and notifier: connect,
-//! provision streams, publish tasks/events, and open pull consumers, all keyed off subject
-//! names in [`tankovault_contracts::subjects`].
+//! Owns the `JetStream` plumbing shared by the control-plane, workers and notifier: connecting,
+//! provisioning streams, publishing tasks and events, and opening pull consumers, all keyed off
+//! [`tankovault_contracts::subjects`].
 //!
 //! It is also where a distributed trace crosses the broker. Every publish carries
 //! [`TRACE_HEADER`] and every delivery continues it ([`trace_of`], and the span [`consume`]
-//! opens per message), so a scan task runs under the sweep that queued it rather than as an
-//! orphan. Putting it here rather than at each publisher is what makes a *new* subject inherit
-//! the behaviour instead of having to remember it.
+//! opens per message), so a scan task runs under the sweep that queued it. Doing this here,
+//! once, means a new subject inherits the behaviour without each publisher remembering it.
 
 use async_nats::jetstream::{self, AckKind, consumer::PullConsumer, consumer::pull, stream};
 use futures::StreamExt;
@@ -21,27 +20,25 @@ use thiserror::Error;
 use tracing::Instrument as _;
 use uuid::Uuid;
 
-/// A message as it arrives from the broker: the envelope carrying a serialized
-/// [`ScanTaskMessage`] plus its ack handle. Re-exported so services need no direct
-/// `async-nats` dependency.
+/// A message as it arrives from the broker: the serialized payload plus its ack handle.
+///
+/// Re-exported so services need no direct `async-nats` dependency.
 pub use async_nats::jetstream::Message as BrokerMessage;
 
-/// A durable pull consumer on one subject; re-exported for the same reason as
-/// [`BrokerMessage`].
+/// A durable pull consumer, re-exported for the same reason as [`BrokerMessage`].
 pub use async_nats::jetstream::consumer::PullConsumer as BrokerConsumer;
 
-/// Redelivery deadline for a claimed scan task.
+/// The redelivery deadline for a claimed scan task.
 ///
 /// It bounds how long a worker may go **silent**, not how long a task may take: see
-/// [`with_ack_heartbeat`]. Kept modest so a crashed worker's task is redelivered quickly
-/// rather than after an hour of dead air.
+/// [`with_ack_heartbeat`]. It is kept short so a crashed worker's task is redelivered quickly.
 pub const TASK_ACK_WAIT: Duration = Duration::from_secs(300);
 
-/// The tasks stream: a work queue, so a task is removed when a worker acks it.
+/// Returns the tasks stream config: a work queue, so a task is removed when a worker acks it.
 ///
-/// Deliberately no age or size limit. The reconciler compares a lane's open `scan_tasks` rows
-/// against what the broker holds, and a limit that silently dropped queued tasks would turn a
-/// long backlog into a republish storm.
+/// It has no age or size limit on purpose. The reconciler compares a lane's open `scan_tasks`
+/// rows against what the broker holds, and a limit that silently dropped queued tasks would turn
+/// a long backlog into a republish storm.
 fn tasks_stream_config() -> stream::Config {
     stream::Config {
         name: subjects::TASKS_STREAM.to_owned(),
@@ -51,12 +48,12 @@ fn tasks_stream_config() -> stream::Config {
     }
 }
 
-/// The events stream: kept only until every consumer bound to an event's subject has acked it,
-/// and never longer than `max_age`.
+/// Returns the events stream config: an event is kept until every consumer bound to its subject
+/// has acked it, and never longer than `max_age`.
 ///
 /// `max_age` is the backstop, not the cleanup. It bounds what `Interest` retention leaves
-/// behind — events for a consumer that is down, or retired but never deleted — and a notifier
-/// down for longer than it loses those chapter notifications.
+/// behind, such as events for a consumer that is down or retired but never deleted. A notifier
+/// down for longer than `max_age` loses those chapter notifications.
 fn events_stream_config(max_age: Duration) -> stream::Config {
     stream::Config {
         name: subjects::EVENTS_STREAM.to_owned(),
@@ -67,16 +64,18 @@ fn events_stream_config(max_age: Duration) -> stream::Config {
     }
 }
 
-/// How often an in-flight task reports progress, as a fraction of [`TASK_ACK_WAIT`]; derived
-/// so tightening one without the other can't silently reintroduce mid-task redelivery.
+/// How often an in-flight task reports progress.
+///
+/// It is derived from [`TASK_ACK_WAIT`], so tightening the deadline cannot leave the heartbeat
+/// too slow and cause mid-task redelivery.
 pub const TASK_ACK_HEARTBEAT: Duration = Duration::from_secs(TASK_ACK_WAIT.as_secs() / 5);
 
-/// Run `work` while holding off redelivery of `msg`.
+/// Runs `work` while holding off redelivery of `msg`.
 ///
-/// `JetStream` redelivers unacked messages after `ack_wait`; for work that legitimately runs
-/// longer, an [`AckKind::Progress`] resets the timer instead of raising the deadline (which
-/// would also delay crash recovery). A failed heartbeat is logged, not fatal — idempotent
-/// writes are the correctness backstop.
+/// `JetStream` redelivers an unacked message after `ack_wait`. For work that runs longer, an
+/// [`AckKind::Progress`] resets the timer; raising the deadline instead would also delay crash
+/// recovery. A failed heartbeat is logged, not fatal: idempotent writes are the correctness
+/// backstop.
 pub async fn with_ack_heartbeat<F>(msg: &jetstream::Message, every: Duration, work: F) -> F::Output
 where
     F: std::future::Future,
@@ -103,30 +102,28 @@ where
     }
 }
 
-/// Hand `msg` back to the stream for redelivery after `delay`, instead of settling it.
+/// Hands `msg` back to the stream for redelivery after `delay`, instead of settling it.
 ///
-/// This is the broker half of retrying a task that failed for a reason time can fix — an
-/// unsolved challenge, a rate-limited provider, a solver that was restarting. Acking such a
-/// task (the only option before this existed) spent the failure permanently: the series was
-/// simply missing from the run, with a log line as the only trace.
+/// This is the broker half of retrying a task that failed for a reason time can fix: an
+/// unsolved challenge, a rate-limited provider, a restarting solver. Acking such a task would
+/// drop the series from the run.
 ///
 /// The consumer, not the stream, bounds the attempts: callers check [`delivery_count`] and
-/// settle the message once retrying stops being worthwhile.
+/// settle the message once retrying stops being worthwhile. If the negative ack fails, the
+/// message stays unsettled and is redelivered once the ack deadline lapses.
 ///
 /// # Errors
-/// [`BusError::Jetstream`] if the negative ack could not be sent — in which case the message
-/// is still unsettled and the stream redelivers it once the ack deadline lapses.
+/// [`BusError::Jetstream`].
 pub async fn retry_later(msg: &jetstream::Message, delay: Duration) -> Result<(), BusError> {
     msg.ack_with(AckKind::Nak(Some(delay)))
         .await
         .map_err(|e| BusError::Jetstream(e.to_string()))
 }
 
-/// How many times this message has been delivered, including the current delivery.
+/// Returns how many times this message has been delivered, including the current delivery.
 ///
-/// Falls back to `1` when the stream metadata cannot be read: an unreadable count must not
-/// make a task look fresh forever, so the safe reading is "this is the first attempt" only
-/// for the decision the caller then bounds by its own limit.
+/// Falls back to `1` when the stream metadata cannot be read. The caller still bounds the
+/// retry by its own limit, so reading an unknown count as a first attempt is safe.
 #[must_use]
 pub fn delivery_count(msg: &jetstream::Message) -> u64 {
     msg.info()
@@ -135,11 +132,10 @@ pub fn delivery_count(msg: &jetstream::Message) -> u64 {
         .unwrap_or(1)
 }
 
-/// Whether a consumer operation failed because the consumer is not there.
+/// Returns whether a consumer operation failed because the consumer does not exist.
 ///
-/// `async-nats` models this as a `JetStream` API error code rather than a distinct error
-/// kind, so the check has to reach for the code. It is the one failure that means "nothing
-/// to do" for an idempotent delete.
+/// `async-nats` reports this as a `JetStream` API error code, not a distinct error kind, so the
+/// check reads the code. It is the one failure an idempotent delete treats as success.
 fn is_consumer_not_found(err: &stream::ConsumerError) -> bool {
     matches!(
         err.kind(),
@@ -148,35 +144,34 @@ fn is_consumer_not_found(err: &stream::ConsumerError) -> bool {
     )
 }
 
-/// Header carrying the trace this message belongs to, so a scan task consumed by a worker
-/// continues the request that queued it instead of starting a trace of its own.
+/// The header carrying a message's trace, so a consumed task continues the request that
+/// queued it.
 ///
-/// The name is Sentry's, not ours: it is what `sentry-tracing` and every other Sentry SDK
-/// read, and the value is opaque here. It is written on every publish and read on every
-/// delivery, so the broker is not where a trace ends.
+/// The name is Sentry's: `sentry-tracing` and every other Sentry SDK read it, and the value is
+/// opaque here. It is written on every publish and read on every delivery.
 pub const TRACE_HEADER: &str = "sentry-trace";
 
-/// The trace this message belongs to, or `None` for one published with tracing off.
+/// Returns the trace this message belongs to, or `None` for one published with tracing off.
 ///
-/// Public because the worker does not use [`consume`] — it has its own fair-share queue —
-/// and still has to continue the trace.
+/// Public because the worker has its own fair-share queue instead of [`consume`], and still
+/// has to continue the trace.
 #[must_use]
 pub fn trace_of(msg: &BrokerMessage) -> Option<&str> {
     trace_in(msg.headers.as_ref())
 }
 
-/// [`trace_of`] over the header map alone, so it is testable without a broker.
+/// Reads [`TRACE_HEADER`] from a header map, so [`trace_of`] is testable without a broker.
 fn trace_in(headers: Option<&async_nats::HeaderMap>) -> Option<&str> {
     headers?
         .get(TRACE_HEADER)
         .map(async_nats::HeaderValue::as_str)
 }
 
-/// The outbound trace headers, or `None` when there is no trace to carry.
+/// Returns the outbound trace headers, or `None` when there is no trace to carry.
 ///
-/// `None` rather than an empty map on purpose: a message published *with* headers goes on the
-/// wire as `HPUB` and carries a `NATS/1.0` block, so an empty map would change every message
-/// this workspace publishes in a deployment that does not use Sentry at all.
+/// Never an empty map: a message published with headers goes on the wire as `HPUB` with a
+/// `NATS/1.0` block, so an empty map would change every message in a deployment without
+/// Sentry.
 fn outbound_headers() -> Option<async_nats::HeaderMap> {
     let mut headers: Option<async_nats::HeaderMap> = None;
     for (name, value) in tankovault_service::trace_headers() {
@@ -187,50 +182,50 @@ fn outbound_headers() -> Option<async_nats::HeaderMap> {
     headers
 }
 
-/// A `JetStream` context plus the underlying core-NATS client.
+/// Holds a `JetStream` context and the underlying core-NATS client.
 ///
-/// Durable task/event traffic goes through the `JetStream` context; ephemeral, best-effort
-/// live pushes (per-user notifications) use the core client directly so they are never
-/// retained for a disconnected subscriber.
+/// Durable task and event traffic goes through `JetStream`. Best-effort live pushes, the
+/// per-user notifications, use the core client so they are never retained for a disconnected
+/// subscriber.
 #[derive(Clone)]
 pub struct Bus {
     client: async_nats::Client,
     js: jetstream::Context,
 }
 
-/// Bus errors.
+/// Errors from the broker client.
 #[derive(Debug, Error)]
 pub enum BusError {
-    /// The connection itself never came up: an unreachable address, a rejected credential, or
-    /// a TLS handshake the server refused.
+    /// The connection never came up: an unreachable address, a rejected credential, or a
+    /// refused TLS handshake.
     #[error("nats connect error: {0}")]
     Connect(String),
-    /// The connection is live and `JetStream` refused the operation, most often because the
-    /// stream this subject belongs to has not been created.
+    /// `JetStream` refused the operation on a live connection, most often because the
+    /// subject's stream has not been created.
     #[error("jetstream error: {0}")]
     Jetstream(String),
-    /// A core-NATS publish or subscribe failed on a live connection. Ephemeral traffic only,
-    /// so nothing durable was lost.
+    /// A core-NATS publish or subscribe failed on a live connection.
+    ///
+    /// Core NATS carries only ephemeral traffic, so nothing durable was lost.
     #[error("nats error: {0}")]
     Nats(String),
-    /// A payload could not be encoded to or decoded from JSON, which is a contract mismatch
-    /// between two services rather than a broker fault.
+    /// A payload could not be encoded to or decoded from JSON: a contract mismatch between
+    /// two services, not a broker fault.
     #[error("serialization error: {0}")]
     Serde(#[from] serde_json::Error),
 }
 
 impl Bus {
-    /// Connect to NATS and build a `JetStream` context.
+    /// Connects to NATS and builds a `JetStream` context.
     ///
-    /// `url` is a [`SecretString`] because `nats://user:pass@host` is a supported form — that is
-    /// where a per-account credential goes, and giving each service its own account is what
-    /// stops `notifier` from being able to publish scan tasks. The accounts themselves are NATS
-    /// server configuration, not something this client can assert.
+    /// `url` is a [`SecretString`] because `nats://user:pass@host` carries a per-account
+    /// credential. A separate account per service is what stops `notifier` from publishing
+    /// scan tasks; the accounts are NATS server configuration, which this client cannot assert.
     ///
-    /// `tls` is present under `internal.identity = "mtls"`, and then the connection is
-    /// mutually authenticated against the same material the HTTP tier uses and TLS is
-    /// **required** rather than merely offered — without that, a server that does not ask for
-    /// TLS silently gets a plaintext connection carrying every user notification.
+    /// `tls` is present under `internal.identity = "mtls"`. The connection is then mutually
+    /// authenticated with the HTTP tier's material, and TLS is **required**, not just offered:
+    /// otherwise a server that does not ask for TLS gets a plaintext connection carrying every
+    /// user notification.
     ///
     /// # Errors
     /// [`BusError::Connect`] if the server is unreachable or the TLS material is unusable.
@@ -256,12 +251,11 @@ impl Bus {
         })
     }
 
-    /// Round-trip the broker, for a readiness probe.
+    /// Round-trips the broker, for a readiness probe.
     ///
-    /// Uses `flush` rather than the client's cached connection state: the client
-    /// reconnects transparently in the background, so its state flag can read `Connected`
-    /// while the server is in fact unreachable. A flush waits for the server to
-    /// acknowledge, which is what a probe needs to assert.
+    /// It flushes instead of reading the client's cached state: the client reconnects in the
+    /// background, so the state can read `Connected` while the server is unreachable. A flush
+    /// waits for the server to acknowledge.
     ///
     /// # Errors
     /// [`BusError::Nats`] if the round trip fails or the connection is down.
@@ -272,28 +266,24 @@ impl Bus {
             .map_err(|e| BusError::Nats(e.to_string()))
     }
 
-    /// The underlying `JetStream` context (for advanced use / consumers).
+    /// Returns the underlying `JetStream` context.
     #[must_use]
     pub fn jetstream(&self) -> &jetstream::Context {
         &self.js
     }
 
-    /// Idempotently create — or bring into line — the tasks and events streams.
+    /// Creates the tasks and events streams, or brings existing ones into line with their
+    /// config.
     ///
-    /// `create_or_update_stream` rather than `get_or_create_stream`: the latter returns an
-    /// existing stream untouched, so widening the tasks stream's subject binding from
-    /// `scan.tasks.*` to `scan.tasks.>` would never take effect on an installation that
-    /// already has the stream, and every tiered task would be published to a subject no
-    /// stream captures.
-    ///
-    /// It is also what migrates an existing events stream from `Limits` to `Interest`
-    /// retention; the server accepts that change in place (2.10+). Every service that calls
-    /// this rewrites `events_max_age`, so they must all be given the same value.
+    /// It uses `create_or_update_stream` because `get_or_create_stream` returns an existing
+    /// stream untouched: a changed subject binding or retention policy would never reach an
+    /// installation that already has the stream. Every service that calls this rewrites
+    /// `events_max_age`, so they must all be given the same value.
     ///
     /// # Errors
-    /// [`BusError::Jetstream`] on a provisioning failure, including a zero `events_max_age`.
+    /// [`BusError::Jetstream`], including for a zero `events_max_age`.
     pub async fn ensure_streams(&self, events_max_age: Duration) -> Result<(), BusError> {
-        // Zero is JetStream's "unlimited": refused rather than silently unbounding the stream.
+        // Zero is JetStream's "unlimited", so it is refused instead of unbounding the stream.
         if events_max_age.is_zero() {
             return Err(BusError::Jetstream(
                 "events stream max age must be greater than zero".to_owned(),
@@ -310,37 +300,38 @@ impl Bus {
         Ok(())
     }
 
-    /// Publish a scan task to its provider's queue for the run's scan mode.
+    /// Publishes a scan task to its provider's lane for the run's scan mode.
     ///
     /// # Errors
-    /// [`BusError`] on serialization or publish failure.
+    /// [`BusError::Serde`] if the task cannot be serialised, [`BusError::Jetstream`] if the publish
+    /// fails.
     pub async fn publish_task(&self, msg: &ScanTaskMessage) -> Result<(), BusError> {
         let subject = subjects::task_subject(&msg.provider_slug, msg.mode);
         self.publish(subject, msg).await
     }
 
-    /// Publish a progress event.
+    /// Publishes a progress event.
     ///
     /// # Errors
-    /// [`BusError`] on failure.
+    /// [`BusError::Serde`] or [`BusError::Jetstream`].
     pub async fn publish_progress(&self, event: &ProgressEvent) -> Result<(), BusError> {
         self.publish(subjects::PROGRESS_SUBJECT.to_owned(), event)
             .await
     }
 
-    /// Publish a new-chapter domain event.
+    /// Publishes a new-chapter event.
     ///
     /// # Errors
-    /// [`BusError`] on failure.
+    /// [`BusError::Serde`] or [`BusError::Jetstream`].
     pub async fn publish_chapter(&self, event: &ChapterDiscovered) -> Result<(), BusError> {
         self.publish(subjects::CHAPTER_DISCOVERED_SUBJECT.to_owned(), event)
             .await
     }
 
-    /// Publish a provider-state-change event.
+    /// Publishes a provider-state-change event.
     ///
     /// # Errors
-    /// [`BusError`] on failure.
+    /// [`BusError::Serde`] or [`BusError::Jetstream`].
     pub async fn publish_provider_state(
         &self,
         event: &ProviderStateChanged,
@@ -349,16 +340,15 @@ impl Bus {
             .await
     }
 
-    /// Publish a live per-user notification over **core NATS** (non-durable, fire-and-forget).
+    /// Publishes a live per-user notification over **core NATS**, fire-and-forget.
     ///
-    /// Unlike the `JetStream` publishers this does not await a broker ack and is not retained:
-    /// if no API replica currently holds an SSE connection for the user, the message is simply
-    /// dropped. The durable record is the `notifications` row, so this can never lose data —
-    /// only a live badge update.
+    /// It awaits no broker ack and is not retained: if no API replica holds an SSE connection
+    /// for the user, the message is dropped. The durable record is the `notifications` row, so
+    /// a drop loses only a live badge update.
     ///
     /// # Errors
-    /// [`BusError::Nats`] if the client cannot hand the message to the connection, or
-    /// [`BusError::Serde`] on encoding failure.
+    /// [`BusError::Serde`] if encoding fails, [`BusError::Nats`] if the client cannot hand the
+    /// message to the connection.
     pub async fn publish_user_notification(
         &self,
         event: &UserNotification,
@@ -376,10 +366,10 @@ impl Bus {
         .map_err(|e| BusError::Nats(e.to_string()))
     }
 
-    /// Subscribe (core NATS) to a single user's live-notification subject. The returned
-    /// [`async_nats::Subscriber`] is a `Stream` of raw messages whose payloads decode to
-    /// [`UserNotification`]; it is unsubscribed automatically when dropped (e.g. when the
-    /// SSE connection closes).
+    /// Subscribes over core NATS to one user's live-notification subject.
+    ///
+    /// The subscriber yields raw messages whose payloads decode to [`UserNotification`], and
+    /// unsubscribes when dropped, such as when the SSE connection closes.
     ///
     /// # Errors
     /// [`BusError::Nats`] if the subscription cannot be established.
@@ -410,26 +400,24 @@ impl Bus {
         Ok(())
     }
 
-    /// Open (or reuse) the worker pool's durable pull consumer for **one provider's tasks
-    /// in one scan mode**.
+    /// Opens or reuses the worker pool's durable pull consumer for **one provider's tasks in
+    /// one scan mode**.
     ///
-    /// One consumer per provider is what makes the queue fair: each provider gets its own
-    /// FIFO lane, and a worker chooses which lane to serve next instead of taking whatever
-    /// the stream happens to hold at its head. With a single wildcard consumer, a full
-    /// catalogue scan of one provider — which fans out into one task per series — is served
-    /// to completion before any other provider's first task is even looked at.
+    /// A consumer per provider makes the queue fair: each provider gets its own FIFO lane, and a
+    /// worker chooses which lane to serve next. A single wildcard consumer would serve one
+    /// provider's full catalogue scan, one task per series, before any other provider's first
+    /// task.
     ///
-    /// Splitting each provider again by scan mode is what makes the queue *prioritisable*:
-    /// the worker can drain every fast lane before looking at a full one.
+    /// Splitting each provider by scan mode makes the queue prioritisable: the worker can drain
+    /// every fast lane before a full one.
     ///
-    /// The full-scan lane also binds [`subjects::legacy_task_subject`], the untiered subject
-    /// tasks were published to before the split. It is the conservative side to put it on —
-    /// an old task is backfill-grade work, and folding it in here means the upgrade strands
-    /// nothing rather than leaving messages in the stream that no filter can reach.
+    /// The full-scan lane also binds [`subjects::legacy_task_subject`], the untiered subject, so
+    /// a task published there is still reachable. It is backfill-grade work, which is why it
+    /// joins the full lane.
     ///
     /// # Errors
-    /// [`BusError::Jetstream`] on failure, including a `slug` that is not a legal subject
-    /// token — see [`subjects::is_valid_provider_slug`].
+    /// [`BusError::Jetstream`], including for a slug that fails
+    /// [`subjects::is_valid_provider_slug`].
     pub async fn provider_task_consumer(
         &self,
         provider_slug: &str,
@@ -453,12 +441,11 @@ impl Bus {
         .await
     }
 
-    /// The lanes that already have a worker consumer on the tasks stream.
+    /// Returns the lanes that already have a worker consumer on the tasks stream.
     ///
     /// The worker builds its lanes from the provider table, but the stream outlives any one
-    /// row: tasks published for a provider that has since been renamed or deleted are still
-    /// in the stream, and only a lane with the matching filter can drain them. Folding these
-    /// lanes into the set keeps those tasks from being stranded forever.
+    /// row: tasks for a renamed or deleted provider stay in the stream, and only a lane with the
+    /// matching filter can drain them. Adding these lanes keeps those tasks from being stranded.
     ///
     /// # Errors
     /// [`BusError::Jetstream`] if the stream or its consumer list cannot be read.
@@ -479,23 +466,21 @@ impl Bus {
         Ok(lanes)
     }
 
-    /// How many messages the broker still holds for one provider lane: waiting to be pulled,
-    /// plus claimed by a worker and not yet acked. The full lane's legacy filter is folded in,
-    /// because both subjects sit on the one consumer.
+    /// Returns how many messages the broker holds for one provider lane: waiting to be pulled,
+    /// plus claimed and not yet acked.
     ///
-    /// This is the broker half of reconciling dispatch against the `scan_tasks` table, and the
-    /// count is the whole of what the broker can say: it names how many messages a lane holds,
-    /// never which. A caller therefore learns the size of a deficit, and has to choose for
-    /// itself which rows to blame it on.
+    /// The full lane's legacy filter is included, because both subjects sit on one consumer.
+    /// This is the broker half of reconciling dispatch against `scan_tasks`. The broker can say
+    /// how many messages a lane holds, never which, so the caller learns the size of a deficit
+    /// and chooses which rows to attribute it to.
     ///
-    /// `None` means the lane has no consumer at all. That is not the same as an empty lane and
-    /// must not be collapsed into one: the worker pool opens its lanes on start, so before it
-    /// has ever run every lane is absent, and reading absence as "the broker holds nothing"
-    /// would have a reconciler republish every open task in the database.
+    /// `None` means the lane has no consumer, which must not be read as an empty lane. The
+    /// worker pool opens its lanes on start, so before it first runs every lane is absent, and
+    /// reading that as "the broker holds nothing" would republish every open task.
     ///
     /// # Errors
-    /// [`BusError::Jetstream`] if the stream or the consumer cannot be read for any other
-    /// reason.
+    /// [`BusError::Jetstream`] if the stream or the consumer cannot be read for a reason other than
+    /// the consumer being absent.
     pub async fn lane_backlog(
         &self,
         provider_slug: &str,
@@ -525,19 +510,18 @@ impl Bus {
         }
     }
 
-    /// Delete the pre-fairness wildcard task consumer, if it is still present.
+    /// Deletes the wildcard task consumer, if present.
     ///
-    /// A work-queue stream refuses a consumer whose filter subject overlaps an existing
-    /// one, and `scan.tasks.*` overlaps every per-provider filter — so on the first start
-    /// after the upgrade, this removal is what lets the lanes be created at all. Nothing is
-    /// lost by it: work-queue retention drops a message when it is *acked*, not when a
-    /// consumer goes away, so everything still pending is picked up by the new lanes.
+    /// A work-queue stream refuses a consumer whose filter overlaps an existing one, and
+    /// `scan.tasks.*` overlaps every per-provider filter, so the lanes cannot be created while
+    /// it exists. Nothing is lost: work-queue retention drops a message when it is acked, not
+    /// when a consumer goes away, so the lanes pick up everything still pending.
     ///
-    /// Idempotent — a missing consumer is the expected steady state.
+    /// Idempotent: a missing consumer is the steady state.
     ///
     /// # Errors
-    /// [`BusError::Jetstream`] if the stream cannot be read or the delete fails for a reason
-    /// other than the consumer already being gone.
+    /// [`BusError::Jetstream`] if the stream cannot be read or the delete fails for a reason other
+    /// than the consumer already being gone.
     pub async fn retire_wildcard_task_consumer(&self) -> Result<(), BusError> {
         let stream = self
             .js
@@ -560,11 +544,11 @@ impl Bus {
         }
     }
 
-    /// Open (or reuse) a durable pull consumer on the events stream, filtered to
-    /// `filter_subject` (e.g. the chapter-discovered subject for the notifier).
+    /// Opens or reuses a durable pull consumer on the events stream, filtered to
+    /// `filter_subject`.
     ///
     /// # Errors
-    /// [`BusError::Jetstream`] on failure.
+    /// [`BusError::Jetstream`].
     pub async fn event_consumer(
         &self,
         durable: &str,
@@ -579,11 +563,11 @@ impl Bus {
         .await
     }
 
-    /// Open (or reuse) a durable pull consumer over one or more subjects.
+    /// Opens or reuses a durable pull consumer over one or more subjects.
     ///
-    /// A single filter goes in `filter_subject` and several in `filter_subjects`; the two
-    /// fields are mutually exclusive on the wire, and the single-subject form is what every
-    /// server version understands.
+    /// A single filter goes in `filter_subject` and several in `filter_subjects`. The two fields
+    /// are mutually exclusive on the wire, and every server version understands the single
+    /// form.
     async fn durable_consumer(
         &self,
         stream_name: &str,
@@ -619,25 +603,24 @@ impl Bus {
     }
 }
 
-/// What a handler wants done with a message that did not succeed.
+/// Says what a handler wants done with a message.
 ///
-/// Returned rather than decided inside [`consume`], because only the handler's own layer can
-/// tell "the provider blocked us, try again in five minutes" from "this markup will fail
-/// identically forever".
+/// The handler returns it because only its own layer can tell "the provider blocked us, try
+/// again in five minutes" from "this markup will fail identically forever".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Disposition {
-    /// Done with this message; settle it.
+    /// Settles the message.
     Ack,
-    /// Hand it back for redelivery, subject to [`ConsumePolicy::max_deliveries`].
+    /// Hands the message back for redelivery, subject to [`ConsumePolicy::max_deliveries`].
     Retry,
 }
 
-/// How [`consume`] treats a handler failure.
+/// Sets how [`consume`] treats a handler failure.
 ///
-/// The delivery *count* is the budget, not the number of retries, and the two differ by one.
-/// [`consume`] hands a message back only while `delivery_count < max_deliveries`, so
-/// `max_deliveries: 1` — the [`Default`] — means the first failure is also the last, and a
-/// handler returning [`Disposition::Retry`] under it is settled immediately.
+/// The budget is the delivery count, not the number of retries, and the two differ by one.
+/// [`consume`] hands a message back only while `delivery_count < max_deliveries`, so the
+/// [`Default`] of `max_deliveries: 1` makes the first failure the last: a
+/// [`Disposition::Retry`] under it is settled immediately.
 ///
 /// ```
 /// use std::time::Duration;
@@ -652,30 +635,29 @@ pub enum Disposition {
 /// assert_eq!((worker.backoff)(1), Duration::from_secs(30));
 /// assert_eq!((worker.backoff)(3), Duration::from_secs(90));
 ///
-/// // The default retries *zero* times. This reads like a disabled policy and is the right
-/// // default: a handler whose failures are not time-fixable (a malformed payload, a deleted
-/// // row) gains nothing from redelivery except occupying the consumer.
+/// // The default retries zero times: a handler whose failures time cannot fix, such as a
+/// // malformed payload or a deleted row, gains nothing from redelivery.
 /// assert_eq!(ConsumePolicy::default().max_deliveries, 1);
 /// assert!(ConsumePolicy::default().heartbeat.is_none());
 ///
-/// // The heartbeat has to be a fraction of the ack wait, not merely smaller than it: one lost
-/// // extension must not let the deadline lapse while the handler is still running, which is
-/// // what would turn a slow scan into a duplicate one.
+/// // The heartbeat is a fraction of the ack wait, so one lost extension cannot let the
+/// // deadline lapse while the handler runs and turn a slow scan into a duplicate.
 /// assert!(TASK_ACK_HEARTBEAT * 2 < TASK_ACK_WAIT);
 /// ```
 pub struct ConsumePolicy {
-    /// Deliveries after which a retryable failure is settled anyway, so one poisoned message
-    /// cannot occupy a consumer forever.
+    /// The deliveries after which a retryable failure is settled anyway, so one poisoned
+    /// message cannot occupy a consumer forever.
     pub max_deliveries: u64,
-    /// Delay before redelivery, given the current delivery count.
+    /// The delay before redelivery, given the current delivery count.
     pub backoff: fn(u64) -> Duration,
-    /// Extend the redelivery deadline every this often while the handler runs. `None` for
-    /// handlers that always finish well inside [`TASK_ACK_WAIT`].
+    /// How often to extend the redelivery deadline while the handler runs.
+    ///
+    /// `None` for handlers that always finish well inside the consumer's ack wait.
     pub heartbeat: Option<Duration>,
 }
 
 impl Default for ConsumePolicy {
-    /// One delivery, no retry: what a handler whose failures are not time-fixable wants.
+    /// Returns one delivery and no retry, for handlers whose failures time cannot fix.
     fn default() -> Self {
         Self {
             max_deliveries: 1,
@@ -685,26 +667,20 @@ impl Default for ConsumePolicy {
     }
 }
 
-/// Drive a durable pull consumer until `shutdown` is cancelled or the stream ends.
+/// Drives a durable pull consumer until `shutdown` is cancelled or the stream ends.
 ///
-/// Consolidates a loop that used to be hand-rolled at three call sites with three different
-/// meanings — the notifier once acked a message whose fan-out had **failed** (a silently lost
-/// notification), and the control-plane's aggregator had no shutdown arm and could not drain on
-/// `SIGTERM`. Delivery semantics belong here, not at each call site.
-///
-/// The contract:
-/// - Cancellation is checked only *between* messages, never mid-handler. Being killed between
-///   the work and the ack is precisely what redelivery is for, but it is still a duplicate,
-///   so the message in hand is always finished first.
-/// - A handler returning `Ok(Disposition::Ack)` settles the message; `Ok(Disposition::Retry)`
-///   or `Err(_)` hands it back with [`retry_later`] until `max_deliveries`, then settles it.
-/// - An undecodable payload is dropped and acked. It will never decode, so redelivering it
-///   only blocks the consumer.
-/// - A failed ack is logged, not fatal: the stream redelivers, and handlers are expected to be
-///   idempotent, which is the same assumption every one of these call sites already made.
+/// Delivery semantics live here, not at each call site:
+/// - Cancellation is checked only between messages, never mid-handler. A kill between the work
+///   and the ack is what redelivery covers, but it still duplicates work, so the message in
+///   hand is always finished first.
+/// - `Ok(Disposition::Ack)` settles the message. `Ok(Disposition::Retry)` or `Err(_)` hands it
+///   back with [`retry_later`] until `max_deliveries`, then settles it.
+/// - An undecodable payload is acked and dropped. It will never decode, so redelivering it only
+///   blocks the consumer.
+/// - A failed ack is logged, not fatal: the stream redelivers, and handlers are idempotent.
 ///
 /// # Errors
-/// [`BusError::Jetstream`] if the message stream itself cannot be opened.
+/// [`BusError::Jetstream`] if the message stream cannot be opened.
 pub async fn consume<T, F, Fut>(
     consumer: BrokerConsumer,
     shutdown: tokio_util::sync::CancellationToken,
@@ -749,11 +725,10 @@ where
         };
 
         let deliveries = delivery_count(&msg);
-        // One span per delivery, continuing the trace the publisher was in. `sentry-tracing`
-        // turns a root span into a transaction and this one is a root — nothing else is on the
-        // stack here — so a consumer's work appears under the request that queued it rather
-        // than as an orphan. Costs a span whether or not Sentry is on, which is worth it on its
-        // own: the handler's log lines gain the subject and the delivery count.
+        // One span per delivery, continuing the publisher's trace. `sentry-tracing` turns a
+        // root span into a transaction, and nothing else is on the stack here, so the work
+        // appears under the request that queued it. The span is created with Sentry off too:
+        // the handler's log lines gain the subject and the delivery count.
         let span = if let Some(trace) = trace_of(&msg) {
             tracing::info_span!(
                 "bus_delivery",
@@ -811,7 +786,7 @@ where
     Ok(())
 }
 
-/// Settle `msg`, logging rather than failing if the ack does not land.
+/// Settles `msg`, logging instead of failing if the ack does not land.
 async fn ack_or_warn(msg: &jetstream::Message, what: &str) {
     if let Err(e) = msg.ack().await {
         tracing::warn!(subject = what, error = %e, "failed to ack message");
@@ -822,9 +797,10 @@ async fn ack_or_warn(msg: &jetstream::Message, what: &str) {
 mod tests {
     use super::*;
 
-    /// A deployment with Sentry off must publish exactly the bytes it published before this
-    /// existed. An empty `HeaderMap` would not: `publish_with_headers` sends `HPUB` with a
-    /// `NATS/1.0` block, so "no trace" has to mean *no headers*, not empty ones.
+    /// A deployment with Sentry off publishes no header block at all.
+    ///
+    /// An empty `HeaderMap` would still send `HPUB` with a `NATS/1.0` block, so "no trace" has
+    /// to mean no headers, not empty ones.
     #[test]
     fn no_trace_means_no_header_block_at_all() {
         assert!(outbound_headers().is_none());
@@ -848,9 +824,10 @@ mod tests {
         );
     }
 
-    /// The events stream was provisioned with default `Limits` retention and no bound, so every
-    /// event ever published stayed on disk: a production broker restored 33.7M messages on
-    /// start. Consumed events must be dropped, and nothing may be kept forever.
+    /// The events stream drops consumed events and keeps nothing forever.
+    ///
+    /// The bug: default `Limits` retention with no bound keeps every event ever published on
+    /// disk, and the broker restores all of them on start.
     #[test]
     fn the_events_stream_drops_consumed_events_and_is_age_bounded() {
         let max_age = Duration::from_secs(3600);
@@ -859,7 +836,7 @@ mod tests {
         assert_eq!(events.max_age, max_age);
     }
 
-    /// The tasks stream must stay a work queue with no age limit; the reconciler reads its
+    /// The tasks stream stays a work queue with no age limit, because the reconciler reads its
     /// per-lane backlog as the truth for what is still queued.
     #[test]
     fn the_tasks_stream_is_an_unbounded_work_queue() {
@@ -870,8 +847,6 @@ mod tests {
 
     #[test]
     fn the_default_policy_does_not_retry() {
-        // A caller that has not thought about redelivery gets at-most-one-attempt, not an
-        // accidental infinite requeue.
         let policy = ConsumePolicy::default();
         assert_eq!(policy.max_deliveries, 1);
         assert!(policy.heartbeat.is_none());
@@ -879,10 +854,7 @@ mod tests {
 
     #[test]
     fn heartbeat_fits_comfortably_inside_the_redelivery_deadline() {
-        // The whole point of the heartbeat is that a progress ack lands well before the
-        // deadline lapses. If someone tightens `TASK_ACK_WAIT` without revisiting the
-        // divisor, mid-task redelivery comes back silently — so assert the margin here
-        // rather than trusting the comment.
+        // A progress ack has to land well before the deadline lapses.
         assert!(
             TASK_ACK_HEARTBEAT.as_secs() > 0,
             "a zero heartbeat would spin"

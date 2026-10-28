@@ -43,6 +43,7 @@ pub(crate) fn Login() -> Element {
     } = form;
 
     let is_register = *register_mode.read();
+    let mfa_step = pending_mfa.read().is_some();
     let heading = i18n.t(if is_register {
         "auth.register.heading"
     } else {
@@ -85,6 +86,7 @@ pub(crate) fn Login() -> Element {
             if *needs_verification.read() {
                 Button {
                     style: "width:100%;margin:0 0 14px;",
+                    disabled: busy.is_busy(),
                     on_click: move |_| resend.call(()),
                     {i18n.t("auth.resendConfirmation")}
                 }
@@ -93,7 +95,7 @@ pub(crate) fn Login() -> Element {
             // The second leg takes over the whole form rather than appearing beside it: the
             // password has already been accepted, and leaving it on screen invites a reader who
             // mistypes their code to retype the password instead and wonder why nothing happens.
-            if pending_mfa.read().is_some() {
+            if mfa_step {
                 {second_factor_step(&form, finish_mfa)}
             } else if is_register {
                 Field {
@@ -123,68 +125,70 @@ pub(crate) fn Login() -> Element {
                     on_enter: move |()| submit.call(()),
                 }
             }
-            Field {
-                id: "tv-auth-password",
-                label: i18n.t("auth.field.password"),
-                kind: "password",
-                // `new-password` on the register form is what tells a password manager to
-                // offer to *generate* one rather than fill the existing one.
-                autocomplete: if is_register { "new-password" } else { "current-password" },
-                value: password(),
-                on_input: move |v| password.set(v),
-                on_enter: move |()| submit.call(()),
-            }
+            if !mfa_step {
+                Field {
+                    id: "tv-auth-password",
+                    label: i18n.t("auth.field.password"),
+                    kind: "password",
+                    // `new-password` on the register form is what tells a password manager to
+                    // offer to *generate* one rather than fill the existing one.
+                    autocomplete: if is_register { "new-password" } else { "current-password" },
+                    value: password(),
+                    on_input: move |v| password.set(v),
+                    on_enter: move |()| submit.call(()),
+                }
 
-            if !is_register {
-                div { style: "text-align:right;margin:-4px 0 14px;",
-                    Link {
-                        to: Route::ForgotPassword {},
-                        class: "ik-link",
-                        {i18n.t("auth.forgotPassword")}
+                if !is_register {
+                    div { style: "text-align:right;margin:-4px 0 14px;",
+                        Link {
+                            to: Route::ForgotPassword {},
+                            class: "ik-link",
+                            {i18n.t("auth.forgotPassword")}
+                        }
                     }
                 }
-            }
 
-            // Offered only where it can work: the deployment has the feature on, and the platform
-            // can run a ceremony — `navigator.credentials` in a secure context on the web build,
-            // Windows Hello on the desktop one. A button that can only report "not available
-            // here" is worse than no button.
-            if !is_register && caps.has_feature(Feature::AccountsPasskeys) && webauthn::is_available() {
-                div { class: "ik-or", style: "margin:4px 0 12px;text-align:center;",
-                    span { class: "ik-muted", style: "font-size:12px;", {i18n.t("common.or")} }
+                // Offered only where it can work: the deployment has the feature on, and the platform
+                // can run a ceremony — `navigator.credentials` in a secure context on the web build,
+                // Windows Hello on the desktop one. A button that can only report "not available
+                // here" is worse than no button.
+                if !is_register && caps.has_feature(Feature::AccountsPasskeys) && webauthn::is_available() {
+                    div { class: "ik-or", style: "margin:4px 0 12px;text-align:center;",
+                        span { class: "ik-muted", style: "font-size:12px;", {i18n.t("common.or")} }
+                    }
+                    Button {
+                        style: "width:100%;margin-bottom:14px;",
+                        disabled: busy.is_busy(),
+                        on_click: move |_| passkey_sign_in.call(()),
+                        {i18n.t("passkey.signIn")}
+                    }
                 }
+
                 Button {
-                    style: "width:100%;margin-bottom:14px;",
+                    tone: Tone::Primary,
+                    style: "width:100%;",
                     disabled: busy.is_busy(),
-                    on_click: move |_| passkey_sign_in.call(()),
-                    {i18n.t("passkey.signIn")}
+                    on_click: move |_| submit.call(()),
+                    if busy.is_busy() {
+                    {i18n.t("common.working")}
+                    } else {
+                    "{cta}"
+                    }
                 }
-            }
 
-            Button {
-                tone: Tone::Primary,
-                style: "width:100%;",
-                disabled: busy.is_busy(),
-                on_click: move |_| submit.call(()),
-                if busy.is_busy() {
-                {i18n.t("common.working")}
-                } else {
-                "{cta}"
+                Button {
+                    style: "width:100%;margin-top:10px;",
+                    on_click: move |_| {
+                        error.set(None);
+                        let now = *register_mode.read();
+                        register_mode.set(!now);
+                    },
+                    "{toggle_label}"
                 }
-            }
 
-            Button {
-                style: "width:100%;margin-top:10px;",
-                on_click: move |_| {
-                    error.set(None);
-                    let now = *register_mode.read();
-                    register_mode.set(!now);
-                },
-                "{toggle_label}"
-            }
-
-            if is_register {
-                {acceptance(i18n)}
+                if is_register {
+                    {acceptance(i18n)}
+                }
             }
         }
     }

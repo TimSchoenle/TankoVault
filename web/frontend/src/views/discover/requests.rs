@@ -117,3 +117,18 @@ pub(super) async fn page(
 pub(super) fn header_total(value: Option<&str>) -> Option<i64> {
     value.and_then(|v| v.parse::<i64>().ok())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A page fetched with `with_total=false` carries no `X-Total-Count`. The count line used to
+    /// fall back to the page's own length, so the second page of a 600-match window read
+    /// "25–48 of 24".
+    #[test]
+    fn a_page_without_a_total_header_reports_no_total() {
+        assert_eq!(header_total(None), None);
+        assert_eq!(header_total(Some("600")), Some(600));
+        assert_eq!(header_total(Some("not a number")), None);
+    }
+}

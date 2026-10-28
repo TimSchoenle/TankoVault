@@ -2,7 +2,7 @@
 
 use crate::error::DbResult;
 use crate::repo::matching::undo::MergeUndo;
-use sqlx::PgExecutor;
+use sqlx::{PgExecutor, Postgres, Transaction};
 use tankovault_domain::SeriesId;
 use uuid::Uuid;
 
@@ -55,13 +55,6 @@ use uuid::Uuid;
 /// cannot slip through. Otherwise [`crate::DbError::Sqlx`] from any statement in the
 /// transaction, which rolls back whole: a partial merge would leave sources re-parented to a
 /// series whose titles and progress had not moved, so there is no partial-success return.
-// A straight-line sequence of per-table union inserts reads more clearly as one function
-// than split across arbitrary helpers just to dodge the line-count lint.
-#[expect(
-    clippy::too_many_lines,
-    reason = "one straight-line sequence of per-table union inserts; splitting it to satisfy \
-              a line count would hide the order the tables must be moved in"
-)]
 pub async fn merge_series(
     pool: &sqlx::PgPool,
     keep_id: SeriesId,
@@ -95,13 +88,34 @@ pub async fn merge_series(
     let mut undo = MergeUndo::new(keep, drop);
     super::undo::capture(&mut tx, &mut undo).await?;
 
+    move_catalogue(&mut tx, &mut undo).await?;
+    fold_reader_state(&mut tx, &mut undo).await?;
+    move_sync_state(&mut tx, &mut undo).await?;
+    move_notification_dedup(&mut tx, &mut undo).await?;
+    resolve_candidates(&mut tx, &mut undo, actor, outcome).await?;
+    fold_recommendations(&mut tx, &mut undo).await?;
+    forward_merged_id(&mut tx, &mut undo, actor).await?;
+
+    // Delete the merged series; residual child rows cascade away.
+    sqlx::query!("DELETE FROM series WHERE id = $1", drop)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+    Ok(undo)
+}
+
+/// Moves the absorbed series' sources, titles, tags and authors onto the survivor.
+async fn move_catalogue(tx: &mut Transaction<'_, Postgres>, undo: &mut MergeUndo) -> DbResult<()> {
+    let keep = undo.survivor_id;
+    let drop = undo.absorbed_id;
     // Sources move wholesale (their global (provider, path) uniqueness is preserved).
     undo.moved_sources = sqlx::query_scalar!(
         "UPDATE series_sources SET series_id = $1 WHERE series_id = $2 RETURNING id",
         keep,
         drop,
     )
-    .fetch_all(&mut *tx)
+    .fetch_all(&mut **tx)
     .await?;
 
     // The merged series' canonical title becomes an alternative title of the survivor.
@@ -117,7 +131,7 @@ pub async fn merge_series(
         keep,
         drop,
     )
-    .fetch_all(&mut *tx)
+    .fetch_all(&mut **tx)
     .await?;
     let inserted_alternatives = sqlx::query_scalar!(
         "INSERT INTO series_titles (series_id, title, normalized, origin) \
@@ -127,7 +141,7 @@ pub async fn merge_series(
         keep,
         drop,
     )
-    .fetch_all(&mut *tx)
+    .fetch_all(&mut **tx)
     .await?;
     undo.inserted_titles = rows_to_json(
         inserted_canonical
@@ -145,7 +159,7 @@ pub async fn merge_series(
             keep,
             drop,
         )
-        .fetch_all(&mut *tx)
+        .fetch_all(&mut **tx)
         .await?,
     );
 
@@ -158,10 +172,19 @@ pub async fn merge_series(
             keep,
             drop,
         )
-        .fetch_all(&mut *tx)
+        .fetch_all(&mut **tx)
         .await?,
     );
+    Ok(())
+}
 
+/// Folds the readers' watchlist entries and read progress into the survivor's.
+async fn fold_reader_state(
+    tx: &mut Transaction<'_, Postgres>,
+    undo: &mut MergeUndo,
+) -> DbResult<()> {
+    let keep = undo.survivor_id;
+    let drop = undo.absorbed_id;
     // `sync_excluded` and `updated_at` travel with the entry. They did not, and the omission was
     // silent in exactly the way that matters: a reader who had switched a series out of tracker
     // sync found it switched back on by a merge they never saw, with the blanket flag reset to
@@ -177,7 +200,7 @@ pub async fn merge_series(
             keep,
             drop,
         )
-        .fetch_all(&mut *tx)
+        .fetch_all(&mut **tx)
         .await?,
     );
 
@@ -201,9 +224,16 @@ pub async fn merge_series(
         keep,
         drop,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
+    Ok(())
+}
 
+/// Moves the absorbed series' tracker-sync state: mappings, overrides, the sync log, decisions,
+/// match blocks, remote entries and open conflicts.
+async fn move_sync_state(tx: &mut Transaction<'_, Postgres>, undo: &mut MergeUndo) -> DbResult<()> {
+    let keep = undo.survivor_id;
+    let drop = undo.absorbed_id;
     undo.inserted_mappings = rows_to_json(
         sqlx::query_scalar!(
             "INSERT INTO sync_mappings (series_id, provider, external_id) \
@@ -213,7 +243,7 @@ pub async fn merge_series(
             keep,
             drop,
         )
-        .fetch_all(&mut *tx)
+        .fetch_all(&mut **tx)
         .await?,
     );
 
@@ -229,7 +259,7 @@ pub async fn merge_series(
         keep,
         drop,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
     // The user-visible sync log. Re-pointed rather than unioned: these rows have their own
@@ -239,7 +269,7 @@ pub async fn merge_series(
         keep,
         drop,
     )
-    .fetch_all(&mut *tx)
+    .fetch_all(&mut **tx)
     .await?;
 
     // The operator-facing decision journal, same reasoning. Its foreign key is `SET NULL`, so
@@ -250,7 +280,7 @@ pub async fn merge_series(
         keep,
         drop,
     )
-    .fetch_all(&mut *tx)
+    .fetch_all(&mut **tx)
     .await?;
 
     // Title matches an operator has already judged wrong. Not moving these lets the next
@@ -262,7 +292,7 @@ pub async fn merge_series(
             keep,
             drop,
         )
-        .fetch_all(&mut *tx)
+        .fetch_all(&mut **tx)
         .await?,
     );
 
@@ -277,7 +307,7 @@ pub async fn merge_series(
             keep,
             drop,
         )
-        .fetch_all(&mut *tx)
+        .fetch_all(&mut **tx)
         .await?,
     );
 
@@ -297,9 +327,18 @@ pub async fn merge_series(
         keep,
         drop,
     )
-    .fetch_all(&mut *tx)
+    .fetch_all(&mut **tx)
     .await?;
+    Ok(())
+}
 
+/// Moves the notification suppression rows, so no reader is notified twice for one chapter.
+async fn move_notification_dedup(
+    tx: &mut Transaction<'_, Postgres>,
+    undo: &mut MergeUndo,
+) -> DbResult<()> {
+    let keep = undo.survivor_id;
+    let drop = undo.absorbed_id;
     // Notification suppression. Not moving these re-notifies every watcher of the survivor for
     // every chapter the absorbed series had already announced — which, on an automatic merge, is
     // a mail-out nobody asked for.
@@ -312,10 +351,20 @@ pub async fn merge_series(
             keep,
             drop,
         )
-        .fetch_all(&mut *tx)
+        .fetch_all(&mut **tx)
         .await?,
     );
+    Ok(())
+}
 
+/// Resolves every open merge candidate that names the absorbed series.
+async fn resolve_candidates(
+    tx: &mut Transaction<'_, Postgres>,
+    undo: &mut MergeUndo,
+    actor: Option<tankovault_domain::UserId>,
+    outcome: &str,
+) -> DbResult<()> {
+    let drop = undo.absorbed_id;
     // Resolve every open candidate that referenced the vanishing series.
     undo.resolved_candidates = sqlx::query_scalar!(
         "UPDATE merge_candidates \
@@ -327,9 +376,19 @@ pub async fn merge_series(
         actor.map(tankovault_domain::UserId::as_uuid),
         outcome,
     )
-    .fetch_all(&mut *tx)
+    .fetch_all(&mut **tx)
     .await?;
+    Ok(())
+}
 
+/// Folds the readers' recommendation feedback, and queues the derived recommendation state to be
+/// rebuilt from the folded rows.
+async fn fold_recommendations(
+    tx: &mut Transaction<'_, Postgres>,
+    undo: &mut MergeUndo,
+) -> DbResult<()> {
+    let keep = undo.survivor_id;
+    let drop = undo.absorbed_id;
     // A reader's refusal is theirs, not the catalogue's, and must survive the catalogue deciding
     // two rows were one. Folded **before** the delete, because the cascade would otherwise take
     // it: without this, "never show me this again" is silently undone by an automatic merge the
@@ -349,7 +408,7 @@ pub async fn merge_series(
         keep,
         drop,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
     // Affinity and the taste profile are *derived* from the watchlist and read progress, which
@@ -362,7 +421,7 @@ pub async fn merge_series(
         keep,
         drop,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
     // The survivor absorbed the loser's tags and authors, so its feature digest has changed and
@@ -377,9 +436,19 @@ pub async fn merge_series(
          ON CONFLICT (series_id) DO NOTHING",
         keep,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
+    Ok(())
+}
 
+/// Records where the absorbed series went, re-pointing every earlier alias at the survivor.
+async fn forward_merged_id(
+    tx: &mut Transaction<'_, Postgres>,
+    undo: &mut MergeUndo,
+    actor: Option<tankovault_domain::UserId>,
+) -> DbResult<()> {
+    let keep = undo.survivor_id;
+    let drop = undo.absorbed_id;
     // Where this series went. Written before the DELETE, so the forwarding record and the
     // disappearance are one atomic fact: there is no instant in which the row is gone and
     // nothing says where to look instead.
@@ -397,7 +466,7 @@ pub async fn merge_series(
         keep,
         drop,
     )
-    .fetch_all(&mut *tx)
+    .fetch_all(&mut **tx)
     .await?;
 
     // `DO UPDATE`, not `DO NOTHING`: if an id that already has a forwarding address is somehow
@@ -414,16 +483,9 @@ pub async fn merge_series(
         keep,
         actor.map(tankovault_domain::UserId::as_uuid),
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
-
-    // Delete the merged series; residual child rows cascade away.
-    sqlx::query!("DELETE FROM series WHERE id = $1", drop)
-        .execute(&mut *tx)
-        .await?;
-
-    tx.commit().await?;
-    Ok(undo)
+    Ok(())
 }
 
 /// Collect a `RETURNING to_jsonb(t)` result into the JSON array shape the undo journal stores.

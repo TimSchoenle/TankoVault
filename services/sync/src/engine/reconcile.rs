@@ -692,11 +692,6 @@ impl Reconciler {
 
     /// Perform a decided merge: the optional watchlist import, then each field, then the single
     /// remote write, then the refreshed snapshot.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "one arm per merge action per field, each journalling the values it acted on; \
-                  splitting it would separate a write from the record of that write"
-    )]
     async fn apply_merge(
         &self,
         run: &RunContext<'_>,
@@ -704,6 +699,39 @@ impl Reconciler {
         external_id: &str,
         plan: &MergePlan,
         members: &[LinkedMember],
+        state: &mut RunState,
+    ) -> anyhow::Result<()> {
+        self.import_status(run, series_id, external_id, plan, state)
+            .await?;
+        self.merge_progress(run, series_id, external_id, plan, state)
+            .await?;
+        self.merge_status(run, series_id, external_id, plan, state)
+            .await?;
+        self.write_remote(run, series_id, external_id, plan, state)
+            .await?;
+
+        if let Some((progress, status)) = plan.snapshot {
+            self.settle(
+                run,
+                series_id,
+                external_id,
+                members,
+                progress,
+                status,
+                state,
+            )
+            .await?;
+        }
+        Ok(())
+    }
+
+    /// Add the remote's entry to the watchlist when the plan imports it.
+    async fn import_status(
+        &self,
+        run: &RunContext<'_>,
+        series_id: SeriesId,
+        external_id: &str,
+        plan: &MergePlan,
         state: &mut RunState,
     ) -> anyhow::Result<()> {
         if let Some(status) = plan.import_status {
@@ -715,7 +743,19 @@ impl Reconciler {
             decision.remote_after = Some(status.as_str().to_owned());
             decision.local_after = Some(status.as_str().to_owned());
         }
+        Ok(())
+    }
 
+    /// Carry out the plan's progress action: pull it, record a conflict, or journal a no-op. A push
+    /// waits for [`Self::write_remote`].
+    async fn merge_progress(
+        &self,
+        run: &RunContext<'_>,
+        series_id: SeriesId,
+        external_id: &str,
+        plan: &MergePlan,
+        state: &mut RunState,
+    ) -> anyhow::Result<()> {
         match plan.progress.action {
             MergeAction::PullRemote => {
                 tracking::progress_set(&self.pool, run.user_id, series_id, plan.progress.remote)
@@ -815,7 +855,19 @@ impl Reconciler {
                 false,
             ),
         }
+        Ok(())
+    }
 
+    /// Carry out the plan's status action: pull it or record a conflict. A push waits for
+    /// [`Self::write_remote`].
+    async fn merge_status(
+        &self,
+        run: &RunContext<'_>,
+        series_id: SeriesId,
+        external_id: &str,
+        plan: &MergePlan,
+        state: &mut RunState,
+    ) -> anyhow::Result<()> {
         match plan.status.action {
             // An imported series was just written above; pulling it again would double-count.
             MergeAction::PullRemote if plan.import_status.is_none() => {
@@ -881,7 +933,18 @@ impl Reconciler {
             }
             _ => {}
         }
+        Ok(())
+    }
 
+    /// Make the plan's single remote write, if it has one, and journal it once.
+    async fn write_remote(
+        &self,
+        run: &RunContext<'_>,
+        series_id: SeriesId,
+        external_id: &str,
+        plan: &MergePlan,
+        state: &mut RunState,
+    ) -> anyhow::Result<()> {
         if let Some((status, progress)) = plan.remote_write {
             run.provider
                 .save_entry(run.access, external_id, status, progress)
@@ -938,19 +1001,6 @@ impl Reconciler {
                     "policy": run.policy.as_str(), "reason": reason }),
             )
             .await;
-        }
-
-        if let Some((progress, status)) = plan.snapshot {
-            self.settle(
-                run,
-                series_id,
-                external_id,
-                members,
-                progress,
-                status,
-                state,
-            )
-            .await?;
         }
         Ok(())
     }

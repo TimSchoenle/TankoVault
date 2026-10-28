@@ -14,7 +14,7 @@ TankoVault onboards a source site in one of two ways (`docs/ARCHITECTURE.md` §7
    rows). Onboarding is **code**: a small struct implementing `SourceAdapter`, dispatched
    by slug in [`factory.rs`](../crates/adapters/src/factory.rs).
 
-The shipped presets live in [`presets.rs`](../crates/adapters/src/presets.rs)
+The shipped presets live in [`presets/`](../crates/adapters/src/presets/mod.rs)
 (`tankovault_adapters::builtin_presets()`), installed by `bootstrap seed-providers` (or
 `xtask seed` from a checkout). Every selector below was
 derived from **live markup fetched through the solver pipeline** and is pinned by fixture

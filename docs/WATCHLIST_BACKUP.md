@@ -13,7 +13,7 @@ how an import finds each series again, and the limits that make the import safe 
 | Validation, matching and merge rules (pure) | `crates/domain/src/watchlist_transfer.rs` |
 | Export query, batched resolution, transactional apply, pending queue | `crates/db/src/repo/tracking/watchlist/transfer.rs` |
 | HTTP surface | `services/api/src/me/watchlist_transfer.rs` |
-| Pending-entry sweep | `services/control-plane/src/main.rs` (`maybe_resolve_watchlist_imports`) |
+| Pending-entry sweep | `services/control-plane/src/maintenance.rs` (`maybe_resolve_watchlist_imports`) |
 | Reader UI | `web/frontend/src/views/account/backup.rs` (`/account/backup`) |
 
 ## Endpoints

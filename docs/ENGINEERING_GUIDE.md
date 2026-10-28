@@ -386,13 +386,13 @@ over the four pure decision cores; a survivor is a missing assertion, not a buil
 
 ## 4 The frontend
 
-Read `web/frontend/src/platform/mod.rs` and `services/frontend/src/main.rs` before changing
+Read `web/frontend/src/platform/mod.rs` and `services/frontend/src/csp.rs` before changing
 anything in this section. They carry the long-form reasoning; this is the summary.
 
 ### 4.1 The Content-Security-Policy contract
 
 The SPA's access token lives **in memory only**, so the CSP is the ceiling on where an injected
-script could send it. `services/frontend/src/main.rs::content_security_policy` builds it, out of
+script could send it. `services/frontend/src/csp.rs::content_security_policy` builds it, out of
 [`csp-shell`](https://github.com/TimSchoenle/csp-shell) — the shell scanner, the typed directive
 vocabulary and the per-response nonce, extracted out of this workspace and pinned by tag. What is
 left here is the three decisions that are this deployment's: the fail-open posture on an

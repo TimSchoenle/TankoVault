@@ -97,13 +97,13 @@ writes to the six input tables:
 | `chapters` insert / `access`, `unlocks_at` change | `upsert_chapters` (worker ingest) | `repo/catalog/chapters.rs:149` |
 | `chapters` delete | `purge_chapters_batch` (console purge) | `repo/catalog/maintenance.rs:335` |
 | `chapters` delete | `prune_chapters` (operator xtask) | `xtask/src/prune_chapters.rs:73` |
-| `chapters` delete (cascade) | series delete, source delete, provider delete | `maintenance.rs:284`, `merge.rs:421`, `providers.rs:345` |
+| `chapters` delete (cascade) | series delete, source delete, provider delete | `maintenance.rs:284`, `merge.rs:100`, `providers.rs:345` |
 | `series_sources` insert | source registration | `repo/catalog/sources.rs:60`, `:158` |
-| `series_sources.series_id` move | merge, revert, disentangle, operator repair | `matching/merge.rs:100`, `undo.rs:365`, `disentangle.rs:170`, `xtask/src/repair_series.rs:237` |
+| `series_sources.series_id` move | merge, revert, disentangle, operator repair | `matching/merge.rs:114`, `undo.rs:407`, `disentangle.rs:170`, `xtask/src/repair_series.rs:237` |
 | `series_sources` delete (cascade) | series / provider delete | as above |
-| `read_progress` | mark read / set / un-read, sync engine | `tracking/progress.rs:61`, `:89`, `:341`; merge `merge.rs:185`; revert `undo.rs:423`, `:433`, `:504` |
-| `watchlist_entries` insert | track, bulk track, merge, revert | `watchlist/entries.rs:26`, `:60`, `:281`; `merge.rs:171`; `undo.rs:497` |
-| `watchlist_entries` delete | untrack, bulk untrack, revert, account erasure | `entries.rs:143`, `:215`; `undo.rs:395`; `privacy.rs:142` (cascade) |
+| `read_progress` | mark read / set / un-read, sync engine | `tracking/progress.rs:61`, `:89`, `:341`; merge `merge.rs:208`; revert `undo.rs:477`, `:487`, `:568` |
+| `watchlist_entries` insert | track, bulk track, merge, revert | `watchlist/entries.rs:26`, `:60`, `:281`; `merge.rs:194`; `undo.rs:561` |
+| `watchlist_entries` delete | untrack, bulk untrack, revert, account erasure | `entries.rs:143`, `:215`; `undo.rs:441`; `privacy.rs:142` (cascade) |
 | `user_provider_early_access` | opt-in replace | `users/source_prefs.rs:116`, `:122` |
 | *time* | an `unlocks_at` passing | nothing writes; see §5 |
 

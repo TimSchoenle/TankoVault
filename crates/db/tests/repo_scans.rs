@@ -1,4 +1,4 @@
-//! The scan run/task lifecycle (`crates/db/src/repo/scans.rs`, TEST F-05).
+//! The scan run/task lifecycle (`crates/db/src/repo/scans/`, TEST F-05).
 //!
 //! # What is actually at stake here
 //!

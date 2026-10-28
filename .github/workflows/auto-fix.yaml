@@ -396,8 +396,9 @@ jobs:
           toolchain: ${{ steps.versions.outputs.toolchain }}
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          # The group `ci.yml`'s `lint` job writes: this compiles the same workspace with the same
-          # flags. Without naming it the lookup uses a key derived from this job's own name, one
+          # The group `ci.yml`'s `lint` job writes: the same workspace under the same `RUSTFLAGS`,
+          # so the dependency artefacts match even though the clippy arguments differ (no
+          # `--all-features`, `--cap-lints=warn`; see the fix step below). Without naming it the lookup uses a key derived from this job's own name, one
           # nothing writes, because this workflow runs on pull requests only and so never executes
           # on `main`. It would restore nothing, on every run.
           shared-key: lint

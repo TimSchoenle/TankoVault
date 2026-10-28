@@ -1,5 +1,5 @@
-//! `xtask config-contract` — hold the committed configuration contracts and the Dockerfile's
-//! `LABEL` regions to what the generator now produces.
+//! Owns `xtask config-contract`, which holds the committed configuration contracts and the
+//! Dockerfile's `LABEL` regions to what the generator produces.
 //!
 //! The contract each image publishes is generated inside the container build, from the binary's
 //! own config root (`crates/config-contract`). Nothing in that build is reviewable, so the same
@@ -9,7 +9,7 @@
 //!
 //! It also holds the one thing the build cannot derive. Three `LABEL` values are what a
 //! deployment pipeline discovers the contract by, and a `LABEL` key can be interpolated from
-//! nothing — so `deploy/docker/Dockerfile` carries them in a marked region per runtime stage.
+//! nothing, so `deploy/docker/Dockerfile` carries them in a marked region per runtime stage.
 //! Every region is compared, one step earlier than the built-image check in CI, and with a
 //! message that names the fix.
 //!
@@ -38,12 +38,12 @@ const DOCKERFILE: &str = "deploy/docker/Dockerfile";
 /// What to run once this gate has named a stale artefact.
 const FIX: &str = "just regenerate";
 
-/// Verify every committed contract and every Dockerfile `LABEL` region.
+/// Verifies every committed contract and every Dockerfile `LABEL` region.
 ///
 /// # Errors
-/// When the generator cannot be run or refuses to build a contract, when the Dockerfile cannot be
-/// read or carries no usable region, or when a committed document or a `LABEL` region disagrees
-/// with what the code now produces.
+/// Returns an error when the generator cannot be run or refuses to build a contract, when the
+/// Dockerfile cannot be read or carries no usable region, or when a committed document or a `LABEL`
+/// region disagrees with what the code produces.
 pub(crate) fn run(root: &Path) -> Result<()> {
     let services = generate(root, &["--services"])?;
     let services: Vec<&str> = services
@@ -84,21 +84,21 @@ pub(crate) fn run(root: &Path) -> Result<()> {
 /// Hold every marked region in the Dockerfile to what the generator prints.
 ///
 /// One service is enough and any of them will do: all three values are constants of the
-/// *deployment*, not of the binary — the envelope version, the in-image path, and the loader's
+/// *deployment*, not of the binary; the envelope version, the in-image path, and the loader's
 /// prefix, which every service shares because they share a loader. That is what lets one block
-/// serve nine images, and it is also why this compares against one service rather than asserting
-/// nine identical blocks.
+/// serve nine images, and it is also why this compares against one service instead of
+/// asserting nine identical blocks.
 ///
-/// Every region is compared rather than the first. This file has three runtime stages and each
+/// Every region is compared instead of the first. This file has three runtime stages and each
 /// needs the labels; a check that stopped at the first would pass a Dockerfile whose other two
 /// stages ship images nothing can discover the contract of.
 fn check_dockerfile_labels(root: &Path, service: &str, stale: &mut Vec<String>) -> Result<()> {
     let rendered = generate(root, &["--service", service, "--format", "dockerfile"])?;
     let expected = normalise(rendered.trim_end());
 
-    // The markers are read off the generated block rather than restated here. They belong to
-    // `terrace-config`, which this crate deliberately does not link — it shells out, so that
-    // `xtask` does not compile the nine service crates — and a copy of a constant in a crate that
+    // The markers are read off the generated block, not restated here. They belong to
+    // `terrace-config`, which this crate deliberately does not link (it shells out, so that
+    // `xtask` does not compile the nine service crates), and a copy of a constant in a crate that
     // cannot see the original is a constant that goes stale silently.
     let (Some(begin), Some(end)) = (expected.lines().next(), expected.lines().last()) else {
         bail!("`config-contract --format dockerfile` printed nothing to compare against");
@@ -142,7 +142,7 @@ fn check_dockerfile_labels(root: &Path, service: &str, stale: &mut Vec<String>) 
 
 /// Every marked region of the Dockerfile, markers included, in the order they appear.
 ///
-/// Cut at the markers rather than by finding the `LABEL` instruction and following its
+/// Cut at the markers instead of by finding the `LABEL` instruction and following its
 /// continuation lines. That older rule read correctly right up until the block was written as one
 /// `LABEL` per line, at which point it compared one line of three and passed.
 ///
@@ -177,7 +177,7 @@ fn label_regions(dockerfile: &str, begin: &str, end: &str) -> Result<Vec<String>
     Ok(regions)
 }
 
-/// Strip `\r` so a CRLF working copy and an LF render compare equal.
+/// Strips `\r` so a CRLF working copy and an LF render compare equal.
 ///
 /// The same belt-and-braces as `notices`: `.gitattributes` pins these artefacts to LF, and this
 /// repository is developed on Windows.
@@ -185,9 +185,9 @@ fn normalise(text: &str) -> String {
     text.replace('\r', "")
 }
 
-/// Run the generator and return its stdout.
+/// Runs the generator and returns its stdout.
 ///
-/// Shelled out rather than called in process: the generator depends on all nine service crates
+/// Shelled out, not called in process: the generator depends on all nine service crates
 /// to reach the config root each binary deserialises, and putting that dependency on `xtask`
 /// would make every `xtask` command compile the whole service tree.
 fn generate(root: &Path, args: &[&str]) -> Result<String> {
@@ -251,7 +251,7 @@ mod tests {
         assert!(!regions[0].contains("USER"));
     }
 
-    /// A file with no region is not one that passed — it is one where the generated block has
+    /// A file with no region is not one that passed: it is one where the generated block has
     /// nowhere to go. The empty result is what the caller turns into that message.
     #[test]
     fn a_dockerfile_without_a_region_yields_none() {

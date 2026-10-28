@@ -1,8 +1,8 @@
-//! Developer/CI entry point: migrations, seeding, `OpenAPI` and third-party-notices
+//! Owns the developer and CI entry point: migrations, seeding, `OpenAPI` and third-party-notices
 //! regeneration, the offline CI gate, and the repo-invariant/config-docs/coverage checks. Run
 //! with no arguments for usage.
 
-// `ci` runs `openapi` in process rather than shelling out, so it sits behind the same gate.
+// `ci` runs `openapi` in process instead of shelling out, so it sits behind the same gate.
 #[cfg(feature = "full")]
 mod ci;
 mod config_contract;
@@ -80,7 +80,7 @@ fn main() -> anyhow::Result<()> {
     if cmd == "notices" {
         let mode = std::env::args().nth(2);
         // `--json <path>` writes the structured inventory the SPA renders instead of the
-        // committed document. A separate mode rather than a second output of the default run:
+        // committed document. A separate mode instead of a second output of the default run:
         // the JSON is not committed, so `--check` has nothing to compare it against, and a
         // developer regenerating the artefact should not have to name a path for a file the
         // image build owns.
@@ -117,7 +117,7 @@ fn main() -> anyhow::Result<()> {
 ///
 /// # Errors
 /// A missing `DATABASE_URL`, a pool that will not connect, or whatever the command itself fails
-/// with. An unrecognised command exits 2 rather than returning.
+/// with. An unrecognised command exits 2 instead of returning.
 #[cfg(feature = "full")]
 #[tokio::main]
 async fn compiled_commands(cmd: &str) -> anyhow::Result<()> {
@@ -288,13 +288,13 @@ fn install_hooks() -> anyhow::Result<()> {
 
 /// Stack for [`run_with_deep_stack`]. Both the 3.1 → 3.0 downgrade and progenitor's generator
 /// recurse once per level of schema nesting, so the depth they need scales with the document
-/// rather than being bounded — and a debug build's frames are large.
+/// instead of being bounded, and a debug build's frames are large.
 #[cfg(feature = "full")]
 const GENERATOR_STACK: usize = 32 * 1024 * 1024;
 
-/// Run `f` on a thread with a stack big enough for the generators.
+/// Runs `f` on a thread with a stack big enough for the generators.
 ///
-/// The main thread's stack is a *platform* default — 8 MiB on Linux, 1 MiB on Windows — so
+/// The main thread's stack is a *platform* default (8 MiB on Linux, 1 MiB on Windows), so
 /// `openapi` worked in CI and overflowed locally, with a bare `STATUS_STACK_OVERFLOW` and no
 /// indication that the two differed. Adding a published endpoint is what pushes it over, which
 /// makes this the worst possible thing to leave to chance: it fails for whoever adds the next
@@ -315,7 +315,7 @@ where
 ///
 /// The crate root a generated file cannot write for itself. Both halves earn their line:
 /// `rustdoc::broken_intra_doc_links` is denied estate-wide, and every `[`Link`]` span in this
-/// file arrived inside an `OpenAPI` `description` naming an item in `services/api` — so without
+/// file arrives inside an `OpenAPI` `description` naming an item in `services/api`, so without
 /// the allow, the documentation job fails on prose that was reviewed somewhere else.
 /// `crates/api-client/Cargo.toml` carries the matching `missing_docs` exemption, and
 /// `crates/api-client/tests/workspace_lints.rs` is what keeps that one honest.
@@ -400,7 +400,7 @@ fn openapi(check: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Format `src` with the toolchain's `rustfmt` over stdio.
+/// Formats `src` with the toolchain's `rustfmt` over stdio.
 ///
 /// Must match `cargo fmt`'s output exactly, or `xtask openapi --check` and `cargo fmt --check`
 /// would disagree on the same file.
@@ -408,7 +408,7 @@ fn openapi(check: bool) -> anyhow::Result<()> {
 /// `newline_style=Unix` is what makes that true off Linux, and it is not redundant with the
 /// `eol=lf` this artefact carries in `.gitattributes`: that governs the checkout, this governs
 /// the bytes we render to compare against it. rustfmt's default is `Auto`, which takes the style
-/// of the first line ending it sees and falls back to the *platform* default when there is none —
+/// of the first line ending it sees and falls back to the *platform* default when there is none,
 /// and there is none here, because the input is one line of `TokenStream::to_string()`. So on
 /// Windows rustfmt emitted CRLF, `--check` compared it against an LF file and failed, and the
 /// remedy it printed ("run `cargo run -p xtask -- openapi`") wrote the CRLF file back and left
@@ -505,23 +505,23 @@ fn inject_rust_types(value: &mut serde_json::Value) {
     }
 }
 
-/// Replace `oneOf: [{"type": "null"}, X]` with `X`, so a nullable schema reference survives as
-/// one schema rather than as a union.
+/// Replaces `oneOf: [{"type": "null"}, X]` with `X`, so a nullable schema reference survives as
+/// one schema instead of as a union.
 ///
 /// `utoipa` publishes `Option<T>` of a schema type as that two-member union. Carried into the 3.0
 /// document verbatim, `progenitor` renders it as an untagged
-/// `Variant0(serde_json::Value) | Variant1(T)` — and serde tries untagged arms in declaration
+/// `Variant0(serde_json::Value) | Variant1(T)`, and serde tries untagged arms in declaration
 /// order, so `Variant0`, which accepts *any* JSON including the object `Variant1` was meant to
 /// hold, makes `Variant1` unreachable. Every such field then reads as absent at runtime, which is
 /// how the console's managed-preset pill and the watchlist's Continue column silently vanished.
 ///
 /// Dropping the null arm is not a loss of nullability: the field is absent from its schema's
 /// `required` list, which is what makes `progenitor` emit `Option<T>` in the first place. What it
-/// costs is the ability to *send* an explicit `null` — the generated struct omits a `None` field
-/// instead — so a request shape that needs `null` and absent to differ needs its own schema
+/// costs is the ability to *send* an explicit `null` (the generated struct omits a `None` field
+/// instead), so a request shape that needs `null` and absent to differ needs its own schema
 /// (`tankovault_domain::PolitenessInput` is the one that did).
 ///
-/// Loops rather than collapsing once: a nested `Option<Option<T>>` merges an inner union into the
+/// Loops instead of collapsing once: a nested `Option<Option<T>>` merges an inner union into the
 /// same map, and leaving it for the next pass would break [`downgrade_to_3_0`]'s idempotence,
 /// which `openapi --check` depends on.
 #[cfg(feature = "full")]
@@ -548,15 +548,15 @@ fn collapse_nullable_union(map: &mut serde_json::Map<String, serde_json::Value>)
 #[cfg(feature = "full")]
 const REFERENCE_ANNOTATIONS: [&str; 3] = ["$ref", "description", "summary"];
 
-/// Move a `$ref` that carries schema keywords beside it into a single-member `allOf`, so those
+/// Moves a `$ref` that carries schema keywords beside it into a single-member `allOf`, so those
 /// keywords survive the downgrade.
 ///
 /// `OpenAPI` 3.1 lets a `$ref` have siblings, and utoipa 6 publishes a defaulted field of a
 /// schema type that way: `{"$ref": "…/ChannelPrefs", "default": {…}}`. In 3.0 every sibling of
-/// a `$ref` is ignored, and `typify` follows that rule — so the `default` vanished, the field fell
-/// out of `required` with nothing to fill it, and the generated client turned
+/// a `$ref` is ignored, and `typify` follows that rule, so the `default` vanishes, the field falls
+/// out of `required` with nothing to fill it, and the generated client turns
 /// `NotificationPrefs::channels` (and three more) into `Option<_>`. Wrapping the reference keeps
-/// the keywords on a schema that 3.0 does read, which is the shape utoipa 5 emitted itself.
+/// the keywords on a schema that 3.0 does read, which is the shape 3.0 expects.
 ///
 /// A reference with only annotation siblings ([`REFERENCE_ANNOTATIONS`]) is left alone: that is
 /// what [`collapse_nullable_union`] produces for every nullable reference, and wrapping it would
@@ -653,7 +653,7 @@ fn downgrade_to_3_0(value: &mut serde_json::Value) {
     }
 }
 
-/// Drop the whole schema and re-migrate from scratch. Refuses to run unless
+/// Drops the whole schema and re-migrates from scratch. Refuses to run unless
 /// `TANKOVAULT_CONFIRM_RESET=1` is set, so it cannot wipe a database by accident
 /// (e.g. a mis-pointed `DATABASE_URL` in a shell that also targets staging).
 #[cfg(feature = "full")]
@@ -692,7 +692,7 @@ async fn seed(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
     };
     let report = tankovault_bootstrap::seed_admin(pool, &seed).await?;
     match report.outcome {
-        // Printed on purpose: this command's whole output is the account you can now log in
+        // Printed on purpose: this command's whole output is the account you can log in
         // with, on a local database, so `expose_secret` here is deliberate.
         tankovault_bootstrap::AdminOutcome::Created {
             username,
@@ -737,8 +737,8 @@ mod tests {
     use proptest::prelude::*;
     use serde_json::json;
 
-    /// Run the rewriter over `value` and hand back the result, so a test reads as one
-    /// expression rather than three lines of `let mut`.
+    /// Runs the rewriter over `value` and hands back the result, so a test reads as one
+    /// expression instead of three lines of `let mut`.
     fn downgraded(value: serde_json::Value) -> serde_json::Value {
         let mut value = value;
         downgrade_to_3_0(&mut value);
@@ -750,7 +750,7 @@ mod tests {
     /// A uniform generator would essentially never produce a `type` or `examples` key, so the
     /// properties below would only ever exercise the pass-through path.
     fn any_document() -> impl Strategy<Value = serde_json::Value> {
-        // `type` gets its own strategy rather than falling out of the recursive generator: a
+        // `type` gets its own strategy instead of falling out of the recursive generator: a
         // non-string `type` (e.g. `[null]`) is invalid OpenAPI the converter isn't idempotent
         // on (see `a_non_string_type_member_is_not_idempotent`), so this must stay well-formed.
         let type_token = prop::sample::select(vec![
@@ -808,7 +808,7 @@ mod tests {
     ///
     /// Left as `oneOf: [null, $ref]` it became an untagged enum whose first arm is a bare
     /// `serde_json::Value`; serde matches untagged arms in order, so the typed arm was
-    /// unreachable and 23 fields — `preset_link`, `next_unread`, `because_series_id` among them —
+    /// unreachable and 23 fields (`preset_link`, `next_unread`, `because_series_id` among them)
     /// read as absent on every response that carried them.
     #[test]
     fn a_nullable_reference_collapses_onto_the_referenced_schema() {
@@ -828,7 +828,7 @@ mod tests {
     #[test]
     fn a_union_that_is_not_a_nullable_reference_is_left_alone() {
         // The null arm of a wider union is still rewritten in place (`nullable: true`), but the
-        // union itself must keep all three arms rather than collapsing onto one of them.
+        // union itself must keep all three arms instead of collapsing onto one of them.
         let three = downgraded(json!({
             "oneOf": [{ "type": "null" }, { "type": "string" }, { "type": "integer" }],
         }));
@@ -924,12 +924,12 @@ mod tests {
         assert_eq!(downgraded(json!({ "type": 42 })), json!({}));
     }
 
-    /// Found by the idempotence property below; pinned rather than fixed.
+    /// Found by the idempotence property below; pinned, not fixed.
     ///
     /// The "pick the first non-null type" branch inserts whatever it found without checking
     /// it's a string, so a non-string member survives one pass and is dropped by a second:
-    /// `downgrade(downgrade(v))` != `downgrade(v)`. No impact today — `utoipa` never emits this
-    /// shape and the converter runs once per document — but it is live the moment anything
+    /// `downgrade(downgrade(v))` != `downgrade(v)`. No impact today (`utoipa` never emits this
+    /// shape and the converter runs once per document), but it is live the moment anything
     /// runs it twice or feeds it a hand-edited spec.
     #[test]
     fn a_non_string_type_member_is_not_idempotent() {
@@ -952,18 +952,18 @@ mod tests {
         let out = downgraded(json!({ "examples": ["first", "second"] }));
         assert_eq!(out["example"], "first");
         assert!(out.get("examples").is_none());
-        // An empty array yields neither key rather than `example: null`.
+        // An empty array yields neither key instead of `example: null`.
         assert_eq!(downgraded(json!({ "examples": [] })), json!({}));
     }
 
     /// **rustfmt must emit LF whatever the host does.**
     ///
     /// Its `newline_style` default is `Auto`, which adopts the first line ending it sees and
-    /// falls back to the *platform* default when the input has none — and the input here is one
+    /// falls back to the *platform* default when the input has none, and the input here is one
     /// line of `TokenStream::to_string()`. So on Windows this returned CRLF, `openapi --check`
     /// compared it against the LF artefact and failed on a clean checkout, and the remedy it
     /// printed rewrote the file in CRLF and left the gate red with an empty `git diff`. That made
-    /// `xtask ci` — this repository's definition of done — unpassable on the platform
+    /// `xtask ci` (this repository's definition of done) unpassable on the platform
     /// `.gitattributes` says it is developed on.
     ///
     /// The `eol=lf` on the artefact governs the checkout; this governs what is rendered to

@@ -1,4 +1,4 @@
-//! `deny.toml` and `.cargo/audit.toml` ignore the same advisories.
+//! Owns the rule that `deny.toml` and `.cargo/audit.toml` ignore the same advisories.
 
 use crate::repo_lint::Finding;
 use crate::repo_lint::text::toml_string_array;
@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 /// `cargo audit` read the same `RustSec` database and neither reads the other's configuration:
 /// cargo-deny takes its exceptions from `deny.toml`, cargo-audit from `.cargo/audit.toml`.
 /// Drift is silent in the direction that matters. An entry present only in `deny.toml` leaves
-/// `cargo-audit` failing on an advisory that has already been reviewed and accepted — a gate
+/// `cargo-audit` failing on an advisory that has already been reviewed and accepted: a gate
 /// nobody can distinguish from a real finding, so the next real finding is merged past. An
 /// entry present only in `.cargo/audit.toml` is worse: the advisory is suppressed for the job
 /// that reports it and never recorded where the dated justification is meant to live.
@@ -127,7 +127,7 @@ mod tests {
         write(".cargo/audit.toml", &["RUSTSEC-2024-0436"]);
         assert!(advisory_ignores_agree(&root).unwrap().is_empty());
 
-        // A deleted key is not an empty list; it must stop the run rather than read as "no
+        // A deleted key is not an empty list; it must stop the run instead of reading as "no
         // exceptions", which is what an unconfigured gate also looks like.
         std::fs::write(root.join(".cargo/audit.toml"), "[advisories]\n").unwrap();
         assert!(advisory_ignores_agree(&root).is_err());

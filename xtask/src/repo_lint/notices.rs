@@ -1,4 +1,4 @@
-//! Rules over `THIRD-PARTY-NOTICES`: the licence allowlists must agree, and the route the
+//! Owns the rules over `THIRD-PARTY-NOTICES`: the licence allowlists must agree, and the route the
 //! server publishes must be the one the frontend links.
 
 use std::path::Path;
@@ -13,7 +13,7 @@ use super::text::{const_str, toml_string_array};
 /// differently: a licence cargo-deny admits but the generator does not accept stops generation
 /// dead with `--fail` (loud, but only in the job that regenerates), while one the generator
 /// accepts and cargo-deny forbids is a standing invitation to publish a notice for terms that
-/// must never be in the graph at all — the GPL-3.0 note in `deny.toml` is exactly that hazard,
+/// must never be in the graph at all; the GPL-3.0 note in `deny.toml` is exactly that hazard,
 /// and it is silent.
 ///
 /// `web/frontend/about.toml` is deliberately *not* held to this: no `deny.toml` covers that
@@ -85,9 +85,9 @@ pub(super) fn notices_accept_every_allowed_licence(root: &Path) -> anyhow::Resul
 /// `web/frontend` is a separate workspace, so the literal pairs have no compile-time
 /// relationship. Getting them out of step does not 404: every unmatched path on that server
 /// falls back to the app shell, so a stale link answers `200` with the application itself, and
-/// the reader — who is owed those notices for the bundle their browser just ran — sees a page
+/// the reader (who is owed those notices for the bundle their browser just ran) sees a page
 /// that looks like it worked. The JSON half fails worse: the screen would parse the app shell,
-/// fail, and report a corrupt inventory rather than an absent one.
+/// fail, and report a corrupt inventory instead of an absent one.
 pub(super) fn the_notices_url_is_the_one_the_server_publishes(
     root: &Path,
 ) -> anyhow::Result<Vec<Finding>> {
@@ -233,7 +233,7 @@ mod tests {
         );
     }
 
-    /// Proves the URL rule fires, for both halves. It has to be proved rather than observed
+    /// Proves the URL rule fires, for both halves. It has to be proved, not observed
     /// green, because the failure it guards against is itself invisible: the server answers
     /// every unmatched path with the app shell, so a stale link returns 200 and a page.
     #[test]

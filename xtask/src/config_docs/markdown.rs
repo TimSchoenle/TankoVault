@@ -1,6 +1,6 @@
-//! What `docs/CONFIGURATION.md` claims, read out of the document. Keys are harvested only from
-//! the **leftmost cell of a table row** — the document mentions keys constantly in prose, and
-//! treating every backticked token as a claim would fire on sentences that are correct — and
+//! Owns what `docs/CONFIGURATION.md` claims, read out of the document. Keys are harvested only from
+//! the **leftmost cell of a table row** (the document mentions keys constantly in prose, and
+//! treating every backticked token as a claim would fire on sentences that are correct), and
 //! keys under "Removed keys" (§8) are collected separately and asserted **absent** from the code.
 
 use std::collections::BTreeSet;
@@ -13,7 +13,7 @@ pub(super) struct Documented {
     pub(super) removed: BTreeSet<String>,
 }
 
-/// Read every documented key out of `markdown`.
+/// Reads every documented key out of `markdown`.
 pub(super) fn parse(markdown: &str) -> Documented {
     let mut live = BTreeSet::new();
     let mut removed = BTreeSet::new();
@@ -41,7 +41,7 @@ pub(super) fn parse(markdown: &str) -> Documented {
 
 /// The leftmost cell of a markdown table row, or `None` if the line is not one.
 ///
-/// The header separator (`|---|---|`) is not a row and is skipped here rather than by the
+/// The header separator (`|---|---|`) is not a row and is skipped here instead of by the
 /// caller, so a `---` cell can never be mistaken for a key.
 fn first_table_cell(line: &str) -> Option<&str> {
     let inner = line.strip_prefix('|')?;
@@ -76,10 +76,10 @@ fn keys_in_cell(cell: &str) -> Vec<String> {
     keys
 }
 
-/// Whether a backticked token is a bare key rather than a pattern or a sentence.
+/// Whether a backticked token is a bare key instead of a pattern or a sentence.
 ///
 /// `TANKOVAULT_SECURITY__*` and `TANKOVAULT_EMAIL__*` appear in the document as families, and a
-/// family is not a key — accepting one would put a literal `*` in the comparison set.
+/// family is not a key: accepting one would put a literal `*` in the comparison set.
 fn is_key_text(token: &str) -> bool {
     !token.is_empty()
         && token
@@ -124,7 +124,7 @@ mod tests {
     }
 
     /// A chained suffix expands against the key before it, not against the first key in the
-    /// cell — otherwise `__COVER` after `__TITLE` would silently document the wrong thing.
+    /// cell: otherwise `__COVER` after `__TITLE` would silently document the wrong thing.
     #[test]
     fn chained_suffixes_expand_against_their_immediate_predecessor() {
         let doc = "\
@@ -145,7 +145,7 @@ mod tests {
         assert!(parse(doc).live.is_empty());
     }
 
-    /// §8's rows are the inverse claim, so they must not land in `live` — a removed key that
+    /// §8's rows are the inverse claim, so they must not land in `live`: a removed key that
     /// still appeared there would be reported as missing from the code, which is the state the
     /// section is documenting on purpose.
     #[test]

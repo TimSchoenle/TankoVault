@@ -1,4 +1,4 @@
-//! The TLS bootstrap rule: every binary installs a rustls crypto provider before it runs.
+//! Owns the TLS bootstrap rule: every binary installs a rustls crypto provider before it runs.
 
 use std::path::Path;
 
@@ -11,10 +11,10 @@ const INSTALL_CALL: &str = "install_crypto_provider()";
 ///
 /// Nothing else catches this. `rustls` only selects a provider by itself when exactly one of
 /// its `ring` and `aws-lc-rs` features is enabled across the whole graph, and this workspace
-/// enables both — so its fallback is a **panic**, thrown from inside `ServerConfig::builder()`
+/// enables both, so its fallback is a **panic**, thrown from inside `ServerConfig::builder()`
 /// and friends the first time a TLS configuration is built. A service that omits the call
 /// compiles, passes every other gate, boots far enough to bind its metrics port, and then dies
-/// with a message that names only rustls. That is how it shipped once already.
+/// with a message that names only rustls.
 ///
 /// The check is on `main.rs` specifically, not the crate's sources: installing the provider
 /// somewhere deeper is exactly the ordering mistake this rule exists to prevent.

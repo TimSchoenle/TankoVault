@@ -1,5 +1,5 @@
-//! `xtask ci` — every offline gate CI runs, in CI's order, stopping at the first failure. Covers
-//! only what needs no Docker, no network and no database; CI alone still runs `integration`,
+//! Owns `xtask ci`: every offline gate CI runs, in CI's order, stopping at the first failure.
+//! Covers only what needs no Docker, no network and no database; CI alone still runs `integration`,
 //! the `sqlx` offline-cache check, `coverage`, `deny`/`audit`/`supply-chain`, and the
 //! Docker/Node/promtool/gitleaks jobs.
 
@@ -93,7 +93,7 @@ const GATES: &[Gate] = &[
     },
     // The nine committed contracts, and the `LABEL` regions the Dockerfile carries by hand. Both
     // are what a deployment pipeline reads to discover an image's configuration surface, and both
-    // are hand-unreviewable inside a container build — this is the step where a renamed key shows
+    // are hand-unreviewable inside a container build: this is the step where a renamed key shows
     // up as a diff in the pull request that renamed it.
     //
     // Once, not twice: this gate stood here in duplicate, which cost a second walk of nine
@@ -106,7 +106,7 @@ const GATES: &[Gate] = &[
         name: "repo invariants",
         step: Step::InProcess(|| crate::repo_lint::run(crate::workspace_root())),
     },
-    // `web/frontend` is outside the host workspace, so none of the above touches it — not even
+    // `web/frontend` is outside the host workspace, so none of the above touches it: not even
     // `cargo fmt --all`, which is why the first gate here exists.
     //
     // It builds two ways from one tree (`web`, the default, and `desktop`), and a check of one
@@ -212,7 +212,7 @@ const GATES: &[Gate] = &[
     },
 ];
 
-/// Run every gate, stopping at the first failure.
+/// Runs every gate, stopping at the first failure.
 ///
 /// # Errors
 /// The first gate that fails, named.
@@ -306,7 +306,7 @@ mod tests {
         );
     }
 
-    /// Not style — it doesn't work. Cargo rebuilds the xtask binary before running it, and on
+    /// Not style: it doesn't work. Cargo rebuilds the xtask binary before running it, and on
     /// Windows the running `xtask.exe` is locked, so a gate that shelled back into it would die
     /// with an access-denied error.
     #[test]
@@ -341,8 +341,8 @@ mod tests {
     }
 
     /// `web/frontend` is excluded from the host workspace, so `cargo test --workspace` and
-    /// `cargo fmt --all` at the root reach none of it — it once ran nowhere at all for exactly
-    /// that reason, and three of its files had drifted out of rustfmt before anyone looked.
+    /// `cargo fmt --all` at the root reach none of it, so without these gates nothing would
+    /// format, lint or test it.
     ///
     /// Eight: it builds two ways from one source tree, and a gate that only ever compiles the
     /// default `web` feature says nothing about the `desktop` one that `release-please.yaml`

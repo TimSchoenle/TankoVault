@@ -1,8 +1,8 @@
-//! Retroactive removal of chapter numbers a source cannot plausibly have released.
+//! Owns the retroactive removal of chapter numbers a source cannot plausibly have released.
 //!
-//! The scan engine refuses these at ingest, but ingest only ever inserts and updates — nothing
-//! in the normal path deletes a chapter — so junk indexed before the guard existed stays
-//! indexed. This applies the same rule to what is already stored.
+//! The scan engine refuses these at ingest, but ingest only ever inserts and updates (nothing
+//! in the normal path deletes a chapter), so junk already
+//! indexed stays indexed. This applies the same rule to what is already stored.
 //!
 //! Reports by default and writes only under `--apply`, because the judgement is statistical:
 //! an operator should read the list before it becomes a `DELETE`.
@@ -25,14 +25,14 @@ struct Finding {
     source_id: Uuid,
     provider: String,
     source_path: String,
-    /// Highest chapter the rule keeps — the context that makes a rejection judgeable.
+    /// Highest chapter the rule keeps: the context that makes a rejection judgeable.
     last_kept: f64,
     rejected: Vec<Row>,
 }
 
-/// Report — or with `apply`, delete — every stored chapter the outlier rule rejects.
+/// Reports (or with `apply`, deletes) every stored chapter the outlier rule rejects.
 ///
-/// Uses [`OutlierPolicy::default`] rather than the worker's configured policy: xtask does not
+/// Uses [`OutlierPolicy::default`] instead of the worker's configured policy: xtask does not
 /// load a service configuration, and an operator who has tuned `chapter_outliers.*` away from
 /// the defaults should expect this to disagree with their workers.
 ///

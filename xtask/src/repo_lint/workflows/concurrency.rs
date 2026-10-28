@@ -1,4 +1,4 @@
-//! Each workflow's concurrency group belongs to that workflow alone.
+//! Owns the rule that each workflow's concurrency group belongs to that workflow alone.
 
 use crate::repo_lint::Finding;
 use crate::repo_lint::text::is_comment;
@@ -6,25 +6,22 @@ use std::path::{Path, PathBuf};
 
 /// **No concurrency group may be declared by more than one workflow.** GitHub keeps at most *one*
 /// pending run per `concurrency.group`. A run entering a group that already has one running and
-/// one pending does not queue behind them — it cancels the pending run outright. So a shared group
+/// one pending does not queue behind them: it cancels the pending run outright. So a shared group
 /// silently drops a run on every event that fires its members twice, and which run is dropped is
 /// decided by run-creation order: nothing a reader of the workflow files can see, and nothing that
 /// shows up as a failure. The dropped run is reported as `cancelled`, which is what a run that was
 /// superseded on purpose also looks like.
 ///
-/// `auto-fix.yaml`, `auto-format.yaml` and `update-lockfile.yaml` shared `pr-autocommit-<pr>`
-/// until 2026-08-04. On release 1.2.1, `release-please` force-pushed its release commit while
-/// `auto-fix` was three minutes into a 33-minute run; `auto-format` took the pending slot and the
-/// lockfile sync was cancelled one second after it was created. `Cargo.lock`,
-/// `web/frontend/Cargo.lock` and `openapi.json` reached `main` still recording 1.2.0 against a
-/// 1.2.1 manifest, and every `--locked` build failed — the release images included.
+/// A release shows the cost. When `release-please` force-pushes its release commit while
+/// `auto-fix` is mid-run, a group-mate takes the pending slot and the lockfile sync is cancelled
+/// the second it is created; `Cargo.lock`, `web/frontend/Cargo.lock` and `openapi.json` reach
+/// `main` recording the old version against the new manifest, and every `--locked` build fails,
+/// the release images included.
 ///
-/// Two members was the first answer and it was the same bug with a smaller constant. On release
-/// 1.3.0 (#76) release-please force-pushed twice in 33 seconds; `auto-fix` was cancelled on both
-/// events, `auto-format` — its one group-mate — survived, and `test (workspace)` failed with
-/// `openapi.json is out of date`. Workflows that must not lose a run therefore share nothing:
-/// `auto-fix.yaml` is now the single member of `pr-autocommit-<pr>`, and one is what this rule
-/// allows.
+/// Two members is the same bug with a smaller constant: two force-pushes seconds apart cancel
+/// `auto-fix` on both events while its one group-mate survives. Workflows that must not lose a
+/// run therefore share nothing: `auto-fix.yaml` is the single member of `pr-autocommit-<pr>`,
+/// and one is what this rule allows.
 pub(in crate::repo_lint) fn concurrency_groups_hold_one_workflow(
     root: &Path,
 ) -> anyhow::Result<Vec<Finding>> {

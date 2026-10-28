@@ -1,12 +1,12 @@
-//! Fuzzes `tankovault_adapters::json::parse_json_body`, the recovery path for a provider JSON
-//! API response that didn't arrive as raw JSON (challenge-solver `<pre>` blocks, entity-escaped,
-//! or shredded JSON-viewer markup).
+//! Owns the fuzz target that exercises `tankovault_adapters::json::parse_json_body`, the recovery
+//! path for a provider JSON API response that didn't arrive as raw JSON (challenge-solver `<pre>`
+//! blocks, entity-escaped, or shredded JSON-viewer markup).
 //!
 //! # Oracle
 //! 1. No panic: `strip_tags` and the brace walk index a `&str` by byte offset.
-//! 2. Completion inside libFuzzer's `-timeout` (run with `-timeout=2 -rss_limit_mb=512`): the
-//!    body scan was once quadratic in body length, and a wall-clock oracle is what catches
-//!    that class of bug — a property test can't express "finishes".
+//! 2. Completion inside libFuzzer's `-timeout` (run with `-timeout=2 -rss_limit_mb=512`): a
+//!    body scan quadratic in body length is the bug class here, and a wall-clock oracle is what
+//!    catches it; a property test can't express "finishes".
 
 #![no_main]
 

@@ -1,20 +1,20 @@
-//! `xtask coverage-ratchet` — the gate on the committed coverage floors. A floor, not a target:
+//! Owns `xtask coverage-ratchet`: the gate on the committed coverage floors. A floor, not a target:
 //! moving logic into a module only the (excluded) integration suites cover lowers the measured
 //! line coverage of the offline suite even though nothing got less tested, so lower that floor in
-//! the same commit rather than treat the drop as a regression.
+//! the same commit instead of treating the drop as a regression.
 //!
 //! **Two floors, two files, two CI jobs.** The fast `coverage` job never builds `--features
 //! integration`, so it cannot see the Docker-backed suites at all and a regression in code only
 //! they reach moves no number it prints. The `coverage-integration` job measures the same
 //! workspace *with* those suites and is enforced against its own file. Merging the two into one
-//! number would be wrong in both directions — the fast path would have to wait on Docker, and the
+//! number would be wrong in both directions: the fast path would have to wait on Docker, and the
 //! slow path's value would be diluted by a measurement that cannot see half the tests.
 
 use std::path::{Path, PathBuf};
 
 /// How far below the measured value a floor is expected to sit.
 ///
-/// Not enforced — it is guidance for whoever raises a floor. Large enough to absorb
+/// Not enforced: it is guidance for whoever raises a floor. Large enough to absorb
 /// `proptest`'s entropy-seeded runs and a refactor that moves a few covered lines around,
 /// small enough that a genuine regression still trips the gate.
 pub(crate) const FLOOR_HEADROOM_PCT: f64 = 1.0;
@@ -30,7 +30,7 @@ const UNSET_SENTINEL: &str = "unset";
 /// which would fail every pull request until somebody deleted the gate.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Suite {
-    /// `cargo llvm-cov --workspace --all-targets`, no `integration` feature — the fast path.
+    /// `cargo llvm-cov --workspace --all-targets`, no `integration` feature: the fast path.
     Offline,
     /// The same sweep with `--features integration`, so the Docker-backed suites are counted.
     Integration,
@@ -110,7 +110,7 @@ fn first_value_line(contents: &str) -> Option<&str> {
         .find(|line| !line.is_empty() && !line.starts_with('#'))
 }
 
-/// Read a numeric floor out of `contents`.
+/// Reads a numeric floor out of `contents`.
 ///
 /// # Errors
 /// If no numeric line is present, or the first one does not parse.
@@ -121,7 +121,7 @@ pub(crate) fn parse_floor(contents: &str) -> anyhow::Result<f64> {
         .map_err(|e| anyhow::anyhow!("the first non-comment line is not a number: {e}"))
 }
 
-/// Read a floor that is allowed to be the `unset` sentinel instead of a number.
+/// Reads a floor that is allowed to be the `unset` sentinel instead of a number.
 ///
 /// Only `unset` is accepted as a word: anything else non-numeric is an error, so a typo cannot
 /// read as "no floor" and quietly turn the gate off.
@@ -135,7 +135,7 @@ pub(crate) fn parse_optional_floor(contents: &str) -> anyhow::Result<Floor> {
     parse_floor(contents).map(Floor::At)
 }
 
-/// Pull the total line-coverage percentage out of `cargo llvm-cov report --json`. Line coverage,
+/// Pulls the total line-coverage percentage out of `cargo llvm-cov report --json`. Line coverage,
 /// not region or function coverage: region coverage is noisy under refactoring (moves when a
 /// `match` gains an unexercised arm) and function coverage weights a getter like a merge engine.
 ///
@@ -160,7 +160,7 @@ pub(crate) enum Verdict {
     /// Below the floor.
     Regressed { measured: f64, floor: f64 },
     /// No floor is committed yet. The measurement is reported so it can be committed and nothing
-    /// is enforced — the one state in which this gate passes without comparing anything, and the
+    /// is enforced: the one state in which this gate passes without comparing anything, and the
     /// only alternative to inventing a starting number nobody measured.
     Unmeasured { measured: f64 },
 }
@@ -168,8 +168,8 @@ pub(crate) enum Verdict {
 /// Compare `measured` against `floor`.
 ///
 /// Equality passes. A floor is a minimum, and a change that lands exactly on it has not made
-/// anything worse — failing there would make the gate depend on floating-point noise in the
-/// last digit rather than on the property it is checking.
+/// anything worse: failing there would make the gate depend on floating-point noise in the
+/// last digit instead of on the property it is checking.
 #[must_use]
 pub(crate) fn judge(measured: f64, floor: f64) -> Verdict {
     if measured >= floor {
@@ -223,7 +223,7 @@ impl Verdict {
     }
 }
 
-/// Run the gate: read the committed floor, read the report `llvm-cov` just wrote, compare.
+/// Runs the gate: reads the committed floor and the report `llvm-cov` just wrote, and compares.
 ///
 /// # Errors
 /// If either file is missing or malformed, or coverage is below the floor.
@@ -242,9 +242,9 @@ pub(crate) fn run(workspace_root: &Path, suite: Suite, report_path: &Path) -> an
     let measured = line_coverage(&report)?;
 
     let verdict = match floor {
-        // The offline floor was measured on 2026-07-30 and has gated every pull request since.
-        // Accepting the sentinel there would disable the only coverage gate the fast path has,
-        // and it would do it silently, in a file whose whole job is to be a number.
+        // The offline floor is measured and gates every pull request. Accepting the sentinel there
+        // would disable the only coverage gate the fast path has, and it would do it silently, in a
+        // file whose whole job is to be a number.
         Floor::Unmeasured if suite == Suite::Offline => anyhow::bail!(
             "{} holds `{UNSET_SENTINEL}`; only the integration floor may be unset. Put the \
              measured percentage back.",
@@ -261,7 +261,7 @@ pub(crate) fn run(workspace_root: &Path, suite: Suite, report_path: &Path) -> an
     }
 }
 
-/// Parse `coverage-ratchet`'s arguments: an optional `--integration`, then an optional report
+/// Parses `coverage-ratchet`'s arguments: an optional `--integration`, then an optional report
 /// path that defaults per suite.
 ///
 /// # Errors
@@ -347,7 +347,7 @@ mod tests {
         );
     }
 
-    /// Accumulated headroom is reported, so the floor rises deliberately rather than never.
+    /// Accumulated headroom is reported, so the floor rises deliberately instead of never.
     /// A ratchet that only ever holds its original line stops being a ratchet.
     #[test]
     fn substantial_headroom_suggests_raising_the_floor() {
@@ -363,8 +363,8 @@ mod tests {
         );
     }
 
-    /// The report shape is `llvm-cov`'s, and reading it wrong must be an error rather than a
-    /// zero — a zero would pass every floor and the gate would be inert.
+    /// The report shape is `llvm-cov`'s, and reading it wrong must be an error, not a
+    /// zero: a zero would pass every floor and the gate would be inert.
     #[test]
     fn the_report_shape_is_checked_rather_than_defaulted() {
         let good = serde_json::json!({
@@ -407,7 +407,7 @@ mod tests {
     }
 
     /// Only the exact word disables enforcement. Any other prose is an error, so `# TBD`,
-    /// `not yet` or a mistyped sentinel fails loudly instead of reading as "no floor" — a
+    /// `not yet` or a mistyped sentinel fails loudly instead of reading as "no floor": a
     /// sentinel that matches loosely is a gate anyone can switch off with a typo.
     #[test]
     fn nothing_but_the_sentinel_reads_as_unset() {
@@ -419,7 +419,7 @@ mod tests {
         }
     }
 
-    /// An unset floor reports the value to commit rather than passing silently, or the sentinel
+    /// An unset floor reports the value to commit instead of passing silently, or the sentinel
     /// would be a permanent no-op nobody ever noticed was still there.
     #[test]
     fn an_unmeasured_floor_reports_the_value_to_commit() {
@@ -504,7 +504,7 @@ mod tests {
         }
     }
 
-    /// A mistyped flag must fail rather than be swallowed as a report path: `--integrations`
+    /// A mistyped flag must fail, not be swallowed as a report path: `--integrations`
     /// silently measuring the offline suite is the exact bug the second floor exists to prevent.
     #[test]
     fn an_unknown_flag_is_rejected() {

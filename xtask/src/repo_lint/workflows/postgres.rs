@@ -1,4 +1,5 @@
-//! The integration harness, CI's service containers and production run one Postgres.
+//! Owns the rule that the integration harness, CI's service containers and production run one
+//! Postgres.
 
 use crate::repo_lint::Finding;
 use crate::repo_lint::text::{const_str, is_comment};
@@ -15,8 +16,8 @@ const COMPOSE: &str = "deploy/docker-compose.yml";
 const POSTGRES_IMAGES: &[&str] = &["postgres", "pgvector/pgvector"];
 
 /// **The integration harness must run production's Postgres image *and* major.** The query
-/// planner is a major-version artefact, so `crates/db/tests/repo_query_plans.rs` — which asserts
-/// that the trigram searches reach their GIN indexes instead of scanning the whole catalogue —
+/// planner is a major-version artefact, so `crates/db/tests/repo_query_plans.rs` (which asserts
+/// that the trigram searches reach their GIN indexes instead of scanning the whole catalogue)
 /// proves nothing about production the moment the two majors diverge, and proves it silently,
 /// because no output of a green run names a version. Nothing else connects them: the harness tag
 /// is a Rust `const`, the deployed image is a digest-pinned line in the compose file, and a bump
@@ -31,7 +32,7 @@ const POSTGRES_IMAGES: &[&str] = &["postgres", "pgvector/pgvector"];
 /// There are **three** copies of this decision, not two, and the third is the one nothing pointed
 /// at: CI's own service containers. The `sqlx offline cache` job pins a Postgres of its own and
 /// applies every migration to it. On the wrong image that job dies at `CREATE EXTENSION vector`
-/// having verified nothing, and it reports a missing extension rather than a wrong pin — so the
+/// having verified nothing, and it reports a missing extension instead of a wrong pin, so the
 /// obvious reading is "the migration is broken", not "this job runs a different database than
 /// production does". Every `image:` line under `.github/workflows/` naming a Postgres is held to
 /// the compose file too.
@@ -174,9 +175,9 @@ fn workflow_postgres_findings(
     findings
 }
 
-/// Split a compose `image: <repository>:<tag>[@<digest>]` line into repository and tag.
+/// Splits a compose `image: <repository>:<tag>[@<digest>]` line into repository and tag.
 ///
-/// Split out so the parse can be tested without a filesystem — and it needs testing, because
+/// Split out so the parse can be tested without a filesystem, and it needs testing, because
 /// both separators appear twice in a real pinned line. The digest is dropped first: `sha256:…`
 /// carries the same `:` as the tag, so taking the last colon of the whole reference lands inside
 /// the hex and reads it as a version. Only then is the repository split off from the right,
@@ -191,12 +192,12 @@ fn image_reference(line: &str) -> Option<(&str, &str)> {
 /// `18.4-alpine@sha256:…`, and from a bare `18`.
 ///
 /// Split out so the shapes a digest pin and a Renovate bump produce can be tested without a
-/// filesystem — the `@sha256:` suffix is the one that looks like it would not parse.
+/// filesystem: the `@sha256:` suffix is the one that looks like it would not parse.
 fn major_of(tag: &str) -> Option<&str> {
     let major = tag.trim_matches('"').split(['-', '.', '@']).next()?.trim();
     // `pgvector/pgvector` tags its images `pg<major>`; the stock image uses the bare major. The
-    // prefix is stripped rather than special-cased at the call site so both spellings compare as
-    // the same number — which is the only thing this rule is actually about.
+    // prefix is stripped here, not special-cased at the call site, so both spellings compare as
+    // the same number, which is the only thing this rule is actually about.
     let major = major.strip_prefix("pg").unwrap_or(major);
     (!major.is_empty() && major.bytes().all(|b| b.is_ascii_digit())).then_some(major)
 }
@@ -206,7 +207,7 @@ mod tests {
     use super::*;
 
     /// The compose file pins images by digest, so the tag the rule has to read is
-    /// `18-alpine@sha256:…` rather than anything as tidy as `18`.
+    /// `18-alpine@sha256:…` instead of anything as tidy as `18`.
     #[test]
     fn a_postgres_major_survives_the_shapes_a_pin_produces() {
         assert_eq!(major_of("18-alpine"), Some("18"));
@@ -236,7 +237,7 @@ mod tests {
     ///
     /// The bug this pins: splitting the whole reference on its last colon lands inside
     /// `sha256:<hex>`, so the "tag" becomes hex, `major_of` rejects it, and the rule reports that
-    /// the compose file pins no Postgres at all — while looking directly at the line that does.
+    /// the compose file pins no Postgres at all, while looking directly at the line that does.
     #[test]
     fn an_image_reference_survives_a_digest_pin_and_a_registry_port() {
         assert_eq!(
@@ -256,8 +257,8 @@ mod tests {
             image_reference("image: ghcr.io:443/timschoenle/tankovault:1.2.0"),
             Some(("ghcr.io:443/timschoenle/tankovault", "1.2.0"))
         );
-        // Not an image line at all, and an image with no tag: both must decline rather than
-        // guess, or an untagged image would be read as pinning something.
+        // Not an image line at all, and an image with no tag: both must decline instead of
+        // guessing, or an untagged image would be read as pinning something.
         assert_eq!(image_reference("environment:"), None);
         assert_eq!(image_reference("image: postgres"), None);
     }

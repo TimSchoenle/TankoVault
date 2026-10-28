@@ -1,7 +1,7 @@
-//! `xtask config-docs [--check]` — keep `docs/CONFIGURATION.md` honest about the code. An
-//! unknown `TANKOVAULT_*` key is *ignored*, not rejected, so drift between the document and the
-//! config structs is silent at runtime; `--check` derives the real surface ([`surface`]) and
-//! diffs it against the document, and the gate itself lives in
+//! Owns `xtask config-docs [--check]`, which keeps `docs/CONFIGURATION.md` honest about the
+//! code. An unknown `TANKOVAULT_*` key is *ignored*, not rejected, so drift between the document
+//! and the config structs is silent at runtime; `--check` derives the real surface
+//! ([`surface`]) and diffs it against the document, and the gate itself lives in
 //! `tests::the_document_matches_the_code`.
 
 mod markdown;
@@ -21,7 +21,7 @@ struct Service {
 
 /// Every service that loads a config, and where its root struct lives.
 ///
-/// Hand-written because a service is a deployment decision, not something derivable — but a
+/// Hand-written because a service is a deployment decision, not something derivable, but a
 /// missing entry cannot hide: its keys would then be absent from the derived surface and the
 /// document's rows for them would fail as stale.
 const SERVICES: &[Service] = &[
@@ -86,14 +86,14 @@ const DOC: &str = "docs/CONFIGURATION.md";
 /// tag. A crate missing here is not silent: its `#[config(nested)]` field fails the walk.
 const EXTERNAL: &[(&str, &str)] = &[("terrace-legal", "terrace_legal")];
 
-/// Derive the configuration surface and, with `check`, compare it against the document.
+/// Derives the configuration surface and, with `check`, compares it against the document.
 ///
 /// Without `check` the derived keys are printed, which is what makes a failure fixable: the
 /// output is the list the document's tables have to account for.
 ///
 /// # Errors
-/// A source file that does not parse, a `serde` attribute the walker cannot model, or — under
-/// `check` — any disagreement between the code and the document.
+/// A source file that does not parse, a `serde` attribute the walker cannot model, or (under
+/// `check`) any disagreement between the code and the document.
 pub(crate) fn run(root: &Path, check: bool) -> Result<()> {
     let implemented = derive(root)?;
 
@@ -155,8 +155,8 @@ fn derive(root: &Path) -> Result<BTreeSet<String>> {
     let mut shared = surface::Table::default();
     shared.parse_dir(&root.join("crates/config/src"))?;
     // The one shared block that does not live in `crates/config`: the metadata priority policy
-    // is domain policy and moved to `tankovault-domain` with ARCH-8, but `sync`'s config still
-    // composes it, so it is still part of the surface.
+    // is domain policy and lives in `tankovault-domain`, but `sync`'s config composes it, so it is
+    // part of the surface.
     shared.parse_file(&root.join("crates/domain/src/metadata_priority.rs"))?;
 
     let mut external = surface::External::default();
@@ -264,7 +264,7 @@ mod tests {
 
     /// The whole gate, run against the repository it ships in.
     ///
-    /// This is the check itself rather than a test *of* the check: `xtask config-docs --check`
+    /// This is the check itself instead of a test *of* the check: `xtask config-docs --check`
     /// is a CI job, and a unit test that only exercised synthetic sources would leave the real
     /// document ungated on any machine that did not run the job.
     #[test]
@@ -272,10 +272,10 @@ mod tests {
         super::run(workspace_root(), true).expect("docs/CONFIGURATION.md is up to date");
     }
 
-    /// A sanity floor on the derived surface. If the walk ever silently stops descending — a
-    /// `serde` attribute mis-modelled, a service tree that moved — the comparison would still
+    /// A sanity floor on the derived surface. If the walk ever silently stops descending (a
+    /// `serde` attribute mis-modelled, a service tree that moved) the comparison would still
     /// pass the day the document was trimmed to match, so the count is asserted to be in the
-    /// right order of magnitude rather than merely non-empty.
+    /// right order of magnitude, not merely non-empty.
     #[test]
     fn the_derived_surface_is_the_whole_surface() {
         let keys = derive(workspace_root()).expect("the surface derives");
@@ -286,7 +286,7 @@ mod tests {
         );
         for expected in [
             // A leaf on a root struct, a nested block, a doubly nested one, and a key read
-            // straight from the environment — one of each way a key can reach the surface.
+            // straight from the environment: one of each way a key can reach the surface.
             "TANKOVAULT_BIND_ADDR",
             "TANKOVAULT_DATABASE__URL",
             "TANKOVAULT_RATE_LIMIT__GLOBAL__BURST",

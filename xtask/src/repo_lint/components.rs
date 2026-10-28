@@ -1,4 +1,4 @@
-//! The frontend's function-length limit, applied to `#[component]` functions, which clippy
+//! Owns the frontend's function-length limit, applied to `#[component]` functions, which clippy
 //! cannot see into.
 
 use std::path::Path;

@@ -1,16 +1,16 @@
-//! Fuzzes `tankovault_solver`'s in-band challenge classifier, which runs on every response the
-//! crawler receives and is entirely provider/solver-controlled (truncated bodies, binary
-//! payloads decoded as UTF-8, rendered interstitials).
+//! Owns the fuzz target that exercises `tankovault_solver`'s in-band challenge classifier, which
+//! runs on every response the crawler receives and is entirely provider/solver-controlled
+//! (truncated bodies, binary payloads decoded as UTF-8, rendered interstitials).
 //!
 //! # Oracle
 //! (1) is shared with the stable properties in `crates/solver/tests/prop_detection.rs`:
 //! 1. No panic, over arbitrary UTF-8 of arbitrary length.
 //! 2. The narrow classifier (`detect_challenge_body`) never accepts what the broad one
-//!    (`detect_challenge`) rejects — disagreement here means an inscrutable parse failure
+//!    (`detect_challenge`) rejects: disagreement here means an inscrutable parse failure
 //!    downstream instead of "still challenged".
 //! 3. A rate-limit notice never buys a solve: two of the three challenge statuses are also
-//!    rate-limit statuses, which is how this regressed once — a `429` fell through to the
-//!    solver fallback and the backoff layer never fired.
+//!    rate-limit statuses, so a `429` that falls through to the solver fallback never reaches
+//!    the backoff layer.
 //!
 //! # Why fuzz when the property tests already assert (2) and (3)
 //! Reach: `prop_detection.rs`'s `".*"` strategy tops out around 32 characters, too short to
@@ -53,7 +53,7 @@ fuzz_target!(|data: &str| {
     let body_kind = detect_challenge_body(data);
     let throttled = is_rate_limit_page(data);
 
-    // (2) Whatever the narrow classifier accepts, the broad one accepts too — by construction,
+    // (2) Whatever the narrow classifier accepts, the broad one accepts too: by construction,
     // since `detect_challenge` consults `detect_challenge_body` first. Moving the rate-limit
     // check above it would break this for a body that is both.
     if body_kind.is_some() {

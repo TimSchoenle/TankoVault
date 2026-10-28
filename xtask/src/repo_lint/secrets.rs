@@ -1,4 +1,4 @@
-//! Rules over credentials: a default published in the compose file must be one the code
+//! Owns the rules over credentials: a default published in the compose file must be one the code
 //! refuses to boot with.
 
 use std::path::Path;
@@ -11,7 +11,7 @@ use super::text::{is_comment, rust_sources};
 /// credential, a value anybody can read that an operator boots with unless they made
 /// `deploy/local.env`. Every credential-shaped default must therefore appear literally in the
 /// Rust refuse-lists (`services/api/src/main.rs::KNOWN_PLACEHOLDERS`,
-/// `tankovault_service::internal_auth::KNOWN_PLACEHOLDERS`) — one half of the fix without the
+/// `tankovault_service::internal_auth::KNOWN_PLACEHOLDERS`): one half of the fix without the
 /// other still boots with the published value.
 pub(super) fn published_secrets_are_refused(root: &Path) -> anyhow::Result<Vec<Finding>> {
     let compose = root.join("deploy/docker-compose.yml");
@@ -67,7 +67,7 @@ fn compose_default(line: &str) -> Option<(String, String)> {
     Some((name.trim().to_owned(), default.trim().to_owned()))
 }
 
-/// Whether a configuration key names a credential rather than an ordinary setting.
+/// Whether a configuration key names a credential instead of an ordinary setting.
 fn is_credential(name: &str) -> bool {
     // `DSN` is here for the same reason `crates/config` wraps one in a `SecretString`: the
     // key embedded in a Sentry DSN is a bearer credential for the project ingest endpoint.
@@ -86,7 +86,7 @@ mod tests {
             compose_default("  X: \"${TANKOVAULT_A__TOKEN:-dev-token}\""),
             Some(("TANKOVAULT_A__TOKEN".to_owned(), "dev-token".to_owned()))
         );
-        // `:?` is the required form — there is no default to publish.
+        // `:?` is the required form: there is no default to publish.
         assert_eq!(
             compose_default("  X: \"${TANKOVAULT_A__TOKEN:?set it}\""),
             None

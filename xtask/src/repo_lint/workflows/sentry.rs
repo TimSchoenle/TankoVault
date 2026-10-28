@@ -1,4 +1,4 @@
-//! The Sentry release name agrees with the one the images are built with.
+//! Owns the rule that the Sentry release name agrees with the one the images are built with.
 
 use super::PUBLISH_WORKFLOW;
 use crate::repo_lint::Finding;
@@ -14,10 +14,10 @@ use std::path::{Path, PathBuf};
 /// Nothing connects the two but the string. Sentry accepts events for a release it has never
 /// been told about and accepts a release nothing ever reports to, so a rename on either side
 /// produces a green release, a green deploy, and an empty "first seen in" on every issue from
-/// then on. There is no error to read and no job to re-run — the only symptom is regression
+/// then on. There is no error to read and no job to re-run: the only symptom is regression
 /// detection quietly not working, which is exactly the kind of absence nobody notices.
 ///
-/// The prefix is read out of the Rust source rather than hard-coded here, so renaming the
+/// The prefix is read out of the Rust source, not hard-coded here, so renaming the
 /// product in one place fails this rule instead of being duplicated into it.
 pub(in crate::repo_lint) fn sentry_release_name_agrees(
     root: &Path,
@@ -71,7 +71,7 @@ fn names_release(workflow: &str, expected: &str) -> bool {
         .any(|line| !is_comment(line) && line.contains(expected))
 }
 
-/// The literal prefix of a `format!("…{}", env!("CARGO_PKG_VERSION"))` — `tankovault@` from
+/// The literal prefix of a `format!("…{}", env!("CARGO_PKG_VERSION"))`: `tankovault@` from
 /// `format!("tankovault@{}", env!("CARGO_PKG_VERSION"))`.
 ///
 /// Split out so the shapes that must *not* match can be tested without a filesystem: the same
@@ -108,7 +108,7 @@ mod tests {
     use super::*;
 
     /// The release name is the only thing tying a running replica's events to the release object
-    /// this workflow creates, and neither side reports a mismatch — so the extractor has to find
+    /// this workflow creates, and neither side reports a mismatch, so the extractor has to find
     /// the *release* `format!` and not merely the first one that ends in a placeholder. Both
     /// near misses below appear in `crates/service/src/sentry.rs`.
     #[test]

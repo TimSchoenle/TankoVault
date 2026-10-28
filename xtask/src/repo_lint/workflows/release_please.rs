@@ -1,4 +1,4 @@
-//! release-please tags the merged release before it proposes the next one.
+//! Owns the rule that release-please tags the merged release before it proposes the next one.
 
 use super::PUBLISH_WORKFLOW;
 use super::yaml::{action_steps, job_at, job_lines};
@@ -15,16 +15,15 @@ use std::path::{Path, PathBuf};
 /// Run together, the pull-request half looks for a tag its own predecessor has not created yet,
 /// finds nothing, and falls back to the version in `.release-please-manifest.json` with **no base
 /// commit to bound the commit walk**. The version is therefore right and the range is the entire
-/// history of the repository. Release v3.1.0 logged `looking for tagName: v3.1.0` / `No latest
-/// release found` / `Considering: 259 commits` and opened #138: a 245-line changelog re-listing
-/// every commit ever merged, and a 4.0.0 major bump — from re-counting `!` commits that had been
-/// released a dozen tags earlier — for a `main` with nothing on it since v3.1.0.
+/// history of the repository: the run logs `No latest release found`, considers every
+/// commit, and opens a changelog re-listing every commit ever merged with a major bump (from
+/// re-counting `!` commits released long before) for a `main` with nothing new on it.
 ///
 /// Nothing else reports this. The action succeeds, the release publishes normally, and
-/// `auto-merge-release-please.yml` would have merged the bogus pull request on schedule.
+/// `auto-merge-release-please.yml` merges the bogus pull request on schedule.
 ///
 /// Both halves are checked, not just the ordering: an invocation that skips neither is the
-/// original bug restored, and one that skips both is a workflow that silently stops releasing.
+/// bug restored, and one that skips both is a workflow that silently stops releasing.
 pub(in crate::repo_lint) fn release_please_tags_before_it_proposes(
     root: &Path,
 ) -> anyhow::Result<Vec<Finding>> {
@@ -125,14 +124,13 @@ pub(in crate::repo_lint) fn release_please_tags_before_it_proposes(
 mod tests {
     use super::*;
 
-    /// The bug this pins: release v3.1.0. `release-please.yaml` invoked the action once, so it
-    /// created the draft release — which carries no git tag until `desktop-release` publishes it —
-    /// and then, in the same process, went looking for `v3.1.0` to work out what the *next* release
-    /// contained. It found nothing (`looking for tagName: v3.1.0` / `No latest release found for
-    /// path: .`), took the version from the manifest and the commit range from the beginning of
-    /// history, and opened #138: `Considering: 259 commits`, a 245-line changelog re-listing the
-    /// whole repository, and a 4.0.0 major bump from re-counting `!` commits released a dozen tags
-    /// earlier — for a `main` with no commits on it since v3.1.0 at all.
+    /// The bug this pins: `release-please.yaml` invoked the action once, so it created the draft
+    /// release (which carries no git tag until `desktop-release` publishes it) and then, in the
+    /// same process, looked for that tag to work out what the *next* release contained. It found
+    /// nothing (`No latest release found for path: .`), took the version from the manifest and
+    /// the commit range from the beginning of history, and opened a changelog re-listing the whole
+    /// repository with a major bump from re-counting `!` commits released long before, for a
+    /// `main` with no new commits at all.
     ///
     /// Nothing downstream would have caught it: the action succeeded, the release published
     /// normally, and `auto-merge-release-please.yml` merges release pull requests on a schedule.
@@ -140,7 +138,7 @@ mod tests {
     fn a_release_please_step_that_does_not_split_its_two_halves_is_caught() {
         const ACTION: &str = "googleapis/release-please-action";
 
-        // The shape that opened #138: one invocation, doing both halves, before the tag exists.
+        // The broken shape: one invocation, doing both halves, before the tag exists.
         let single = [
             "jobs:",
             "  release-please:",
@@ -154,7 +152,7 @@ mod tests {
         assert_eq!(steps.len(), 1);
         assert!(!steps[0].1.iter().any(|line| line.contains("skip-github")));
 
-        // The fix: tag, publish the draft, then propose — one half each, in that order.
+        // The fix: tag, publish the draft, then propose; one half each, in that order.
         let split = [
             "jobs:",
             "  release-please:",
@@ -182,7 +180,7 @@ mod tests {
         assert!(skips(&steps[0].1, "skip-github-pull-request: true"));
         assert!(!skips(&steps[0].1, "skip-github-release: true"));
         // The step body stops at the next job, so the tagging pass cannot borrow the other half's
-        // input — and a comment naming that input is prose, not a second skip.
+        // input, and a comment naming that input is prose, not a second skip.
         assert!(skips(&steps[1].1, "skip-github-release: true"));
         assert!(!skips(&steps[1].1, "skip-github-pull-request: true"));
 

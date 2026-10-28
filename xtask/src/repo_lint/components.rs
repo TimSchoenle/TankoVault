@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use super::Finding;
-use super::text::{is_comment, rust_sources};
+use super::text::rust_sources;
 
 /// The frontend crates whose components the limit covers.
 const FRONTEND_SOURCES: [&str; 2] = ["web/frontend/src", "web/frontend/crates/inkstone-ui/src"];
@@ -67,9 +67,8 @@ struct LongComponent {
 
 /// The `#[component]` functions in `source` with more than `threshold` lines.
 ///
-/// Lines are counted as clippy counts them: from the signature to the closing brace, leaving
-/// out blank and comment lines. A component ends at the first `}` at its own indentation, which
-/// `rustfmt` guarantees.
+/// A component ends at the first `}` at its own indentation, and its body starts after the first
+/// line of the signature that ends in `{`, both of which `rustfmt` guarantees.
 fn long_components(source: &str, threshold: usize) -> Vec<LongComponent> {
     let lines: Vec<&str> = source.lines().collect();
     let mut found = Vec::new();
@@ -87,10 +86,10 @@ fn long_components(source: &str, threshold: usize) -> Vec<LongComponent> {
         let end = (start..lines.len())
             .find(|&i| lines[i] == close)
             .unwrap_or(lines.len() - 1);
-        let counted = lines[start..=end]
-            .iter()
-            .filter(|line| !line.trim().is_empty() && !is_comment(line))
-            .count();
+        let body_start = (start..end)
+            .find(|&i| lines[i].trim_end().ends_with('{'))
+            .map_or(end, |i| i + 1);
+        let counted = code_lines(&lines[body_start..end]);
         if counted > threshold {
             found.push(LongComponent {
                 name: fn_name(lines[start]).unwrap_or_default().to_owned(),
@@ -103,13 +102,51 @@ fn long_components(source: &str, threshold: usize) -> Vec<LongComponent> {
     found
 }
 
-/// The function name `line` declares, if it declares one.
+/// Counts the lines of a function body that hold code, the way clippy's `too_many_lines` does.
+///
+/// A port of clippy's loop: a line counts when any of it lies outside a `//` or `/* */`
+/// comment, and a block comment carries its state across lines. Any other rule disagrees with
+/// clippy near the threshold, and this one exists to apply clippy's limit where clippy cannot.
+fn code_lines(body: &[&str]) -> usize {
+    let mut in_comment = false;
+    let mut count = 0;
+    for &full in body {
+        let mut line = full;
+        let mut code_in_line = false;
+        loop {
+            line = line.trim_start();
+            if line.is_empty() {
+                break;
+            }
+            if in_comment {
+                if let Some(i) = line.find("*/") {
+                    line = &line[i + 2..];
+                    in_comment = false;
+                    continue;
+                }
+            } else {
+                let multi = line.find("/*").unwrap_or(line.len());
+                let single = line.find("//").unwrap_or(line.len());
+                code_in_line |= multi > 0 && single > 0;
+                if multi < single {
+                    line = &line[multi + 2..];
+                    in_comment = true;
+                    continue;
+                }
+            }
+            break;
+        }
+        count += usize::from(code_in_line);
+    }
+    count
+}
+
+/// Returns the function name `line` declares, if it declares one.
 fn fn_name(line: &str) -> Option<&str> {
-    let rest = line.trim_start().split("fn ").nth(1)?;
-    let before = line.trim_start().split("fn ").next()?;
-    let qualifiers_only = before
+    let (before, rest) = line.trim_start().split_once("fn ")?;
+    let qualifiers_only = without_visibility(before)
         .split_whitespace()
-        .all(|word| word.starts_with("pub") || word == "async" || word == "const");
+        .all(|word| matches!(word, "async" | "const" | "unsafe"));
     if !qualifiers_only {
         return None;
     }
@@ -117,6 +154,17 @@ fn fn_name(line: &str) -> Option<&str> {
         .find(|c: char| !(c.is_alphanumeric() || c == '_'))
         .unwrap_or(rest.len());
     (end > 0).then(|| &rest[..end])
+}
+
+/// Strips a leading `pub` or `pub(…)`, whose path may contain spaces, as in `pub(in crate::x)`.
+fn without_visibility(qualifiers: &str) -> &str {
+    let Some(rest) = qualifiers.trim_start().strip_prefix("pub") else {
+        return qualifiers;
+    };
+    match rest.strip_prefix('(') {
+        Some(scoped) => scoped.split_once(')').map_or(rest, |(_, after)| after),
+        None => rest,
+    }
 }
 
 #[cfg(test)]
@@ -134,22 +182,63 @@ mod tests {
         source
     }
 
+    /// `#[component]` re-emits the function from a proc macro and clippy skips
+    /// `too_many_lines` on macro output, so components grew past the threshold that held for
+    /// every helper.
     #[test]
     fn a_component_over_the_threshold_is_reported_with_its_counted_lines() {
-        let source = format!("{}\n{}", component("Short", 3), component("Long", 10));
+        let source = format!("{}\n{}", component("Short", 3), component("Long", 11));
         assert_eq!(
             long_components(&source, 10),
             vec![LongComponent {
                 name: "Long".to_owned(),
                 line: 15,
-                lines: 12,
+                lines: 11,
             }]
         );
     }
 
+    /// Clippy counts body lines only, so a component exactly at the threshold passes.
+    #[test]
+    fn a_component_at_the_threshold_passes() {
+        assert_eq!(long_components(&component("Exact", 10), 10), vec![]);
+    }
+
     #[test]
     fn blank_and_comment_lines_do_not_count() {
-        assert_eq!(long_components(&component("Exact", 8), 10), vec![]);
+        assert_eq!(long_components(&component("Short", 8), 8), vec![]);
+    }
+
+    /// The counter skipped every line starting with `#` or `*`, so an attribute or a deref in a
+    /// body went uncounted, and it counted the lines of a block comment that clippy skips.
+    #[test]
+    fn lines_are_counted_as_clippy_counts_them() {
+        let body = [
+            "#[expect(unused)]",
+            "*slot = 1;",
+            "/* a block",
+            "   comment */",
+            "let a = 1; /* trailing",
+            "   still a comment */ let b = 2;",
+            "// a line comment",
+            "",
+            "let url = \"https://example.com\";",
+        ];
+        assert_eq!(code_lines(&body), 5);
+    }
+
+    /// `pub(in crate::views) fn` splits into words at the space inside the parentheses, and the
+    /// second word failed the qualifier check, so such a component was never measured.
+    #[test]
+    fn a_scoped_visibility_still_names_the_function() {
+        assert_eq!(
+            fn_name("pub(in crate::views) fn Panel() -> Element {"),
+            Some("Panel")
+        );
+        assert_eq!(fn_name("pub(crate) async fn Load() {"), Some("Load"));
+        assert_eq!(fn_name("fn Plain() {"), Some("Plain"));
+        assert_eq!(fn_name("let f = fn_pointer;"), None);
+        assert_eq!(fn_name("let x = 1; fn"), None);
     }
 
     #[test]

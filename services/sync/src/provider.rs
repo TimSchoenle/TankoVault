@@ -1,5 +1,5 @@
-//! Provider registry contract. Every external tracker implements [`ExternalProvider`] and is
-//! registered under its stable slug; status crosses the boundary as the shared [`WatchStatus`],
+//! Owns the provider registry contract. Every external tracker implements [`ExternalProvider`] and
+//! is registered under its stable slug; status crosses the boundary as the shared [`WatchStatus`],
 //! so the engine never touches a provider-specific status enum.
 
 use async_trait::async_trait;
@@ -10,7 +10,7 @@ use time::OffsetDateTime;
 /// Tokens returned by an `OAuth2` code exchange or refresh.
 ///
 /// Both credentials are [`SecretString`]s, which is what makes the derived `Debug` on this
-/// struct safe — it is carried through the engine, the token vault and the linking handler,
+/// struct safe: it is carried through the engine, the token vault and the linking handler,
 /// and any of those is a plausible place for someone to add a `tracing::debug!(?tokens)`.
 #[derive(Debug, Clone)]
 pub(crate) struct OAuthTokens {
@@ -29,7 +29,7 @@ pub(crate) struct Viewer {
 
 /// One remote list entry, normalised for local matching: where the reader is on the list, plus
 /// the catalogue metadata of the work behind it. Shares [`RemoteMetadata`] with the tokenless
-/// enrichment path rather than a narrower copy, so a list sync can enrich the matched series on
+/// enrichment path instead of a narrower copy, so a list sync can enrich the matched series on
 /// the spot instead of parsing the extra fields and discarding them.
 #[derive(Debug, Clone)]
 pub(crate) struct RemoteEntry {
@@ -58,7 +58,7 @@ pub(crate) struct RemoteMetadata {
     pub(crate) external_id: String,
     /// Candidate titles (primary first, then every alternative/synonym), non-blank only.
     pub(crate) titles: Vec<String>,
-    /// How many leading `titles` are the record's own names rather than synonyms. Only these
+    /// How many leading `titles` are the record's own names instead of synonyms. Only these
     /// can identify a series: a franchise-wide synonym is how a search lands on a sibling.
     pub(crate) own_titles: usize,
     pub(crate) description: Option<String>,
@@ -74,7 +74,7 @@ pub(crate) struct RemoteMetadata {
     pub(crate) themes: Vec<RemoteTag>,
     pub(crate) authors: Vec<String>,
     /// Whether upstream classifies the work as adult. `None` is "no opinion" and leaves the
-    /// stored flag alone — a content gate must not be cleared by a provider that cannot see it.
+    /// stored flag alone: a content gate must not be cleared by a provider that cannot see it.
     pub(crate) is_adult: Option<bool>,
     /// Upstream's average score, 0..100.
     pub(crate) external_score: Option<f32>,
@@ -87,7 +87,7 @@ pub(crate) struct RemoteMetadata {
 #[derive(Debug, Clone)]
 pub(crate) struct RemoteTag {
     pub(crate) name: String,
-    /// `(0, 1]` — `AniList`'s `rank`/100, floored so it never reaches the zero the column's
+    /// `(0, 1]`: `AniList`'s `rank`/100, floored so it never reaches the zero the column's
     /// `CHECK` rejects.
     pub(crate) weight: f32,
 }
@@ -105,13 +105,13 @@ pub(crate) trait ExternalProvider: Send + Sync {
     fn authorize_url(&self) -> String;
     /// Exchange an OAuth `code` for tokens.
     async fn exchange_code(&self, code: &str) -> anyhow::Result<OAuthTokens>;
-    /// Refresh an expired access token.
+    /// Refreshes an expired access token.
     async fn refresh(&self, refresh_token: &SecretString) -> anyhow::Result<OAuthTokens>;
     /// The authenticated viewer behind `access_token`.
     ///
-    /// Every token-taking method on this trait takes a [`SecretString`] rather than a `&str`.
-    /// Unlike a presented bearer header — which is borrowed, transient and belongs to the
-    /// caller — these are *stored* credentials this service decrypted out of its own
+    /// Every token-taking method on this trait takes a [`SecretString`] instead of a `&str`.
+    /// Unlike a presented bearer header (which is borrowed, transient and belongs to the
+    /// caller), these are *stored* credentials this service decrypted out of its own
     /// database, so it owns them and is responsible for not leaking them.
     async fn viewer(&self, access_token: &SecretString) -> anyhow::Result<Viewer>;
     /// The viewer's full remote list.
@@ -133,7 +133,7 @@ pub(crate) trait ExternalProvider: Send + Sync {
         false
     }
 
-    /// Fetch public catalogue metadata for a work by title, **without** any user token.
+    /// Fetches public catalogue metadata for a work by title, **without** any user token.
     /// Returns `Ok(None)` when nothing matches (or the provider has no public API).
     async fn fetch_public_metadata_by_title(
         &self,
@@ -142,7 +142,7 @@ pub(crate) trait ExternalProvider: Send + Sync {
         Ok(None)
     }
 
-    /// Fetch public catalogue metadata for a known external id, **without** any user token.
+    /// Fetches public catalogue metadata for a known external id, **without** any user token.
     /// Returns `Ok(None)` when the record is not one a library holds; a failed lookup is an
     /// error, never `None`.
     async fn fetch_public_metadata_by_id(
@@ -152,7 +152,7 @@ pub(crate) trait ExternalProvider: Send + Sync {
         Ok(None)
     }
 
-    /// Create or update a remote list entry.
+    /// Creates or updates a remote list entry.
     async fn save_entry(
         &self,
         access_token: &SecretString,

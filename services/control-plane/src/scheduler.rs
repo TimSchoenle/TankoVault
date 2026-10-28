@@ -1,5 +1,5 @@
-//! The background scheduler: fast and full scans, duplicate sweeps and model builds, each on its
-//! own interval.
+//! Owns the background scheduler: fast and full scans, duplicate sweeps and model builds, each on
+//! its own interval.
 
 use std::time::Duration;
 
@@ -24,7 +24,7 @@ use crate::{dedupe, leader, policy};
 
 /// Periodic scheduler loop.
 ///
-/// Exits on `shutdown` rather than being killed mid-sweep: a severed sweep leaves
+/// Exits on `shutdown` instead of being killed mid-sweep: a severed sweep leaves
 /// planned-but-unpublished runs behind, which the aggregator then waits on forever.
 pub(super) async fn run_scheduler(
     state: AppState,
@@ -70,7 +70,7 @@ pub(super) async fn run_scheduler(
     let mut recsys_full = interval_or_never(cfg.recsys_full_interval_secs);
 
     loop {
-        // Republished on every tick rather than on acquisition, so a replica that lost the
+        // Republished on every tick instead of on acquisition, so a replica that lost the
         // lock without noticing still reports the truth. Summed over the job this must be
         // exactly 1; 0 means nothing is planning scans and the pipeline is quietly stopped.
         metrics::gauge!("scheduler_leader").set(f64::from(u8::from(leadership.is_leader())));
@@ -231,7 +231,7 @@ async fn maybe_merge_sweep(
                 "duplicate sweep complete"
             );
             // `auto_merged` is the destructive one and the only arm bounded by the merge
-            // ceiling, so it is worth watching on its own rather than as a sweep total.
+            // ceiling, so it is worth watching on its own, not as a sweep total.
             for (action, count) in [
                 ("examined", report.pairs_examined),
                 ("auto_merged", report.auto_merged),
@@ -250,7 +250,7 @@ async fn maybe_merge_sweep(
         Err(e) => tracing::warn!(error = %e, "duplicate sweep failed"),
     }
     // Labelled by scope: a rotation pass and a full sweep have different costs by design, and
-    // one histogram over both reads as bimodal noise rather than as either.
+    // one histogram over both reads as bimodal noise instead of as either.
     metrics::histogram!(
         "merge_sweep_duration_seconds",
         "scope" => match scope {
@@ -295,7 +295,7 @@ async fn maybe_sweep(state: &AppState, leadership: &leader::Leadership, mode: Sc
 /// Whether `provider` is still serving out a cooldown earned by consecutive failed runs.
 ///
 /// Only the **sweep** consults this. An operator pressing "Scan now" is asking a question the
-/// backoff exists to stop *us* asking, and the answer they want is the current one — so
+/// backoff exists to stop *us* asking, and the answer they want is the current one, so
 /// [`trigger_scan`] goes straight to [`plan_run`] and a manual run also ends the streak the
 /// moment it succeeds.
 ///

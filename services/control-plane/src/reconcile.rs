@@ -1,18 +1,18 @@
-//! Repairs the drift between `JetStream` (the truth for dispatch) and `scan_tasks` (the truth
-//! for progress).
+//! Owns repairing the drift between `JetStream` (the truth for dispatch) and `scan_tasks` (the
+//! truth for progress).
 //!
 //! Nothing else closes this gap. A task row is committed and then its message is published, and
-//! every way that pair can come apart — a publish that never landed, a stream purged or
+//! every way that pair can come apart (a publish that never landed, a stream purged or
 //! recreated under a running deployment, a worker that acked and then died, a queue that stopped
-//! consuming — leaves a row that is open forever and a run that can never settle. From the
+//! consuming) leaves a row that is open forever and a run that can never settle. From the
 //! database's side there is no failure to see, so no retry is triggered and nothing is logged;
 //! the run simply reads `RUNNING` with an unmoving counter, and until it goes stale it also
 //! suppresses the provider's next run of the same mode. That is the shape of every "the scan
 //! queue is stuck" report.
 //!
-//! The repair is evidence-based rather than timed, which is the part that makes it safe to run
+//! The repair is evidence-based, not timed, which is the part that makes it safe to run
 //! unattended: a lane's open rows are compared against the message count the broker actually
-//! holds for it, and only the difference is republished. Age alone would be a bad signal — a
+//! holds for it, and only the difference is republished. Age alone would be a bad signal: a
 //! catalogue scan legitimately leaves tens of thousands of tasks queued for hours behind its
 //! provider's one slot, and republishing those would fan the backlog out a second time.
 
@@ -24,18 +24,18 @@ use time::OffsetDateTime;
 
 use crate::AppState;
 
-/// How long a row must have been open before a missing message is read as lost rather than as a
+/// How long a row must have been open before a missing message is read as lost instead of as a
 /// publish still in flight.
 ///
 /// The window it has to cover is the gap between the task row's commit and its broker ack, which
-/// is milliseconds. Minutes of margin costs nothing — the tasks this repairs have been stranded
-/// for as long as the deployment has been broken — and buys immunity to a slow publish, a
+/// is milliseconds. Minutes of margin costs nothing (the tasks this repairs have been stranded
+/// for as long as the deployment has been broken) and buys immunity to a slow publish, a
 /// paused replica and a clock that is not quite in step.
 const AGED_AFTER: Duration = Duration::from_secs(300);
 
 /// Ceiling on republishes per lane per pass.
 ///
-/// A deficit this large is not a lost publish, it is a stream that was emptied or replaced —
+/// A deficit this large is not a lost publish, it is a stream that was emptied or replaced:
 /// and in that case the whole backlog is missing. Republishing it in bounded slices keeps one
 /// pass from turning into an hours-long fan-out that blocks the scheduler, and the next pass
 /// resumes from what is still open.
@@ -64,10 +64,10 @@ impl Repairs {
     }
 }
 
-/// Run one reconciliation pass.
+/// Runs one reconciliation pass.
 ///
 /// Every repair is idempotent, so a pass that overlaps a worker or another replica is wasteful
-/// rather than wrong: a republished task whose message did still exist is claimed once and
+/// instead of wrong: a republished task whose message did still exist is claimed once and
 /// declined on the second delivery, and finalisation is a single conditional UPDATE.
 pub(crate) async fn pass(state: &AppState) -> anyhow::Result<Repairs> {
     let mut repairs = Repairs::default();
@@ -109,8 +109,8 @@ pub(crate) async fn pass(state: &AppState) -> anyhow::Result<Repairs> {
 /// The comparison is deliberately conservative in both directions. `open_tasks` counts every
 /// open row while the deficit is charged only against the *aged* ones, so a task published
 /// seconds ago can absorb the difference and keep a fresh row from being republished. And a lane
-/// the broker cannot account for at all — no consumer yet, because no worker has ever opened it
-/// — is skipped rather than treated as empty.
+/// the broker cannot account for at all (no consumer yet, because no worker has ever opened it)
+/// is skipped instead of treated as empty.
 async fn repair_lane(state: &AppState, lane: &OpenLane) -> anyhow::Result<u64> {
     let Some(backlog) = state
         .bus
@@ -160,7 +160,7 @@ async fn repair_lane(state: &AppState, lane: &OpenLane) -> anyhow::Result<u64> {
 /// How many of a lane's open tasks the broker is not holding a message for.
 ///
 /// Split out to be tested without a broker: it is the whole of the decision to republish, and
-/// getting it wrong is silent either way — too eager duplicates a catalogue fan-out, too shy
+/// getting it wrong is silent either way: too eager duplicates a catalogue fan-out, too shy
 /// leaves the queue as stuck as it was.
 fn deficit(lane: &OpenLane, backlog: u64) -> i64 {
     let backlog = i64::try_from(backlog).unwrap_or(i64::MAX);
@@ -171,7 +171,7 @@ fn deficit(lane: &OpenLane, backlog: u64) -> i64 {
 }
 
 /// Rebuild one task's message and publish it. `false` when the row cannot be turned back into a
-/// message, which is a corrupt row rather than a drift and is not this reconciler's to fix.
+/// message, which is a corrupt row, not a drift and is not this reconciler's to fix.
 async fn republish(state: &AppState, lane: &OpenLane, task: &StrandedTask) -> anyhow::Result<bool> {
     let Some(kind) = TaskKind::from_token(&task.kind) else {
         tracing::warn!(
@@ -251,10 +251,10 @@ async fn fail_abandoned_runs(state: &AppState) -> anyhow::Result<u64> {
     Ok(failed.len() as u64)
 }
 
-/// Count one repair.
+/// Counts one repair.
 ///
 /// The counter an operator alerts on: a healthy deployment never repairs anything, so any
-/// sustained rate here is dispatch losing messages — the cause, not the symptom the console
+/// sustained rate here is dispatch losing messages: the cause, not the symptom the console
 /// shows.
 fn repaired(provider_slug: &str, mode: ScanMode, action: &'static str) {
     metrics::counter!(
@@ -298,7 +298,7 @@ mod tests {
     ///
     /// The row is committed before the publish, so every task passes through a moment of looking
     /// exactly like a stranded one. Charging the deficit against the aged rows alone is what
-    /// makes that moment invisible here — and getting it wrong duplicates work silently rather
+    /// makes that moment invisible here, and getting it wrong duplicates work silently instead of
     /// than failing, which on a catalogue fan-out means a second pass over tens of thousands of
     /// series.
     #[test]

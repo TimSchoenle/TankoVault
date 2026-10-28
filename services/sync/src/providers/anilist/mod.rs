@@ -1,5 +1,5 @@
-//! `AniList` `OAuth2` + GraphQL provider. This file holds only the endpoint defaults and the
-//! [`ExternalProvider`] impl — the boundary where `AniList`'s own ids/status vocabulary become
+//! Owns the `AniList` `OAuth2` and GraphQL provider. This file holds only the endpoint defaults and
+//! the [`ExternalProvider`] impl: the boundary where `AniList`'s own ids/status vocabulary become
 //! the shared `RemoteEntry`/`WatchStatus` types the engine sees.
 
 mod client;

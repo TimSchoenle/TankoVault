@@ -1,6 +1,6 @@
-//! Sync engine: OAuth linking plus provider ⇆ local pull/push, a targeted single-series push,
-//! metadata enrichment, and the multi-provider registry. [`SyncEngine`] is a facade delegating
-//! to the collaborator modules below; it holds no logic of its own.
+//! Owns the sync engine: OAuth linking and provider ⇆ local pull/push, a targeted single-series
+//! push, metadata enrichment, and the multi-provider registry. [`SyncEngine`] is a facade
+//! delegating to the collaborator modules below; it holds no logic of its own.
 
 mod accounts;
 mod conflicts;
@@ -147,12 +147,12 @@ impl SyncEngine {
         self.accounts.link(slug, user_id, code).await
     }
 
-    /// Remove a user's link to `provider`. Returns `true` if an account was removed.
+    /// Removes a user's link to `provider`. Returns `true` if an account was removed.
     pub(crate) async fn unlink(&self, slug: &str, user_id: UserId) -> anyhow::Result<bool> {
         self.accounts.unlink(slug, user_id).await
     }
 
-    /// Whether `user_id` has a linked `provider` account, plus its display name and most recent
+    /// Whether `user_id` has a linked `provider` account, and its display name and most recent
     /// sync time.
     pub(crate) async fn status(
         &self,
@@ -162,7 +162,7 @@ impl SyncEngine {
         self.accounts.status(slug, user_id).await
     }
 
-    /// The account's automatic-sync settings plus its pending-conflict count.
+    /// The account's automatic-sync settings and its pending-conflict count.
     pub(crate) async fn settings(
         &self,
         slug: &str,
@@ -171,7 +171,7 @@ impl SyncEngine {
         self.accounts.settings(slug, user_id).await
     }
 
-    /// Update the account's automatic-sync settings.
+    /// Updates the account's automatic-sync settings.
     pub(crate) async fn update_settings(
         &self,
         slug: &str,
@@ -205,7 +205,8 @@ impl SyncEngine {
             .await
     }
 
-    /// Apply a user's manual conflict resolution. `false` if it does not exist / is resolved.
+    /// Applies a user's manual conflict resolution. Returns `false` if it does not exist or is
+    /// resolved.
     pub(crate) async fn resolve_conflict(
         &self,
         user_id: UserId,
@@ -230,7 +231,7 @@ impl SyncEngine {
         self.reverts.list(filter, limit, offset).await
     }
 
-    /// Undo one journalled sync decision.
+    /// Undoes one journalled sync decision.
     ///
     /// # Errors
     /// A decision that changed nothing, was already reverted, or has no inverse; otherwise
@@ -244,7 +245,7 @@ impl SyncEngine {
         self.reverts.revert(id, actor, reason).await
     }
 
-    /// Mark one journalled sync decision wrong, optionally refusing the match it made.
+    /// Marks one journalled sync decision wrong, optionally refusing the match it made.
     ///
     /// # Errors
     /// Database failures, or a `block_match` request against a decision that named no match.
@@ -258,7 +259,7 @@ impl SyncEngine {
         self.reverts.flag(id, actor, reason, block_match).await
     }
 
-    /// Refuse one (external id, series) correspondence permanently.
+    /// Refuses one (external id, series) correspondence permanently.
     ///
     /// # Errors
     /// Database failures.
@@ -318,7 +319,7 @@ impl SyncEngine {
         self.enricher.enrich_all(batch_size, max_series).await
     }
 
-    /// Start re-verifying every stored mapping in the background. Returns `false`, starting
+    /// Starts re-verifying every stored mapping in the background. Returns `false`, starting
     /// nothing, when a run is already in flight.
     ///
     /// # Errors

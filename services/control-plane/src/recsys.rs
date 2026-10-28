@@ -1,6 +1,6 @@
-//! The recommendation model builder (`docs/RECOMMENDATIONS.md` §6).
+//! Owns the recommendation model builder (`docs/RECOMMENDATIONS.md` §6).
 //!
-//! Runs here rather than in the worker because a build is a *singleton* over the whole
+//! Runs here instead of in the worker because a build is a *singleton* over the whole
 //! catalogue, and this is the service that already holds the leader lock and already runs one
 //! standing catalogue-wide job (the duplicate sweep). Putting it behind the same lock reuses the
 //! mutual exclusion instead of inventing a second one.
@@ -8,7 +8,7 @@
 //! Nothing in the pipeline is resident in proportion to the catalogue. Extraction and projection
 //! stream in batches; the vocabulary pass aggregates in the database; the one structure that
 //! scales with anything is the covariance matrix, and that scales with the *vocabulary*
-//! (`cap * cap` f64, ~32 MB at the default) rather than with the number of series.
+//! (`cap * cap` f64, ~32 MB at the default) instead of with the number of series.
 
 use std::collections::HashMap;
 
@@ -31,7 +31,7 @@ pub struct BuildBudget {
     /// Ceiling on a single incremental run, so a catalogue that grew by a million overnight
     /// does not turn the hourly pass into an all-day one.
     pub incremental_max: i64,
-    /// Features that may shape the dense space — the covariance matrix's side.
+    /// Features that may shape the dense space: the covariance matrix's side.
     pub dense_input_cap: i64,
     /// The HNSW index's `m`, clamped to pgvector's 2..=100 at index creation.
     pub hnsw_m: i32,
@@ -45,12 +45,12 @@ pub struct BuildBudget {
 
 /// Everything a build reads out of the tuning registry, resolved once per run.
 ///
-/// Read at the top of a build rather than per stage, so one run is built entirely under one set
+/// Read at the top of a build instead of per stage, so one run is built entirely under one set
 /// of values: a refresh landing between the projection and the priors would otherwise produce a
 /// generation that is internally inconsistent and impossible to reason about afterwards.
 #[derive(Debug, Clone, Copy)]
 pub struct BuildTuning {
-    /// The work and shape limits, two of which came from configuration rather than the
+    /// The work and shape limits, two of which came from configuration instead of the
     /// registry.
     pub budget: BuildBudget,
     /// The appeal prior's blend for this run.
@@ -60,7 +60,7 @@ pub struct BuildTuning {
 }
 
 impl BuildTuning {
-    /// Resolve the operator's tuning, taking the two configuration-side limits from `budget`.
+    /// Resolves the operator's tuning, taking the two configuration-side limits from `budget`.
     #[must_use]
     pub fn read(set: &TunableSet, batch: i64, incremental_max: i64) -> Self {
         Self {
@@ -128,9 +128,9 @@ pub struct BuildReport {
 
 /// How long a claim survives without a heartbeat before another run may break it.
 ///
-/// Sized against [`HEARTBEAT_INTERVAL`] rather than against how long a build takes: the
+/// Sized against [`HEARTBEAT_INTERVAL`] instead of against how long a build takes: the
 /// heartbeat says the process holding the claim is alive, so the only question this answers is
-/// how many beats may be lost before the holder is presumed dead. Ten — long enough that a
+/// how many beats may be lost before the holder is presumed dead. Ten: long enough that a
 /// database hiccup does not hand a live build's claim away mid-run, short enough that a killed
 /// one stops being the schedule's problem within minutes instead of forever.
 const BUILD_LEASE_SECS: f64 = 300.0;
@@ -138,17 +138,18 @@ const BUILD_LEASE_SECS: f64 = 300.0;
 /// How often a running build stamps its lease.
 const HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
 
-/// Run one build to completion.
+/// Runs one build to completion.
 ///
-/// Returns `None` when another *live* build already holds the claim — the correct response to
+/// Returns `None` when another *live* build already holds the claim: the correct response to
 /// which is to do nothing, not to wait: the other build is doing this one's work.
 ///
 /// This awaits the whole build, so it belongs on a background loop. A request handler must use
 /// [`build_detached`] instead; see its documentation for what awaiting one inside a handler did.
 ///
 /// # Errors
-/// Database failures. Whatever a failed run had already written stays written and is coherent:
-/// every stage is idempotent and writes under a generation, so the next run redoes it.
+/// Returns an error on a database failure. Whatever a failed run had already written stays written
+/// and is coherent: every stage is idempotent and writes under a generation, so the next run redoes
+/// it.
 pub async fn build(
     pool: &PgPool,
     tuning: BuildTuning,
@@ -163,20 +164,20 @@ pub async fn build(
         .map(Some)
 }
 
-/// Claim the build and run it on a detached task, returning the generation claimed.
+/// Claims the build and runs it on a detached task, returning the generation claimed.
 ///
 /// The claim is taken *before* returning, so the answer to "did this start a build?" is the
-/// truth rather than an optimistic guess; everything after it happens on a task of its own.
+/// truth, not an optimistic guess; everything after it happens on a task of its own.
 ///
-/// **A build must never be awaited inside a request handler.** It was, and the control plane's
-/// `TimeoutLayer` dropped the handler future at 30 seconds — mid-extraction, before the code
-/// that releases the claim. The claim was held by nothing at all from then on, every scheduled
-/// run declined to start, and the console showed a full rebuild frozen at its first stage for
-/// six hours. The lease in `start_build` is the second half of that fix; this is the first.
+/// **A build must never be awaited inside a request handler.** The control plane's
+/// `TimeoutLayer` drops the handler future at 30 seconds, mid-extraction and before the code
+/// that releases the claim. The claim is then held by nothing at all, every scheduled run
+/// declines to start, and the console shows a full rebuild frozen at its first stage. The lease
+/// in `start_build` is the other half of this guard.
 ///
 /// # Errors
-/// Database failures while claiming. Failures *within* the build are logged by the spawned
-/// task and recorded on `rec_build_state`, which is where the console reads them from.
+/// Returns an error on a database failure while claiming. Failures *within* the build are logged by
+/// the spawned task and recorded on `rec_build_state`, which is where the console reads them from.
 pub async fn build_detached(
     pool: &PgPool,
     tuning: BuildTuning,
@@ -217,10 +218,10 @@ pub async fn build_detached(
     Ok(Some(claim.generation))
 }
 
-/// Run every stage under a claim already taken, and release it however that ends.
+/// Runs every stage under a claim already taken, and releases it however that ends.
 ///
 /// The claim is released *only* here. A build that returned early on an error without finishing
-/// would leave the claim held until its lease expired — and before the lease existed, forever.
+/// would leave the claim held until its lease expired.
 async fn run_claimed(
     pool: PgPool,
     tuning: BuildTuning,
@@ -228,7 +229,7 @@ async fn run_claimed(
     claim: recsys::BuildClaim,
 ) -> anyhow::Result<BuildReport> {
     // Bound to a name, not to `_`: the guard has to live to the end of this function, and `let _`
-    // would drop it — and so stop the heartbeat — on this very line.
+    // would drop it (and so stop the heartbeat) on this very line.
     let _heartbeat = Heartbeat::spawn(pool.clone(), claim);
 
     let outcome = run_stages(&pool, tuning, full, claim).await;
@@ -253,7 +254,7 @@ async fn run_claimed(
 
 /// Stamps a claim's lease until dropped.
 ///
-/// On a timer rather than alongside the progress writes: `full:basis` and `full:index` are
+/// On a timer instead of alongside the progress writes: `full:basis` and `full:index` are
 /// single statements that can run for minutes with nothing to report, and a heartbeat carried by
 /// progress would expire during them and hand the claim to a second build.
 struct Heartbeat(tokio::task::JoinHandle<()>);
@@ -295,7 +296,7 @@ async fn run_stages(
     if full {
         // Read once, up front: every full stage walks either the catalogue or the subset of it
         // that has features, so this is the denominator the console draws its progress bar
-        // against. Display only — a failed read would cost a bar, not a build.
+        // against. Display only: a failed read would cost a bar, not a build.
         let catalogue = recsys::read_model_coverage(pool).await?.series_total;
 
         stage(pool, claim, "full:features", 0, catalogue).await?;
@@ -343,7 +344,7 @@ async fn run_stages(
         let touched = incremental_targets(pool, budget).await?;
         report.series_built = i64::try_from(touched.len()).unwrap_or(i64::MAX);
         // The work list is only knowable after it is claimed, which is why the incremental run
-        // publishes its denominator here rather than at `start_build`.
+        // publishes its denominator here instead of at `start_build`.
         stage(pool, claim, "incremental", 0, report.series_built).await?;
         if !touched.is_empty() {
             extract_and_project(
@@ -365,8 +366,8 @@ async fn run_stages(
             // leaving a stale profile marked fresh until they next touch their watchlist.
             //
             // Incremental only. A full build re-extracts the whole catalogue, so the same call
-            // there would mark every profile stale on every run — a rebuild and a discarded
-            // shelf for every reader — whether or not anything they track actually moved.
+            // there would mark every profile stale on every run (a rebuild and a discarded
+            // shelf for every reader), whether or not anything they track actually moved.
             recsys::mark_profiles_stale_for_series(pool, &touched).await?;
             prior_pass(pool, tuning, claim, Some(&touched), report.series_built).await?;
         }
@@ -378,10 +379,10 @@ async fn run_stages(
     Ok(report)
 }
 
-/// Publish the stage a build has reached, with what it is counting and what towards.
+/// Publishes the stage a build has reached, with what it is counting and what towards.
 ///
 /// The two counts are `i64` here and `i32` in the column; a catalogue past two billion series
-/// saturates the display rather than failing the build over a progress figure.
+/// saturates the display instead of failing the build over a progress figure.
 async fn stage(
     pool: &PgPool,
     claim: recsys::BuildClaim,
@@ -400,7 +401,7 @@ async fn stage(
     Ok(())
 }
 
-/// Extract features for the whole catalogue, one keyset page at a time.
+/// Extracts features for the whole catalogue, one keyset page at a time.
 async fn extract_all(
     pool: &PgPool,
     budget: BuildBudget,
@@ -419,9 +420,9 @@ async fn extract_all(
         let n = i64::try_from(stored.len()).unwrap_or(0);
         built += n;
         since_report += n;
-        // Counted since the last report rather than tested with `built % (batch * 20) == 0`: a
-        // single short page — one the query filtered, one at the end of a catalogue an
-        // incremental walk resumes past — knocks the running total off every future multiple,
+        // Counted since the last report instead of tested with `built % (batch * 20) == 0`: a
+        // single short page (one the query filtered, one at the end of a catalogue an
+        // incremental walk resumes past) knocks the running total off every future multiple,
         // and the stage then reports nothing at all for the rest of the run.
         if since_report >= budget.batch * 20 {
             since_report = 0;
@@ -484,7 +485,7 @@ async fn extract_batch(
     Ok(written)
 }
 
-/// Count the vocabulary, write idf, and assign the projection's input positions.
+/// Counts the vocabulary, writes idf, and assigns the projection's input positions.
 async fn vocabulary_pass(pool: &PgPool, cap: i64) -> anyhow::Result<i64> {
     let total = recsys::total_feature_documents(pool).await?;
     let counts = recsys::count_feature_documents(pool).await?;
@@ -517,8 +518,8 @@ async fn dense_map(pool: &PgPool) -> anyhow::Result<DenseMap> {
         .collect())
 }
 
-/// Turn a stored term-weight vector into the idf-weighted, normalised dense row the projection
-/// consumes. Features with no input position — authors, and anything past the cap — are absent
+/// Turns a stored term-weight vector into the idf-weighted, normalised dense row the projection
+/// consumes. Features with no input position (authors, and anything past the cap) are absent
 /// by construction.
 fn dense_row(feature_ids: &[i32], weights: &[f32], vocabulary: &DenseMap) -> Vec<(usize, f32)> {
     let mut row: Vec<(usize, f32)> = feature_ids
@@ -541,11 +542,11 @@ fn dense_row(feature_ids: &[i32], weights: &[f32], vocabulary: &DenseMap) -> Vec
 ///
 /// The basis can be narrower than the column. Orthogonal iteration cannot produce more than
 /// `dim` orthonormal directions, so a catalogue whose *vocabulary* is smaller than
-/// [`tankovault_recsys::EMBEDDING_DIMS`] — a new deployment, a small self-hosted instance, or any
-/// fixture — yields a basis of that smaller width, and `halfvec(128)` rejects a shorter vector
+/// [`tankovault_recsys::EMBEDDING_DIMS`] (a new deployment, a small self-hosted instance, or any
+/// fixture) yields a basis of that smaller width, and `halfvec(128)` rejects a shorter vector
 /// outright.
 ///
-/// Padding with zeros is exact rather than a fudge: the missing directions carry no variance, so
+/// Padding with zeros is exact, not a fudge: the missing directions carry no variance, so
 /// a zero contributes nothing to any cosine. Truncation is the impossible branch (`k` is capped
 /// at `EMBEDDING_DIMS` when the basis is solved) and is written out anyway so a future change to
 /// that cap cannot silently write vectors the column will not take.
@@ -620,7 +621,7 @@ async fn load_basis(pool: &PgPool) -> anyhow::Result<Option<Basis>> {
         .collect();
     let dim = usize::try_from(input_dim).unwrap_or(0);
     let width = usize::try_from(dims).unwrap_or(0);
-    // A basis of the wrong shape is refused rather than reshaped: it would project into a space
+    // A basis of the wrong shape is refused, not reshaped: it would project into a space
     // the stored vectors do not live in, and every neighbour it produced would be nonsense.
     Ok(Basis::from_columns(dim, width, columns))
 }
@@ -683,8 +684,8 @@ async fn incremental_targets(pool: &PgPool, budget: BuildBudget) -> anyhow::Resu
 
 /// Re-extract and re-embed a named set, fusing the two passes.
 ///
-/// The full path cannot do this — the covariance matrix has to see everything before a basis
-/// exists — but the incremental path projects with a basis that is already fixed, so the vectors
+/// The full path cannot do this (the covariance matrix has to see everything before a basis
+/// exists), but the incremental path projects with a basis that is already fixed, so the vectors
 /// never have to be read back.
 async fn extract_and_project(
     pool: &PgPool,
@@ -712,9 +713,9 @@ async fn extract_and_project(
 
 /// Facts for a named set, read through the same paged query the full build uses.
 ///
-/// One page per contiguous run rather than a bespoke `= ANY` query: the ids are sorted, the page
+/// One page per contiguous run instead of a bespoke `= ANY` query: the ids are sorted, the page
 /// size is the batch size, and reusing the query keeps a single definition of "what a series is"
-/// — a second one would be the place the two paths quietly disagree.
+/// and a second one would be the place the two paths quietly disagree.
 async fn read_facts_of(
     pool: &PgPool,
     ids: &[SeriesId],
@@ -740,7 +741,7 @@ async fn read_facts_of(
         );
         if out.len() == before {
             // A whole page with nothing wanted in it means the remaining targets were deleted
-            // between being queued and being read — a merge, most likely. Nothing to repair.
+            // between being queued and being read: a merge, most likely. Nothing to repair.
             break;
         }
     }
@@ -827,13 +828,13 @@ async fn prior_pass(
 /// A series nothing links to and nothing describes cannot be recommended usefully and should not
 /// occupy a slot. This flag is the model's opinion about usefulness, and only that.
 ///
-/// The adult gate is deliberately **not** applied here, though it used to be. Every retrieval
-/// path joins `series_prior.recommendable`, so a series the build refuses is unreachable by any
-/// read-time filter however permissive — which made the reader's opt-in and the `include_adult`
-/// parameter dead in the same stroke: an opted-in reader still got nothing, and nothing said so.
+/// The adult gate is deliberately **not** applied here. Every retrieval path joins
+/// `series_prior.recommendable`, so a series the build refuses is unreachable by any read-time
+/// filter however permissive, which would make the reader's opt-in and the `include_adult`
+/// parameter dead in the same stroke: an opted-in reader would still get nothing, silently.
 /// Content belongs to the reader's filter, usefulness to this one. See `crates/db/src/repo/
 /// recsys/prior.rs::PriorInputs::adult_gated`.
-/// The metadata bar counts *descriptive* features — tags and authors — not all of them. Status,
+/// The metadata bar counts *descriptive* features (tags and authors), not all of them. Status,
 /// decade and length come from columns every series has, so a bar counting those would admit a
 /// completely unenriched series on the strength of three facts that distinguish it from nothing.
 /// `min_features` is the operator's, but the floor of one is not: at zero this admits every
@@ -846,7 +847,7 @@ fn is_recommendable(inputs: &recsys::PriorInputs, min_features: i64) -> bool {
 
 /// Blend the appeal signals into `[0, 1]`.
 ///
-/// The watcher term is confidence-scaled by the catalogue's own scale rather than trusted
+/// The watcher term is confidence-scaled by the catalogue's own scale instead of trusted
 /// outright: on a new deployment `watchers` is a handful of arbitrary early watchlists, and
 /// letting it dominate would rank the catalogue by the first three people to sign up. The
 /// remaining terms need no users at all.
@@ -859,7 +860,7 @@ fn prior_of(inputs: &recsys::PriorInputs, weights: &PriorWeights) -> f32 {
         let value = value.max(0) as f32;
         value / (value + knee.max(f32::EPSILON))
     };
-    // Rating and audience size ride on the one external-score weight rather than two: both are
+    // Rating and audience size ride on the one external-score weight instead of two: both are
     // the same tracker's opinion of the same series, and a second knob whose only distinguishing
     // property is which column it came from is a knob nobody can set meaningfully. Averaged
     // where both exist, so a series with only one of them is not penalised for the gap.
@@ -875,7 +876,7 @@ fn prior_of(inputs: &recsys::PriorInputs, weights: &PriorWeights) -> f32 {
         (None, None) => 0.0,
     };
 
-    // Velocity has no input yet — the builder writes zero into `series_prior.velocity` — so the
+    // Velocity has no input yet (the builder writes zero into `series_prior.velocity`), so the
     // weight is threaded through and contributes nothing until that signal lands.
     let blended = weights.watchers * saturate(inputs.watchers, weights.watcher_confidence_k)
         + weights.external_score * external

@@ -1,4 +1,4 @@
-//! Failures this service's HTTP contract is defined in terms of.
+//! Owns the failures this service's HTTP contract is defined in terms of.
 //! [`SyncError`] carries status/kind explicitly so rewording a message can never silently change
 //! what's served; everything untyped is `anyhow::Error` and maps to a 502.
 
@@ -12,7 +12,7 @@ pub(crate) enum SyncError {
     /// No provider is registered under that slug. `404`.
     #[error("unknown sync provider: {0}")]
     UnknownProvider(String),
-    /// The user has not linked an account at this provider. `409` — the request is
+    /// The user has not linked an account at this provider. `409`: the request is
     /// well-formed and the caller may fix it by linking, which is what conflict means here.
     #[error("no {0} account linked for user")]
     NotLinked(String),
@@ -48,7 +48,7 @@ impl<E: Into<anyhow::Error>> From<E> for AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        // Downcast rather than match on text: `anyhow` preserves the concrete type through
+        // Downcast instead of matching on text: `anyhow` preserves the concrete type through
         // `?`-added context, so a `SyncError` raised anywhere below still arrives typed.
         let (status, kind, detail) = match self.0.downcast_ref::<SyncError>() {
             Some(err) => (err.status(), err.kind(), err.to_string()),

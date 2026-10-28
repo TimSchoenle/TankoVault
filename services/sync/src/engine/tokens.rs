@@ -1,4 +1,4 @@
-//! Sealed OAuth token storage — the only place in this service holding the encryption key.
+//! Owns sealed OAuth token storage, the only place in this service holding the encryption key.
 //! Expiry-driven refresh lives here too, since a refresh re-seals and re-persists tokens.
 
 use secrecy::SecretString;
@@ -22,7 +22,7 @@ impl TokenVault {
         Self { pool, secret }
     }
 
-    /// Seal `tokens` and persist them for `user_id` at `slug`.
+    /// Seals `tokens` and persists them for `user_id` at `slug`.
     pub(crate) async fn store(
         &self,
         slug: &str,

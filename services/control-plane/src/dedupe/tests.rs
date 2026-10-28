@@ -1,3 +1,5 @@
+//! Tests the duplicate sweep.
+
 use std::collections::{HashMap, HashSet};
 
 use tankovault_config::MatchingConfig;
@@ -46,7 +48,7 @@ fn verdict_for(a: &SeriesMatchFacts, b: &SeriesMatchFacts, trigram: f32) -> Merg
 /// `chains_deferred` is how many pairs the *last* pass skipped because of its own merges, and
 /// the sweep re-runs for exactly as long as it is non-zero. Summing it across passes would
 /// report the chains that later passes went on to resolve, so a run that fully collapsed a
-/// three-way duplicate would still read as having left work behind — and the counter an
+/// three-way duplicate would still read as having left work behind, and the counter an
 /// operator watches for a stuck chain would never come back to zero.
 #[test]
 fn a_multi_pass_run_reports_only_the_chains_the_last_pass_left() {
@@ -108,7 +110,7 @@ fn judgement_of<'a>(
 ///
 /// The judging loop skips pairs naming an already-absorbed series, but it can only skip pairs
 /// it has not reached yet. A pair judged *earlier* kept its verdict, and the queue write that
-/// carries the whole pass — both of whose id columns are foreign keys into `series` — was
+/// carries the whole pass (both of whose id columns are foreign keys into `series`) was
 /// rejected as a body: `insert or update on table "merge_candidates" violates foreign key
 /// constraint "merge_candidates_candidate_id_fkey"`, reported to the operator as
 /// `Full sweep failed`. The retracted pair is a chain deferral, which is what makes the sweep
@@ -231,10 +233,10 @@ fn an_exhaustive_run_ends_when_a_round_shortlists_nothing_new() {
 
 /// **A round that shortlists new pairs is drawn however many rounds and merges came before.**
 ///
-/// The exhaustive run used to stop at the scheduled sweep's automatic-merge ceiling (200) and
+/// The bug: the exhaustive run stopped at the scheduled sweep's automatic-merge ceiling (200) and
 /// at a 256-round cap, and report the stop as work remaining. The button says it sweeps the
 /// whole catalogue: on a catalogue with more duplicates than that, it swept a prefix and
-/// asked to be pressed again — once per 200 merges, with a full-catalogue blocking query
+/// asked to be pressed again, once per 200 merges, with a full-catalogue blocking query
 /// spent on each press to reach the pairs the last run stopped short of.
 #[test]
 fn nothing_but_an_empty_rotation_stops_an_exhaustive_run() {
@@ -251,7 +253,7 @@ fn nothing_but_an_empty_rotation_stops_an_exhaustive_run() {
 
 /// The exhaustive budget lifts the merge ceiling and nothing else.
 ///
-/// The shortlist sizes are the page the walk is drawn in — raising them here would multiply
+/// The shortlist sizes are the page the walk is drawn in; raising them here would multiply
 /// what one round holds in memory without covering a single pair more, since rounds continue
 /// until one comes back empty-handed.
 #[test]
@@ -269,7 +271,7 @@ fn the_exhaustive_budget_lifts_the_ceiling_and_keeps_the_page() {
 ///
 /// `Query` has no alternative titles, so a sweep that scored the query side's canonical
 /// title alone saw only the *right* side's synonyms. Here the synonym is on the left, and
-/// the canonical titles share nothing — so that sweep filed two obvious duplicates as
+/// the canonical titles share nothing, so that sweep filed two obvious duplicates as
 /// distinct.
 #[test]
 fn a_synonym_on_either_side_is_enough() {
@@ -297,7 +299,7 @@ fn a_synonym_on_either_side_is_enough() {
 /// **The synonym that identifies a pair survives the trigram score that synonym produced.**
 ///
 /// `pair_similarities` takes the trigram over each side's alternative titles as well as the
-/// two canonical ones, so this pair arrives with 1.0 — earned by the synonym and handed to
+/// two canonical ones, so this pair arrives with 1.0, earned by the synonym and handed to
 /// every reading. That lifted the canonical reading, which agrees on nothing, to the clamp
 /// ceiling, where it tied with the alias reading that carries the identity and beat it on
 /// iteration order. The row then read "100% match … titles are similar but not the same
@@ -305,7 +307,7 @@ fn a_synonym_on_either_side_is_enough() {
 /// the same pair at a trigram of zero, which is the one value that hides this.
 ///
 /// An alias alone no longer merges (an uncorroborated alias is what built the hub series of
-/// `docs/MATCHING_OVERHAUL.md` §2), so the pair is reviewed — and must be reviewed as the
+/// `docs/MATCHING_OVERHAUL.md` §2), so the pair is reviewed, and must be reviewed as the
 /// alias hit it is, not as a fuzzy score.
 #[test]
 fn an_alias_identity_is_not_lost_to_the_trigram_it_produced() {
@@ -327,8 +329,8 @@ fn an_alias_identity_is_not_lost_to_the_trigram_it_produced() {
 
 /// The survivor is the series carrying more of the catalogue, in both orderings.
 ///
-/// Which id sat in `series_id` and which in `candidate_id` used to decide this, and it
-/// recorded nothing but which series a scan happened to create second — so the console's
+/// The bug: which id sat in `series_id` and which in `candidate_id` decided this, and it
+/// recorded nothing but which series a scan happened to create second, so the console's
 /// merge button routinely deleted the *older*, richer series and kept a stub.
 #[test]
 fn the_richer_series_survives_regardless_of_pair_order() {
@@ -372,10 +374,10 @@ fn the_reported_duplicate_is_merged_automatically() {
 /// `alias_identity`. The pair sat split for a day because `find_duplicate_pairs` never
 /// reached it; this pins that, once reached, the sweep reads it as the alias hit it is.
 ///
-/// It used to merge on the alias plus an agreeing year. Production showed that route
-/// (alias, lifted by metadata) behind 12,356 suspicious merges and the contaminated hub
-/// series in `docs/MATCHING_OVERHAUL.md` §2, so an alias alone is now held for review, and
-/// merges once a trusted non-title signal agrees.
+/// An alias and an agreeing year are not enough to merge: that route (alias, lifted by
+/// metadata) produced 12,356 suspicious merges and the contaminated hub series in
+/// `docs/MATCHING_OVERHAUL.md` §2. An alias alone is held for review, and merges once a trusted
+/// non-title signal agrees.
 #[test]
 fn the_reported_pair_is_held_until_its_alias_is_corroborated() {
     let long = "The Capital\u{2019}s One-Man Army Golem Master\u{2014}Unexpectedly Banished!? \
@@ -411,8 +413,8 @@ fn the_reported_pair_is_held_until_its_alias_is_corroborated() {
 
 /// Two series that agree on nothing but a *shared synonym* are still a duplicate.
 ///
-/// `find_duplicate_pairs` shortlists this collision — alias against alias, the same work
-/// listed under its romaji name by two providers that each chose a different english title —
+/// `find_duplicate_pairs` shortlists this collision (alias against alias, the same work
+/// listed under its romaji name by two providers that each chose a different english title)
 /// but the scorer could not see it: `Query` has no alternative titles, so both directions
 /// compared a *canonical* title against the other side's names and the one title the two
 /// series actually share was never an input. No structural signal meant `adjudicate` refused
@@ -460,8 +462,8 @@ fn a_sequel_is_not_swept_up() {
 
 /// Two works with the same title and no creator in common are held for review.
 ///
-/// The pair clears every part of the automatic bar — byte-identical titles, a score at the
-/// ceiling — and is exactly the shape of a remake, a spin-off, or an unrelated work that
+/// The pair clears every part of the automatic bar (byte-identical titles, a score at the
+/// ceiling) and is exactly the shape of a remake, a spin-off, or an unrelated work that
 /// happens to share a name. Before the guard, the scorer had no term for disagreeing credits
 /// at all: `shared_author` was a bonus, and its absence was indistinguishable from a series
 /// with no credits recorded.
@@ -518,7 +520,7 @@ fn a_merged_pair_carries_its_itemised_score() {
         reading.terms
     );
     // The score is reconstructible from the terms, which is what makes them an explanation
-    // rather than a commentary.
+    // instead of a commentary.
     let summed: f32 = reading.terms.iter().map(|t| t.delta).sum();
     assert!(
         (summed.clamp(0.0, 1.0) - reading.assessment.score).abs() < 1e-5,

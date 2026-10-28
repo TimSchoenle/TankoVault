@@ -1,4 +1,4 @@
-//! Engine unit tests.
+//! Tests the scan engine.
 
 use super::*;
 use tankovault_domain::{AdapterKind, Politeness, ProviderState};
@@ -20,7 +20,7 @@ fn provider(rps: f64, ua: &str) -> Provider {
             user_agent: ua.to_owned(),
             emulation: None,
         },
-        // These tests are about the crawl budget, which no preset ever owns — so the link this
+        // These tests are about the crawl budget, which no preset ever owns, so the link this
         // fixture carries makes no difference to them either way.
         preset: None,
         last_full_scan_at: None,
@@ -49,8 +49,8 @@ fn the_configured_crawler_identity_replaces_only_the_shipped_default() {
     );
 }
 
-/// The cache key must change when — and only when — a setting the fetch stack is built
-/// from changes. Too eager and every task rebuilds again (the bug this replaced); too
+/// The cache key must change when, and only when, a setting the fetch stack is built
+/// from changes. Too eager and every task rebuilds its stack; too
 /// lazy and an operator lowering `rps` mid-run is ignored until the process restarts.
 #[test]
 fn the_fingerprint_tracks_exactly_the_settings_the_stack_is_built_from() {
@@ -117,7 +117,7 @@ fn chapter(number: f64, title: Option<&str>, path: &str) -> ChapterMeta {
     }
 }
 
-/// The listing is in the source's order, which is usually newest-first — so the stray is at
+/// The listing is in the source's order, which is usually newest-first, so the stray is at
 /// index 0 while the domain rule reasons about it sorted. Getting the index bookkeeping
 /// wrong here deletes real chapters and keeps the junk.
 #[test]
@@ -187,7 +187,7 @@ fn a_rejected_chapter_does_not_move_the_content_hash() {
 
 /// Determinism is the entire contract: a hash that varies for identical input makes
 /// every scan look changed (wasteful); one that's stable across a real change stops
-/// updates for that series silently — the failure nobody notices.
+/// updates for that series silently, the failure nobody notices.
 #[test]
 fn the_content_hash_is_deterministic_for_identical_input() {
     let chapters = vec![
@@ -242,9 +242,9 @@ fn the_content_hash_changes_when_a_covered_field_changes() {
 
 /// Two things the hash deliberately does *not* cover.
 ///
-/// 1. Chapter titles aren't hashed — a chapter retitled in place reports "no change",
+/// 1. Chapter titles aren't hashed: a chapter retitled in place reports "no change",
 ///    intentional since scanlation sites edit labels constantly.
-/// 2. Chapter order is significant — a reordered listing reports a change, costing
+/// 2. Chapter order is significant: a reordered listing reports a change, costing
 ///    work but never wrong; an order-insensitive hash would be a behaviour change.
 #[test]
 fn the_content_hash_ignores_chapter_titles_and_respects_chapter_order() {
@@ -274,7 +274,7 @@ fn the_content_hash_ignores_chapter_titles_and_respects_chapter_order() {
 }
 
 /// A chapter path can't be made to look like a different chapter list by embedding the
-/// framing bytes (`number | path \n`) the hash uses to separate entries — a classic
+/// framing bytes (`number | path \n`) the hash uses to separate entries, a classic
 /// collision providers could otherwise force.
 #[test]
 fn a_chapter_path_carrying_the_separator_bytes_does_not_forge_another_chapter() {
@@ -288,8 +288,8 @@ fn a_chapter_path_carrying_the_separator_bytes_does_not_forge_another_chapter() 
     );
 }
 
-/// The pairing key must agree with the tolerance comparison it replaced, on every
-/// number a chapter can carry — disagreement loses notifications silently.
+/// The pairing key must agree with an `f64::EPSILON` tolerance comparison, on every
+/// number a chapter can carry: disagreement loses notifications silently.
 #[test]
 fn the_pairing_key_agrees_with_the_tolerance_it_replaced() {
     let numbers = [
@@ -307,7 +307,7 @@ fn the_pairing_key_agrees_with_the_tolerance_it_replaced() {
     }
 }
 
-/// Chapter 0 is real — a prologue — and it is the one value where a bit pattern and a
+/// Chapter 0 is real (a prologue), and it is the one value where a bit pattern and a
 /// tolerance would disagree, because `-0.0` and `0.0` are equal numbers with different
 /// bits. Normalising it is what keeps a notification from depending on a sign bit.
 #[test]

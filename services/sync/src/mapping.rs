@@ -1,4 +1,4 @@
-//! Pure mapping and reconciliation logic for `AniList` sync, kept free of I/O so status
+//! Owns the pure mapping and reconciliation logic for `AniList` sync, kept free of I/O so status
 //! translation and the conflict policy are exhaustively unit-tested.
 
 use tankovault_domain::{ContentType, SeriesStatus, WatchStatus};
@@ -28,7 +28,7 @@ impl AniListStatus {
         }
     }
 
-    /// Parse a GraphQL `MediaListStatus` token.
+    /// Parses a GraphQL `MediaListStatus` token.
     #[must_use]
     pub(crate) fn parse(token: &str) -> Option<Self> {
         match token {
@@ -42,7 +42,7 @@ impl AniListStatus {
         }
     }
 
-    /// Map an `AniList` status onto our local [`WatchStatus`]. `REPEATING` (a re-read) maps
+    /// Maps an `AniList` status onto our local [`WatchStatus`]. `REPEATING` (a re-read) maps
     /// to `Reading`, its closest local equivalent.
     #[must_use]
     pub(crate) fn to_watch_status(self) -> WatchStatus {
@@ -55,7 +55,7 @@ impl AniListStatus {
         }
     }
 
-    /// Map a local [`WatchStatus`] onto the `AniList` status pushed in a mutation.
+    /// Maps a local [`WatchStatus`] onto the `AniList` status pushed in a mutation.
     #[must_use]
     pub(crate) fn from_watch_status(status: WatchStatus) -> Self {
         match status {
@@ -68,7 +68,7 @@ impl AniListStatus {
     }
 }
 
-/// `AniList` `countryOfOrigin`/`format` → our [`ContentType`].
+/// Maps `AniList` `countryOfOrigin`/`format` onto our [`ContentType`].
 ///
 /// Country is the primary signal, since `AniList` models manga/manhwa/manhua as one `MANGA`
 /// format distinguished only by origin. `format` is the fallback for countries this catalogue
@@ -88,10 +88,10 @@ pub(crate) fn content_type_from_origin(country: Option<&str>, format: Option<&st
     }
 }
 
-/// `AniList` `MediaStatus` → our [`SeriesStatus`].
+/// Maps `AniList` `MediaStatus` onto our [`SeriesStatus`].
 ///
 /// This is the work's *publication* status, not the reader's `MediaListStatus` ([`AniListStatus`]
-/// covers that). `NOT_YET_RELEASED` has no local counterpart and maps to `Unknown` — inventing a
+/// covers that). `NOT_YET_RELEASED` has no local counterpart and maps to `Unknown`: inventing a
 /// fifth publication state for it would ripple through the Postgres enum, the API contract and
 /// every locale file.
 #[must_use]
@@ -120,9 +120,9 @@ pub(crate) fn progress_to_int(progress: f64) -> i64 {
 
 /// The user-selectable reconciliation policy when a series exists on both sides.
 ///
-/// Re-exported, not defined here: it used to be a private enum plus a bare wire `String` with a
-/// `_ => NewestWins` fallback parser, turning a misspelled token into a silent policy change.
-/// Now declared once in [`tankovault_contracts::sync::ConflictPolicy`].
+/// Re-exported, not defined here: declared once in
+/// [`tankovault_contracts::sync::ConflictPolicy`], so a misspelled token is a deserialisation
+/// error, not a silent policy change.
 pub(crate) use tankovault_contracts::sync::ConflictPolicy;
 
 /// Which side a reconciliation deemed authoritative.
@@ -137,9 +137,9 @@ pub(crate) enum Side {
 pub(crate) enum MergeAction {
     /// Neither side changed since the last agreement; nothing to write.
     Noop,
-    /// Push the local value to the remote.
+    /// Pushes the local value to the remote.
     PushLocal,
-    /// Pull the remote value into the local store.
+    /// Pulls the remote value into the local store.
     PullRemote,
     /// A genuine conflict under `AskMe`: touch neither side, queue for the user.
     Conflict,
@@ -155,7 +155,7 @@ pub(crate) struct MergeDecision {
     ///
     /// The action alone is not an explanation: a `PullRemote` because only the remote moved and a
     /// `PullRemote` because both moved and the policy said so are the same write and completely
-    /// different events — the second is a value the reader lost, and it is the one they will ask
+    /// different events: the second is a value the reader lost, and it is the one they will ask
     /// about. Stable because it is persisted and rendered.
     pub(crate) reason: &'static str,
 }
@@ -223,14 +223,14 @@ pub(crate) fn three_way<T: PartialEq + Copy>(
     }
 }
 
-/// Resolve a genuine conflict (both sides changed to different values, or first-sync
+/// Resolves a genuine conflict (both sides changed to different values, or first-sync
 /// disagreement) under `policy`.
 ///
 /// `first_sync` distinguishes the two situations that reach here, and travels into the reason
 /// slug: the same policy applied to a first sync and to a genuine divergence are different
 /// events, and only the second means a value the reader had was overwritten.
 ///
-/// The slugs are spelled out rather than composed, because they are persisted: a `format!` here
+/// The slugs are spelled out instead of composed, because they are persisted: a `format!` here
 /// would either allocate per field per series or leak, and the set is small enough to read.
 #[must_use]
 fn resolve_conflict(policy: ConflictPolicy, newer: Side, first_sync: bool) -> MergeDecision {
@@ -345,7 +345,7 @@ mod tests {
         assert_eq!(ct(Some("US")), ContentType::Unknown);
     }
 
-    /// A country we do not model used to erase a content type `AniList` had stated: an OEL
+    /// The bug: a country we do not model erased a content type `AniList` had stated. An OEL
     /// comic is `countryOfOrigin: "US"`, `format: "MANGA"`, and landed on `Unknown`.
     #[test]
     fn format_fills_in_a_country_we_do_not_model() {
@@ -363,7 +363,7 @@ mod tests {
             content_type_from_origin(Some("KR"), Some("MANGA")),
             ContentType::Manhwa
         );
-        // A light novel is not a content type this catalogue models — better `Unknown` than
+        // A light novel is not a content type this catalogue models; better `Unknown` than
         // filed as manga.
         assert_eq!(
             content_type_from_origin(Some("US"), Some("NOVEL")),
@@ -427,7 +427,7 @@ mod tests {
 
     #[test]
     fn only_remote_changed_pulls() {
-        // Only remote changed: not a conflict, so policy is irrelevant — pull it.
+        // Only remote changed: not a conflict, so policy is irrelevant: pull it.
         let d = three_way(
             5.0,
             9.0,
@@ -566,8 +566,8 @@ mod tests {
     }
 
     /// Pins three properties `cargo mutants` found untested (replacing the body with `0`, `1`,
-    /// `-1` stayed green): rounds rather than truncates, clamps negative to zero, and the cast
-    /// saturates so `f64::INFINITY` becomes `i64::MAX` rather than a negative count.
+    /// `-1` stayed green): rounds instead of truncating, clamps negative to zero, and the cast
+    /// saturates so `f64::INFINITY` becomes `i64::MAX` instead of a negative count.
     #[test]
     fn progress_rounds_to_whole_chapters_and_never_goes_negative() {
         assert_eq!(progress_to_int(0.0), 0);

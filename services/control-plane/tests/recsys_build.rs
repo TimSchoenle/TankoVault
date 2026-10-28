@@ -1,6 +1,6 @@
-//! The recommendation model, end to end: a real catalogue in, an ANN index out.
+//! Tests the recommendation model, end to end: a real catalogue in, an ANN index out.
 //!
-//! The pure halves are unit-tested where they live — extraction and the digest in
+//! The pure halves are unit-tested where they live: extraction and the digest in
 //! `crates/recsys/src/features.rs`, the projection in `embedding.rs`, scoring in
 //! `similarity.rs`. What none of those can show is whether the *pipeline* agrees with itself:
 //! that the ids extraction interned are the ones the vocabulary pass counted, that the
@@ -38,7 +38,7 @@ struct Fixture {
     content_type: ContentType,
 }
 
-/// Two clusters that share no tag and no author, plus enough chapters to clear the
+/// Two clusters that share no tag and no author, and enough chapters to clear the
 /// recommendable gate. The separation is the assertion: a model that cannot tell these apart
 /// cannot tell anything apart.
 const DUNGEON: &[Fixture] = &[
@@ -83,7 +83,7 @@ const ROMANCE: &[Fixture] = &[
     },
 ];
 
-/// Chosen to *move* input positions rather than append them: every one carries `tower`, the
+/// Chosen to *move* input positions instead of appending them: every one carries `tower`, the
 /// rarest tag of the first build, which makes it the most frequent tag of the second and shifts
 /// every position below it.
 const TOWER: &[Fixture] = &[
@@ -167,7 +167,7 @@ async fn catalogue(db: &TestDb) -> (Vec<SeriesId>, Vec<SeriesId>) {
 /// One full build over a six-series catalogue, then the assertion that matters: an ANN search
 /// seeded with a dungeon series ranks the other dungeon series above every romance one. That is
 /// only true if extraction, interning, the idf pass, the `dense_index` assignment, the basis and
-/// the `halfvec` round trip all line up — each of which passes its own tests in isolation.
+/// the `halfvec` round trip all line up, each of which passes its own tests in isolation.
 #[tokio::test]
 async fn a_full_build_produces_an_index_that_separates_the_clusters() {
     let db = TestDb::spawn().await;
@@ -236,9 +236,9 @@ async fn a_full_build_produces_an_index_that_separates_the_clusters() {
 /// The bug this pins: the input positions were cleared and reassigned by two sub-statements of a
 /// single statement. Postgres runs those against one snapshot, so the clear was invisible to the
 /// assignment, and any position that moved to a different feature collided with its previous
-/// holder — every full build after the first died with `duplicate key value violates unique
-/// constraint "rec_features_dense_idx"`. The second batch is chosen to move positions rather than
-/// only append them, which is what the first build's catalogue alone would do.
+/// holder: every full build after the first died with `duplicate key value violates unique
+/// constraint "rec_features_dense_idx"`. The second batch is chosen to move positions instead of
+/// only appending them, which is what the first build's catalogue alone would do.
 #[tokio::test]
 async fn a_second_full_build_reassigns_the_input_positions() {
     let db = TestDb::spawn().await;
@@ -283,9 +283,9 @@ async fn a_second_full_build_reassigns_the_input_positions() {
 /// An incremental build refuses to run before a full one.
 ///
 /// The bug this pins: projecting with a basis solved from a partial catalogue produces vectors
-/// that are not comparable with the stored ones. The index keeps answering — with neighbours
-/// that are silently meaningless — which is far worse than an error, so the incremental path
-/// must decline rather than improvise a basis.
+/// that are not comparable with the stored ones. The index keeps answering (with neighbours
+/// that are silently meaningless), which is far worse than an error, so the incremental path
+/// must decline instead of improvising a basis.
 #[tokio::test]
 async fn an_incremental_build_refuses_without_a_basis() {
     let db = TestDb::spawn().await;
@@ -308,10 +308,10 @@ async fn an_incremental_build_refuses_without_a_basis() {
 /// A merge removes the absorbed series from the index immediately, and queues the survivor.
 ///
 /// Both halves matter and they are different mechanisms. The loser's rows go with the cascade,
-/// in the same transaction that deletes the series — that is what makes a merged id unreachable
-/// from the ANN index straight away rather than at the next build. The survivor is *not*
+/// in the same transaction that deletes the series: that is what makes a merged id unreachable
+/// from the ANN index straight away instead of at the next build. The survivor is *not*
 /// automatic: it absorbed the loser's tags and authors, so its digest moved and its embedding is
-/// now wrong, which only a re-embed fixes.
+/// stale, which only a re-embed fixes.
 #[tokio::test]
 async fn a_merge_evicts_the_absorbed_series_and_queues_the_survivor() {
     let db = TestDb::spawn().await;
@@ -411,7 +411,7 @@ async fn an_incremental_build_drains_the_repair_queue() {
 /// The bug this pins: the incremental pass rewrote a series' feature vector and marked nobody
 /// stale. `mark_profiles_stale_for_series` existed for exactly this and had no caller at all, so
 /// every reader tracking that series kept a profile weighted against feature ids the series no
-/// longer carried — `ensure_profile` rebuilds only on `stale`, and the watchlist and progress
+/// longer carried: `ensure_profile` rebuilds only on `stale`, and the watchlist and progress
 /// writes that set it are untouched by a build. The one case anyone noticed (a blocked term
 /// removed from a series' credits) had to be repaired by marking profiles stale from a migration.
 ///

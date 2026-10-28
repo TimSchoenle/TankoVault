@@ -1,6 +1,6 @@
-//! The adapter dry-run: `POST /internal/providers/{id}/test`, proxied from the API. Runs
+//! Owns the adapter dry-run: `POST /internal/providers/{id}/test`, proxied from the API. Runs
 //! through [`Engine::provider_context`] so it shares the provider's cached fetch stack and
-//! rate limiter with scans, rather than getting a private request budget.
+//! rate limiter with scans, instead of getting a private request budget.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -19,7 +19,7 @@ use crate::engine::Engine;
 /// How long a dry run may take before it is abandoned.
 ///
 /// Shorter than the API's own upstream request timeout, so a hung provider surfaces here as a
-/// timeout with a useful message rather than there as an opaque gateway error.
+/// timeout with a useful message instead of there as an opaque gateway error.
 const DRY_RUN_TIMEOUT: Duration = Duration::from_secs(25);
 
 /// The dry run's optional input: a relative series path to fetch metadata and chapters for.
@@ -31,7 +31,7 @@ pub(crate) struct TestAdapterRequest {
 
 /// Everything that can go wrong before a sample exists.
 ///
-/// An adapter failure is not one of these — that's what the operator ran this to find
+/// An adapter failure is not one of these: that's what the operator ran this to find
 /// out, so it's reported in the `200` body as `{"ok": false, "error": …}`.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum DryRunError {
@@ -66,10 +66,10 @@ impl IntoResponse for DryRunError {
     }
 }
 
-/// Run one provider's adapter against the live site and report what it parsed.
+/// The route that runs one provider's adapter against the live site and reports what it parsed.
 pub(crate) const TEST_ADAPTER: &str = "/internal/providers/{id}/test";
 
-/// The dry-run route, merged into the worker's internally-authenticated router — not
+/// The dry-run route, merged into the worker's internally-authenticated router, not
 /// into `ops_router`, which stays reachable without a credential.
 pub(crate) fn router(engine: Arc<Engine>) -> Router {
     Router::new()
@@ -81,15 +81,15 @@ pub(crate) fn router(engine: Arc<Engine>) -> Router {
 ///
 /// `api` alone: the dry-run runs the crawl stack against an operator-named provider, and the
 /// console is the only thing that asks for it. The worker itself is a *caller* elsewhere in the
-/// tier (it drives `challenge-solver` and `render`), which under one shared token meant its
-/// credential also opened this route.
+/// tier (it drives `challenge-solver` and `render`), and under one shared token its credential
+/// would also open this route.
 pub(crate) static INTERNAL_ROUTES: &[InternalRoute] = &[InternalRoute {
     method: Method::POST,
     path: TEST_ADAPTER,
     callers: &["api"],
 }];
 
-/// Run the provider's adapter against the live site and return whatever it parsed.
+/// Runs the provider's adapter against the live site and returns whatever it parsed.
 ///
 /// The body is deliberately free-form: it is a diagnostic dump whose shape follows what the
 /// adapter managed to read, and the console renders it verbatim.
@@ -162,7 +162,7 @@ mod tests {
     use axum::http::StatusCode;
     use tankovault_service::problem::IntoProblem as _;
 
-    /// The status must mean "the request was wrong", never "the adapter was" — otherwise
+    /// The status must mean "the request was wrong", never "the adapter was"; otherwise
     /// the console shows a red banner for the answer the operator asked for.
     #[test]
     fn only_a_request_level_failure_is_an_error_status() {

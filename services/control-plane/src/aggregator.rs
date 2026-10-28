@@ -1,4 +1,4 @@
-//! Progress aggregator: finalises a scan run once every planned task has settled, then
+//! Owns the progress aggregator: finalises a scan run once every planned task has settled, then
 //! republishes one terminal progress event for the console SSE. Finalisation is a single
 //! atomic UPDATE ([`tankovault_db::repo::scans::finalize_if_complete`]) that fires exactly
 //! once, so a redelivered event is a no-op that cannot loop.
@@ -9,9 +9,9 @@ use tankovault_contracts::{ProgressEvent, subjects};
 use tankovault_db::PgPool;
 use time::OffsetDateTime;
 
-/// Consume `scan.progress` until `shutdown`, finalising runs as their tasks settle.
+/// Consumes `scan.progress` until `shutdown`, finalising runs as their tasks settle.
 ///
-/// Must use the shared consume loop, not a bare loop — without a cancellation arm this
+/// Must use the shared consume loop, not a bare loop: without a cancellation arm this
 /// hangs or gets killed mid-message on `SIGTERM`.
 pub(crate) async fn run(
     pool: PgPool,

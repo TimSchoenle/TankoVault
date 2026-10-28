@@ -749,7 +749,7 @@
         "env": "TANKOVAULT_WORKER__PROVIDER_REFRESH_SECS",
         "env_file": "TANKOVAULT_WORKER__PROVIDER_REFRESH_SECS_FILE",
         "secrets_file": "worker__provider_refresh_secs",
-        "docs": "How often the round-robin queue re-reads the provider list, in seconds.\n\nThis is the delay before a provider added (or renamed) while the pool is running has\nits task lane opened and starts being scanned — a one-off at provider onboarding, so\na minute costs nothing and keeps the query off the hot path.",
+        "docs": "How often the round-robin queue re-reads the provider list, in seconds.\n\nThis is the delay before a provider added (or renamed) while the pool is running has\nits task lane opened and starts being scanned: a one-off at provider onboarding, so\na minute costs nothing and keeps the query off the hot path.",
         "ty": "u64",
         "values": [],
         "constraint": {
@@ -777,7 +777,7 @@
         "env": "TANKOVAULT_WORKER__MAX_CONCURRENT_PROVIDERS",
         "env_file": "TANKOVAULT_WORKER__MAX_CONCURRENT_PROVIDERS_FILE",
         "secrets_file": "worker__max_concurrent_providers",
-        "docs": "How many providers this worker scans at once.\n\nA worker runs at most one task per provider, so this is both the task concurrency and\nthe count of distinct providers in flight. Crawl politeness is unaffected: `rps` and\n`concurrency` are enforced by a fetch stack cached per provider, which every task for\nthat provider shares. The database pool is *not* — size `database.max_connections`\nfor this many concurrent scans, or tasks queue on `acquire` and report as timeouts\nthat read like a database fault.",
+        "docs": "How many providers this worker scans at once.\n\nA worker runs at most one task per provider, so this is both the task concurrency and\nthe count of distinct providers in flight. Crawl politeness is unaffected: `rps` and\n`concurrency` are enforced by a fetch stack cached per provider, which every task for\nthat provider shares. The database pool is *not*: size `database.max_connections`\nfor this many concurrent scans, or tasks queue on `acquire` and report as timeouts\nthat read like a database fault.",
         "ty": "usize",
         "values": [],
         "constraint": {
@@ -805,7 +805,7 @@
         "env": "TANKOVAULT_BIND_ADDR",
         "env_file": "TANKOVAULT_BIND_ADDR_FILE",
         "secrets_file": "bind_addr",
-        "docs": "Ops listener binding. The worker has no HTTP contract of its own, but an\norchestrator still needs somewhere to send liveness/readiness probes and a\nscrape target — previously it exposed neither, so a wedged worker was invisible.",
+        "docs": "Ops listener binding. The worker has no HTTP contract of its own, but an\norchestrator still needs somewhere to send liveness/readiness probes and a\nscrape target; without them a wedged worker is invisible.",
         "ty": "String",
         "values": [],
         "constraint": {
@@ -2431,7 +2431,7 @@
     "additionalProperties": false,
     "properties": {
       "bind_addr": {
-        "description": "Ops listener binding. The worker has no HTTP contract of its own, but an\norchestrator still needs somewhere to send liveness/readiness probes and a\nscrape target — previously it exposed neither, so a wedged worker was invisible.",
+        "description": "Ops listener binding. The worker has no HTTP contract of its own, but an\norchestrator still needs somewhere to send liveness/readiness probes and a\nscrape target; without them a wedged worker is invisible.",
         "type": "string"
       },
       "branding": {
@@ -3018,12 +3018,12 @@
             "type": "integer"
           },
           "max_concurrent_providers": {
-            "description": "How many providers this worker scans at once.\n\nA worker runs at most one task per provider, so this is both the task concurrency and\nthe count of distinct providers in flight. Crawl politeness is unaffected: `rps` and\n`concurrency` are enforced by a fetch stack cached per provider, which every task for\nthat provider shares. The database pool is *not* — size `database.max_connections`\nfor this many concurrent scans, or tasks queue on `acquire` and report as timeouts\nthat read like a database fault.",
+            "description": "How many providers this worker scans at once.\n\nA worker runs at most one task per provider, so this is both the task concurrency and\nthe count of distinct providers in flight. Crawl politeness is unaffected: `rps` and\n`concurrency` are enforced by a fetch stack cached per provider, which every task for\nthat provider shares. The database pool is *not*: size `database.max_connections`\nfor this many concurrent scans, or tasks queue on `acquire` and report as timeouts\nthat read like a database fault.",
             "minimum": 0,
             "type": "integer"
           },
           "provider_refresh_secs": {
-            "description": "How often the round-robin queue re-reads the provider list, in seconds.\n\nThis is the delay before a provider added (or renamed) while the pool is running has\nits task lane opened and starts being scanned — a one-off at provider onboarding, so\na minute costs nothing and keeps the query off the hot path.",
+            "description": "How often the round-robin queue re-reads the provider list, in seconds.\n\nThis is the delay before a provider added (or renamed) while the pool is running has\nits task lane opened and starts being scanned: a one-off at provider onboarding, so\na minute costs nothing and keeps the query off the hot path.",
             "minimum": 0,
             "type": "integer"
           }

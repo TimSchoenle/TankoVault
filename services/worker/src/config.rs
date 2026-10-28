@@ -1,6 +1,6 @@
-//! What the `worker` binary reads from its configuration.
+//! Owns what the `worker` binary reads from its configuration.
 //!
-//! Public, and in a library rather than beside `main`, because it is the root
+//! Public, and in a library instead of beside `main`, because it is the root
 //! `config-contract` describes for this image: the contract has to be generated from the very
 //! type the binary deserialises, or it is a claim about something else.
 
@@ -27,7 +27,7 @@ pub struct Config {
     pub worker: WorkerConfig,
     /// Ops listener binding. The worker has no HTTP contract of its own, but an
     /// orchestrator still needs somewhere to send liveness/readiness probes and a
-    /// scrape target — previously it exposed neither, so a wedged worker was invisible.
+    /// scrape target; without them a wedged worker is invisible.
     #[serde(default = "default_bind")]
     pub bind_addr: String,
     /// Edge hardening for the ops listener.
@@ -45,12 +45,12 @@ pub struct Config {
     pub internal: tankovault_config::InternalAuthConfig,
     /// The confidence policy for canonicalising a scanned series onto an existing one. Shared
     /// with external sync so the two paths cannot disagree about whether two series are the
-    /// same (ARCH-16).
+    /// same.
     #[serde(default)]
     #[config(nested)]
     pub matching: tankovault_config::MatchingConfig,
     /// Which source owns each metadata field. Shared with external sync, which writes the same
-    /// columns: a scan that ignored it overwrote every enriched description on its next pass.
+    /// columns: a scan that ignored it would overwrite every enriched description on its next pass.
     #[serde(default)]
     #[config(nested)]
     pub metadata: tankovault_config::MetadataPriorityConfig,
@@ -60,8 +60,8 @@ pub struct Config {
     #[serde(default)]
     #[config(nested)]
     pub chapter_outliers: tankovault_config::ChapterOutlierConfig,
-    /// The deployment's identity. The worker reads one field of it — the identifiable crawler
-    /// user-agent — so a fork does not announce this project to every site it crawls.
+    /// The deployment's identity. The worker reads one field of it, the identifiable crawler
+    /// user-agent, so a fork does not announce this project to every site it crawls.
     #[serde(default)]
     #[config(nested)]
     pub branding: tankovault_config::BrandingConfig,
@@ -86,7 +86,7 @@ pub struct WorkerConfig {
     /// How often the round-robin queue re-reads the provider list, in seconds.
     ///
     /// This is the delay before a provider added (or renamed) while the pool is running has
-    /// its task lane opened and starts being scanned — a one-off at provider onboarding, so
+    /// its task lane opened and starts being scanned: a one-off at provider onboarding, so
     /// a minute costs nothing and keeps the query off the hot path.
     #[serde(default = "default_provider_refresh_secs")]
     pub provider_refresh_secs: u64,
@@ -95,7 +95,7 @@ pub struct WorkerConfig {
     /// A worker runs at most one task per provider, so this is both the task concurrency and
     /// the count of distinct providers in flight. Crawl politeness is unaffected: `rps` and
     /// `concurrency` are enforced by a fetch stack cached per provider, which every task for
-    /// that provider shares. The database pool is *not* — size `database.max_connections`
+    /// that provider shares. The database pool is *not*: size `database.max_connections`
     /// for this many concurrent scans, or tasks queue on `acquire` and report as timeouts
     /// that read like a database fault.
     #[serde(default = "default_max_concurrent_providers")]
@@ -103,7 +103,7 @@ pub struct WorkerConfig {
 }
 
 impl WorkerConfig {
-    /// The concurrency limit, floored at one.
+    /// Returns the concurrency limit, floored at one.
     ///
     /// Zero does not disable scanning, it deadlocks: the loop would never be under the limit,
     /// so it would never claim a task and never spawn one to get back under it. The worker
@@ -132,7 +132,7 @@ fn default_max_concurrent_providers() -> usize {
 
 fn default_max_pages() -> u32 {
     // Purely a runaway-paginator backstop (real termination is the adapter's `has_next`
-    // marker) — some providers legitimately paginate into the thousands (e.g. kunmanga's
+    // marker); some providers legitimately paginate into the thousands (e.g. kunmanga's
     // ~6866-page catalogue), so this must sit well above any real catalogue size.
     20_000
 }

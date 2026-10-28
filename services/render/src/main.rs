@@ -1,4 +1,4 @@
-//! Render service: headless-browser rendering for JS-heavy listing pages, and an
+//! Owns the render service: headless-browser rendering for JS-heavy listing pages, and an
 //! alternate [`tankovault_solver::ChallengeSolver`] back-end for when TRAWL is
 //! unavailable.
 
@@ -25,15 +25,15 @@ use tankovault_service::{
 };
 use tankovault_solver::ChallengeSolver;
 
-/// Render a caller-supplied URL in a headless browser and return the resulting DOM.
+/// Renders a caller-supplied URL in a headless browser and returns the resulting DOM.
 const RENDER_PATH: &str = "/v1/render";
 
 /// Who may reach this service's routes.
 ///
 /// `worker` alone, and this is the service where that matters most: both routes fetch a
 /// caller-supplied URL, so reaching either is an arbitrary-URL fetch primitive on the internal
-/// network (SEC audit — `POST /v1/render {"url":"file:///etc/passwd"}`). Under one shared token
-/// every service in the tier could drive it; now only the one that crawls can.
+/// network (`POST /v1/render {"url":"file:///etc/passwd"}`). Under one shared token every
+/// service in the tier could drive it; scoped like this, only the one that crawls can.
 static INTERNAL_ROUTES: &[InternalRoute] = &[
     InternalRoute {
         method: axum::http::Method::POST,
@@ -109,10 +109,10 @@ async fn main() -> anyhow::Result<()> {
     .await
 }
 
-/// Build and run everything a configuration change rebuilds: the browser manager, the solver,
+/// Builds and runs everything a configuration change rebuilds: the browser manager, the solver,
 /// the router and the listener.
 ///
-/// Returns when `shutdown` is cancelled — by the OS signal, or by the supervisor because the
+/// Returns when `shutdown` is cancelled, by the OS signal or by the supervisor because the
 /// configuration changed and this runtime is being replaced.
 async fn serve_once(
     cfg: Arc<Config>,

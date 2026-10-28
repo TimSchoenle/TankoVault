@@ -1,4 +1,4 @@
-//! The `JetStream` task consumer: dispatch, catalogue fan-out and progress reporting.
+//! Owns the `JetStream` task consumer: dispatch, catalogue fan-out and progress reporting.
 
 use tankovault_contracts::{ScanTaskMessage, TaskKind};
 use tankovault_domain::{Provider, ScanStage};
@@ -7,7 +7,7 @@ use time::OffsetDateTime;
 use super::{Engine, FANOUT_CHUNK, StageReporter, catalog_truncated};
 
 impl Engine {
-    /// Dispatch a single task received from `JetStream`: `CatalogPage` registers every
+    /// Dispatches a single task received from `JetStream`: `CatalogPage` registers every
     /// series on the page, enqueues a `Series` task per series, and chains the next page;
     /// `Series` fetches and upserts one series; `LatestFeed` enqueues a `Series` task per
     /// entry the feed named.
@@ -47,14 +47,14 @@ impl Engine {
                 let updates = adapter.list_latest(&ctx).await?;
                 // Fanned out, not walked inline.
                 //
-                // Walking the feed inside this one task is why a fast scan sat at `0/1` for as
+                // Walking the feed inside this one task would leave a fast scan at `0/1` for as
                 // long as it ran: the run's single counter could not move until every series the
                 // feed named had been fetched, and at a polite crawl rate that is tens of
                 // minutes. A child per series reports the same work as `17/94`, gives each series
                 // its own retry budget and its own failure row instead of one warning in the log,
-                // and keeps every task short enough that a redelivery costs one series rather
-                // than the whole feed. It costs one extra task per feed entry, which is what the
-                // full scan has always done per catalogue entry.
+                // and keeps every task short enough that a redelivery costs one series instead of
+                // the whole feed. It costs one extra task per feed entry, as the full scan does
+                // per catalogue entry.
                 let targets: Vec<serde_json::Value> = updates
                     .iter()
                     .map(|u| serde_json::json!({ "path": u.path }))
@@ -72,10 +72,10 @@ impl Engine {
         Ok(())
     }
 
-    /// Walk one catalogue page: register everything on it, fan out a task per series, and chain
+    /// Walks one catalogue page: registers everything on it, fans out a task per series, and chains
     /// the next page.
     ///
-    /// Three stages, because they fail and stall for different reasons — a page that will not
+    /// Three stages, because they fail and stall for different reasons: a page that will not
     /// fetch is a provider problem, a registration that crawls is the trigram matcher, and a
     /// fan-out that crawls is the broker.
     async fn walk_catalog_page(
@@ -90,7 +90,7 @@ impl Engine {
         let label = format!("page {page}");
         stage.enter(ScanStage::CatalogFetch, Some(&label)).await;
         let catalog = adapter.list_catalog(ctx, page).await?;
-        // Breadth-first: register every series before fetching chapters. Batched — a per-entry
+        // Breadth-first: register every series before fetching chapters. Batched: a per-entry
         // round trip on a 20k-entry sitemap page would outrun the consumer's ack deadline.
         let entries: Vec<(&str, &str)> = catalog
             .items
@@ -162,12 +162,12 @@ impl Engine {
         Ok(())
     }
 
-    /// Fan out one child task of `parent`'s run: persist it, bump the run's task total, and
-    /// publish it to the provider's `JetStream` subject.
+    /// Fans out one child task of `parent`'s run: persists it, bumps the run's task total, and
+    /// publishes it to the provider's `JetStream` subject.
     ///
     /// Idempotent on `(run_id, kind, target)`: a redelivered parent re-enqueues nothing.
     /// The total is incremented before the parent completes, so `done + failed` can never
-    /// reach `total` mid-fan-out — the run cannot finalise early.
+    /// reach `total` mid-fan-out, so the run cannot finalise early.
     async fn enqueue_child(
         &self,
         parent: &ScanTaskMessage,
@@ -255,7 +255,7 @@ impl Engine {
         Ok(())
     }
 
-    /// Publish a compact [`tankovault_contracts::ProgressEvent`] for `run_id`, read from
+    /// Publishes a compact [`tankovault_contracts::ProgressEvent`] for `run_id`, read from
     /// `scan_runs`, so the control-plane aggregator can finalise the run and the console
     /// SSE gets live progress over NATS. Best-effort: a broker or DB hiccup is logged,
     /// never fatal.

@@ -1,10 +1,8 @@
-//! # worker service
-//!
-//! Executes scan tasks. Two entry modes:
-//! - `worker scan <provider_slug> <full|fast>` — a one-shot inline scan (no broker),
-//!   the Phase-0 deliverable: full-scan a provider into Postgres, links-only, idempotent.
-//! - `worker` (no args) — subscribe to the `JetStream` tasks stream (consumer group →
-//!   horizontal scale) and process tasks until shutdown.
+//! Owns the worker service, which executes scan tasks. Two entry modes:
+//! - `worker scan <provider_slug> <full|fast>`: a one-shot inline scan (no broker) that
+//!   full-scans a provider into Postgres, links-only and idempotent.
+//! - `worker` (no args): subscribes to the `JetStream` tasks stream (a consumer group, so it
+//!   scales horizontally) and processes tasks until shutdown.
 
 mod dryrun;
 mod engine;
@@ -31,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
     tankovault_service::install_crypto_provider();
 
     // Before config, telemetry or anything else: this process may have been invoked by
-    // Docker's HEALTHCHECK rather than as the service. `scratch` images have no shell and no
+    // Docker's HEALTHCHECK instead of as the service. `scratch` images have no shell and no
     // wget, so the binary probing itself is the only probe available. See
     // `tankovault_service::healthcheck`.
     if tankovault_service::healthcheck::requested() {
@@ -62,10 +60,10 @@ async fn main() -> anyhow::Result<()> {
             // request-facing ops listener. Outside the reloadable runtime so a reload does
             // not rebind it.
             tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
-            // Boxed, not because the future is held across an await here — it is the whole
-            // program — but because it carries the config by value, and the worker's is the
+            // Boxed, not because the future is held across an await here (it is the whole
+            // program), but because it carries the config by value, and the worker's is the
             // largest in the workspace. Left on the stack it trips `clippy::large_futures`,
-            // which is a stack-overflow guard rather than a style rule.
+            // which is a stack-overflow guard, not a style rule.
             Box::pin(tankovault_service::run_reloading(
                 boot,
                 &shutdown,
@@ -88,7 +86,7 @@ struct Built {
     internal_auth: tankovault_config::ResolvedInternalAuth,
 }
 
-/// Connect the dependencies and assemble the scan engine.
+/// Connects the dependencies and assembles the scan engine.
 ///
 /// Shared by the one-shot CLI path and the served path so the two cannot drift into scanning
 /// with differently configured engines.
@@ -137,10 +135,10 @@ async fn build(cfg: &Config) -> anyhow::Result<Built> {
             internal_auth.caller.as_ref().and_then(|c| c.token.clone()),
         ),
     });
-    // Wrapped here rather than inside the client: what is being repeated is *the solve*, and the
+    // Wrapped here instead of inside the client: what is being repeated is *the solve*, and the
     // policy has to hold for whichever back-end a deployment mounts. A solver replica restarting
     // or a browser pool briefly full is this deployment's transient, not the provider's answer,
-    // and it used to cost the fetch outright.
+    // and without the retry it would cost the fetch outright.
     let solver: Arc<dyn ChallengeSolver> = Arc::new(
         tankovault_fetch::RetryingSolver::with_default_budget(endpoint),
     );
@@ -171,10 +169,10 @@ async fn build(cfg: &Config) -> anyhow::Result<Built> {
     })
 }
 
-/// Build and run everything a configuration change rebuilds: the pool, the bus connection, the
-/// scan engine, the ops listener and the consumer loop.
+/// Builds and runs everything a configuration change rebuilds: the pool, the bus connection,
+/// the scan engine, the ops listener and the consumer loop.
 ///
-/// Returns when `shutdown` is cancelled — by the OS signal, or by the supervisor because the
+/// Returns when `shutdown` is cancelled, by the OS signal or by the supervisor because the
 /// configuration changed and this runtime is being replaced.
 async fn serve_once(
     cfg: Arc<Config>,
@@ -196,7 +194,7 @@ async fn serve_once(
     run_consumer(&engine, &cfg.worker, shutdown).await
 }
 
-/// Serve liveness, readiness and the metrics scrape alongside the consumer loop.
+/// Serves liveness, readiness and the metrics scrape alongside the consumer loop.
 ///
 /// Readiness reports both dependencies. A worker without NATS has nothing to consume and a
 /// worker without Postgres cannot record what it consumed, so neither should be counted as
@@ -246,7 +244,7 @@ fn spawn_ops_listener(
     });
 }
 
-/// One-shot inline scan (no broker).
+/// Runs a one-shot inline scan (no broker).
 async fn run_inline(engine: &Engine, slug: &str, mode: &str) -> anyhow::Result<()> {
     let provider = tankovault_db::repo::providers::get_by_slug(&engine.pool, slug).await?;
     tracing::info!(%slug, %mode, "starting inline scan");
@@ -270,21 +268,21 @@ async fn run_inline(engine: &Engine, slug: &str, mode: &str) -> anyhow::Result<(
     Ok(())
 }
 
-/// `JetStream` consumer loop.
+/// Runs the `JetStream` consumer loop.
 ///
-/// Tasks are taken from the round-robin [`queue::FairQueue`] rather than straight off a
+/// Tasks are taken from the round-robin [`queue::FairQueue`] instead of straight off a
 /// wildcard consumer, so which provider runs next is a scheduling decision instead of
 /// whatever the stream holds at its head.
 ///
-/// Several tasks run at once, but **at most one per provider** — the ceiling is
+/// Several tasks run at once, but **at most one per provider**: the ceiling is
 /// `max_concurrent_providers` distinct providers in flight. That cap is doing more work than
 /// it looks: a `scan_runs` row belongs to exactly one provider, so one task per provider
 /// keeps every task of a run serialised, and the run's task accounting and the `CatalogPage`
 /// fan-out ordering stay correct without any locking. Raising it to more than one task per
-/// provider would forfeit that, and buy almost nothing — tasks for one provider share a
+/// provider would forfeit that, and buy almost nothing: tasks for one provider share a
 /// cached fetch stack, so they would queue on the same semaphore anyway.
 ///
-/// Stops claiming on shutdown and then drains what is already running, rather than severing
+/// Stops claiming on shutdown and then drains what is already running, instead of severing
 /// it. A task killed part-way through stays claimed until its visibility timeout expires, so
 /// draining cleanly is what keeps a rolling restart from stalling every in-flight run.
 async fn run_consumer(
@@ -311,8 +309,8 @@ async fn run_consumer(
     );
 
     let mut inflight: JoinSet<()> = JoinSet::new();
-    // Which provider each in-flight task is scanning, keyed by task rather than carried back
-    // as the task's return value — see [`release`].
+    // Which provider each in-flight task is scanning, keyed by task instead of carried back
+    // as the task's return value; see [`release`].
     let mut slugs: HashMap<tokio::task::Id, String> = HashMap::new();
     let mut busy: HashSet<String> = HashSet::new();
 
@@ -322,7 +320,7 @@ async fn run_consumer(
         }
         report_inflight(inflight.len());
         if inflight.len() >= limit {
-            // Wait for a slot rather than spinning the poll loop against a full set.
+            // Wait for a slot instead of spinning the poll loop against a full set.
             if let Some(finished) = inflight.join_next_with_id().await {
                 release(finished, &mut slugs, &mut busy);
             }
@@ -342,8 +340,8 @@ async fn run_consumer(
             };
             let slug = task.provider_slug.clone();
             busy.insert(slug.clone());
-            // The worker does not use `tankovault_bus::consume` — it has its own fair-share
-            // queue — so the trace continuation that lives there has to be repeated here, or
+            // The worker does not use `tankovault_bus::consume` (it has its own fair-share
+            // queue), so the trace continuation that lives there has to be repeated here, or
             // a scan task would be the one hop where the trace stops.
             let span = task_span(&msg, &task);
             let id = inflight
@@ -355,8 +353,8 @@ async fn run_consumer(
 
         // Nothing servable this round. The wait has to watch `inflight` as well as the clock:
         // every lane may be blocked by a provider whose task has *already finished*, and
-        // joining it is the only thing that can free one. Waiting on the clock alone is how
-        // this loop used to wedge permanently.
+        // joining it is the only thing that can free one. Waiting on the clock alone wedges this
+        // loop permanently.
         let delay = queue.idle_delay();
         if let Some(finished) = wait_while_idle(&mut inflight, &shutdown, delay).await {
             release(finished, &mut slugs, &mut busy);
@@ -377,15 +375,15 @@ async fn run_consumer(
     Ok(())
 }
 
-/// Wait out a round that served nothing: until a task finishes, the backoff lapses, or
+/// Waits out a round that served nothing: until a task finishes, the backoff lapses, or
 /// shutdown is requested. `Some` is a task to release.
 ///
 /// Joining here is not an optimisation. A worker runs one task per provider, so a lane whose
-/// provider is in flight is passed over — and the set of providers in flight is only ever
-/// shrunk by this join. Sleeping on the clock alone left a finished task's provider marked
-/// busy for as long as the wait, and when *every* lane with work was blocked that way, the
-/// wait never ended: no lane could be served, so the loop never reached the join, so no lane
-/// was ever unblocked.
+/// provider is in flight is passed over, and the set of providers in flight is only ever
+/// shrunk by this join. Sleeping on the clock alone would leave a finished task's provider
+/// marked busy for as long as the wait, and when *every* lane with work was blocked that way,
+/// the wait would never end: no lane could be served, so the loop would never reach the join,
+/// so no lane would ever be unblocked.
 ///
 /// Every future here is cancel-safe, which is the constraint that shapes it: `try_next` is
 /// deliberately not among them, because cancelling a pull mid-fetch hands a message back and
@@ -404,19 +402,19 @@ async fn wait_while_idle(
     }
 }
 
-/// Report how many scan tasks are in flight.
+/// Reports how many scan tasks are in flight.
 ///
-/// Widened through `u32` rather than cast straight to `f64`: the direct cast is a pedantic
+/// Widened through `u32` instead of cast straight to `f64`: the direct cast is a pedantic
 /// clippy failure, and the count is bounded by `max_concurrent_providers`, so the saturation
-/// is unreachable rather than merely unlikely.
+/// is unreachable, not merely unlikely.
 fn report_inflight(count: usize) {
     metrics::gauge!("scan_tasks_inflight").set(f64::from(u32::try_from(count).unwrap_or(u32::MAX)));
 }
 
-/// Free the provider slot a finished task held.
+/// Frees the provider slot a finished task held.
 ///
-/// Keyed on [`tokio::task::Id`] rather than returned by the task itself, because a panicking
-/// task returns nothing — `JoinError` still carries its id, so the slot is released on that
+/// Keyed on [`tokio::task::Id`] instead of returned by the task itself, because a panicking
+/// task returns nothing; `JoinError` still carries its id, so the slot is released on that
 /// path too. Had the slug ridden back as the task's output, a panic would leave its provider
 /// in `busy` forever, and a provider in `busy` is skipped by every future poll: one panic
 /// would silently retire that provider for the life of the process, with only the panic
@@ -438,22 +436,15 @@ fn release(
     }
 }
 
-/// Run one claimed task to a terminal disposition, then settle its message.
-///
-/// Owns its message for the whole lifetime — heartbeat, retry decision and ack all live here,
-/// so concurrent tasks cannot settle each other's messages. It also owns the two measurements
-/// that explain the task afterwards: the stage reporter, and the fetch accounting scope, which
-/// is entered here because a scope covers exactly the futures of the tokio task that opened it
-/// and this is that task.
 /// One transaction per scan task, continuing whatever queued it.
 ///
 /// The transaction is named `scan_task` for every provider, with the provider as a field: a
 /// name per provider would be fifty transaction names for one operation, which is how a
 /// performance view stops aggregating.
 ///
-/// Two spellings because `sentry.trace` cannot be recorded after the span is created — the SDK
-/// reads it when the transaction is opened — so an absent header has to be a different span
-/// rather than an empty field, which would parse as a malformed trace.
+/// Two spellings because `sentry.trace` cannot be recorded after the span is created (the SDK
+/// reads it when the transaction is opened), so an absent header has to be a different span
+/// instead of an empty field, which would parse as a malformed trace.
 fn task_span(msg: &tankovault_bus::BrokerMessage, task: &ScanTaskMessage) -> tracing::Span {
     if let Some(trace) = tankovault_bus::trace_of(msg) {
         tracing::info_span!(
@@ -477,15 +468,22 @@ fn task_span(msg: &tankovault_bus::BrokerMessage, task: &ScanTaskMessage) -> tra
     }
 }
 
+/// Runs one claimed task to a terminal disposition, then settles its message.
+///
+/// Owns its message for the whole lifetime: heartbeat, retry decision and ack all live here,
+/// so concurrent tasks cannot settle each other's messages. It also owns the two measurements
+/// that explain the task afterwards: the stage reporter, and the fetch accounting scope, which
+/// is entered here because a scope covers exactly the futures of the tokio task that opened it
+/// and this is that task.
 async fn run_task(engine: Arc<Engine>, msg: tankovault_bus::BrokerMessage, task: ScanTaskMessage) {
-    // Wrapped here rather than inside the engine: ack lifetime belongs to whoever owns the
-    // message, and doing it at this level means *every* task kind is covered — a 20k-entry
-    // catalogue page today, whatever runs long tomorrow — instead of each slow path having to
+    // Wrapped here instead of inside the engine: ack lifetime belongs to whoever owns the
+    // message, and doing it at this level means *every* task kind is covered (a 20k-entry
+    // catalogue page today, whatever runs long tomorrow) instead of each slow path having to
     // remember.
     let started = std::time::Instant::now();
     let stage = engine::StageReporter::for_task(engine.pool.clone(), task.task_id);
-    // Boxed: the composed future carries the whole dispatch state machine — a catalogue page's
-    // entry vectors included — and this one is held across the consumer loop's `JoinSet`, where
+    // Boxed: the composed future carries the whole dispatch state machine (a catalogue page's
+    // entry vectors included), and this one is held across the consumer loop's `JoinSet`, where
     // an inline 35 KB future is 35 KB per concurrent provider on the stack.
     let (result, fetched) =
         tankovault_fetch::measured(Box::pin(tankovault_bus::with_ack_heartbeat(
@@ -547,7 +545,7 @@ async fn run_task(engine: Arc<Engine>, msg: tankovault_bus::BrokerMessage, task:
         Err(e) => {
             if requeue_or_fail(&engine, &msg, &task, &e, &outcome).await == Disposition::Requeued {
                 // Returns without acking or reporting progress: `retry_later` has already settled
-                // the message, and the run stays open *for this task* — the idempotent writes make
+                // the message, and the run stays open *for this task*; the idempotent writes make
                 // the re-run a no-op for whatever it did do.
                 return;
             }
@@ -571,7 +569,7 @@ enum Disposition {
     Failed,
 }
 
-/// Decide whether a failed task gets another delivery, and carry that decision out.
+/// Decides whether a failed task gets another delivery, and carries that decision out.
 ///
 /// The retry budget is spent on failures the *provider* may recover from; anything else fails
 /// immediately, because a worker that cannot reach Postgres has a problem no redelivery fixes.
@@ -629,7 +627,7 @@ async fn requeue_or_fail(
     Disposition::Failed
 }
 
-/// Publish the task's breakdown as metrics, so the same question the console answers per run is
+/// Publishes the task's breakdown as metrics, so the same question the console answers per run is
 /// answerable per provider over a week without reading `scan_tasks`.
 fn record_stage_metrics(task: &ScanTaskMessage, timings: &tankovault_domain::StageTimings) {
     for (stage, millis) in &timings.stages {
@@ -650,7 +648,7 @@ fn record_stage_metrics(task: &ScanTaskMessage, timings: &tankovault_domain::Sta
     .record(seconds(timings.pace_wait_ms));
 }
 
-/// Milliseconds as the seconds a histogram takes.
+/// Converts milliseconds to the seconds a histogram takes.
 #[expect(
     clippy::cast_precision_loss,
     reason = "a millisecond count large enough to lose f64 precision is 285,000 years"
@@ -661,7 +659,7 @@ fn seconds(millis: i64) -> f64 {
 
 /// Deliveries a scan task gets before its failure is treated as final.
 ///
-/// Sized against what actually recovers between attempts — a challenge solve, a provider's
+/// Sized against what actually recovers between attempts: a challenge solve, a provider's
 /// rate-limit window, a solver restart. Past that, "transient" is not a useful description of
 /// the failure, and further attempts only delay the run's completion.
 const MAX_TASK_DELIVERIES: u64 = 3;
@@ -670,18 +668,17 @@ const MAX_TASK_DELIVERIES: u64 = 3;
 ///
 /// The adapter layer owns this judgement
 /// ([`AdapterError::is_transient`](tankovault_adapters::AdapterError::is_transient)) because it
-/// is the
-/// layer that knows the difference between a provider that blocked us and a page whose markup
-/// changed. Anything else — a DB write, a broker publish, a malformed task — fails the task:
+/// is the layer that knows the difference between a provider that blocked us and a page whose
+/// markup changed. Anything else (a DB write, a broker publish, a malformed task) fails the task:
 /// a worker that cannot reach Postgres has a problem no redelivery fixes.
 fn is_retryable(err: &anyhow::Error) -> bool {
     err.downcast_ref::<tankovault_adapters::AdapterError>()
         .is_some_and(tankovault_adapters::AdapterError::is_transient)
 }
 
-/// Backoff before a requeued task is redelivered.
+/// Returns the backoff before a requeued task is redelivered.
 ///
-/// Minutes rather than seconds, deliberately: the failures worth retrying are provider-side,
+/// Minutes, not seconds, deliberately: the failures worth retrying are provider-side,
 /// and retrying into a rate limit or a bot-management block faster than it clears is how a
 /// scan becomes the thing that keeps it blocked.
 fn retry_delay(deliveries: u64) -> Duration {
@@ -692,7 +689,7 @@ fn retry_delay(deliveries: u64) -> Duration {
     }
 }
 
-/// The task kind as it is spelled on the wire and in `scan_tasks.kind`, so a console line
+/// Returns the task kind as it is spelled on the wire and in `scan_tasks.kind`, so a console line
 /// and a row in the table can be correlated without a translation step.
 fn task_kind_name(kind: TaskKind) -> &'static str {
     match kind {
@@ -702,7 +699,7 @@ fn task_kind_name(kind: TaskKind) -> &'static str {
     }
 }
 
-/// What a task was pointed at, in the terms the provider uses.
+/// Describes what a task was pointed at, in the terms the provider uses.
 ///
 /// A task id identifies a row; it does not tell whoever is watching the console *which page*
 /// of the catalogue or *which series* just failed, which is the only part they can act on.
@@ -725,17 +722,11 @@ fn describe_target(task: &ScanTaskMessage) -> String {
     }
 }
 
-/// Report a failed task, and what becomes of it.
-///
-/// A scan is watched from the console, so one failure is one line answering three questions:
-/// what was being scanned, what the provider did about it, and whether anything will try
-/// again. `next` carries the third — the retry decision lives at the call site, because only
-/// there are the delivery count and the backoff known.
-/// Count a task reaching a terminal disposition.
+/// Counts a task reaching a terminal disposition.
 ///
 /// Separate from `scan_tasks_served_total`, which a redelivery increments again: served
-/// conflates throughput with retries, and the permanent-failure rate — the number worth
-/// alerting on — is only derivable from `outcome="failed"` here.
+/// conflates throughput with retries, and the permanent-failure rate (the number worth
+/// alerting on) is only derivable from `outcome="failed"` here.
 fn settled(task: &ScanTaskMessage, outcome: &'static str) {
     metrics::counter!(
         "scan_tasks_settled_total",
@@ -746,6 +737,12 @@ fn settled(task: &ScanTaskMessage, outcome: &'static str) {
     .increment(1);
 }
 
+/// Reports a failed task, and what becomes of it.
+///
+/// A scan is watched from the console, so one failure is one line answering three questions:
+/// what was being scanned, what the provider did about it, and whether anything will try
+/// again. `next` carries the third; the retry decision lives at the call site, because only
+/// there are the delivery count and the backoff known.
 fn log_task_failure(task: &ScanTaskMessage, deliveries: u64, err: &anyhow::Error, next: &str) {
     tracing::warn!(
         provider = %task.provider_slug,
@@ -778,7 +775,7 @@ async fn handle_task(
 ) -> anyhow::Result<Handled> {
     let provider = tankovault_db::repo::providers::get(&engine.pool, task.provider_id).await?;
     // The claim is the cancellation check. `JetStream` holds this message independently of the
-    // database, so an operator cancelling a run cannot unpublish its tasks — refusing to start
+    // database, so an operator cancelling a run cannot unpublish its tasks; refusing to start
     // one here is the only place the cancellation takes effect.
     if !tankovault_db::repo::scans::claim_task(&engine.pool, task.task_id, &engine.worker_id)
         .await?
@@ -786,7 +783,7 @@ async fn handle_task(
         return Ok(Handled::Declined);
     }
     // A `CatalogPage` task fans out its children (and bumps the run total) before this
-    // returns, so completing it — in `run_task`, once the accounting scope closes — cannot
+    // returns, so completing it (in `run_task`, once the accounting scope closes) cannot
     // finalise the run prematurely.
     engine.dispatch_task(&provider, task, stage).await?;
     Ok(Handled::Executed)
@@ -820,7 +817,7 @@ mod tests {
     ///
     /// The slug is tracked by `tokio::task::Id` precisely because a panicked task returns no
     /// value. Had it ridden back as the task's output, this path would leave the provider in
-    /// `busy` forever — and `busy` is consulted before every pull, so the provider would be
+    /// `busy` forever, and `busy` is consulted before every pull, so the provider would be
     /// skipped silently for the life of the process, with only an unattributed panic in the
     /// log. This pins the recovery.
     #[tokio::test]
@@ -873,7 +870,7 @@ mod tests {
     /// The idle wait must observe a task **finishing**, not only the clock.
     ///
     /// The bug this pins wedged the whole pool. `busy` is pruned only where the loop joins a
-    /// finished task, and the poll it waited in blocked until some lane could be served — but a
+    /// finished task, and the poll it waited in blocked until some lane could be served; but a
     /// lane whose provider is in `busy` is passed over, so once every provider holding queued
     /// work was in `busy`, no lane could be served, the poll never returned, the loop never
     /// reached the join, and the providers whose tasks had *already finished* stayed blocked
@@ -911,7 +908,7 @@ mod tests {
     /// With nothing in flight the wait is the backoff, and must not spin.
     ///
     /// `join_next_with_id` on an empty `JoinSet` resolves immediately, so an unguarded branch
-    /// would return at once on every idle round — turning a five-second poll into a hot loop
+    /// would return at once on every idle round, turning a five-second poll into a hot loop
     /// against the broker.
     #[tokio::test]
     async fn an_empty_pool_waits_out_the_backoff_instead_of_spinning() {
@@ -928,7 +925,7 @@ mod tests {
         );
     }
 
-    /// Shutdown ends the wait rather than being noticed a backoff later.
+    /// Shutdown ends the wait instead of being noticed a backoff later.
     #[tokio::test]
     async fn shutdown_ends_the_idle_wait() {
         let shutdown = tokio_util::sync::CancellationToken::new();
@@ -999,7 +996,7 @@ mod tests {
         let parse = anyhow::Error::from(AdapterError::Parse("selector matched nothing".to_owned()));
         assert!(!is_retryable(&parse));
 
-        // Anything that is not an adapter error at all — a database write, a broker publish —
+        // Anything that is not an adapter error at all (a database write, a broker publish)
         // is the worker's own problem and no redelivery fixes it.
         assert!(!is_retryable(&anyhow::anyhow!("connection pool exhausted")));
     }
@@ -1039,7 +1036,7 @@ mod tests {
     /// for the run's completion and for everything downstream of it. Raising
     /// `MAX_TASK_DELIVERIES` or the backoff cap without noticing that second effect is the
     /// regression this pins, and it states the bound in wall-clock terms so the trade-off is
-    /// legible rather than implied by two constants sitting far apart in the file.
+    /// legible instead of implied by two constants sitting far apart in the file.
     #[test]
     fn the_delivery_ceiling_bounds_how_long_a_task_can_hold_a_run_open() {
         const {

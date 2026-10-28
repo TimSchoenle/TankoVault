@@ -1,12 +1,12 @@
-//! How long a provider that keeps failing is left alone before it is swept again.
+//! Owns how long a provider that keeps failing is left alone before it is swept again.
 //!
 //! The sweep is unconditional by design: every active provider, every tick. That is right while
 //! providers work and wrong the moment one stops, because nothing else in the pipeline slows
 //! down. A provider whose feed has been answering an infrastructure error page for a day was
-//! still being asked for it every five minutes — 288 requests a day at a site serving none of
+//! still being asked for it every five minutes: 288 requests a day at a site serving none of
 //! them, times the nine installs of the platform that had gone down together. The requests
 //! cannot succeed, they fill the failure feed with the same row until nothing else in it is
-//! legible, and against a host that is *refusing* rather than broken they are the reason it keeps
+//! legible, and against a host that is *refusing* instead of broken they are the reason it keeps
 //! refusing.
 //!
 //! So the cadence becomes a function of the provider's own recent history. Pure and separate from
@@ -19,7 +19,7 @@ use time::OffsetDateTime;
 
 /// Consecutive failures tolerated at the normal cadence before the cooldown starts growing.
 ///
-/// One failure is noise — a page that timed out, a solve that lost its race — and delaying the
+/// One failure is noise (a page that timed out, a solve that lost its race), and delaying the
 /// next sweep for it would make the scanner slower at exactly the moment it needs to confirm
 /// whether anything is actually wrong. Two in a row is a pattern.
 const FAILURES_BEFORE_BACKOFF: i64 = 2;
@@ -27,8 +27,8 @@ const FAILURES_BEFORE_BACKOFF: i64 = 2;
 /// The backoff policy for one scan mode.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ScanBackoff {
-    /// The mode's ordinary sweep interval — the unit the cooldown is expressed in, so the first
-    /// step is "skip one sweep" rather than an unrelated constant.
+    /// The mode's ordinary sweep interval: the unit the cooldown is expressed in, so the first
+    /// step is "skip one sweep" instead of an unrelated constant.
     pub(crate) interval: Duration,
     /// Ceiling on the cooldown. Bounds how long a provider that has recovered stays unscanned,
     /// which is the cost of being wrong in the other direction.
@@ -39,7 +39,7 @@ impl ScanBackoff {
     /// How long `streak` earns before this provider is swept again.
     ///
     /// Doubles per failure past the tolerance and then stops, so a provider that is simply down
-    /// settles at one attempt per [`Self::max`] instead of one per interval — enough to notice it
+    /// settles at one attempt per [`Self::max`] instead of one per interval, enough to notice it
     /// coming back, few enough to be a rounding error in its logs.
     fn cooldown(self, failures: i64) -> Duration {
         let over = failures.saturating_sub(FAILURES_BEFORE_BACKOFF);
@@ -52,7 +52,7 @@ impl ScanBackoff {
             .min(self.max)
     }
 
-    /// How much of the cooldown is left at `now`, or `None` if the provider is due.
+    /// Returns how much of the cooldown is left at `now`, or `None` if the provider is due.
     ///
     /// `None` for an empty streak and for a `max` of zero, which is how an operator switches the
     /// policy off: the sweep then behaves exactly as it did before it existed.
@@ -112,7 +112,7 @@ mod tests {
         assert_eq!(POLICY.remaining(streak(1, Duration::ZERO), now), None);
     }
 
-    /// The shape of the growth, asserted as exact values rather than as "it increases": the whole
+    /// The shape of the growth, asserted as exact values instead of as "it increases": the whole
     /// point is *how fast* it stops asking, and an ordering assertion holds for a policy that
     /// takes a week to back off as well as for this one.
     #[test]
@@ -126,7 +126,7 @@ mod tests {
     }
 
     /// The cooldown is measured from the last failure, so waiting it out is what releases the
-    /// provider — not the next failure, which would make the backoff self-perpetuating.
+    /// provider, not the next failure, which would make the backoff self-perpetuating.
     #[test]
     fn a_provider_is_released_once_the_cooldown_has_elapsed() {
         let now = OffsetDateTime::now_utc();

@@ -1,6 +1,6 @@
-//! What the `challenge-solver` binary reads from its configuration.
+//! Owns what the `challenge-solver` binary reads from its configuration.
 //!
-//! Public, and in a library rather than beside `main`, because it is the root
+//! Public, and in a library instead of beside `main`, because it is the root
 //! `config-contract` describes for this image: the contract has to be generated from the very
 //! type the binary deserialises, or it is a claim about something else.
 
@@ -20,7 +20,7 @@ pub struct Config {
     /// Which back-end solves an interstitial, and how long it is given.
     #[config(nested)]
     pub solver: SolverBackendConfig,
-    /// Edge hardening: body cap, timeout, security headers. CORS stays off — nothing
+    /// Edge hardening: body cap, timeout, security headers. CORS stays off: nothing
     /// browser-originated calls this service.
     #[serde(default)]
     #[config(nested)]
@@ -35,7 +35,7 @@ pub struct Config {
     #[config(nested)]
     pub metrics: tankovault_config::MetricsConfig,
     /// Shared secret every caller must present. `/v1/solve` fetches a caller-supplied URL
-    /// and returns the body — an SSRF primitive for anyone who can reach the port.
+    /// and returns the body, an SSRF primitive for anyone who can reach the port.
     #[serde(default)]
     #[config(nested)]
     pub internal: tankovault_config::InternalAuthConfig,

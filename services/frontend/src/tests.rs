@@ -1,3 +1,5 @@
+//! Tests the frontend service over its real router.
+
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -46,7 +48,7 @@ async fn spawn_stub_upstream() -> SocketAddr {
     addr
 }
 
-/// Write a minimal SPA bundle (shell + one hashed asset + a stand-in notices file) to a
+/// Writes a minimal SPA bundle (the shell, one hashed asset and a stand-in notices file) to a
 /// unique temp directory.
 fn write_bundle() -> PathBuf {
     static COUNTER: AtomicU32 = AtomicU32::new(0);
@@ -71,7 +73,7 @@ fn write_bundle() -> PathBuf {
 /// Date every file in the fixture `Thu, 01 Jan 1970`, as the image does.
 ///
 /// Not decoration. Image layer timestamps are clamped from `SOURCE_DATE_EPOCH`, which this
-/// repository pins to a constant `0`, so this is the shell's real mtime in production — and it
+/// repository pins to a constant `0`, so this is the shell's real mtime in production, and it
 /// is the precondition for the `304` that
 /// [`a_conditional_request_for_the_shell_is_never_answered_304`] exists to prevent. A fixture
 /// dated *now* cannot reproduce the bug: any conditional request against it is legitimately
@@ -119,7 +121,7 @@ fn test_config(static_dir: &str) -> FrontendConfig {
 
 /// A client for the tests that send conditional request headers, which `reqwest::get` cannot.
 ///
-/// Built rather than `Client::new()`: `clippy.toml` disallows that constructor for having no
+/// Built instead of `Client::new()`: `clippy.toml` disallows that constructor for having no
 /// timeouts and no pool bound.
 fn conditional_client() -> reqwest::Client {
     reqwest::Client::builder()
@@ -143,7 +145,7 @@ async fn served_csp(front: SocketAddr) -> String {
 
 /// The `'sha256-…'` source expression the policy has to carry for an inline `script`.
 ///
-/// Goes through the scanner rather than restating a literal, so an assertion cannot pass
+/// Goes through the scanner instead of restating a literal, so an assertion cannot pass
 /// against a hash that agrees with the test and with nothing a browser computes.
 fn inline_hash(script: &str) -> String {
     let scan = csp_shell::scan_shell(&format!("<script>{script}</script>"));
@@ -164,11 +166,11 @@ fn script_src(csp: &str) -> &str {
         .unwrap_or_else(|| panic!("no script-src directive in {csp}"))
 }
 
-/// Stand up the real frontend application — the shared stack included — against a stub
+/// Stands up the real frontend application, the shared stack included, against a stub
 /// upstream on an ephemeral port.
 ///
-/// Goes through [`build_app`], not [`build_router`]: the middleware previously found
-/// missing (request id, ops probes) lives in the stack, so testing only the inner router
+/// Goes through [`build_app`], not [`build_router`]: the middleware a regression would drop
+/// (request id, ops probes) lives in the stack, so testing only the inner router
 /// would miss a regression.
 async fn spawn_frontend(static_dir: &str, upstream: SocketAddr) -> SocketAddr {
     spawn_frontend_with(test_config(static_dir), upstream).await
@@ -208,7 +210,7 @@ async fn spawn_frontend_with(frontend: FrontendConfig, upstream: SocketAddr) -> 
     addr
 }
 
-/// The contract every other service exposes; this tier previously answered `/healthz` only.
+/// The contract every other service exposes, `/healthz` and `/readyz` both.
 #[tokio::test]
 async fn health_and_ready_match_the_shared_contract() {
     let upstream = spawn_stub_upstream().await;
@@ -226,12 +228,12 @@ async fn health_and_ready_match_the_shared_contract() {
     assert!(ready.text().await.unwrap().contains("\"api\""));
 }
 
-/// With the upstream gone, readiness must fail while liveness must not — a restart can't
+/// With the upstream gone, readiness must fail while liveness must not: a restart can't
 /// bring the API back.
 ///
-/// The dead upstream holds its port and drops every connection. It used to bind a port and
-/// release it, and a parallel test's stub upstream could take the freed port and answer,
-/// so readiness passed and the test failed at random.
+/// The dead upstream holds its port and drops every connection. A port bound and released
+/// instead could be taken by a parallel test's stub upstream, which would answer, so
+/// readiness would pass and the test would fail at random.
 #[tokio::test]
 async fn readiness_fails_when_the_api_upstream_is_unreachable() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -254,7 +256,7 @@ async fn readiness_fails_when_the_api_upstream_is_unreachable() {
 }
 
 /// This tier originates every correlation chain: a bare `TraceLayer` minted no request id,
-/// so a frontend → api hop couldn't be correlated in logs.
+/// so a frontend-to-api hop couldn't be correlated in logs.
 #[tokio::test]
 async fn responses_carry_a_request_id() {
     let upstream = spawn_stub_upstream().await;
@@ -308,10 +310,10 @@ async fn the_shells_inline_scripts_are_admitted_by_hash() {
     );
 }
 
-/// **The bug this pins, which was live in production.** The shell used to be served off disk
+/// **The bug this pins.** The shell was served off disk
 /// by `ServeFile`. Image timestamps are clamped to `SOURCE_DATE_EPOCH`, which this repository
 /// pins to a constant `0` on purpose, so every build answered `Last-Modified: Thu, 01 Jan 1970
-/// 00:00:00 GMT` — and `Cache-Control: no-cache` means *revalidate*, not *do not store*. Every
+/// 00:00:00 GMT`, and `Cache-Control: no-cache` means *revalidate*, not *do not store*. Every
 /// conditional request therefore succeeded with a `304`, and the browser re-used the previous
 /// build's shell under the current build's headers, indefinitely and across redeploys.
 ///
@@ -351,7 +353,7 @@ async fn a_conditional_request_for_the_shell_is_never_answered_304() {
 }
 
 /// The other half of the same requirement: a document that cannot be stored cannot be
-/// revalidated into. `no-store` rather than `no-cache`, and no validator to revalidate with —
+/// revalidated into. `no-store`, not `no-cache`, and no validator to revalidate with:
 /// a `Last-Modified` or `ETag` here is what a conditional request would answer `304` against.
 #[tokio::test]
 async fn the_shell_is_never_stored() {
@@ -370,8 +372,8 @@ async fn the_shell_is_never_stored() {
 
 /// The invariant the whole policy rests on: the document the browser receives and the document
 /// whose inline scripts the header admits are the same bytes. Two reads of the same path could
-/// not guarantee it — the shell is now read once and served from memory — so this asserts the
-/// property rather than the mechanism, by scanning what was actually served.
+/// not guarantee it (the shell is read once and served from memory), so this asserts the
+/// property, not the mechanism, by scanning what was actually served.
 #[tokio::test]
 async fn the_served_shell_is_the_document_the_policy_admits() {
     let upstream = spawn_stub_upstream().await;
@@ -401,7 +403,7 @@ async fn the_served_shell_is_the_document_the_policy_admits() {
 
 /// A bundle file that is not there must be a `404`. Answered with the shell it is a `200` of
 /// HTML where the browser expected a module, which fails on the MIME type and reads as a
-/// bundler or CSP fault rather than the missing file it is — the same reasoning that makes
+/// bundler or CSP fault instead of the missing file it is, the same reasoning that makes
 /// the licence notices a route of their own.
 #[tokio::test]
 async fn a_missing_hashed_asset_is_a_404_rather_than_the_app_shell() {
@@ -417,8 +419,8 @@ async fn a_missing_hashed_asset_is_a_404_rather_than_the_app_shell() {
 }
 
 /// `/assets/…` filenames carry their own content hash, so a changed file is a changed URL:
-/// the one thing in the bundle that may be cached for a year. The blanket `no-cache` used to
-/// cover these too, costing a revalidation round-trip per asset per load.
+/// the one thing in the bundle that may be cached for a year. A blanket `no-cache` would cost a
+/// revalidation round trip per asset per load.
 #[tokio::test]
 async fn hashed_assets_are_cached_immutably() {
     let upstream = spawn_stub_upstream().await;
@@ -437,9 +439,9 @@ async fn hashed_assets_are_cached_immutably() {
 }
 
 /// Pinned against a hash computed outside this codebase: `sha256-bhHHL3z2…` is the value MDN
-/// documents for `alert(1)`. The scan itself lives in `csp-shell` now, but a browser
+/// documents for `alert(1)`. The scan itself lives in `csp-shell`, but a browser
 /// silently refusing a script it should run stays invisible server-side, so the value that
-/// reaches this service's header is pinned here rather than only upstream.
+/// reaches this service's header is pinned here, not only upstream.
 #[test]
 fn inline_scripts_hash_the_way_a_browser_does() {
     assert_eq!(
@@ -449,7 +451,7 @@ fn inline_scripts_hash_the_way_a_browser_does() {
 }
 
 /// The tab is named before the WASM bundle boots, so the pre-boot name has to be the
-/// operator's — and the rewrite must leave the inline scripts byte-identical, or the hashes
+/// operator's, and the rewrite must leave the inline scripts byte-identical, or the hashes
 /// derived from the same source would stop matching what the browser computes.
 #[test]
 fn the_served_shell_carries_the_operators_name_and_no_other_change() {
@@ -481,7 +483,7 @@ fn the_served_shell_carries_the_operators_name_and_no_other_change() {
 }
 
 /// An operator's name reaches an attribute value; an unescaped quote there is a shell that
-/// does not parse, which is a blank page rather than a rebrand.
+/// does not parse, which is a blank page instead of a rebrand.
 #[test]
 fn a_name_with_markup_characters_cannot_break_the_shell() {
     let source = std::fs::read_to_string("../../web/frontend/index.html")
@@ -498,7 +500,7 @@ fn a_name_with_markup_characters_cannot_break_the_shell() {
     assert!(!branded.contains(r#"content="Ink" &"#), "{branded}");
 }
 
-/// An unreadable shell must not take the whole tier down — the API proxy and every hashed
+/// An unreadable shell must not take the whole tier down: the API proxy and every hashed
 /// asset still work, only the inline scripts are refused.
 #[test]
 fn a_missing_shell_degrades_to_a_hashless_policy() {
@@ -516,7 +518,7 @@ fn a_missing_shell_degrades_to_a_hashless_policy() {
 /// Cloudflare's bot products (Bot Fight Mode, JavaScript Detections, the challenge platform)
 /// inject an inline `<script>` at the edge, long after this service hashed the shell. The
 /// documented way to admit it is a nonce, which Cloudflare copies out of the response
-/// header — so a *fresh* one has to reach every response. A constant nonce would pass a
+/// header, so a *fresh* one has to reach every response. A constant nonce would pass a
 /// naive "contains `nonce-`" assertion while being `'unsafe-inline'` under another name,
 /// which is why this asserts the two differ.
 #[tokio::test]
@@ -557,12 +559,12 @@ async fn the_cloudflare_nonce_is_fresh_on_every_response() {
 /// `csp_shell::Headers::cache_control` is an obligation, not a suggestion: a nonce served
 /// from cache is pinned across every reader for the lifetime of the entry, which is
 /// `'unsafe-inline'` under another name. This tier discharges it with the shell's
-/// unconditional `no-store` rather than by reading the field, so the two have to be pinned
-/// together — weakening it would silently invalidate the whole nonce argument.
+/// unconditional `no-store` instead of by reading the field, so the two have to be pinned
+/// together: weakening it would silently invalidate the whole nonce argument.
 ///
 /// `no-store` and not `no-cache`: the latter permits a stored copy and only requires it to be
 /// revalidated, and a `304` then pairs one response's nonce with another response's body.
-/// That is not hypothetical — see [`a_conditional_request_for_the_shell_is_never_answered_304`].
+/// That is not hypothetical; see [`a_conditional_request_for_the_shell_is_never_answered_304`].
 #[tokio::test]
 async fn a_nonced_shell_is_served_uncacheable() {
     let upstream = spawn_stub_upstream().await;
@@ -583,7 +585,7 @@ async fn a_nonced_shell_is_served_uncacheable() {
     assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
 }
 
-/// Off by default, and off is the whole policy unchanged — a deployment that is not behind
+/// Off by default, and off is the whole policy unchanged: a deployment that is not behind
 /// Cloudflare must not carry either concession.
 #[tokio::test]
 async fn the_cloudflare_flags_are_off_by_default() {
@@ -600,7 +602,7 @@ async fn the_cloudflare_flags_are_off_by_default() {
 }
 
 /// Turnstile serves `api.js` and the widget's iframe from one origin `'self'` cannot cover,
-/// and admitting the script without the frame renders an empty box — so the flag has to
+/// and admitting the script without the frame renders an empty box, so the flag has to
 /// reach both directives.
 #[tokio::test]
 async fn the_turnstile_flag_admits_the_widget_origin_in_both_directives() {
@@ -694,7 +696,7 @@ async fn the_licence_notices_are_served_to_the_reader_as_text() {
 }
 
 /// The inventory the `/licenses` screen fetches, and the `application/json` that lets it be
-/// parsed rather than downloaded.
+/// parsed instead of downloaded.
 #[tokio::test]
 async fn the_licence_inventory_is_served_to_the_reader_as_json() {
     let upstream = spawn_stub_upstream().await;
@@ -715,7 +717,7 @@ async fn the_licence_inventory_is_served_to_the_reader_as_json() {
 /// The same trap as [`missing_notices_are_a_404_rather_than_the_app_shell`], and worse for
 /// being silent: an image built before the inventory existed has no file here, and the SPA
 /// fallback would hand the screen the app shell. It would parse that as JSON, fail, and
-/// report a corrupt inventory rather than an absent one.
+/// report a corrupt inventory instead of an absent one.
 #[tokio::test]
 async fn a_missing_inventory_is_a_404_rather_than_the_app_shell() {
     let upstream = spawn_stub_upstream().await;

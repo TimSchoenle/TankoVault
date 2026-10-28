@@ -1,4 +1,4 @@
-//! Bot-management bypass service: exposes `POST /v1/solve` over a pluggable
+//! Owns the bot-management bypass service: exposes `POST /v1/solve` over a pluggable
 //! [`ChallengeSolver`] back-end (TRAWL by default).
 
 use std::sync::Arc;
@@ -54,10 +54,10 @@ async fn main() -> anyhow::Result<()> {
     .await
 }
 
-/// Build and run everything a configuration change rebuilds: the solver back-end, the router
+/// Builds and runs everything a configuration change rebuilds: the solver back-end, the router
 /// and the listener.
 ///
-/// Returns when `shutdown` is cancelled — by the OS signal, or by the supervisor because the
+/// Returns when `shutdown` is cancelled, by the OS signal or by the supervisor because the
 /// configuration changed and this runtime is being replaced.
 async fn serve_once(
     cfg: Arc<Config>,
@@ -88,7 +88,7 @@ async fn serve_once(
             &internal_auth,
             tankovault_service::RouteTable(INTERNAL_ROUTES),
         )))
-        // Contract shared with `render` — see `tankovault_solver::http`.
+        // Contract shared with `render`; see `tankovault_solver::http`.
         .apply(tankovault_solver::http::solver_router(state.solver))
         // Readiness is just "listening": TRAWL has its own `/health` gate on the browser pool
         // and is deliberately not probed from here, since a solve already degrades to `502`

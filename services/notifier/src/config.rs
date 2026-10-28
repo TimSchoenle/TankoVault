@@ -1,6 +1,6 @@
-//! What the `notifier` binary reads from its configuration.
+//! Owns what the `notifier` binary reads from its configuration.
 //!
-//! Public, and in a library rather than beside `main`, because it is the root
+//! Public, and in a library instead of beside `main`, because it is the root
 //! `config-contract` describes for this image: the contract has to be generated from the very
 //! type the binary deserialises, or it is a claim about something else.
 
@@ -25,7 +25,7 @@ pub struct Config {
     #[serde(default)]
     #[config(nested)]
     pub channels: ChannelsConfig,
-    /// The shared `TANKOVAULT_EMAIL__*` relay configuration, identical to the API's — must
+    /// The shared `TANKOVAULT_EMAIL__*` relay configuration, identical to the API's. It must
     /// stay shared, or the envelope-sender policy silently diverges from the API's mail.
     #[serde(default)]
     #[config(nested)]
@@ -41,7 +41,7 @@ pub struct Config {
     #[serde(default)]
     #[config(nested)]
     pub metrics: tankovault_config::MetricsConfig,
-    /// Runtime feature flags — how often this replica re-reads the operator's decisions.
+    /// Runtime feature flags: how often this replica re-reads the operator's decisions.
     #[serde(default)]
     #[config(nested)]
     pub features: tankovault_config::FeaturesConfig,
@@ -62,7 +62,7 @@ fn default_bind() -> String {
 /// constructed when its URL is present and non-empty.
 #[derive(Debug, Deserialize, Describe)]
 pub struct ChannelsConfig {
-    /// A Discord "Incoming Webhook" URL. Receives the Discord message/embed shape.
+    /// A Discord "Incoming Webhook" URL. Receives the Discord message and embed shape.
     ///
     /// A [`SecretString`], not a URL: Discord's form embeds the token in the path
     /// (`https://discord.com/api/webhooks/{id}/{token}`), and this struct derives `Debug`.

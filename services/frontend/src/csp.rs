@@ -1,5 +1,5 @@
-//! The SPA's Content Security Policy: built from the shell's inline scripts, and sent with every
-//! response.
+//! Owns the SPA's Content Security Policy: built from the shell's inline scripts, and sent with
+//! every response.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -9,21 +9,22 @@ use csp_shell::presets::cloudflare;
 use csp_shell::{Csp, Policy};
 use tankovault_frontend::config::CloudflareConfig;
 
-/// Build the Content-Security-Policy for the SPA shell.
+/// Builds the Content-Security-Policy for the SPA shell.
 ///
 /// The access token lives only in memory; this CSP is the ceiling on where an injected script
 /// could send it. [`Csp::spa_wasm`] is the policy this service's own hand-rolled one was
-/// extracted into: no `'unsafe-eval'` — `'wasm-unsafe-eval'` covers WebAssembly instantiation and
-/// nothing here calls Dioxus's `document::eval` (banned; its web impl is `new Function(…)`, see
-/// `web/frontend/src/platform/`) — `connect-src 'self'` as the exfiltration ceiling, and any
-/// `https:`/`data:` host in `img-src` for provider-sourced cover art.
+/// extracted into: no `'unsafe-eval'`, because `'wasm-unsafe-eval'` covers WebAssembly
+/// instantiation and nothing here calls Dioxus's `document::eval` (banned: its web impl is
+/// `new Function(…)`; see `web/frontend/src/platform/`); `connect-src 'self'` as the
+/// exfiltration ceiling; and any `https:`/`data:` host in `img-src` for provider-sourced cover
+/// art.
 ///
 /// The `'sha256-…'` entries admit the shell's inline boot scripts, scanned from the served shell
-/// at startup rather than hardcoded: a constant drifts the moment the shell is edited, and the
+/// at startup instead of hardcoded: a constant drifts the moment the shell is edited, and the
 /// browser then refuses the script with nothing surfaced server-side.
 ///
 /// `connect-src` already covers Cloudflare's `/cdn-cgi/challenge-platform/` beacons and
-/// `script-src 'self'` its scripts, since both are served from this origin — the flags in
+/// `script-src 'self'` its scripts, since both are served from this origin; the flags in
 /// [`CloudflareConfig`] exist for the two things that are *not* reachable from `'self'`.
 pub(super) fn content_security_policy(
     shell: Option<&str>,
@@ -34,7 +35,7 @@ pub(super) fn content_security_policy(
     if let Some(source) = shell {
         let scan = csp_shell::scan_shell(source);
         // The scanner is deliberately not an HTML parser. Anything it accepted but could not
-        // read exactly yields a hash no browser computes, so the limit is logged rather than
+        // read exactly yields a hash no browser computes, so the limit is logged instead of
         // left as a blank page with nothing to attribute it to.
         for warning in &scan.warnings {
             tracing::warn!(
@@ -84,7 +85,7 @@ impl<T> tower_http::set_header::MakeHeaderValue<T> for CspHeader {
     }
 }
 
-/// Render one response's policy.
+/// Renders one response's policy.
 pub(super) fn header_value(policy: &Policy) -> HeaderValue {
     #[expect(
         clippy::unneeded_wildcard_pattern,

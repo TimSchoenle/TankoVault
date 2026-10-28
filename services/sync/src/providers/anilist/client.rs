@@ -1,4 +1,5 @@
-//! Transport and `OAuth2` for `AniList`: the HTTP client, the paced+retried GraphQL round
+//! Owns the transport and `OAuth2` for `AniList`: the HTTP client, the paced and retried GraphQL
+//! round
 //! trip, and the token endpoint. The typed GraphQL operations built on top live in
 //! [`super::graphql`]; the response shaping in [`super::parse`].
 
@@ -81,7 +82,7 @@ impl AniListClient {
         self.token_request(&body).await
     }
 
-    /// Refresh an access token, where the provider supports it.
+    /// Refreshes an access token, where the provider supports it.
     pub(crate) async fn refresh(
         &self,
         refresh_token: &SecretString,
@@ -134,7 +135,7 @@ impl AniListClient {
 
     /// Execute a GraphQL operation, returning the `data` object. Retries once on `429`.
     ///
-    /// `operation` is the metric label. A `&'static str` chosen by the caller rather than
+    /// `operation` is the metric label. A `&'static str` chosen by the caller instead of
     /// anything derived from `query`: a label taken from the request text is an unbounded
     /// label source the moment a query is built dynamically.
     pub(super) async fn graphql(
@@ -148,7 +149,7 @@ impl AniListClient {
             .await
     }
 
-    /// Execute a GraphQL operation with **no** bearer token — used for `AniList`'s public,
+    /// Executes a GraphQL operation with **no** bearer token, used for `AniList`'s public,
     /// unauthenticated metadata endpoint (the tokenless enrichment path).
     pub(super) async fn graphql_public(
         &self,
@@ -220,8 +221,8 @@ impl AniListClient {
                     }
                     continue;
                 }
-                // Break rather than fall through to the decoder: persistent throttling used to
-                // surface as a JSON parse error, hiding the actual rate-limit cause.
+                // Break instead of falling through to the decoder: persistent throttling would
+                // otherwise surface as a JSON parse error, hiding the actual rate-limit cause.
                 break;
             }
 
@@ -245,7 +246,7 @@ impl AniListClient {
     ///
     /// `rate_limited` is worth separating from `error`: it is not a fault in this deployment,
     /// it widens every later request's gap, and it is the one outcome an operator answers by
-    /// waiting rather than by investigating.
+    /// waiting instead of by investigating.
     fn anilist_result(result: &anyhow::Result<serde_json::Value>) -> &'static str {
         match result {
             Ok(_) => "ok",
@@ -254,8 +255,8 @@ impl AniListClient {
         }
     }
 
-    /// Wait for this client's next paced slot. Uses the shared [`tankovault_domain::Pacer`],
-    /// which keeps a persistent throttle penalty rather than reverting to full rate after one
+    /// Waits for this client's next paced slot. Uses the shared [`tankovault_domain::Pacer`],
+    /// which keeps a persistent throttle penalty instead of reverting to full rate after one
     /// retry, so a `429` widens every later gap until `AniList` has been quiet for a while.
     async fn wait_for_slot(&self) {
         let delay = self.pacer.reserve(std::time::Instant::now());
@@ -332,8 +333,8 @@ mod tests {
         );
     }
 
-    /// Pins `application/x-www-form-urlencoded` encoding (space as `+`, `~` escaped) rather than
-    /// RFC-3986 — the encoding RFC 6749 §3.1 specifies, not a regression to "fix" back.
+    /// Pins `application/x-www-form-urlencoded` encoding (space as `+`, `~` escaped) instead of
+    /// RFC-3986: the encoding RFC 6749 §3.1 specifies, not a regression to "fix" back.
     #[test]
     fn the_authorize_url_uses_form_encoding_not_rfc_3986() {
         let url = client("a b~c", "https://a.example/cb").authorize_url();
@@ -430,7 +431,7 @@ mod tests {
     }
 
     /// `AniList` answers `400` alike for a spent code, wrong secret, or mismatched redirect,
-    /// distinguished only in the body — so both status and body must be asserted.
+    /// distinguished only in the body, so both status and body must be asserted.
     #[tokio::test]
     async fn a_rejected_token_request_reports_the_status_and_the_body() {
         let server = MockServer::start().await;
@@ -546,8 +547,8 @@ mod tests {
         );
     }
 
-    /// Pins that a `429` widens the gap for every later request, not just the immediate retry —
-    /// the old minimum-gap mutex reverted to full rate right after. Measured on a separate later
+    /// Pins that a `429` widens the gap for every later request, not just the immediate retry: a
+    /// plain minimum-gap mutex would revert to full rate right after. Measured on a separate later
     /// call, not the retry itself, since the retry is slow under either implementation.
     #[tokio::test]
     async fn a_429_widens_the_gap_for_later_requests_not_only_for_the_retry() {
@@ -678,7 +679,7 @@ mod tests {
         assert_eq!(data, serde_json::json!({ "ok": 1 }));
     }
 
-    /// A `200` with neither `data` nor `errors` is malformed rather than empty, and saying so is
+    /// A `200` with neither `data` nor `errors` is malformed, not empty, and saying so is
     /// what keeps the caller from treating a missing object as "no results".
     #[tokio::test]
     async fn a_response_without_data_is_an_error() {

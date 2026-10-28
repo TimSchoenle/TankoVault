@@ -1,4 +1,4 @@
-//! Pending conflicts and sync history: the read models the console renders, plus the manual
+//! Owns pending conflicts and sync history: the read models the console renders, and the manual
 //! resolution that closes a conflict.
 
 use anyhow::anyhow;
@@ -59,7 +59,7 @@ impl ConflictService {
         .await?)
     }
 
-    /// Apply a user's manual conflict resolution: write the chosen side to whichever side
+    /// Applies a user's manual conflict resolution: writes the chosen side to whichever side
     /// lacks it, then mark it resolved (`false` if already resolved/missing).
     ///
     /// Re-detection relies on this write alone, not a snapshot refresh: once both sides match,

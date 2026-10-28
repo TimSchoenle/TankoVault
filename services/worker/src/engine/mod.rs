@@ -1,4 +1,4 @@
-//! Scan execution engine — shared by the inline (one-shot) full/fast scans and the
+//! Owns the scan execution engine, shared by the inline (one-shot) full and fast scans and the
 //! `JetStream` task consumer. Every write goes through the idempotent
 //! [`tankovault_db::repo::catalog::ingest_series`], so replays are safe.
 
@@ -92,7 +92,7 @@ fn crawl_identity(configured: &str, branded: Option<&str>) -> String {
     }
 }
 
-/// Hash the provider settings a fetch stack is built from.
+/// Hashes the provider settings a fetch stack is built from.
 ///
 /// Only the inputs to `build_provider_fetcher`, so an unrelated column change doesn't
 /// discard a warm connection pool, while lowering `rps` takes effect on the next task.
@@ -112,7 +112,7 @@ fn politeness_fingerprint(provider: &Provider) -> u64 {
 /// The lookup key for a chapter number, pairing a newly-inserted number back to the parsed
 /// chapter it came from.
 ///
-/// Keyed on the bit pattern, not a tolerance comparison, matching the old
+/// Keyed on the bit pattern, not a tolerance comparison, and agrees with an
 /// `(a - b).abs() < f64::EPSILON` test for every value a chapter number can take. The one
 /// disagreement is `-0.0`, normalised here since chapter 0 (prologues) is real. `NaN`
 /// cannot arrive: `parse_number` rejects non-finite values.
@@ -120,16 +120,16 @@ fn chapter_key(number: f64) -> u64 {
     if number == 0.0 { 0.0_f64 } else { number }.to_bits()
 }
 
-/// A built fetch stack plus the fingerprint of the settings that produced it.
+/// A built fetch stack and the fingerprint of the settings that produced it.
 struct CachedFetcher {
-    /// Politeness + base URL as the provider row had them when this stack was built. An
+    /// Politeness and base URL as the provider row had them when this stack was built. An
     /// operator lowering `rps` mid-run must take effect, so the entry is rebuilt on change
-    /// rather than pinned for the process lifetime.
+    /// instead of pinned for the process lifetime.
     fingerprint: u64,
     fetcher: Arc<dyn Fetcher>,
 }
 
-/// The tunables an engine scans under, grouped so they travel together rather than as a
+/// The tunables an engine scans under, grouped so they travel together instead of as a
 /// widening argument list.
 pub(crate) struct EngineSettings {
     pub(crate) max_catalog_pages: u32,
@@ -142,7 +142,7 @@ pub(crate) struct EngineSettings {
 }
 
 impl Engine {
-    /// Assemble the engine with an empty fetcher cache.
+    /// Assembles the engine with an empty fetcher cache.
     ///
     /// A constructor, not a struct literal, so [`Engine::fetchers`] stays an
     /// implementation detail callers can't construct pre-populated.
@@ -171,7 +171,7 @@ impl Engine {
         }
     }
 
-    /// Build the fetch stack for `provider`, reusing the cached one when its settings are
+    /// Builds the fetch stack for `provider`, reusing the cached one when its settings are
     /// unchanged.
     fn fetcher_for(&self, provider: &Provider) -> anyhow::Result<Arc<dyn Fetcher>> {
         let fingerprint = politeness_fingerprint(provider);
@@ -223,9 +223,9 @@ impl Engine {
         Ok(Arc::clone(&entry.fetcher))
     }
 
-    /// Build the per-provider adapter + injected fetch stack + context.
+    /// Builds the per-provider adapter, its injected fetch stack and its context.
     ///
-    /// The adapter is rebuilt per call (cheap, stateless); the fetch stack is not — it
+    /// The adapter is rebuilt per call (cheap, stateless); the fetch stack is not: it
     /// carries the rate limiter and throttle penalty, which must be shared across a
     /// provider's tasks to mean anything.
     pub(crate) fn provider_context(
@@ -250,12 +250,12 @@ pub(crate) struct ScanSummary {
     pub(crate) new_chapters: usize,
 }
 
-/// Drop chapter entries whose numbers no chapter-number column can hold.
+/// Drops chapter entries whose numbers no chapter-number column can hold.
 ///
 /// Runs before [`drop_implausible`], which cannot be relied on to catch these: it needs
 /// `min_sample` entries before it judges anything, it never rejects more than
 /// `max_rejected_fraction` of a listing, and an operator can switch it off entirely. This one is
-/// not a heuristic and has no configuration — an unstorable number reaching ingest fails the
+/// not a heuristic and has no configuration: an unstorable number reaching ingest fails the
 /// `INSERT` with `numeric field overflow`, and ingest is one transaction per source, so it takes
 /// every other chapter of that series down with it on every rescan.
 fn drop_unstorable(provider: &Provider, path: &str, chapters: &mut Vec<ChapterMeta>) {
@@ -284,9 +284,9 @@ fn drop_unstorable(provider: &Provider, path: &str, chapters: &mut Vec<ChapterMe
     chapters.retain(|c| is_storable(c.number));
 }
 
-/// Drop chapter entries whose numbers the source cannot plausibly have released.
+/// Drops chapter entries whose numbers the source cannot plausibly have released.
 ///
-/// These are the source's own slugs, not a parse failure — `chapter-180302` (a date),
+/// These are the source's own slugs, not a parse failure: `chapter-180302` (a date),
 /// `chapter-2025` (a year), `chapter-2099` (a number lifted out of the series title). Left in,
 /// one of them becomes the series' latest chapter and every reader's progress against it reads
 /// as hundreds of chapters behind.
@@ -325,11 +325,10 @@ fn drop_implausible(
     });
 }
 
-/// Content hash over title + chapter (number, path) pairs, for cheap change detection.
-/// Record that a catalogue walk stopped at the page budget with pages still unread.
+/// Records that a catalogue walk stopped at the page budget with pages still unread.
 ///
-/// The warning beside each call site is the only other trace, and it has already been missed
-/// once in practice: a large provider was silently truncated for as long as nobody grepped.
+/// The warning beside each call site is the only other trace, and it is easy to miss: without
+/// this counter a large provider is silently truncated for as long as nobody greps.
 fn catalog_truncated(provider_slug: &str) {
     metrics::counter!(
         "scan_catalog_pages_truncated_total",
@@ -338,6 +337,7 @@ fn catalog_truncated(provider_slug: &str) {
     .increment(1);
 }
 
+/// Hashes the title and the chapter (number, path) pairs, for cheap change detection.
 fn content_hash(meta: &SeriesMeta, chapters: &[ChapterMeta]) -> Vec<u8> {
     let mut h = Sha256::new();
     h.update(meta.title.as_bytes());

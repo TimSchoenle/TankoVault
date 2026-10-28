@@ -1,9 +1,9 @@
-//! Repository rows → the published `/v1/sync/*` bodies.
+//! Owns the mapping from repository rows to the published `/v1/sync/*` bodies.
 //!
-//! Free functions rather than `From` impls: both sides are foreign to this crate, so the orphan
+//! Free functions, not `From` impls: both sides are foreign to this crate, so the orphan
 //! rule forbids the impl, and neither `tankovault-db` nor `tankovault-contracts` may depend on
-//! the other — they are siblings over `tankovault-domain`, and db's dependency list is
-//! deliberately narrow (ARCH-16).
+//! the other: they are siblings over `tankovault-domain`, and db's dependency list is
+//! deliberately narrow.
 //!
 //! Why the hop exists at all is the same reason `crates/contracts/src/admin/mod.rs` gives for the
 //! console: a `SELECT` column rename must be a compile error, not a silent rewrite of the public

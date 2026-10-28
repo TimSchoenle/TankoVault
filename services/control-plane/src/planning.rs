@@ -1,19 +1,19 @@
-//! Planning a scan run: which providers it covers, and publishing its tasks to the bus.
+//! Owns planning a scan run: which providers it covers, and publishing its tasks to the bus.
 
 use tankovault_contracts::{ScanTaskMessage, TaskKind};
 use tankovault_domain::{Provider, RunState, ScanMode, ScanRunId};
 
 use super::AppState;
 
-/// Expand a run into its initial task(s) and dispatch them, unless the provider already has one
-/// of this mode in flight — in which case that run's id is returned and nothing is queued.
+/// Expands a run into its initial task(s) and dispatches them, unless the provider already has
+/// one of this mode in flight, in which case that run's id is returned and nothing is queued.
 ///
-/// ## Why planning is coalesced rather than queued
+/// ## Why planning is coalesced instead of queued
 ///
 /// Nothing about a scan run bounds how long it takes: a fast scan is one `latest_feed` task that
 /// re-ingests every series the feed names, at whatever rate that provider's crawl budget allows.
 /// The sweep, by contrast, ticks on a fixed interval. A provider whose fast scan outlasts
-/// `fast_interval_secs` therefore gained a second queued run every tick, indefinitely — and those
+/// `fast_interval_secs` would gain a second queued run every tick, indefinitely, and those
 /// runs are *identical*, since each one re-reads the same feed.
 ///
 /// The worker's per-provider lanes bound the damage but do not stop it: the backlog is served one
@@ -56,7 +56,7 @@ pub(super) async fn plan_run(
             Ok(run_id)
         }
         Err(e) => {
-            // The run row exists and would read as in flight forever, which now means it would
+            // The run row exists and would read as in flight forever, which means it would
             // suppress this provider's every later run until it went stale. Failing it here is
             // what keeps one broker hiccup from costing a provider its whole schedule.
             if let Err(fail_err) =
@@ -76,7 +76,7 @@ pub(super) async fn plan_run(
     }
 }
 
-/// Persist and publish `run_id`'s initial task, naming which outcome it was for the log and the
+/// Persists and publishes `run_id`'s initial task, naming which outcome it was for the log and the
 /// counter.
 async fn dispatch_run(
     state: &AppState,
@@ -120,16 +120,16 @@ async fn dispatch_run(
     Ok("planned")
 }
 
-/// Count one planning decision.
+/// Counts one planning decision.
 ///
 /// The upstream half of the scan pipeline: `scan_tasks_served_total` on the worker says work
 /// is being consumed, and only this says work is being *created*. A scheduler that is alive
-/// but planning nothing — a lost leader, a flag left off — is otherwise indistinguishable
+/// but planning nothing (a lost leader, a flag left off) is otherwise indistinguishable
 /// from an idle deployment.
 ///
 /// `result` is one of `planned`, `duplicate`, `coalesced`, `cooling_down` or `error`. A provider
 /// scanning more slowly than it is swept shows up as a steady stream of `coalesced` and no
-/// `planned`, which is the signal to look at its crawl budget or its feed size rather than at the
+/// `planned`, which is the signal to look at its crawl budget or its feed size instead of at the
 /// scheduler. A steady stream of `cooling_down` is the other shape worth a panel: that provider
 /// is not being scanned at all, and the reason is its own failure streak.
 pub(super) fn planned(provider_slug: &str, mode: ScanMode, result: &'static str) {

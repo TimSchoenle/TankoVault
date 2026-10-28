@@ -1,5 +1,6 @@
-//! The one place upstream metadata is folded into a local series, shared by [`super::enrich`]'s
-//! catalogue sweep and [`super::reconcile`] so both paths resolve [`MetadataPriority`] the same way.
+//! Owns the one place upstream metadata is folded into a local series, shared by
+//! [`super::enrich`]'s catalogue sweep and [`super::reconcile`] so both paths resolve
+//! [`MetadataPriority`] the same way.
 
 use tankovault_db::PgPool;
 use tankovault_db::repo::catalog::{
@@ -48,8 +49,8 @@ impl MetadataWriter {
         Ok(catalog::series_needing_metadata(&self.pool, &ids, stale_before).await?)
     }
 
-    /// Persist resolved provider metadata for `row`: cache the external-id mapping, offer every
-    /// prioritised field to the merge, and record the upstream-only signals plus every
+    /// Persists resolved provider metadata for `row`: caches the external-id mapping, offers every
+    /// prioritised field to the merge, and records the upstream-only signals and every
     /// alternative title/synonym, genre and credit.
     pub(crate) async fn apply(
         &self,
@@ -98,7 +99,7 @@ impl MetadataWriter {
         Ok(())
     }
 
-    /// Record that `series_id` was examined and there was nothing to write.
+    /// Records that `series_id` was examined and there was nothing to write.
     ///
     /// Load-bearing: an unstamped series leads every following sweep page, so the sweep would
     /// spend its whole budget retrying it forever.
@@ -111,7 +112,7 @@ impl MetadataWriter {
 /// The two upstream vocabularies as one link list: coarse genres at full strength, then the
 /// provider's descriptive terms at their own rank.
 ///
-/// Both land in `series_tags`, and `tags.kind` is what keeps them distinguishable afterwards —
+/// Both land in `series_tags`, and `tags.kind` is what keeps them distinguishable afterwards:
 /// the recommender weights a 600-term theme very differently from a genre a third of the
 /// catalogue carries.
 fn tag_links(meta: &RemoteMetadata) -> Vec<TagLink<'_>> {

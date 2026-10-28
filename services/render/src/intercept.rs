@@ -1,4 +1,4 @@
-//! Applies the SSRF policy to every network request the browser makes, through CDP's `Fetch`
+//! Owns applying the SSRF policy to every network request the browser makes, through CDP's `Fetch`
 //! domain on the browser target.
 //!
 //! The pre-flight check on the URL a caller names covers one request. Chromium then follows
@@ -32,7 +32,7 @@ pub(crate) enum Plan {
     Resolve(String),
 }
 
-/// Decide a request URL as far as is possible without I/O.
+/// Decides a request URL as far as is possible without I/O.
 pub(crate) fn plan(raw: &str) -> Plan {
     if let Some((scheme, _)) = raw.split_once(':')
         && matches!(
@@ -58,7 +58,7 @@ static LOOKUPS: Semaphore = Semaphore::const_new(32);
 /// The full per-request decision: [`plan`], then a lookup when the host is a name.
 ///
 /// # Errors
-/// The [`SsrfError`] that refuses the request.
+/// Returns the [`SsrfError`] that refuses the request.
 pub(crate) async fn admit(raw: &str) -> Result<(), SsrfError> {
     match plan(raw) {
         Plan::Continue => Ok(()),
@@ -74,13 +74,14 @@ pub(crate) async fn admit(raw: &str) -> Result<(), SsrfError> {
     }
 }
 
-/// Enable interception on `browser` and answer every paused request until its connection ends.
+/// Enables interception on `browser` and answers every paused request until its connection
+/// ends.
 ///
 /// Must complete before the browser is handed out: a page that navigates before this returns is
 /// not intercepted. The task holds only a [`Weak`] so it does not keep a replaced browser alive.
 ///
 /// # Errors
-/// When the listener cannot be registered or `Fetch.enable` is refused.
+/// Returns an error when the listener cannot be registered or `Fetch.enable` is refused.
 pub(crate) async fn install(browser: &Arc<Browser>) -> anyhow::Result<()> {
     // Listener first, so no request paused between the two calls goes unanswered.
     let mut paused = browser.event_listener::<EventRequestPaused>().await?;

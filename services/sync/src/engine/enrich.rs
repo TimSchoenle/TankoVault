@@ -1,6 +1,6 @@
-//! Tokenless metadata enrichment: the only part of the engine that needs no user token, talking
-//! only to providers exposing a public API. The writing half is shared with reconciliation via
-//! [`super::metadata::MetadataWriter`].
+//! Owns tokenless metadata enrichment: the only part of the engine that needs no user token,
+//! talking only to providers exposing a public API. The writing half is shared with reconciliation
+//! via [`super::metadata::MetadataWriter`].
 
 use std::sync::Arc;
 
@@ -17,7 +17,7 @@ use super::verify::record_identifies;
 
 /// What the sweep records when there is no provider that can answer without a user token.
 ///
-/// A sentence rather than an empty result, because "ran, found nothing" and "cannot run at all"
+/// A sentence instead of an empty result, because "ran, found nothing" and "cannot run at all"
 /// need different operator responses and look identical in the counters.
 const NO_PUBLIC_PROVIDER: &str =
     "no registered provider exposes public metadata, so the sweep had nothing to ask";
@@ -55,7 +55,7 @@ impl Enricher {
     /// Never fails the whole sweep on a single series' error.
     ///
     /// Every run is published to `metadata_sweep_state` as well as logged, because a log line is
-    /// invisible to the operator console and gone once the window rolls — and the two ways this
+    /// invisible to the operator console and gone once the window rolls, and the two ways this
     /// can come back having done nothing (no public-metadata provider registered, versus a sweep
     /// that ran and resolved nothing) are indistinguishable from the catalogue alone.
     pub(crate) async fn enrich_all(
@@ -92,7 +92,7 @@ impl Enricher {
     }
 
     /// The walk itself, split out so [`Self::enrich_all`] closes the sweep out on the failure
-    /// path as well as the success one — a run that returned early would otherwise leave
+    /// path as well as the success one: a run that returned early would otherwise leave
     /// `running` true forever, and the console would report a sweep that no longer exists.
     async fn sweep(
         &self,
@@ -101,7 +101,7 @@ impl Enricher {
         report: &mut EnrichReport,
     ) -> anyhow::Result<()> {
         // Every row touched is stamped `metadata_checked_at = now()`, success or not, and
-        // `started_at` fences the run — that stamp is the whole paging mechanism. Paging on
+        // `started_at` fences the run; that stamp is the whole paging mechanism. Paging on
         // `updated_at` instead (only a success writes it) let unresolvable series stay at the
         // head forever, starving pages once they outnumbered `max_series`.
         let started_at = OffsetDateTime::now_utc();
@@ -130,7 +130,7 @@ impl Enricher {
                     }
                 }
             }
-            // Once per page rather than per series: a sweep of thousands would otherwise spend a
+            // Once per page instead of per series: a sweep of thousands would otherwise spend a
             // write on every row to move a number the console re-reads every few seconds.
             catalog::record_sweep_progress(
                 &self.pool,
@@ -182,7 +182,7 @@ impl Enricher {
 
     /// Stamp a series the sweep got nothing out of, so the next page moves past it.
     ///
-    /// A failure to stamp is logged rather than propagated: the sweep would otherwise abort a
+    /// A failure to stamp is logged, not propagated: the sweep would otherwise abort a
     /// whole run over one row, and the run's remaining budget is worth more than the row.
     async fn mark_checked(&self, row: &SeriesEnrichmentRow) {
         if let Err(e) = self.metadata.mark_checked(row.id).await {

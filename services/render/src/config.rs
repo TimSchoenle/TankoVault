@@ -1,8 +1,8 @@
-//! What the `render` binary reads from its configuration.
+//! Owns what the `render` binary reads from its configuration.
 //!
-//! Loaded via `tankovault-config` (defaults → TOML → `TANKOVAULT_*` → files). Public, and in
-//! the library rather than beside `main`, because it is the root `config-contract` describes for
-//! this image: the contract has to be generated from the very type the binary deserialises, or
+//! Loaded via `tankovault-config` (defaults, then TOML, then `TANKOVAULT_*`, then files). Public,
+//! and in the library instead of beside `main`, because it is the root `config-contract` describes
+//! for this image: the contract has to be generated from the very type the binary deserialises, or
 //! it is a claim about something else.
 
 use serde::Deserialize;
@@ -21,7 +21,7 @@ pub struct Config {
     #[serde(default)]
     #[config(nested)]
     pub render: RenderConfig,
-    /// Edge hardening: body cap, request timeout, security headers. CORS stays off —
+    /// Edge hardening: body cap, request timeout, security headers. CORS stays off:
     /// this is an internal service, not a browser-facing one.
     #[serde(default)]
     #[config(nested)]
@@ -47,7 +47,7 @@ fn default_bind() -> String {
     "0.0.0.0:8084".to_owned()
 }
 
-/// Headless-browser + rendering knobs.
+/// Headless-browser and rendering knobs.
 #[derive(Debug, Clone, Deserialize, Describe)]
 pub struct RenderConfig {
     /// Explicit Chrome/Chromium executable path. When `None`, `chromiumoxide` auto-detects.

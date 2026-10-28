@@ -1,4 +1,4 @@
-//! Control-plane internals that are worth reaching from outside the binary.
+//! Owns the control-plane internals that are worth reaching from outside the binary.
 //!
 //! Only the recommendation-model builder lives here. The scheduler, the leader lock and the
 //! HTTP surface stay in `main.rs`: they are wiring, and testing them would mean standing up

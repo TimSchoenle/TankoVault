@@ -1,6 +1,6 @@
-//! Undoing one journalled sync decision, and refusing a title match permanently.
+//! Owns undoing one journalled sync decision, and refusing a title match permanently.
 //!
-//! This lives in the sync service rather than the API because half of it is a *provider* write:
+//! This lives in the sync service instead of the API because half of it is a *provider* write:
 //! taking back a push means putting the previous values on the remote, and the token that can do
 //! that is sealed in this service's vault. The API forwards.
 
@@ -50,26 +50,26 @@ impl RevertService {
         Ok(sync::list_sync_decisions(&self.pool, filter, limit, offset).await?)
     }
 
-    /// Undo one decision.
+    /// Undoes one decision.
     ///
     /// # What each action's inverse is
     ///
-    /// - **`pull`** — put the local value back. The common-ancestor snapshot is deliberately left
+    /// - **`pull`**: put the local value back. The common-ancestor snapshot is deliberately left
     ///   alone: with local moved away from it and the remote unchanged, the next reconciliation
     ///   sees "only local changed" and *pushes* the restored value, which is the operator's
     ///   intent. Resetting the snapshot instead would make the next run re-pull the value that
     ///   was just rejected.
-    /// - **`import_status`** — the series was not on the watchlist before the sync put it there,
+    /// - **`import_status`**: the series was not on the watchlist before the sync put it there,
     ///   so the inverse is to take it off again.
-    /// - **`push`** — write the remote's previous status and progress back through the provider.
+    /// - **`push`**: write the remote's previous status and progress back through the provider.
     ///   This is the half that needs a token, and the reason this service owns the operation.
-    /// - **`matched`** — a mapping is not a value to restore but a claim to withdraw, so the
+    /// - **`matched`**: a mapping is not a value to restore but a claim to withdraw, so the
     ///   inverse is the permanent refusal in [`Self::block_match`].
     ///
     /// # Errors
     ///
-    /// A decision that changed nothing, was already reverted, or has no inverse — a
-    /// `create_remote`, because no provider in this system can delete a remote entry — is an
+    /// A decision that changed nothing, was already reverted, or has no inverse (a
+    /// `create_remote`, because no provider in this system can delete a remote entry) is an
     /// error naming which of those it was. Otherwise database and provider failures.
     pub(crate) async fn revert(
         &self,
@@ -119,7 +119,7 @@ impl RevertService {
         Ok(report)
     }
 
-    /// Mark a decision wrong without undoing it, optionally refusing the match it made.
+    /// Marks a decision wrong without undoing it, optionally refusing the match it made.
     ///
     /// Kept separate from [`Self::revert`] because the two answer different questions. A revert
     /// says "put it back"; a flag says "this was the wrong call", which is worth recording even
@@ -151,7 +151,7 @@ impl RevertService {
         Ok(flagged)
     }
 
-    /// Refuse one (external id, series) correspondence permanently, whatever it scored.
+    /// Refuses one (external id, series) correspondence permanently, whatever it scored.
     ///
     /// # Errors
     /// Database failures.
@@ -220,7 +220,7 @@ impl RevertService {
             .ok_or_else(|| anyhow::anyhow!("this decision names no series"))?;
         let user_id = UserId::from_uuid(decision.user_id);
         // An import only ever happens for a series that was *not* on the watchlist, so removing
-        // it is exact rather than approximate. The reader's progress is left alone: it is not
+        // it is exact, not approximate. The reader's progress is left alone: it is not
         // what the import wrote, and deleting a read frontier to undo a status import would be a
         // larger change than the one being reverted.
         tracking::watchlist_remove(&self.pool, user_id, series_id).await?;

@@ -1,9 +1,9 @@
-//! The *linked group*: every local series mapped to one external id at one provider.
+//! Owns the *linked group*: every local series mapped to one external id at one provider.
 //!
 //! `sync_mappings` is keyed on `(series_id, provider)`, so catalogue duplicates legitimately
 //! share an external id while the remote keeps a single entry for all of them. Any value settled
-//! against that entry — a targeted push after a chapter is marked read, or a reconciliation's
-//! merge — is therefore settled for every member, and this module is what makes that true of the
+//! against that entry (a targeted push after a chapter is marked read, or a reconciliation's
+//! merge) is therefore settled for every member, and this module is what makes that true of the
 //! local rows as well.
 //!
 //! Split the same way the rest of the engine is: [`plan_group`] and [`plan_mirror`] decide from
@@ -31,14 +31,14 @@ pub(crate) struct LinkedMember {
 
 impl LinkedMember {
     /// Whether the user holds anything at all for this series. A duplicate they never added is
-    /// not out of step with the remote — it is simply not theirs — so the mirror leaves it
-    /// alone rather than inventing a shelf entry for it.
+    /// not out of step with the remote (it is simply not theirs), so the mirror leaves it
+    /// alone instead of inventing a shelf entry for it.
     const fn tracked(&self) -> bool {
         self.progress.is_some() || self.status.is_some()
     }
 }
 
-/// The group folded into one local side, plus the member that stands for it.
+/// The group folded into one local side, and the member that stands for it.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct GroupSide {
     /// The member the merge's local writes and journal entries are recorded against.
@@ -100,7 +100,7 @@ pub(crate) fn plan_group(members: &[LinkedMember], preferred: SeriesId) -> Group
 
 /// One linked member's write-back. A member already holding the settled values still yields a
 /// `MirrorWrite` with both fields `None`, because its common-ancestor snapshot is refreshed
-/// either way — that snapshot is what stops the next run re-deciding the member from an
+/// either way: that snapshot is what stops the next run re-deciding the member from an
 /// ancestor the group has moved past.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct MirrorWrite {
@@ -118,7 +118,7 @@ pub(crate) struct MirrorWrite {
 /// The series the merge drove is included, not exempt: the settled progress can come from a
 /// *different* member (see [`plan_group`]), in which case the driver's own row is the one left
 /// behind. Callers hold the pre-run values, so re-writing a row the merge already wrote is
-/// idempotent — what must not be repeated is the journal entry, which the merge owns.
+/// idempotent; what must not be repeated is the journal entry, which the merge owns.
 #[expect(
     clippy::float_cmp,
     reason = "both frontiers are whole-chapter numbers read back from the same column, so the \
@@ -158,7 +158,7 @@ impl LinkedSeries {
 
     /// The group mapped to `external_id`, with `user_id`'s local state for each member.
     ///
-    /// Queries per member rather than in one pass, because the callers that need it handle a
+    /// Queries per member instead of in one pass, because the callers that need it handle a
     /// single series and a group is one row wide in all but the duplicate case this exists for.
     /// The whole-account reconciliation builds its members from the state it already loaded.
     ///
@@ -184,7 +184,7 @@ impl LinkedSeries {
         Ok(members)
     }
 
-    /// Apply the planned write-backs and refresh each written member's common-ancestor snapshot
+    /// Applies the planned write-backs and refreshes each written member's common-ancestor snapshot
     /// to the state the group settled on.
     ///
     /// # Errors
@@ -321,7 +321,7 @@ mod tests {
     }
 
     /// The settled progress can come from a member the merge did not drive, which leaves the
-    /// driver's own row behind — the group would be pushed to 120 while the series the push was
+    /// driver's own row behind: the group would be pushed to 120 while the series the push was
     /// recorded against still read 100.
     #[test]
     fn the_driving_member_is_written_too_when_a_sibling_supplied_the_value() {

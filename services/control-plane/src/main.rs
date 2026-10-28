@@ -1,6 +1,6 @@
-//! Schedules and plans scans; workers execute. Exposes `POST /internal/scans` for the API's "Scan
-//! now" and runs a background scheduler that periodically triggers fast and full scans of active
-//! providers.
+//! Owns scheduling and planning scans; workers execute them. Exposes `POST /internal/scans` for the
+//! API's "Scan now" and runs a background scheduler that periodically triggers fast and full scans
+//! of active providers.
 
 mod aggregator;
 mod cooldown;
@@ -41,9 +41,9 @@ use scheduler::run_scheduler;
 const SCANS: &str = "/internal/scans";
 /// Sweep the catalogue for duplicate series and merge what passes the threshold.
 const MERGE_SWEEP: &str = "/internal/merge-sweep";
-/// Start an exhaustive sweep — rounds of [`MERGE_SWEEP`] until every shortlist is walked out.
+/// Starts an exhaustive sweep: rounds of [`MERGE_SWEEP`] until every shortlist is walked out.
 const MERGE_SWEEP_ALL: &str = "/internal/merge-sweep-all";
-/// Read the automatic-merge policy the sweep applies.
+/// Reads the automatic-merge policy the sweep applies.
 const MERGE_POLICY: &str = "/internal/merge-policy";
 /// Rebuild the recommendation model.
 const RECSYS_BUILD: &str = "/internal/recsys-build";
@@ -86,14 +86,14 @@ static INTERNAL_ROUTES: &[InternalRoute] = &[
     },
 ];
 
-// `Clone` so the scheduler loop can own a copy: the config now lives behind an `Arc` shared
+// `Clone` so the scheduler loop can own a copy: the config lives behind an `Arc` shared
 // with the reload supervisor, so it cannot be moved out of.
 
 #[derive(Clone)]
 struct AppState {
     pool: PgPool,
     bus: Bus,
-    /// The operator's runtime switches, consulted per sweep rather than at boot so an
+    /// The operator's runtime switches, consulted per sweep instead of at boot so an
     /// incident-time toggle takes effect without a redeploy.
     features: FeatureGate,
     /// The recommender's tuning, read at the start of each build so a change reaches the next
@@ -106,7 +106,7 @@ struct AppState {
     recsys_batch: i64,
     /// Ceiling on one incremental model build.
     recsys_incremental_max: i64,
-    /// How much work one full duplicate sweep may do — including how many series it may delete.
+    /// How much work one full duplicate sweep may do, including how many series it may delete.
     merge_budget: dedupe::SweepBudget,
     /// The same for a rotation-only pass, whose merge ceiling is scaled by its cadence so that
     /// running it more often does not raise how much the sweeps may delete per hour.
@@ -159,12 +159,12 @@ async fn main() -> anyhow::Result<()> {
     .await
 }
 
-/// Build and run everything a configuration change rebuilds: the pool, the bus and Redis
+/// Builds and runs everything a configuration change rebuilds: the pool, the bus and Redis
 /// connections, the scheduler and aggregator loops, the router and the listener.
 ///
-/// Returns when `shutdown` is cancelled — by the OS signal, or by the supervisor because the
+/// Returns when `shutdown` is cancelled, by the OS signal, or by the supervisor because the
 /// configuration changed and this runtime is being replaced. The background loops take the
-/// same token, so they stop with the runtime that spawned them rather than accumulating one
+/// same token, so they stop with the runtime that spawned them instead of accumulating one
 /// scheduler per reload.
 async fn serve_once(
     cfg: Arc<Config>,
@@ -188,7 +188,7 @@ async fn serve_once(
     bus.ensure_streams(cfg.nats.events_max_age()).await?;
 
     // Loaded before the scheduler starts so the first post-restart sweep respects stored
-    // flags rather than briefly running against defaults.
+    // flags instead of briefly running against defaults.
     let features = FeatureGate::new(std::sync::Arc::new(PostgresFlagSource::new(pool.clone())));
     features
         .spawn_refresh(cfg.features.refresh_interval(), shutdown.clone())
@@ -291,8 +291,8 @@ async fn serve_once(
     Ok(())
 }
 
-// The scheduler's derived budgets, as free functions rather than an inherent `impl`: the config
-// type lives in this crate's library — `config-contract` has to reach it — and the types these
+// The scheduler's derived budgets, as free functions instead of an inherent `impl`: the config
+// type lives in this crate's library (`config-contract` has to reach it), and the types these
 // return are the binary's own.
 /// The failure backoff for one scan mode.
 ///
@@ -322,8 +322,8 @@ const fn merge_budget(scheduler: &SchedulerConfig) -> dedupe::SweepBudget {
 /// The budget for a rotation-only pass.
 ///
 /// Discovery is dropped, and the automatic-merge ceiling is scaled by how much more often
-/// this runs than the full sweep does. That ceiling is really a *rate* — the bound on how
-/// many rows a bad threshold can delete before an operator looks — so running the rotation
+/// this runs than the full sweep does. That ceiling is really a *rate*: the bound on how
+/// many rows a bad threshold can delete before an operator looks, so running the rotation
 /// four times an hour at the full sweep's per-run ceiling would quintuple the rate without
 /// anyone having chosen to. With discovery disabled there is no other sweep to share the rate
 /// with, and the rotation carries the whole ceiling.
@@ -359,8 +359,8 @@ mod tests {
     ///
     /// `merge_sweep_max_auto_merges` is the only bound on a destructive background action, and it
     /// is written per run. Splitting the sweep into an hourly discovery pass and a frequent
-    /// rotation pass silently multiplied that bound by the number of rotations in an hour â€” the
-    /// ceiling would still have read `200` in the configuration while permitting five times as
+    /// rotation pass would silently multiply that bound by the number of rotations in an hour:
+    /// the ceiling would still read `200` in the configuration while permitting five times as
     /// many deletions between two looks at the catalogue. The rotation's share is therefore
     /// scaled by its cadence, and this pins the arithmetic.
     #[test]
@@ -383,7 +383,7 @@ mod tests {
     }
 
     /// With discovery switched off the rotation is the only sweep, so it carries the whole
-    /// ceiling rather than a share of a cadence that never runs.
+    /// ceiling instead of a share of a cadence that never runs.
     #[test]
     fn the_rotation_carries_the_whole_ceiling_when_discovery_is_disabled() {
         let cfg = SchedulerConfig {
@@ -399,7 +399,7 @@ mod tests {
     /// A rotation may always merge at least one pair.
     ///
     /// The scaling is integer division, so a rotation interval short enough relative to the
-    /// discovery one rounds its share to zero â€” which would not be a conservative ceiling but a
+    /// discovery one rounds its share to zero, which would not be a conservative ceiling but a
     /// rotation that can re-score the queue forever and never act on it.
     #[test]
     fn a_rotation_may_always_merge_at_least_one_pair() {

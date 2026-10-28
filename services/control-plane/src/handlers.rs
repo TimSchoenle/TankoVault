@@ -1,4 +1,4 @@
-//! The internal HTTP handlers the API calls: scan triggers, merge sweeps, the merge policy and
+//! Owns the internal HTTP handlers the API calls: scan triggers, merge sweeps, the merge policy and
 //! model builds.
 
 use axum::Json;
@@ -22,13 +22,13 @@ pub(super) struct TriggerRequest {
     mode: ScanMode,
 }
 
-// Uses `tankovault_contracts::admin::ScanTriggeredView`, not a private struct —
+// Uses `tankovault_contracts::admin::ScanTriggeredView`, not a private struct:
 // `services/api` republishes this body verbatim.
 
 /// Plan a run for one provider, or for every active provider when the request names none.
 ///
 /// Coalesced exactly as the scheduler's sweeps are ([`plan_run`]): a provider already scanning in
-/// this mode answers with that run's id rather than queueing a second identical run behind it, so
+/// this mode answers with that run's id instead of queueing a second identical run behind it, so
 /// a repeated "Scan now" points the caller at the run in progress instead of clogging the queue.
 pub(super) async fn trigger_scan(
     State(state): State<AppState>,
@@ -68,7 +68,7 @@ pub(super) async fn trigger_scan(
     Ok(Json(ScanTriggeredView { run_ids }))
 }
 
-/// Runs one duplicate-reconciliation sweep on demand — to preview a `matching.auto_merge`
+/// Runs one duplicate-reconciliation sweep on demand, to preview a `matching.auto_merge`
 /// change or clear a backlog without waiting for the schedule.
 ///
 /// Not leader-gated (runs on the replica asked), but still gated on `scanning.auto_merge`,
@@ -113,7 +113,7 @@ pub(super) async fn trigger_merge_sweep(
 ///
 /// Not leader-gated (it runs on the replica asked) but still gated on `scanning.auto_merge`,
 /// since the switch has to hold at the component doing the work. The run's claim is the mutual
-/// exclusion: a request arriving while one is live answers `started: false` rather than putting
+/// exclusion: a request arriving while one is live answers `started: false` instead of putting
 /// a second run's merges on top of the ceiling an operator already authorised.
 pub(super) async fn trigger_full_merge_sweep(
     State(state): State<AppState>,
@@ -142,7 +142,7 @@ pub(super) async fn trigger_full_merge_sweep(
 /// The automatic-merge policy as this service resolves it: the configured `matching` block with
 /// every stored override applied.
 ///
-/// Served from here rather than assembled in the API because the configured baseline is this
+/// Served from here instead of assembled in the API because the configured baseline is this
 /// image's, and the console has to be able to say what resetting a knob would return it to.
 pub(super) async fn read_merge_policy(
     State(state): State<AppState>,
@@ -153,9 +153,9 @@ pub(super) async fn read_merge_policy(
         .map_err(internal)
 }
 
-/// Record — or withdraw — an operator's decision about one knob of that policy.
+/// Records, or withdraws, an operator's decision about one knob of that policy.
 ///
-/// Answers with the whole policy as it now stands, for the same reason the flags and tuning
+/// Answers with the whole policy as it stands, for the same reason the flags and tuning
 /// endpoints do: a console that patched its own row from the request it just sent can show a
 /// value this service does not hold.
 pub(super) async fn write_merge_policy(
@@ -208,17 +208,17 @@ pub(super) async fn write_merge_policy(
     read_merge_policy(State(state)).await
 }
 
-/// Start one model build on demand — to apply a `next_build` tuning change, or to bring a model
+/// Starts one model build on demand, to apply a `next_build` tuning change, or to bring a model
 /// up to date after a long outage, without waiting for the schedule.
 ///
 /// Not leader-gated (it runs on the replica asked) but still gated on
 /// `catalogue.recommendations`, since the switch has to hold at the component doing the work.
 /// The build's own claim is the mutual exclusion: a run that arrives while another holds it
-/// answers `started: false` rather than queueing behind it.
+/// answers `started: false` instead of queueing behind it.
 ///
-/// Answers as soon as the claim is taken, and the build itself runs detached. It used to be
-/// awaited here, which meant the request timeout decided how long a build was allowed to
-/// take — see [`recsys::build_detached`]. Progress and the outcome are on
+/// Answers as soon as the claim is taken, and the build itself runs detached: awaited here, the
+/// request timeout would decide how long a build is allowed to take; see
+/// [`recsys::build_detached`]. Progress and the outcome are on
 /// `GET /v1/admin/recommendations/health`, which the console already polls.
 pub(super) async fn trigger_recsys_build(
     State(state): State<AppState>,
@@ -275,7 +275,7 @@ pub(super) struct MergePolicyRequest {
 #[derive(Debug, Default, Deserialize)]
 pub(super) struct MergeSweepRequest {
     /// The operator who asked, recorded against every candidate the sweep resolves so an
-    /// automatic merge is attributable to a person rather than only to the schedule.
+    /// automatic merge is attributable to a person, not only to the schedule.
     #[serde(default)]
     actor: Option<tankovault_domain::UserId>,
 }

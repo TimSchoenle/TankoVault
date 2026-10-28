@@ -1,6 +1,6 @@
-//! What the `control-plane` binary reads from its configuration.
+//! Owns what the `control-plane` binary reads from its configuration.
 //!
-//! Public, and in the library rather than beside `main`, because it is the root
+//! Public, and in the library instead of beside `main`, because it is the root
 //! `config-contract` describes for this image: the contract has to be generated from the very
 //! type the binary deserialises, or it is a claim about something else.
 
@@ -44,7 +44,7 @@ pub struct Config {
     #[serde(default)]
     #[config(nested)]
     pub metrics: tankovault_config::MetricsConfig,
-    /// Runtime feature flags — how often this replica re-reads the operator's decisions.
+    /// Runtime feature flags: how often this replica re-reads the operator's decisions.
     #[serde(default)]
     #[config(nested)]
     pub features: tankovault_config::FeaturesConfig,
@@ -83,7 +83,7 @@ pub struct SchedulerConfig {
     /// the compact title key and so costs the same whether anything changed or not.
     #[serde(default = "default_merge_sweep_interval")]
     pub merge_sweep_interval_secs: u64,
-    /// Seconds between rotation-only sweeps — the open queue and the recheck set, no discovery.
+    /// Seconds between rotation-only sweeps: the open queue and the recheck set, no discovery.
     /// 0 disables.
     ///
     /// Four times an hour by default. These two shortlists are index scans bounded by their own
@@ -104,7 +104,7 @@ pub struct SchedulerConfig {
     /// Seconds between incremental recommendation-model builds. 0 disables.
     ///
     /// Frequent by default: an incremental pass re-embeds only what changed and inserts into a
-    /// live HNSW index, so the cost is proportional to catalogue churn rather than to the
+    /// live HNSW index, so the cost is proportional to catalogue churn instead of to the
     /// catalogue.
     #[serde(default = "default_recsys_incremental_interval")]
     pub recsys_incremental_interval_secs: u64,
@@ -112,7 +112,7 @@ pub struct SchedulerConfig {
     ///
     /// A full build re-solves the projection from the whole catalogue, which is what keeps the
     /// idf and the embedding space current. Weekly: the incremental pass covers changed series,
-    /// so this exists for vocabulary drift rather than for freshness.
+    /// so this exists for vocabulary drift, not for freshness.
     #[serde(default = "default_recsys_full_interval")]
     pub recsys_full_interval_secs: u64,
     /// Series per streamed batch in a model build.
@@ -121,7 +121,7 @@ pub struct SchedulerConfig {
     /// Ceiling on how many series one incremental build may touch.
     #[serde(default = "default_recsys_incremental_max")]
     pub recsys_incremental_max: i64,
-    /// Automatic merges permitted in a single sweep — the only bound on a destructive
+    /// Automatic merges permitted in a single sweep: the only bound on a destructive
     /// background action. Without it, a bad threshold or normalization rule could collapse
     /// the whole catalogue between two scheduler ticks.
     #[serde(default = "default_merge_sweep_max_auto_merges")]
@@ -129,8 +129,8 @@ pub struct SchedulerConfig {
     /// How long an unfinished run keeps suppressing new runs of the same provider and mode.
     ///
     /// The suppression itself has no expiry condition other than this one, so the value is the
-    /// only thing standing between a run that can never settle — a task persisted but never
-    /// published — and a provider that is never scanned again.
+    /// only thing standing between a run that can never settle (a task persisted but never
+    /// published) and a provider that is never scanned again.
     #[serde(default = "default_run_stale_after")]
     pub run_stale_after_secs: u64,
     /// Ceiling on how long a provider whose runs keep failing is skipped by the sweeps. 0
@@ -146,7 +146,7 @@ pub struct SchedulerConfig {
     ///
     /// This is a repair, not a schedule: it exists because dispatch and the task table can come
     /// apart with no failure on either side, and nothing else notices when they do. Disabling it
-    /// leaves a lost message costing a run — and, until `run_stale_after_secs`, the provider's
+    /// leaves a lost message costing a run and, until `run_stale_after_secs`, the provider's
     /// next run of that mode as well.
     #[serde(default = "default_reconcile_interval")]
     pub reconcile_interval_secs: u64,
@@ -214,7 +214,7 @@ pub fn default_merge_sweep_max_auto_merges() -> i64 {
     200
 }
 
-/// An hour — comfortably longer than any healthy scan of one provider, and short enough that a
+/// An hour: comfortably longer than any healthy scan of one provider, and short enough that a
 /// run which can never settle costs at most one hour of that provider's schedule.
 const fn default_run_stale_after() -> u64 {
     3600
@@ -226,9 +226,9 @@ const fn default_failure_backoff_max() -> u64 {
     21_600
 }
 
-/// Five minutes: frequent enough that a lost message costs one scan cycle rather than the hour
+/// Five minutes: frequent enough that a lost message costs one scan cycle instead of the hour
 /// `run_stale_after_secs` would otherwise take to release the provider, and rare enough that the
-/// pass — one broker call per lane with open work, and nothing at all when there is none — is
+/// pass (one broker call per lane with open work, and nothing at all when there is none) is
 /// invisible next to a sweep.
 const fn default_reconcile_interval() -> u64 {
     300

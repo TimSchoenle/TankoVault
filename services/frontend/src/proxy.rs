@@ -1,4 +1,4 @@
-//! The `/v1/*` reverse proxy to the `api` service.
+//! Owns the `/v1/*` reverse proxy to the `api` service.
 
 use std::net::SocketAddr;
 
@@ -13,7 +13,7 @@ use super::AppState;
 ///
 /// The request body is buffered (the API's bodies are small JSON payloads), but the *response*
 /// is streamed frame-by-frame via [`reqwest::Response::bytes_stream`], so Server-Sent Events
-/// reach the browser as the API emits them rather than being held here.
+/// reach the browser as the API emits them instead of being held here.
 pub(super) async fn proxy(
     State(state): State<AppState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -22,7 +22,7 @@ pub(super) async fn proxy(
     let (parts, body) = req.into_parts();
 
     // Preserve the full path and query verbatim: the SSE stream's credential rides in the query
-    // string (`EventSource` can't set a header) as a single-use, 30-second ticket rather than an
+    // string (`EventSource` can't set a header) as a single-use, 30-second ticket instead of an
     // access token, since this hop and every proxy in front of it logs the URI it forwards.
     let path_and_query = parts
         .uri

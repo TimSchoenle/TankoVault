@@ -1,5 +1,6 @@
-//! The pure half of one series' reconciliation: [`plan_series`] and [`plan_merge`] decide *what*
-//! must happen from values alone, no pool or provider. [`super::reconcile::Reconciler`] performs it.
+//! Owns the pure half of one series' reconciliation: [`plan_series`] and [`plan_merge`] decide
+//! *what* must happen from values alone, no pool or provider. [`super::reconcile::Reconciler`]
+//! performs it.
 
 use time::OffsetDateTime;
 
@@ -21,7 +22,7 @@ pub(crate) struct LocalSide {
     pub(crate) excluded: bool,
 }
 
-/// The value each side held at the last successful reconciliation — the common ancestor the
+/// The value each side held at the last successful reconciliation: the common ancestor the
 /// three-way merge compares against. A `None` field means "no snapshot yet".
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct Ancestor {
@@ -58,7 +59,7 @@ pub(crate) enum SeriesPlan {
     Skip,
     /// Not present on the remote yet: create it there. Local is authoritative for a first push.
     CreateRemote { status: WatchStatus, progress: f64 },
-    /// Both sides exist — load the ancestor and call [`plan_merge`].
+    /// Both sides exist: load the ancestor and call [`plan_merge`].
     Merge,
 }
 
@@ -72,7 +73,7 @@ pub(crate) struct MergePlan {
     pub(crate) status: FieldPlan<WatchStatus>,
     /// The single remote write covering both fields, set when either field wants to push local.
     pub(crate) remote_write: Option<(WatchStatus, f64)>,
-    /// The refreshed common ancestor, `None` when a conflict was left pending — so the conflict
+    /// The refreshed common ancestor, `None` when a conflict was left pending, so the conflict
     /// is re-detected on the next run instead of silently becoming unresolvable.
     pub(crate) snapshot: Option<(f64, WatchStatus)>,
 }
@@ -92,7 +93,7 @@ pub(crate) fn plan_series(local: &LocalSide, remote: Option<&RemoteEntry>) -> Se
     }
 }
 
-/// Apply the three-way merge to both fields of a series present on both sides.
+/// Applies the three-way merge to both fields of a series present on both sides.
 #[must_use]
 pub(crate) fn plan_merge(
     local: &LocalSide,
@@ -108,7 +109,7 @@ pub(crate) fn plan_merge(
     };
 
     // An absent local watchlist entry is imported from the remote first, so its status agrees
-    // with the remote by construction and the status merge below is a no-op rather than a
+    // with the remote by construction and the status merge below is a no-op instead of a
     // spurious conflict.
     let import_status = if local.status.is_none() {
         Some(remote.status)
@@ -281,7 +282,7 @@ mod tests {
         );
     }
 
-    /// Both fields wanting to push must produce one remote write, not two — separate writes
+    /// Both fields wanting to push must produce one remote write, not two: separate writes
     /// would race each other and cost double rate-limit budget.
     #[test]
     fn one_remote_write_covers_both_fields() {
@@ -306,7 +307,7 @@ mod tests {
         assert_eq!(plan.snapshot, Some((20.0, WatchStatus::Completed)));
     }
 
-    /// The untouched field still has to travel in the write — `save_entry` sets both, so a
+    /// The untouched field still has to travel in the write: `save_entry` sets both, so a
     /// stale value would clobber the remote.
     #[test]
     fn a_one_sided_push_carries_the_other_field_unchanged() {
@@ -325,7 +326,7 @@ mod tests {
         assert_eq!(plan.remote_write, Some((WatchStatus::Reading, 20.0)));
     }
 
-    /// A series absent locally is imported rather than treated as a status disagreement, or
+    /// A series absent locally is imported instead of treated as a status disagreement, or
     /// every first sync would queue a conflict per series.
     #[test]
     fn a_series_missing_locally_is_imported_instead_of_conflicting() {
@@ -346,7 +347,7 @@ mod tests {
     }
 
     /// With no ancestor, unequal values are a genuine disagreement decided by policy, not the
-    /// merge — this is what a first sync against a populated remote library hits.
+    /// merge; this is what a first sync against a populated remote library hits.
     #[test]
     fn a_first_sync_disagreement_is_decided_by_policy_alone() {
         let l = local(0.0, None, 0);

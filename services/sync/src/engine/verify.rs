@@ -1,4 +1,4 @@
-//! Checking a provider's record against the series it would describe, before enrichment trusts
+//! Owns checking a provider's record against the series it would describe, before enrichment trusts
 //! a title search and when an operator re-verifies the mappings already stored.
 
 use std::sync::Arc;
@@ -26,7 +26,7 @@ const MAX_LISTED_FAILURES: usize = 1_000;
 /// its sources' listing titles. `None` when the series no longer exists.
 ///
 /// # Errors
-/// Database failures.
+/// Returns an error on a database failure.
 pub(super) async fn record_identifies(
     pool: &PgPool,
     series_id: SeriesId,
@@ -57,7 +57,7 @@ impl MappingVerifier {
     /// Claim the run and return its token. `None` when another run holds the claim.
     ///
     /// # Errors
-    /// Database failures.
+    /// Returns an error on a database failure.
     pub(crate) async fn claim(&self, dry_run: bool) -> anyhow::Result<Option<Uuid>> {
         Ok(sync::begin_reverify(&self.pool, dry_run).await?)
     }
@@ -161,7 +161,7 @@ impl MappingVerifier {
                         });
                     }
                 }
-                // A stalled run whose claim was retaken stops here rather than spend the rate
+                // A stalled run whose claim was retaken stops here instead of spending the rate
                 // budget beside its successor.
                 anyhow::ensure!(
                     sync::record_reverify_progress(&self.pool, run, *counts).await?,

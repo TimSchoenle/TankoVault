@@ -1,5 +1,6 @@
 //! The innermost fetcher: `wreq` with a browser emulation profile, a validating
-//! (SSRF-safe) DNS resolver, per-hop redirect scheme validation, and a bounded text body.
+//! (SSRF-safe) DNS resolver, per-hop redirect scheme and address validation, and a bounded text
+//! body.
 //!
 //! Emulation exists because providers fingerprint the TLS `ClientHello` and HTTP/2 frames and
 //! cross-check them against `User-Agent` — a browser UA over a non-browser handshake is a
@@ -175,15 +176,11 @@ fn build_client(
         if attempt.previous.len() >= MAX_REDIRECTS {
             return attempt.error("too many redirects");
         }
-        // `wreq` 6 carries a `http::Uri` here rather than a `url::Url`, and `Uri::scheme`
-        // is `Option<&Scheme>` — a scheme-relative or malformed target yields `None`, which
-        // must fall to `stop()` with the other non-HTTP schemes rather than being unwrapped.
-        // Resolved before the branch because `follow`/`stop` consume `attempt`.
-        let http_scheme = matches!(attempt.uri.scheme_str(), Some("http" | "https"));
-        if http_scheme {
-            attempt.follow()
-        } else {
-            attempt.stop()
+        // Resolved before the branch because `follow`, `stop` and `error` consume `attempt`.
+        match redirect_hop(&attempt.uri.to_string()) {
+            Hop::Follow => attempt.follow(),
+            Hop::Stop => attempt.stop(),
+            Hop::Refuse(e) => attempt.error(e),
         }
     });
 
@@ -502,12 +499,58 @@ fn status_class(status: u16) -> &'static str {
     }
 }
 
+/// What the redirect policy does with one hop.
+#[derive(Debug, PartialEq, Eq)]
+enum Hop {
+    /// Follow it.
+    Follow,
+    /// Return the redirect response itself: the target is not an `http(s)` URL.
+    Stop,
+    /// Fail the request: the target is an address the SSRF guard forbids.
+    Refuse(ssrf::SsrfError),
+}
+
+/// Decides one redirect hop.
+///
+/// Security: the connector skips DNS for an IP-literal authority, so [`SsrfResolver`] never sees
+/// a redirect to `http://169.254.169.254/`. The range check on the request URL in `send` does
+/// not cover later hops either, so every hop is validated here or a provider could point the
+/// crawler at an internal service.
+fn redirect_hop(target: &str) -> Hop {
+    // A scheme-relative or malformed target does not parse, and stops with the other non-HTTP
+    // schemes.
+    let Ok(url) = Url::parse(target) else {
+        return Hop::Stop;
+    };
+    if !matches!(url.scheme(), "http" | "https") {
+        return Hop::Stop;
+    }
+    match ssrf::validate_url(&url) {
+        Ok(()) => Hop::Follow,
+        Err(e) => Hop::Refuse(e),
+    }
+}
+
+/// Returns the SSRF refusal behind a transport error, from the redirect policy or the resolver.
+fn ssrf_cause(e: &wreq::Error) -> Option<ssrf::SsrfError> {
+    let mut source = std::error::Error::source(e);
+    while let Some(err) = source {
+        if let Some(refusal) = err.downcast_ref::<ssrf::SsrfError>() {
+            return Some(refusal.clone());
+        }
+        source = err.source();
+    }
+    None
+}
+
 #[expect(
     clippy::needless_pass_by_value,
     reason = "an owned-error mapper, passed directly to `.map_err`"
 )]
 fn map_wreq_err(e: wreq::Error) -> FetchError {
-    if e.is_timeout() {
+    if let Some(refusal) = ssrf_cause(&e) {
+        FetchError::Ssrf(refusal)
+    } else if e.is_timeout() {
         FetchError::Timeout
     } else if e.is_redirect() {
         FetchError::TooManyRedirects
@@ -688,5 +731,62 @@ mod tests {
             decode_gzip(&gzip_members(&[&bomb])),
             Err(FetchError::BodyTooLarge)
         ));
+    }
+
+    /// A redirect to an internal IP literal was followed: the request URL was range-checked, the
+    /// redirect policy checked only the scheme, and the connector never resolves a literal, so
+    /// a provider answering `302 Location: http://169.254.169.254/` reached the metadata service.
+    #[test]
+    fn a_redirect_to_an_internal_address_is_refused() {
+        for target in [
+            "http://127.0.0.1/admin",
+            "http://169.254.169.254/latest/meta-data/",
+            "http://10.0.0.5:8080/",
+            "http://[::1]/",
+            "http://[::ffff:127.0.0.1]/",
+        ] {
+            assert!(
+                matches!(redirect_hop(target), Hop::Refuse(_)),
+                "{target} must be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn a_redirect_to_a_public_host_is_followed_and_a_non_web_target_stops() {
+        assert_eq!(redirect_hop("https://provider.test/manga/"), Hop::Follow);
+        assert_eq!(redirect_hop("http://93.184.216.34/"), Hop::Follow);
+        assert_eq!(redirect_hop("ftp://provider.test/file"), Hop::Stop);
+        assert_eq!(redirect_hop("//provider.test/manga/"), Hop::Stop);
+    }
+
+    /// The bug: a refused redirect hop that `wreq` no longer carried in the error's `source()`
+    /// chain would map to `TooManyRedirects` or `Transport`, and callers that branch on
+    /// `FetchError::Ssrf` would treat a blocked internal target as an ordinary network fault.
+    /// Driven through a real client, so the policy, the error chain and the mapper are all tested.
+    #[tokio::test]
+    async fn a_refused_redirect_hop_surfaces_as_an_ssrf_error() {
+        use wiremock::{Mock, MockServer, ResponseTemplate, matchers::any};
+
+        let server = MockServer::start().await;
+        Mock::given(any())
+            .respond_with(
+                ResponseTemplate::new(302).insert_header("location", "http://169.254.169.254/"),
+            )
+            .mount(&server)
+            .await;
+        let policy = ClientPolicy {
+            connect_timeout: Duration::from_secs(1),
+            request_timeout: Duration::from_secs(1),
+        };
+        let client = build_client(None, &policy).expect("client builds");
+
+        let err = client
+            .get(server.uri())
+            .send()
+            .await
+            .map_err(map_wreq_err)
+            .expect_err("the redirect hop is refused");
+        assert!(matches!(err, FetchError::Ssrf(_)), "got {err:?}");
     }
 }

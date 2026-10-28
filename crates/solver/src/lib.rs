@@ -1,10 +1,8 @@
-//! # tankovault-solver
+//! Owns the bot-management bypass tier (`docs/ARCHITECTURE.md` §9): cheap challenge detection,
+//! the pluggable [`ChallengeSolver`] contract, and the default [`TrawlSolver`] back-end.
 //!
-//! The modular bot-management bypass tier (`docs/ARCHITECTURE.md` §9): cheap challenge detection, the
-//! pluggable [`ChallengeSolver`] contract, and the default [`TrawlSolver`] back-end.
-//!
-//! Does not depend on `tankovault-fetch`; detection uses the minimal [`ResponseView`] trait
-//! instead, to avoid a cycle.
+//! It does not depend on `tankovault-fetch`, which depends on it; detection reads responses
+//! through the minimal [`ResponseView`] trait instead.
 
 mod detection;
 mod fake;

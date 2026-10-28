@@ -353,8 +353,8 @@ async fn run_consumer(
 
         // Nothing servable this round. The wait has to watch `inflight` as well as the clock:
         // every lane may be blocked by a provider whose task has *already finished*, and
-        // joining it is the only thing that can free one. Waiting on the clock alone wedges this
-        // loop permanently.
+        // joining it is what frees the lane. Waiting on the clock alone would hold that lane
+        // until the backoff lapses.
         let delay = queue.idle_delay();
         if let Some(finished) = wait_while_idle(&mut inflight, &shutdown, delay).await {
             release(finished, &mut slugs, &mut busy);
@@ -378,12 +378,11 @@ async fn run_consumer(
 /// Waits out a round that served nothing: until a task finishes, the backoff lapses, or
 /// shutdown is requested. `Some` is a task to release.
 ///
-/// Joining here is not an optimisation. A worker runs one task per provider, so a lane whose
-/// provider is in flight is passed over, and the set of providers in flight is only ever
-/// shrunk by this join. Sleeping on the clock alone would leave a finished task's provider
-/// marked busy for as long as the wait, and when *every* lane with work was blocked that way,
-/// the wait would never end: no lane could be served, so the loop would never reach the join,
-/// so no lane would ever be unblocked.
+/// A worker runs one task per provider, so a lane whose provider is in flight is passed over,
+/// and only a join takes a provider out of the in-flight set. Sleeping on the clock alone would
+/// leave a finished task's provider marked busy until the wait lapses and the loop's next
+/// `try_join_next_with_id` releases it: with every lane blocked that way, servable work would sit
+/// idle for a whole backoff that doubles each round up to `IDLE_POLL_MAX`.
 ///
 /// Every future here is cancel-safe, which is the constraint that shapes it: `try_next` is
 /// deliberately not among them, because cancelling a pull mid-fetch hands a message back and

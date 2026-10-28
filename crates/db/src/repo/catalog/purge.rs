@@ -236,7 +236,7 @@ pub async fn finish_purge<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Ask the live run to stop after its current batch. `false` when no run is live.
+/// Asks the live run to stop after its current batch. `false` when no run is live.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.

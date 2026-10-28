@@ -145,7 +145,7 @@ pub(crate) fn run(root: &Path, bases: Option<&Path>, all: bool) -> anyhow::Resul
     emit(&selected)
 }
 
-/// Decide the rebuild set from each binary's own base ref.
+/// Decides the rebuild set from each binary's own base ref.
 fn select(root: &Path, deployable: &[String], bases: &Path) -> anyhow::Result<Vec<String>> {
     let workspace = Workspace::load(root)?;
     let document = std::fs::read_to_string(bases).map_err(|error| {

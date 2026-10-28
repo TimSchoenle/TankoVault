@@ -393,7 +393,8 @@ pub struct ProviderIndex {
 }
 
 impl ProviderIndex {
-    /// Index a catalogue's providers; one whose `base_url` does not parse is matched by slug only.
+    /// Indexes a catalogue's providers; one whose `base_url` does not parse is matched by slug
+    /// only.
     #[must_use]
     pub fn new(providers: impl IntoIterator<Item = CatalogueProvider>) -> Self {
         let mut index = Self::default();

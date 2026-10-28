@@ -38,7 +38,7 @@ pub struct PasswordResetRecord {
     pub used_at: Option<OffsetDateTime>,
 }
 
-/// Persist a freshly issued password-reset token as its SHA-256 hash.
+/// Persists a freshly issued password-reset token as its SHA-256 hash.
 ///
 /// A duplicate `token_hash` is a generator fault (500), not a client-triggerable
 /// [`DbError::Conflict`] (409).

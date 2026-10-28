@@ -734,7 +734,7 @@ pub async fn watchlist_pending(
     Ok((total, items))
 }
 
-/// Discard every pending entry `user_id` has, returning how many there were.
+/// Discards every pending entry `user_id` has, returning how many there were.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.

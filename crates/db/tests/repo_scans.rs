@@ -71,7 +71,7 @@ async fn counters(db: &TestDb, run: ScanRunId) -> (i32, i32, i32) {
     (run.done_tasks, run.failed_tasks, run.total_tasks)
 }
 
-/// Pin a row's timestamp.
+/// Pins a row's timestamp.
 ///
 /// Both `list_recent_runs` and the failure feed order on a `now()`-stamped column with no
 /// tie-break, so rows written microseconds apart have no guaranteed order. Making the instants

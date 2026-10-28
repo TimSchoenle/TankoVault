@@ -32,7 +32,7 @@ async fn operator(app: &TestApp) -> (String, String) {
     (app.bearer(user), app.enrolled_and_elevated(user).await)
 }
 
-/// Poll the status route until the run releases its claim.
+/// Polls the status route until the run releases its claim.
 async fn settled(app: &TestApp, bearer: &str) -> Value {
     let deadline = Instant::now() + Duration::from_secs(60);
     loop {

@@ -243,7 +243,7 @@ pub async fn finish_build<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Persist the projection basis solved by a full build.
+/// Persists the projection basis solved by a full build.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.

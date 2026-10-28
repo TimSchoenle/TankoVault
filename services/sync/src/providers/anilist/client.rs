@@ -30,7 +30,7 @@ pub(crate) struct AniListClient {
 }
 
 impl AniListClient {
-    /// Construct a client. `min_interval` paces every outbound request (`AniList` allows
+    /// Constructs a client. `min_interval` paces every outbound request (`AniList` allows
     /// ~90 requests/minute; a ~700 ms floor stays comfortably under that).
     pub(crate) fn new(
         graphql_url: String,
@@ -70,7 +70,7 @@ impl AniListClient {
         format!("{}/authorize?{query}", self.oauth_base)
     }
 
-    /// Exchange an authorization `code` for tokens.
+    /// Exchanges an authorization `code` for tokens.
     pub(crate) async fn exchange_code(&self, code: &str) -> anyhow::Result<OAuthTokens> {
         let body = serde_json::json!({
             "grant_type": "authorization_code",
@@ -133,7 +133,7 @@ impl AniListClient {
         })
     }
 
-    /// Execute a GraphQL operation, returning the `data` object. Retries once on `429`.
+    /// Executes a GraphQL operation, returning the `data` object. Retries once on `429`.
     ///
     /// `operation` is the metric label. A `&'static str` chosen by the caller instead of
     /// anything derived from `query`: a label taken from the request text is an unbounded
@@ -242,7 +242,7 @@ impl AniListClient {
         Err(anyhow!(RATE_LIMITED))
     }
 
-    /// Classify a call for the `result` label.
+    /// Classifies a call for the `result` label.
     ///
     /// `rate_limited` is worth separating from `error`: it is not a fault in this deployment,
     /// it widens every later request's gap, and it is the one outcome an operator answers by
@@ -308,7 +308,7 @@ mod tests {
         serde_json::from_slice(&requests[0].body).expect("a JSON request body")
     }
 
-    /// Mount a `POST /graphql` that answers `200` with `data` for every call.
+    /// Mounts a `POST /graphql` that answers `200` with `data` for every call.
     async fn mount_graphql_ok(server: &MockServer) {
         Mock::given(method("POST"))
             .and(path("/graphql"))

@@ -307,7 +307,7 @@ struct LicenceNotices<'a> {
     notices: Vec<Notice>,
 }
 
-/// Group one workspace's harvest into the distinct notices each licence covers.
+/// Groups one workspace's harvest into the distinct notices each licence covers.
 ///
 /// **Identical notices are kept once.** cargo-about hands back one entry per licence *file*, so a
 /// graph of 531 crates yields 531 copies of ~10 licences: the Apache-2.0 text alone
@@ -464,7 +464,7 @@ struct Cluster {
 /// than it saves: the point is the 9.7 KB Apache-2.0 body, not a shared `Copyright (c) `.
 const MIN_SHARED_OPENING: usize = 1024;
 
-/// Group notices by the opening they share, so one licence body is printed once per group
+/// Groups notices by the opening they share, so one licence body is printed once per group
 /// instead of once per crate.
 ///
 /// Apache-2.0 is the case this exists for: 37 distinct notices in this graph, nearly all of them
@@ -547,7 +547,7 @@ fn cluster_crates(cluster: &Cluster) -> usize {
 const RULE: &str =
     "--------------------------------------------------------------------------------";
 
-/// Fold every run of whitespace to a single space, for comparison only.
+/// Folds every run of whitespace to a single space, for comparison only.
 ///
 /// Two licence files that differ solely in line wrapping or trailing whitespace are the same
 /// notice; without this the Apache-2.0 text appears 54 times instead of the number of genuinely

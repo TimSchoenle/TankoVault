@@ -100,7 +100,7 @@ struct Pass<'a> {
 }
 
 impl Pass<'_> {
-    /// Score every shortlisted pair, and perform the merges as they are decided.
+    /// Scores every shortlisted pair, and performs the merges as they are decided.
     ///
     /// # Errors
     ///
@@ -298,7 +298,7 @@ pub(super) fn retract_absorbed(judged: &mut Vec<Judged<'_>>, absorbed: &HashSet<
     retracted
 }
 
-/// Fold what the pass decided into its report.
+/// Folds what the pass decided into its report.
 ///
 /// Counted after [`retract_absorbed`], not as each pair is judged: a judgement the pass went on to
 /// invalidate was not one it examined to a conclusion, and counting it there would leave

@@ -65,7 +65,7 @@ pub struct EmailVerificationRecord {
     pub used_at: Option<OffsetDateTime>,
 }
 
-/// Persist a freshly issued email-verification token as its SHA-256 hash.
+/// Persists a freshly issued email-verification token as its SHA-256 hash.
 ///
 /// A duplicate `token_hash` is a generator fault (500), not a client-triggerable
 /// [`crate::DbError::Conflict`] (409).

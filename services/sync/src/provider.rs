@@ -103,7 +103,7 @@ pub(crate) trait ExternalProvider: Send + Sync {
     fn display_name(&self) -> &'static str;
     /// The OAuth consent URL to redirect a user to.
     fn authorize_url(&self) -> String;
-    /// Exchange an OAuth `code` for tokens.
+    /// Exchanges an OAuth `code` for tokens.
     async fn exchange_code(&self, code: &str) -> anyhow::Result<OAuthTokens>;
     /// Refreshes an expired access token.
     async fn refresh(&self, refresh_token: &SecretString) -> anyhow::Result<OAuthTokens>;
@@ -120,7 +120,7 @@ pub(crate) trait ExternalProvider: Send + Sync {
         access_token: &SecretString,
         viewer: &Viewer,
     ) -> anyhow::Result<Vec<RemoteEntry>>;
-    /// Search for a remote entry by title, returning its external id if found.
+    /// Searches for a remote entry by title, returning its external id if found.
     async fn search(
         &self,
         access_token: &SecretString,

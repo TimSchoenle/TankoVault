@@ -52,7 +52,7 @@ fn first_table_cell(line: &str) -> Option<&str> {
     .then_some(cell)
 }
 
-/// Expand one cell into the keys it documents, applying the suffix shorthand.
+/// Expands one cell into the keys it documents, applying the suffix shorthand.
 fn keys_in_cell(cell: &str) -> Vec<String> {
     let mut keys: Vec<String> = Vec::new();
     for token in cell.split('`').skip(1).step_by(2) {

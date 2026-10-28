@@ -140,7 +140,7 @@ pub(super) const NOTICES_ROUTE: &str = "/third-party-notices";
 /// [`NOTICES_ROUTE`], and `xtask repo-lint` holds this pair equal too.
 pub(super) const NOTICES_JSON_ROUTE: &str = "/third-party-notices.json";
 
-/// Assemble the router: the health probe, the licence notices, the `/v1/*` proxy, and the
+/// Assembles the router: the health probe, the licence notices, the `/v1/*` proxy, and the
 /// static bundle (with SPA fallback and hardening headers) catching everything else.
 pub(super) fn build_router(
     frontend: &FrontendConfig,

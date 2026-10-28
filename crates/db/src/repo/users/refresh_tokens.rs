@@ -21,7 +21,7 @@ pub struct RefreshRecord {
     pub revoked_at: Option<OffsetDateTime>,
 }
 
-/// Persist a freshly issued refresh token (as its SHA-256 hash).
+/// Persists a freshly issued refresh token (as its SHA-256 hash).
 ///
 /// A duplicate `token_hash` is a generator fault (500), not a client-triggerable
 /// [`crate::DbError::Conflict`] (409).

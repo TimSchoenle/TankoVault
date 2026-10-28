@@ -10,7 +10,7 @@ use crate::error::DbResult;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-/// Recompute up to `limit` stored rows whose unlock deadline has passed, and return how many
+/// Recomputes up to `limit` stored rows whose unlock deadline has passed, and returns how many
 /// were due.
 ///
 /// # Errors
@@ -150,7 +150,7 @@ pub async fn reconcile_batch(pool: &PgPool, limit: i64) -> DbResult<UnreadDrift>
     Ok(drift)
 }
 
-/// Recompute the stored rows for `keys`, one reader at a time in key order.
+/// Recomputes the stored rows for `keys`, one reader at a time in key order.
 async fn refresh(pool: &PgPool, keys: &[(Uuid, Uuid)]) -> DbResult<()> {
     let mut keys = keys.to_vec();
     keys.sort_unstable();

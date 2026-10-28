@@ -29,7 +29,7 @@ pub async fn insert_link_state<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Spend a live link `state` minted for this user and provider; `false` when there is none.
+/// Spends a live link `state` minted for this user and provider; `false` when there is none.
 ///
 /// A match is deleted in the same statement, so of two callbacks racing on one `state` exactly
 /// one sees `true`. A `state` presented by the wrong account or for the wrong provider is left

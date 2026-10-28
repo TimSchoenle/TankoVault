@@ -54,7 +54,7 @@ impl MappingVerifier {
         Self { pool, registry }
     }
 
-    /// Claim the run and return its token. `None` when another run holds the claim.
+    /// Claims the run and returns its token. `None` when another run holds the claim.
     ///
     /// # Errors
     /// Returns an error on a database failure.

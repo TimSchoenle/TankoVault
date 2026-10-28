@@ -190,7 +190,7 @@ async fn drop_overshared_aliases(pool: &tankovault_db::PgPool, apply: bool) -> a
     Ok(())
 }
 
-/// Print the ranking, worst first, and the totals under it.
+/// Prints the ranking, worst first, and the totals under it.
 fn report(splits: &[Split]) {
     if splits.is_empty() {
         println!("sources: every source scores as belonging to the series it is filed under");

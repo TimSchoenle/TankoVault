@@ -165,7 +165,7 @@ pub(crate) enum Verdict {
     Unmeasured { measured: f64 },
 }
 
-/// Compare `measured` against `floor`.
+/// Compares `measured` against `floor`.
 ///
 /// Equality passes. A floor is a minimum, and a change that lands exactly on it has not made
 /// anything worse: failing there would make the gate depend on floating-point noise in the

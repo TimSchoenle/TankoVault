@@ -22,7 +22,7 @@ use super::verify::record_identifies;
 const NO_PUBLIC_PROVIDER: &str =
     "no registered provider exposes public metadata, so the sweep had nothing to ask";
 
-/// Narrow a counter for the `int` columns the sweep state is stored in.
+/// Narrows a counter for the `int` columns the sweep state is stored in.
 fn saturating(count: usize) -> i32 {
     i32::try_from(count).unwrap_or(i32::MAX)
 }
@@ -49,7 +49,7 @@ impl Enricher {
         }
     }
 
-    /// Walk the catalogue in batches of `batch_size`, up to `max_series` series, asking every
+    /// Walks the catalogue in batches of `batch_size`, up to `max_series` series, asking every
     /// public-metadata provider for each one's catalogue metadata by cached external id, else
     /// by canonical title, accepting a title hit only when its titles identify the series.
     /// Never fails the whole sweep on a single series' error.
@@ -146,7 +146,7 @@ impl Enricher {
         Ok(())
     }
 
-    /// Enrich one series from the first public provider that resolves it. Returns whether any
+    /// Enriches one series from the first public provider that resolves it. Returns whether any
     /// provider supplied metadata.
     async fn enrich_series(&self, row: &SeriesEnrichmentRow) -> anyhow::Result<bool> {
         for (slug, provider) in self.registry.iter() {
@@ -180,7 +180,7 @@ impl Enricher {
         Ok(false)
     }
 
-    /// Stamp a series the sweep got nothing out of, so the next page moves past it.
+    /// Stamps a series the sweep got nothing out of, so the next page moves past it.
     ///
     /// A failure to stamp is logged, not propagated: the sweep would otherwise abort a
     /// whole run over one row, and the run's remaining budget is worth more than the row.

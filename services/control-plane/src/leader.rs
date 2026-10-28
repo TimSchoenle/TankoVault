@@ -30,7 +30,7 @@ impl Leadership {
     }
 }
 
-/// Connect (and wait for readiness) a Redis client for leader election.
+/// Connects (and waits for readiness) a Redis client for leader election.
 ///
 /// `url` is a [`SecretString`] because `redis://:password@host` is a supported form; it is
 /// exposed exactly here, into the client config.

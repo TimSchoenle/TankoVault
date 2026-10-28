@@ -47,7 +47,7 @@ impl TokenVault {
         Ok(())
     }
 
-    /// Decrypt a usable access token for `user_id` at `provider`, refreshing it first if it has
+    /// Decrypts a usable access token for `user_id` at `provider`, refreshing it first if it has
     /// expired and a refresh token is available.
     pub(crate) async fn access(
         &self,

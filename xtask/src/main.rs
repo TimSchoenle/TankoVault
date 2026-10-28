@@ -187,7 +187,7 @@ async fn compiled_commands(cmd: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Regenerate (or, with `check = true`, verify) the committed sqlx offline query cache in
+/// Regenerates (or, with `check = true`, verify) the committed sqlx offline query cache in
 /// `.sqlx/` via `cargo sqlx prepare`. Needs `DATABASE_URL` pointing at a migrated database and
 /// `sqlx-cli` installed.
 #[cfg(feature = "full")]
@@ -233,7 +233,7 @@ fn sqlx_prepare(check: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Install `hooks/pre-commit` into `.git/hooks/pre-commit`.
+/// Installs `hooks/pre-commit` into `.git/hooks/pre-commit`.
 ///
 /// An opt-in convenience, not the enforcement: `xtask openapi --check` in CI is what actually
 /// catches a regenerated artefact that never got committed.
@@ -330,7 +330,7 @@ const CLIENT_HEADER: &str = concat!(
     "#![allow(rustdoc::broken_intra_doc_links)]\n",
 );
 
-/// Regenerate `openapi.json` and the typed `crates/api-client/src/lib.rs` from the api
+/// Regenerates `openapi.json` and the typed `crates/api-client/src/lib.rs` from the api
 /// service's `utoipa` schemas. With `check = true`, verifies both against disk instead of
 /// writing, and fails on any difference.
 #[cfg(feature = "full")]
@@ -482,7 +482,7 @@ const ENUM_TYPES: [&str; 7] = [
     "AccountStatus",
 ];
 
-/// Inject `x-rust-type` into the id and enum schema components so `progenitor` emits our
+/// Injects `x-rust-type` into the id and enum schema components so `progenitor` emits our
 /// domain newtypes/enums instead of freshly generated stand-ins.
 #[cfg(feature = "full")]
 fn inject_rust_types(value: &mut serde_json::Value) {
@@ -578,7 +578,7 @@ fn wrap_annotated_reference(map: &mut serde_json::Map<String, serde_json::Value>
     }
 }
 
-/// Downgrade `OpenAPI` 3.1.0 (what utoipa publishes) to 3.0.3 (openapiv3 crate requirement).
+/// Downgrades `OpenAPI` 3.1.0 (what utoipa publishes) to 3.0.3 (openapiv3 crate requirement).
 /// This handles the `type: [string, null]` -> `type: string, nullable: true` conversion
 /// and changes the version string.
 #[cfg(feature = "full")]

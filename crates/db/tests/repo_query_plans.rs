@@ -177,7 +177,7 @@ async fn generic_plan_of(pool: &PgPool, query: &CachedQuery) -> Value {
     serde_json::from_str(&raw).expect("parse the plan document")
 }
 
-/// Visit every node of an `EXPLAIN (FORMAT JSON)` document, subplans included.
+/// Visits every node of an `EXPLAIN (FORMAT JSON)` document, subplans included.
 fn walk(node: &Value, visit: &mut impl FnMut(&Value)) {
     visit(node);
     if let Some(children) = node.get("Plans").and_then(Value::as_array) {
@@ -700,7 +700,7 @@ async fn the_browse_statements_read_the_projection() {
     }
 }
 
-/// Assert a statement's plan has no node reading `chapters`.
+/// Asserts a statement's plan has no node reading `chapters`.
 fn assert_never_reads_chapters(plan: &Value, label: &str) {
     let mut chapter_scans: Vec<String> = Vec::new();
     walk(&plan[0]["Plan"], &mut |node| {

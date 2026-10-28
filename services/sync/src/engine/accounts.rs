@@ -43,7 +43,7 @@ impl AccountService {
         Ok(self.registry.get(slug)?.authorize_url())
     }
 
-    /// Exchange an OAuth `code` and persist the (encrypted) tokens for `user_id`.
+    /// Exchanges an OAuth `code` and persists the (encrypted) tokens for `user_id`.
     pub(crate) async fn link(&self, slug: &str, user_id: UserId, code: &str) -> anyhow::Result<()> {
         let provider = self.registry.get(slug)?;
         let tokens = provider.exchange_code(code).await?;

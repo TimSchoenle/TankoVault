@@ -54,8 +54,8 @@ code change closes it:
     on a second lookup can still reach an internal address from either tier.
   - Inside TRAWL, redirects and subresources are not checked at all: it is a third-party image
     this repository does not control.
-  - Traffic CDP `Fetch` never pauses (WebSocket, WebRTC, `<link rel=preconnect>`) is not
-    checked in `render` either.
+  - Traffic that CDP `Fetch` never pauses for (WebSocket, WebRTC, `<link rel=preconnect>`) is
+    not checked in `render` either.
 
   The reference compose file narrows what any of these can reach: `render`, `challenge-solver`
   and `trawl` sit on their own `solver` network with only `worker` beside them, and `trawl`

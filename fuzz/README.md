@@ -41,7 +41,7 @@ builds at `1.94`.
 As a workspace member, this crate would put nightly and `libfuzzer-sys`/`arbitrary` into the path
 of `cargo fmt --all`, `cargo clippy --workspace --all-targets`, `cargo deny check bans` (whose
 `multiple-versions` is `deny` against a dated skip list) and the `--locked` resolution the `msrv`
-and `supply-chain` jobs measure: for a crate that no gate runs. So it is listed under the root
+and `supply-chain` jobs measure, all for a crate that no CI gate runs. So it is listed under the root
 `Cargo.toml`'s `exclude`, alongside `web/frontend`, which is outside for the same kind of reason
 (it targets `wasm32`). It carries its own `rust-toolchain.toml` and its own, uncommitted lockfile.
 
@@ -50,7 +50,7 @@ a required check is a gate that breaks on somebody else's schedule, and a fuzz r
 depends on how long it ran: neither is a property a blocking gate should have. If a job is ever
 added it must be `continue-on-error: true` and time-boxed (`-max_total_time=60` per target for a
 pull request, a `schedule:`d soak with the corpus persisted via `actions/cache` for the real
-campaign), and it must report, not fail.
+campaign), and it must report its result without failing the workflow.
 
 ## Running them
 

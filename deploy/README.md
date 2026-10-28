@@ -71,13 +71,15 @@ The complete surface (every `TANKOVAULT_*` key, its default, and which service r
 
 **Required, with no working default** (compose fails fast instead of booting insecure):
 - `TANKOVAULT_AUTH__JWT_SECRET`: API token signing secret.
-- `TANKOVAULT_AUTH__PASSWORD_PEPPER`: *optional* server-side password pepper mixed into every
-  argon2id hash so a database leak alone can't be brute-forced offline. Empty (the default)
-  keeps hashing un-peppered. Once set it must stay stable (or existing passwords stop
-  verifying) and must be given to both the `api` and `seed` services with the same value.
 - `TANKOVAULT_ANILIST__CLIENT_ID` / `__CLIENT_SECRET` / `__REDIRECT_URI`: AniList OAuth app.
 - `TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY`: base64 32-byte key for tokens at rest; generate
   with `openssl rand -base64 32`.
+
+**Password pepper** (`TANKOVAULT_AUTH__PASSWORD_PEPPER`): a server-side secret mixed into every
+argon2id hash so a database leak alone cannot be brute-forced offline. Empty by default, which
+keeps hashing un-peppered; `bootstrap seed-admin` refuses an empty value when
+`TANKOVAULT_PROFILE=production`. Once set it must stay stable (or existing passwords stop
+verifying), and the `api` and `seed` services must have the same value.
 
 ## Building a single service image
 ```bash
@@ -241,8 +243,9 @@ templates and tests live and are gated there.
 What the chart builds on, from this repository: every service exposes `/health` (liveness) and
 `/ready` (readiness with per-dependency detail) on its main port and a Prometheus scrape on an
 isolated `9090`, schema migration is a discrete one-shot step instead of something a service
-does at startup, and the control-plane scheduler elects a leader through Redis, so a
-`Deployment` with `replicas > 1` is safe there.
+does at startup, and the control-plane scheduler elects a leader through Redis. A
+`Deployment` with `replicas > 1` is safe only with `TANKOVAULT_REDIS__URL` set: without Redis,
+every replica is its own sole leader and runs the scheduler sweeps.
 
 ### Installing into a cluster
 

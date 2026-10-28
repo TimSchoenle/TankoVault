@@ -169,9 +169,6 @@ impl Mfa {
         info.set(None);
         let label = key_label.read().trim().to_owned();
         let client = gate.client(api);
-        // The finish leg needs no elevation — the ceremony it completes was already gated — so
-        // it goes through the ordinary client.
-        let plain = api.client();
 
         spawn(async move {
             let started = match client
@@ -206,7 +203,11 @@ impl Mfa {
                 Err(e) => return ceremony_failed(&e, error, busy, i18n),
             };
 
-            match plain
+            // The finish leg needs no elevation, since the ceremony it completes was gated. The
+            // client is built here because a token renewed during the ceremony would leave one
+            // built before it carrying the expired token.
+            match api
+                .client()
                 .security_key_register_finish()
                 .body(SecurityKeyRegisterFinish {
                     ceremony_id: started.ceremony_id,

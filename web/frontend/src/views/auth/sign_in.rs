@@ -124,6 +124,10 @@ impl SignIn {
                             nav.push(Route::Discover {
                                 query: DiscoverQuery::default(),
                             });
+                        } else {
+                            // Neither outcome: an API that broke its contract must not leave
+                            // the form looking as if nothing was sent.
+                            error.set(Some(i18n.t("error.unexpected")));
                         }
                     }
                     Err(e) => error.set(Some(api::friendly_error(i18n, e))),
@@ -319,10 +323,11 @@ impl SignIn {
             mut error,
             mut info,
             mut needs_verification,
+            busy,
             ..
         } = self;
         let email_v = login.read().trim().to_owned();
-        if email_v.is_empty() {
+        if email_v.is_empty() || !busy.claim() {
             return;
         }
         let client = api.client();
@@ -335,6 +340,7 @@ impl SignIn {
             needs_verification.set(false);
             error.set(None);
             info.set(Some(i18n.t("auth.resent")));
+            busy.release();
         });
     }
 }

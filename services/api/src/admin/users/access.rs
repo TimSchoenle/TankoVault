@@ -1,5 +1,5 @@
-//! Whether the account may act at all (suspension), and whether it is acting right now (session
-//! revocation). Neither is a capability edit; those are [`super::permissions`].
+//! Owns whether the account may act at all (suspension), and whether it is acting right now
+//! (session revocation). Neither is a capability edit; those are [`super::permissions`].
 
 use crate::audit::audit;
 use crate::error::ApiResult;
@@ -22,7 +22,7 @@ pub struct SetUserStatus {
     /// next; ignored when reinstating.
     #[serde(default)]
     pub reason: Option<String>,
-    /// Also revoke every live session, so the suspension takes effect immediately rather than
+    /// Also revoke every live session, so the suspension takes effect immediately instead of
     /// when the current access token expires.
     ///
     /// Defaults to `true`: a suspension that leaves the account working for the next quarter of
@@ -38,7 +38,7 @@ fn default_true() -> bool {
 
 /// Suspend or reinstate a user
 ///
-/// A suspended account cannot sign in, refresh a session, or take any action — the check
+/// A suspended account cannot sign in, refresh a session, or take any action: the check
 /// happens before authorization, so it is not something a permission can override. Nothing the
 /// account owns is deleted, so the change is fully reversible.
 ///
@@ -104,8 +104,8 @@ pub async fn set_user_status(
 
 /// Revoke a user's sessions
 ///
-/// Signs the account out of every device. Does not change what the account may do — use
-/// suspension for that; this only ends the sessions currently in flight.
+/// Signs the account out of every device. Does not change what the account may do (use
+/// suspension for that); this only ends the sessions currently in flight.
 #[utoipa::path(
     post,
     path = "/v1/admin/users/{id}/revoke-sessions",

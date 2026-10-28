@@ -1,15 +1,15 @@
-//! The adult-content gate: the one place that decides whether a request may see gated series.
+//! Owns the adult-content gate: the one place that decides whether a request may see gated series.
 //!
 //! Two independent conditions, and both must hold:
 //!
-//! 1. the deployment has [`Feature::CatalogueAdultContent`] switched on — off by default, and
+//! 1. the deployment has [`Feature::CatalogueAdultContent`] switched on (off by default), and
 //!    an operator turning it on shows nobody anything by itself;
 //! 2. the requesting account has opted in *and* attested its age.
 //!
 //! There is no third way in. An anonymous request cannot satisfy (2) at all, which is the
 //! design: the opt-in is a property of an account, so a caller without one has nowhere to
 //! record a decision and nothing to consult. Every read surface resolves the answer through
-//! [`AdultVisibility`] rather than assembling it locally — the gate is only as good as its
+//! [`AdultVisibility`] instead of assembling it locally: the gate is only as good as its
 //! least careful call site, and there are a dozen of them.
 
 use crate::state::{AppState, AuthUser};

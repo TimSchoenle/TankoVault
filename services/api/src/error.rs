@@ -1,4 +1,5 @@
-//! Typed API error → RFC 9457 problem+json. Internal errors never leak details.
+//! Owns the typed API error and its RFC 9457 problem+json rendering. Internal errors never leak
+//! details.
 
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -10,10 +11,10 @@ use utoipa::ToSchema;
 
 /// The closed vocabulary of `title` values an API response can carry.
 ///
-/// Published as a schema enum so clients branch on a generated type rather than on string
-/// literals. That makes the list a **contract**: a token missing from here fails to deserialise
-/// in the generated client, which turns a clean error response into
-/// `progenitor_client::Error::InvalidResponsePayload` — the server's message is lost and the
+/// Published as a schema enum so clients branch on a generated type, not on string literals.
+/// That makes the list a **contract**: a token missing from here fails to deserialise in the
+/// generated client, which turns a clean error response into
+/// `progenitor_client::Error::InvalidResponsePayload`; the server's message is lost and the
 /// caller sees "unreadable response" instead of the refusal. So every problem body reachable on
 /// an API route needs a variant, including the two the shared middleware emits without ever
 /// building an [`ApiError`]: [`Self::FeatureDisabled`] and [`Self::RateLimited`].
@@ -24,7 +25,7 @@ pub enum ProblemKind {
     Conflict,
     Unauthorized,
     /// Distinct from [`Self::Unauthorized`]: the deployment admits no anonymous callers at all,
-    /// so the client shows its sign-in surface rather than reporting a failed request.
+    /// so the client shows its sign-in surface instead of reporting a failed request.
     /// Emitted only by `crate::account_gate`.
     AccountRequired,
     Forbidden,
@@ -91,7 +92,7 @@ impl ProblemKind {
 }
 
 /// RFC 9457 `application/problem+json` error body shape produced by [`ApiError`]. Declared
-/// purely for `OpenAPI` documentation — `tankovault_service::problem` builds the JSON, so runtime
+/// purely for `OpenAPI` documentation: `tankovault_service::problem` builds the JSON, so runtime
 /// callers never construct this type. It mirrors `problem::ProblemBody`; a test asserts the two
 /// agree field for field, since only this copy is published to clients.
 #[derive(Serialize, serde::Deserialize, ToSchema)]
@@ -137,7 +138,7 @@ pub enum ApiError {
     /// The route needs a fresh second-factor presentation and the request carried none.
     ///
     /// `403`, not `401`, and the distinction is load-bearing: the caller *is* authenticated, and
-    /// a `401` would drive the SPA's sign-out path — turning "confirm it is you" into "you have
+    /// a `401` would drive the SPA's sign-out path, turning "confirm it is you" into "you have
     /// been logged out". The distinct problem type is what the client branches on to open its
     /// re-authentication prompt and retry.
     #[error("step-up authentication required")]
@@ -145,15 +146,15 @@ pub enum ApiError {
     /// The caller holds a privileged grant (or the deployment requires it of everyone) but has
     /// no second factor enrolled.
     ///
-    /// Also `403` with its own type, so the console can route to the enrolment page rather than
+    /// Also `403` with its own type, so the console can route to the enrolment page instead of
     /// showing "insufficient privileges" to someone whose privileges are fine.
     #[error("two-factor enrolment required")]
     MfaEnrolmentRequired,
     /// The requested capability exists in the code but is switched off for this deployment.
     ///
     /// `404`, matching `tankovault_service::flags::enforce`. Handlers use this where
-    /// route-level middleware can't express it — e.g. a request body asking for a disabled
-    /// *mode* rather than a disabled path.
+    /// route-level middleware can't express it, such as a request body asking for a disabled
+    /// *mode* instead of a disabled path.
     #[error("feature disabled")]
     FeatureDisabled(tankovault_domain::Feature),
     #[error("{0}")]
@@ -310,8 +311,8 @@ mod tests {
     ///
     /// The exhaustive match below the list is what makes that hold: a new variant stops this
     /// file compiling, so it cannot reach the wire without someone standing here deciding what
-    /// its status and token are. The previous version of these tests was a hand-picked list and
-    /// silently omitted the three `403`s the console branches on.
+    /// its status and token are. A hand-picked list silently omits variants, and the first ones
+    /// it dropped were the three `403`s the console branches on.
     fn every_variant() -> Vec<ApiError> {
         let all = vec![
             ApiError::NotFound,
@@ -357,14 +358,13 @@ mod tests {
             .await
             .expect("read body");
         // Deserializing into the *documented* type is the assertion: a member renamed or dropped
-        // on either side fails here, and now so does a `title` outside the published vocabulary.
+        // on either side fails here, and so does a `title` outside the published vocabulary.
         serde_json::from_slice(&bytes).expect("body matches the published schema")
     }
 
-    /// `ProblemDetails` is documentation only — `tankovault_service::problem` builds the runtime
-    /// body. Two declarations of one wire shape is exactly the drift that made hand-mirrored DTOs
-    /// a problem elsewhere in this codebase, so the published schema is asserted against a real
-    /// response rather than trusted.
+    /// `ProblemDetails` is documentation only: `tankovault_service::problem` builds the runtime
+    /// body. Two declarations of one wire shape drift apart, so the published schema is asserted
+    /// against a real response instead of trusted.
     #[tokio::test]
     async fn the_documented_schema_matches_the_body_actually_sent() {
         let response = ApiError::NotFound.into_response();
@@ -386,8 +386,8 @@ mod tests {
 
     /// Every variant's status must agree with the `status` member in its own body, or a client
     /// that reads one and not the other sees a different error than the one that happened. Every
-    /// variant, not a hand-picked list: the previous version of this test omitted the three
-    /// `403`s the console branches on, which are the ones a mistake here would hurt most.
+    /// variant, not a hand-picked list: a hand-picked list omitted the three `403`s the console
+    /// branches on, which are the ones a mistake here would hurt most.
     #[tokio::test]
     async fn every_variant_echoes_its_own_status() {
         for error in every_variant() {
@@ -408,7 +408,7 @@ mod tests {
     /// The vocabulary published in `openapi.json` is closed, so a token emitted on an API route
     /// but missing from it deserialises as nothing at all in the generated client: the caller
     /// gets `InvalidResponsePayload` and the server's message is lost. This is what proves the
-    /// list may be closed — it has to name *every* producer, and two of them never build an
+    /// list may be closed: it has to name *every* producer, and two of them never build an
     /// `ApiError`.
     #[test]
     fn every_problem_body_an_api_route_can_emit_is_in_the_vocabulary() {
@@ -423,7 +423,7 @@ mod tests {
             );
         }
 
-        // The shared middleware writes its problem body by hand rather than through `ApiError`,
+        // The shared middleware writes its problem body by hand, not through `ApiError`,
         // so neither of these is reachable from the loop above.
         for kind in [
             tankovault_service::ratelimit::RATE_LIMITED_KIND,

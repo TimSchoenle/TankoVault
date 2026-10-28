@@ -1,6 +1,6 @@
-//! Short-lived, single-use tickets for opening the SSE notification stream.
+//! Owns the short-lived, single-use tickets for opening the SSE notification stream.
 //!
-//! They replace a bearer token that would otherwise sit in the query string, where proxy
+//! They stand in for a bearer token that would otherwise sit in the query string, where proxy
 //! logs, `Referer` headers and browser history could retain it long after use.
 
 use std::collections::HashMap;
@@ -17,8 +17,8 @@ use uuid::Uuid;
 ///
 /// Long enough to cover the round trip from the mint call to the browser opening the
 /// `EventSource`, short enough that a ticket sitting in a log line is dead by the time anyone
-/// reads it. The audit suggested 30 s; there is no reason to be more generous, because the only
-/// legitimate holder redeems it immediately.
+/// reads it. There is no reason to be more generous, because the only legitimate holder redeems
+/// it immediately.
 pub const TICKET_TTL: Duration = Duration::from_secs(30);
 
 /// Namespace prefix, so ticket keys cannot collide with the rate limiter's buckets or the
@@ -31,29 +31,28 @@ const KEY_PREFIX: &str = "tankovault:stream-ticket:";
 /// logs: a Redis outage must degrade the live stream, never the request that asked for a ticket.
 #[async_trait]
 pub trait StreamTicketStore: Send + Sync + 'static {
-    /// Mint a fresh single-use ticket for `user`, returning the value to hand the client.
+    /// Mints a fresh single-use ticket for `user`, returning the value to hand the client.
     ///
-    /// A [`SecretString`]: between minting and redemption a ticket is exactly as good as the
-    /// access token it replaced, and query strings are the thing most likely to end up in a
-    /// proxy log.
+    /// A [`SecretString`]: between minting and redemption a ticket is exactly as good as an
+    /// access token, and query strings are the thing most likely to end up in a proxy log.
     ///
     /// # Errors
-    /// A message describing the store failure, for the caller to log.
+    /// Returns a message describing the store failure, for the caller to log.
     async fn mint(&self, user: UserId) -> Result<SecretString, String>;
 
-    /// Redeem `ticket`, returning the user it was minted for.
+    /// Redeems `ticket`, returning the user it was minted for.
     ///
     /// `Ok(None)` means "no such ticket": unknown, expired, or already spent. The three are
-    /// deliberately indistinguishable — the caller answers `401` to all of them.
+    /// deliberately indistinguishable: the caller answers `401` to all of them.
     ///
     /// # Errors
-    /// A message describing the store failure, for the caller to log.
+    /// Returns a message describing the store failure, for the caller to log.
     async fn consume(&self, ticket: &str) -> Result<Option<UserId>, String>;
 }
 
-/// Generate a ticket and the key it is stored under.
+/// Generates a ticket and the key it is stored under.
 ///
-/// Reuses the refresh-token generator (32 CSPRNG bytes, URL-safe base64) rather than inventing
+/// Reuses the refresh-token generator (32 CSPRNG bytes, URL-safe base64) instead of inventing
 /// a second opaque-token format, and the same SHA-256 hashing the reset and confirmation tokens
 /// use, for the same reason: what is stored must not be replayable.
 fn new_ticket() -> (SecretString, String) {
@@ -62,10 +61,10 @@ fn new_ticket() -> (SecretString, String) {
     (raw, key)
 }
 
-/// The key `ticket` would have been stored under.
+/// Returns the key `ticket` would have been stored under.
 ///
 /// `ticket` stays a `&str`: it arrives as a borrowed query parameter, and wrapping a value the
-/// caller does not own buys nothing — the same reasoning as
+/// caller does not own buys nothing; the same reasoning as
 /// `tankovault_auth::verify_access_token`'s presented token.
 fn key_for(ticket: &str) -> String {
     format!(
@@ -80,7 +79,7 @@ pub struct RedisStreamTickets {
 }
 
 impl RedisStreamTickets {
-    /// Use an already-initialised client. Shares the connection with the rate-limit counters.
+    /// Uses an already-initialised client. Shares the connection with the rate-limit counters.
     #[must_use]
     pub fn new(client: fred::clients::Client) -> Self {
         Self { client }
@@ -93,8 +92,8 @@ impl StreamTicketStore for RedisStreamTickets {
         use fred::interfaces::KeysInterface as _;
 
         let (raw, key) = new_ticket();
-        // `NX` so a hash collision — or a repeated random value, which would mean the CSPRNG is
-        // broken — can never overwrite another user's live ticket and hand them this stream.
+        // `NX` so a hash collision (or a repeated random value, which would mean the CSPRNG is
+        // broken) can never overwrite another user's live ticket and hand them this stream.
         let stored: Option<String> = self
             .client
             .set(
@@ -135,7 +134,7 @@ impl StreamTicketStore for RedisStreamTickets {
 
 /// Tickets in this process only.
 ///
-/// Correct for one replica; wrong across several — a ticket minted on one is invisible to
+/// Correct for one replica; wrong across several: a ticket minted on one is invisible to
 /// another replica until a retry happens to land on it.
 #[derive(Default)]
 pub struct MemoryStreamTickets {

@@ -1,5 +1,5 @@
-//! Public series browse/detail/chapters. Links are resolved to absolute URLs here via
-//! `domain::resolve_link`; the database stays relative (`docs/ARCHITECTURE.md` §11).
+//! Owns the public series browse, detail and chapter routes. Links resolve to absolute URLs here
+//! via `domain::resolve_link`; the database stays relative (`docs/ARCHITECTURE.md` §11).
 
 use crate::content_gate::AdultVisibility;
 use crate::error::{ApiError, ApiResult};
@@ -22,14 +22,14 @@ use crate::views::IntoView;
 
 /// Highest accepted page index for the browse listing.
 ///
-/// At the 100-item maximum page size this is 10 million rows deep — far past any real
-/// catalogue, and far short of the `i64` overflow the unbounded value allowed.
+/// At the 100-item maximum page size this is 10 million rows deep: far past any real
+/// catalogue, and far short of the `i64` overflow an unbounded value allows.
 const MAX_PAGE: i64 = 100_000;
 
 /// Query parameters for the Discover browse list (frontend §9.1). All filters are optional;
 /// `tag`/`exclude_tag` may repeat (`?tag=action&tag=drama`). Sorting and offset pagination
-/// are server-side; the total match count + next page are returned as response headers so
-/// the JSON body stays a plain array (backward-compatible with older clients).
+/// are server-side; the total match count and next page are returned as response headers so
+/// the JSON body stays a plain array that older clients still decode.
 #[derive(Debug, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 pub struct ListParams {
@@ -55,7 +55,7 @@ pub struct ListParams {
     #[serde(default)]
     pub min_chapters: Option<i32>,
     /// `tracked` narrows the list to series the caller already has on their watchlist,
-    /// `untracked` to the rest. Requires an authenticated caller — whose watchlist it is comes
+    /// `untracked` to the rest. Requires an authenticated caller; whose watchlist it is comes
     /// from the token, never from a parameter.
     #[serde(default)]
     pub tracking: Option<String>,
@@ -89,10 +89,9 @@ const fn default_with_total() -> bool {
 
 /// The `tracking` parameter: which side of the caller's own watchlist the list is narrowed to.
 ///
-/// An enum with a strict [`FromStr`](std::str::FromStr) rather than a bare string, so a typo is a
-/// `400` naming the parameter instead of a silently unfiltered page — the same reasoning as
-/// `sort`, and the more important one here: "hide what I already read" reads as working when it
-/// quietly does nothing.
+/// An enum with a strict [`FromStr`](std::str::FromStr), so a typo is a `400` naming the
+/// parameter instead of a silently unfiltered page. The same reasoning applies to `sort`, and
+/// matters more here: "hide what I already read" reads as working when it quietly does nothing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrackingFilter {
     /// Only series on the caller's watchlist.
@@ -113,9 +112,9 @@ impl std::str::FromStr for TrackingFilter {
     }
 }
 
-/// Parse an optional query-string token, refusing an unrecognised one.
+/// Parses an optional query-string token, refusing an unrecognised one.
 ///
-/// An empty value means "not supplied" — the frontend's select controls submit `""` for their
+/// An empty value means "not supplied": the frontend's select controls submit `""` for their
 /// "any" option, and treating that as a parse failure would 400 the default page.
 fn parse_param<T: std::str::FromStr>(raw: Option<&str>, name: &str) -> ApiResult<Option<T>> {
     match raw.map(str::trim).filter(|v| !v.is_empty()) {
@@ -129,10 +128,9 @@ fn parse_param<T: std::str::FromStr>(raw: Option<&str>, name: &str) -> ApiResult
 
 /// One card in a catalogue grid.
 ///
-/// Grown rather than replaced: a deployed SPA outlives a server change, so every field an older
-/// client reads is still here and the additions are ignored by it. `source_count` is kept for
-/// that reason alone — the surfaces that used to print it now print [`Self::chapter_count`],
-/// which is what a reader was actually trying to learn from it.
+/// Fields are only ever added: a deployed SPA outlives a server change, so every field an older
+/// client reads stays, and it ignores the additions. `source_count` stays for that reason alone;
+/// reader-facing surfaces print [`Self::chapter_count`].
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SeriesSummary {
     pub id: SeriesId,
@@ -151,33 +149,32 @@ pub struct SeriesSummary {
     pub latest_chapter: Option<f64>,
     pub release_year: Option<i32>,
     /// The opening of the description, trimmed to a card's worth. `None` when the series has
-    /// none, which a card renders as nothing rather than as empty space.
+    /// none, which a card renders as nothing instead of as empty space.
     pub blurb: Option<String>,
     /// Tag names, alphabetically. Capped server-side: a card has room for two or three, and
     /// shipping forty for a client to slice is payload nobody renders.
     pub tags: Vec<String>,
     /// Whether this series is adult-classified.
     ///
-    /// Only ever `true` for a caller who opted in — a card that reaches a client at all has
+    /// Only ever `true` for a caller who opted in: a card that reaches a client at all has
     /// already passed the gate. This labels what is on screen; it is not what hides anything.
     pub is_adult: bool,
 }
 
-/// Tags a card carries at most. Alphabetical, so the choice is stable between requests rather
-/// than varying with row order.
+/// Tags a card carries at most. Alphabetical, so the choice is stable between requests and does
+/// not vary with row order.
 const CARD_TAGS: usize = 3;
 
 /// Characters a card's blurb may carry before it is cut at the preceding word boundary.
 ///
-/// Sized for the three lines a cover card has room for. Trimming here rather than in the client
-/// keeps a full description — which routinely runs to several kilobytes — out of a grid response
-/// that carries sixty of them.
+/// Sized for the three lines a cover card has room for. Trimming here, not in the client, keeps a
+/// full description (routinely several kilobytes) out of a grid response that carries sixty.
 const BLURB_CHARS: usize = 220;
 
 /// A series description as a card shows it: whitespace collapsed, cut at a word boundary, with an
 /// ellipsis when anything was dropped.
 ///
-/// `None` for an absent or blank description, so a card branches on presence rather than
+/// `None` for an absent or blank description, so a card branches on presence instead of
 /// rendering an empty line.
 #[must_use]
 pub fn blurb(description: Option<&str>) -> Option<String> {
@@ -200,16 +197,16 @@ pub fn blurb(description: Option<&str>) -> Option<String> {
 }
 
 impl SeriesSummary {
-    /// Build the summaries for one page, in the order given, with the two batched reads the
+    /// Builds the summaries for one page, in the order given, with the two batched reads the
     /// card needs.
     ///
-    /// Batched rather than folded into the listing query: the browse statements are the ones the
+    /// Batched, not folded into the listing query: the browse statements are the ones the
     /// plan audit budgets, and a reach into `chapters` per candidate row is charged against every
     /// row of `series` under a generic plan. Keyed on the ids about to be rendered, these two
     /// touch only those.
     ///
     /// # Errors
-    /// Propagates the two reads. Neither is defaulted away — a card silently claiming zero
+    /// Propagates the two reads. Neither is defaulted away: a card silently claiming zero
     /// chapters is worse than the page failing and being retried.
     async fn page(
         state: &AppState,
@@ -279,8 +276,8 @@ pub async fn list(
     MultiQuery(params): MultiQuery<ListParams>,
 ) -> ApiResult<(HeaderMap, Json<Vec<SeriesSummary>>)> {
     // Search is a *parameter* of the browse route, not a route of its own, so the feature
-    // table can't express it. Refused rather than silently ignored — a quietly unfiltered
-    // catalogue is worse than a clear no.
+    // table can't express it. Refused, not silently ignored: a quietly unfiltered catalogue is
+    // worse than a clear no.
     if params
         .query
         .as_deref()
@@ -304,10 +301,9 @@ pub async fn list(
     // Parsed at the edge: an unrecognised `sort`/`content_type`/`status` must fail loudly,
     // not silently answer `200` with a wrong page. Native Postgres types also let the
     // filters use an index; casting the column to text would lose it.
-    // A *searched* list defaults to relevance, an unsearched one to recency. Without this the
-    // search screen inherited `updated`, so an exact title match ranked wherever its last scan
-    // happened to put it — which is how a 100%-matching title came back below forty unrelated
-    // series. An explicit `sort` still wins: the Discover grid's control is the same parameter.
+    // A *searched* list defaults to relevance, an unsearched one to recency; under `updated` an
+    // exact title match ranks wherever its last scan put it. An explicit `sort` still wins: the
+    // Discover grid's control is the same parameter.
     let searching = params
         .query
         .as_deref()
@@ -325,8 +321,8 @@ pub async fn list(
     // Whose watchlist comes from the token, never from the query string: a browse parameter that
     // could name an account would read one reader's shelf back to another.
     //
-    // Refused rather than ignored for an anonymous caller. "Hide what I already read" that
-    // silently returns everything is the failure mode this whole parameter exists to avoid.
+    // Refused, not ignored, for an anonymous caller. "Hide what I already read" that silently
+    // returns everything is the failure mode this whole parameter exists to avoid.
     let tracking: Option<TrackingFilter> = parse_param(params.tracking.as_deref(), "tracking")?;
     let reader = match tracking {
         None => None,
@@ -385,10 +381,10 @@ pub struct SourceDto {
     pub provider_slug: String,
     /// Resolved absolute URL to open the series on the provider.
     pub url: String,
-    /// Count of distinct **whole** chapters (`floor(number)`-deduped) — sub-chapter part
-    /// releases don't inflate this (§ chapter grouping).
+    /// Count of distinct **whole** chapters (`floor(number)`-deduped), so sub-chapter part
+    /// releases don't inflate it (§ chapter grouping).
     pub chapter_count: i32,
-    /// True for the richest source (most chapters) — the one the reader should prefer
+    /// True for the richest source (most chapters), the one the reader should prefer
     /// (frontend §9.2). Exactly one source per series is flagged.
     pub is_primary: bool,
 }
@@ -412,7 +408,7 @@ pub struct SeriesDetail {
     /// `AniList` media id, if this series is mapped (`sync_mappings`); lets the frontend
     /// link out to the canonical `AniList` entry regardless of whether the viewer has synced.
     pub anilist_id: Option<String>,
-    /// Whether this series is adult-classified. See [`SeriesSummary::is_adult`] — reaching this
+    /// Whether this series is adult-classified. See [`SeriesSummary::is_adult`]: reaching this
     /// response at all means the caller is entitled to it.
     pub is_adult: bool,
 }
@@ -435,8 +431,8 @@ pub async fn detail(
 ) -> ApiResult<Json<SeriesDetail>> {
     use tankovault_db::repo::{catalog, providers, sync};
 
-    // Two grouped reads replace what used to be an N+1 loop over providers; the four
-    // independent tail reads below touch different tables and can overlap.
+    // Two grouped reads cover every provider at once; the four independent tail reads below
+    // touch different tables and can overlap.
     let series = catalog::get_series_visible(&state.pool, id, adult.include_adult()).await?;
     let sources = catalog::list_sources_for_series(&state.pool, id).await?;
 
@@ -457,7 +453,8 @@ pub async fn detail(
         .map(|g| counts_by_provider.get(&g.provider_id).copied().unwrap_or(0))
         .collect();
 
-    // The primary source is the merged provider carrying the most chapters (ties → first).
+    // The primary source is the merged provider carrying the most chapters (ties go to the
+    // first).
     let primary_idx = chapter_counts
         .iter()
         .enumerate()
@@ -474,8 +471,8 @@ pub async fn detail(
 
     let mut source_dtos = Vec::with_capacity(groups.len());
     for (i, group) in groups.iter().enumerate() {
-        // Unreachable today (the foreign key guarantees it); treated as "not found" rather
-        // than unwrapped so it stays that way if the constraint ever changes.
+        // The foreign key makes this unreachable; it is "not found", not an unwrap, so it stays
+        // safe if the constraint ever changes.
         let provider = providers
             .get(&group.provider_id)
             .ok_or(ApiError::NotFound)?;
@@ -519,9 +516,10 @@ pub async fn detail(
     }))
 }
 
-/// One provider's folded presence on a canonical series (`docs/ARCHITECTURE.md` §10): several `series_sources`
-/// rows collapsed into one reader-visible "completing" source. `link_id`/`link_source_path`
-/// identify the richest member — the DTO's representative id and outbound link.
+/// One provider's folded presence on a canonical series (`docs/ARCHITECTURE.md` §10): several
+/// `series_sources` rows collapsed into one reader-visible "completing" source.
+/// `link_id`/`link_source_path` identify the richest member: the DTO's representative id and
+/// outbound link.
 struct ProviderGroup {
     provider_id: ProviderId,
     link_id: SeriesSourceId,
@@ -529,9 +527,9 @@ struct ProviderGroup {
     member_ids: Vec<SeriesSourceId>,
 }
 
-/// Fold a series' source rows so each provider appears exactly once (`docs/ARCHITECTURE.md` §10). First-seen
-/// provider order is preserved (matching `list_sources_for_series`, which orders by id); the
-/// richest entry within a provider becomes the outbound link.
+/// Folds a series' source rows so each provider appears exactly once (`docs/ARCHITECTURE.md` §10).
+/// First-seen provider order is preserved (matching `list_sources_for_series`, which orders by id);
+/// the richest entry within a provider becomes the outbound link.
 fn group_sources_by_provider(sources: &[SeriesSource]) -> Vec<ProviderGroup> {
     // Parallel `best_counts` tracks each group's richest member's raw chapter_count so the
     // link target only advances to a strictly richer entry.
@@ -629,7 +627,7 @@ pub async fn chapters(
     // Read-state is opt-in: only a valid token gets it; no progress row yet still yields
     // `Some(false)`, not `None` (which means anonymous).
     //
-    // Both frontiers are needed — a part read ahead of the whole frontier lives only in
+    // Both frontiers are needed: a part read ahead of the whole frontier lives only in
     // `last_read_part_number`, so checking just the whole frontier reports it unread forever.
     let user = optional_user(&state, &headers);
     let progress = match user {
@@ -640,16 +638,16 @@ pub async fn chapters(
     };
 
     // The same identity decides which chapters exist at all: a provider's paid early-access rows
-    // are listed only to a reader who has opted that provider in. Everything downstream — the
-    // counts on this screen, the "next up" marker, the merged open control — is derived from
-    // this list, so filtering here is what keeps all of them from offering a paywall.
+    // are listed only to a reader who has opted that provider in. Everything downstream (the
+    // counts on this screen, the "next up" marker, the merged open control) derives from this
+    // list, so filtering here keeps all of them from offering a paywall.
     let chapters =
         tankovault_db::repo::catalog::list_chapters_across(&state.pool, &member_ids, user).await?;
 
     Ok(Json(chapter_dtos(chapters, &base_url, user, progress)?))
 }
 
-/// Project one provider group's chapters onto the wire, resolving links against that
+/// Projects one provider group's chapters onto the wire, resolving links against that
 /// provider's `base_url`.
 ///
 /// `viewer` is what distinguishes the two meanings of `read`: `None` (anonymous) omits the
@@ -682,7 +680,7 @@ fn chapter_dtos(
 pub struct SourceChaptersDto {
     /// The group's outbound-link source, matching `SourceDto::id` in the series detail.
     pub source_id: SeriesSourceId,
-    /// That source's chapters, newest first — identical to what `GET .../chapters?source=`
+    /// That source's chapters, newest first, identical to what `GET .../chapters?source=`
     /// answers for it.
     pub chapters: Vec<ChapterDto>,
 }
@@ -691,13 +689,11 @@ pub struct SourceChaptersDto {
 ///
 /// The whole-screen counterpart to `GET /v1/series/{id}/chapters`: one entry per source of
 /// the series, in the order `GET /v1/series/{id}` lists them.
-// Exists because the series screen merges every source's list, and doing that with one
-// `.../chapters?source=` call per source made a page load cost one request per provider —
-// re-issued in full whenever a chapter was marked read. On a title carried by many providers
-// that alone exhausted the caller's rate-limit burst, so the screen answered its own reads
-// with `429`. Serving the fan-out here also collapses the per-request repeats of the source,
-// provider and progress lookups into one each. Keep the two handlers' read-state and
-// early-access filtering identical: they answer the same question for the same screen.
+// The series screen merges every source's list. One `.../chapters?source=` call per source costs
+// a request per provider, re-issued whenever a chapter is marked read, which on a widely carried
+// title exhausts the caller's rate-limit burst. Serving the fan-out here also runs the source,
+// provider and progress lookups once each. Keep the two handlers' read-state and early-access
+// filtering identical: they answer the same question for the same screen.
 #[utoipa::path(
     get,
     path = "/v1/series/{id}/chapters/by-source",
@@ -726,8 +722,8 @@ pub async fn chapters_by_source(
         .map(|p| (p.id, p.base_url))
         .collect();
 
-    // Read once for the whole series rather than once per source: the frontier is per series,
-    // not per provider. Both frontiers are needed — see [`chapters`].
+    // Read once for the whole series, not once per source: the frontier is per series, not per
+    // provider. Both frontiers are needed; see [`chapters`].
     let user = optional_user(&state, &headers);
     let progress = match user {
         Some(user_id) => tracking::progress_get_full(&state.pool, user_id, id).await?,
@@ -736,8 +732,8 @@ pub async fn chapters_by_source(
 
     let mut out = Vec::with_capacity(groups.len());
     for group in &groups {
-        // Unreachable today (the foreign key guarantees it); treated as "not found" rather
-        // than unwrapped so it stays that way if the constraint ever changes.
+        // The foreign key makes this unreachable; it is "not found", not an unwrap, so it stays
+        // safe if the constraint ever changes.
         let base_url = base_urls
             .get(&group.provider_id)
             .ok_or(ApiError::NotFound)?;
@@ -750,7 +746,7 @@ pub async fn chapters_by_source(
     Ok(Json(out))
 }
 
-/// Best-effort user extraction for endpoints that are public but *enrich* their response
+/// Extracts the user, best effort, for endpoints that are public but *enrich* their response
 /// when authenticated. Returns `None` for a missing/invalid token instead of rejecting the
 /// request, so anonymous browsing keeps working.
 fn optional_user(state: &AppState, headers: &HeaderMap) -> Option<UserId> {
@@ -769,8 +765,8 @@ pub struct TagFacet {
     pub id: tankovault_domain::TagId,
     pub slug: String,
     pub name: String,
-    /// Series carrying this tag. What lets the filter panel order by usage and say how much a
-    /// chip would narrow the grid before it is clicked.
+    /// Series carrying this tag. Lets the filter panel order by usage and say how much a chip
+    /// would narrow the grid before it is clicked.
     pub series_count: i64,
 }
 
@@ -779,17 +775,15 @@ pub struct TagFacet {
 /// Every genre/tag in the catalogue with the number of series carrying it, commonest first
 /// (public).
 ///
-/// Ordered by usage rather than alphabetically because the facet panel that consumes this can
-/// only show so many chips at once: an alphabetical list truncated to fit cuts off at whatever
-/// letter the cap lands on, hiding the genres most of the catalogue actually uses. The body is a
-/// superset of the previous `Tag[]`, so an older client reading only `id`/`slug`/`name` is
-/// unaffected — it just sees them in a different order.
+/// Ordered by usage, not alphabetically, because the facet panel can only show so many chips at
+/// once: an alphabetical list truncated to fit cuts off at whatever letter the cap lands on,
+/// hiding the genres most of the catalogue uses. Each entry is a `Tag` plus `series_count`, so a
+/// client reading only `id`/`slug`/`name` still decodes it.
 ///
 /// Adult-classifying genres are withheld from a caller the gate closes on. They are the terms
 /// that put a series behind [`crate::content_gate`] in the first place, so offering them as
 /// filter chips advertises a slice of the catalogue the same request cannot return a single row
-/// of — and names it in the reader's own filter panel, which is the part the gate exists to
-/// avoid.
+/// of, and names it in the reader's own filter panel, which is what the gate exists to avoid.
 #[utoipa::path(
     get,
     path = "/v1/tags",
@@ -817,7 +811,7 @@ pub async fn tags(
 
 /// List public providers
 ///
-/// Provider list + per-provider series counts, for the Discover provider filter (frontend
+/// Provider list and per-provider series counts, for the Discover provider filter (frontend
 /// §9.3). Operator-only fields (config/politeness/health) are not exposed; disabled providers
 /// are hidden.
 #[utoipa::path(
@@ -840,7 +834,7 @@ mod tests {
     use super::*;
     use tankovault_domain::ProviderState;
 
-    /// Build a minimal `SeriesSource` for a given provider, path, and raw chapter count.
+    /// Builds a minimal `SeriesSource` for a given provider, path, and raw chapter count.
     /// The other fields are irrelevant to same-provider folding.
     fn source(provider_id: ProviderId, source_path: &str, chapter_count: i32) -> SeriesSource {
         SeriesSource {
@@ -858,7 +852,7 @@ mod tests {
 
     #[test]
     fn folds_same_provider_entries_into_one_completing_source() {
-        // Two KunManga entries under one canonical series: the exact issue case.
+        // Two KunManga entries under one canonical series.
         let kunmanga = ProviderId::new();
         let early = source(kunmanga, "/manga/work-part-1", 40);
         let later = source(kunmanga, "/manga/work-part-2", 120);
@@ -869,7 +863,7 @@ mod tests {
         let group = &groups[0];
         assert_eq!(group.provider_id, kunmanga);
         assert_eq!(group.member_ids, vec![early.id, later.id]);
-        // The richer entry (120 > 40) drives the outbound link/representative id.
+        // The richer entry (120 > 40) drives the outbound link and representative id.
         assert_eq!(group.link_id, later.id);
         assert_eq!(group.link_source_path, "/manga/work-part-2");
     }
@@ -917,7 +911,7 @@ pub struct SimilarSeries {
     pub series: SeriesSummary,
     /// Cosine similarity in `[0, 1]`, as the index ranked it.
     pub score: f32,
-    /// The features this shares with the seed, most explanatory first — the tag names a reader
+    /// The features this shares with the seed, most explanatory first: the tag names a reader
     /// would recognise, not feature ids.
     pub shared: Vec<String>,
 }
@@ -938,7 +932,7 @@ const SIMILAR_OVERFETCH: i64 = 4;
 /// Content-similar series, ranked by an approximate nearest-neighbour search over the
 /// recommendation model's embedding space, with the features each match shares with the seed.
 ///
-/// Falls back to the catalogue's popularity prior when the seed has no embedding yet — a series
+/// Falls back to the catalogue's popularity prior when the seed has no embedding yet: a series
 /// added since the last model build, or a deployment that has never run one. An empty array
 /// means the model has never been built at all.
 #[utoipa::path(
@@ -970,8 +964,8 @@ pub async fn similar(
         Some(survivor) => survivor,
         None => id,
     };
-    // Confirms the series exists at all, and turns an unknown id into a 404 rather than an
-    // empty list — the two mean different things to a caller.
+    // Confirms the series exists at all, and turns an unknown id into a 404 instead of an empty
+    // list; the two mean different things to a caller.
     tankovault_db::repo::catalog::get_series_visible(&state.pool, seed, adult.include_adult())
         .await?;
 
@@ -1042,7 +1036,7 @@ pub struct SimilarParams {
 
 /// The shelf when the model cannot answer: broadly appealing series, no explanation offered.
 ///
-/// Returns an empty list rather than an error when the model has never been built. A caller
+/// Returns an empty list, not an error, when the model has never been built. A caller
 /// cannot act on the difference, and a 500 for "the nightly job has not run yet" would take the
 /// series page down with it.
 async fn fallback_to_prior(

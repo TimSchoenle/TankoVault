@@ -1,5 +1,5 @@
-//! The authenticated user's watchlist: listing, upsert, removal, and the bulk operations the
-//! list view's multi-select drives.
+//! Owns the authenticated user's watchlist: listing, upsert, removal, and the bulk operations
+//! the list view's multi-select drives.
 
 use super::progress::{spawn_targeted_push, spawn_targeted_push_many};
 use crate::error::{ApiError, ApiResult};
@@ -19,8 +19,8 @@ use utoipa::{IntoParams, ToSchema};
 /// every tracked series in one request.
 const MAX_LIMIT: i64 = 200;
 
-/// Highest accepted offset, short of the `i64` overflow an unbounded value allowed on
-/// `/v1/series` before it was clamped there for the same reason.
+/// Highest accepted offset, short of the `i64` overflow an unbounded value allows. `/v1/series`
+/// clamps its page for the same reason.
 const MAX_OFFSET: i64 = 100_000;
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -32,14 +32,14 @@ pub struct WatchlistItem {
     #[schema(value_type = String)]
     pub added_at: time::OffsetDateTime,
     /// Embedded series title so the Watchlist renders without a per-row detail fetch
-    /// (frontend §9.3, kills the N+1).
+    /// (frontend §9.3).
     pub series_title: String,
     pub cover_url: Option<String>,
     /// The user's last-read chapter number, if any.
     pub last_read_number: Option<f64>,
     /// Unread chapters above the user's progress.
     pub unread: i64,
-    /// Whole chapters at or below the user's progress — the progress bar's numerator.
+    /// Whole chapters at or below the user's progress: the progress bar's numerator.
     ///
     /// Not [`Self::last_read_number`]: a catalogue with gaps makes the frontier larger than the
     /// number of chapters below it, so a bar drawn from the frontier reads past 100%.
@@ -48,7 +48,7 @@ pub struct WatchlistItem {
     pub next_unread: Option<NextUnread>,
     /// Every provider carrying this series, preferred first.
     pub sources: Vec<WatchlistSource>,
-    /// Distinct whole chapters known across all sources — the progress bar's denominator.
+    /// Distinct whole chapters known across all sources: the progress bar's denominator.
     pub total_chapters: i64,
     /// The highest chapter number known across all sources.
     pub latest_chapter_number: Option<f64>,
@@ -71,7 +71,7 @@ pub struct WatchlistItem {
     /// [`Self::preferred_source_name`], which stays the derived richest source the ledger row
     /// displays. Set through `PUT /v1/me/watchlist/{series_id}/source-pin`.
     // A bare `Uuid`, not `Option<SeriesSourceId>`: an optional newtype publishes as
-    // `oneOf [null, $ref]`, and this field stays out of that union rather than relying on
+    // `oneOf [null, $ref]`, and this field stays out of that union instead of relying on
     // `xtask`'s `collapse_nullable_union` to undo it. Inline `{type: [string, null], format:
     // uuid}` costs the client one `SeriesSourceId::from(uuid)` instead.
     pub pinned_source_id: Option<uuid::Uuid>,
@@ -92,7 +92,7 @@ pub struct NextUnread {
 /// One provider carrying a series, for the ledger's `Sources` column.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct WatchlistSource {
-    /// The provider slug — the monogram tile's letters and a stable client-side key.
+    /// The provider slug: the monogram tile's letters and a stable client-side key.
     pub code: String,
     pub name: String,
     /// The effective state: the series-source's own, unless the provider behind it is worse.
@@ -162,11 +162,11 @@ pub struct WatchlistGroup {
     pub chapter_count: i64,
 }
 
-/// The watchlist page plus the chrome around it.
+/// The watchlist page and the chrome around it.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct WatchlistView {
     pub items: Vec<WatchlistItem>,
-    /// Rows matching the whole filter, `status` included — the pager's denominator.
+    /// Rows matching the whole filter, `status` included: the pager's denominator.
     pub total: i64,
     pub counts: WatchlistCounts,
     /// Newest band first; empty bands are omitted.
@@ -188,7 +188,7 @@ pub struct WatchlistSummaryView {
 
 /// The opaque `cursor` token's payload.
 ///
-/// Serialised rather than spelled into the query string because the text key is a series title:
+/// Serialised, not spelled into the query string, because the text key is a series title:
 /// arbitrary user-visible text with `&`, `=` and `#` in it, which a hand-built token would have
 /// to escape correctly on both sides.
 #[derive(Debug, Serialize, Deserialize)]
@@ -200,7 +200,7 @@ struct CursorPayload {
     i: uuid::Uuid,
 }
 
-/// Encode a repo cursor as the opaque token the client echoes back.
+/// Encodes a repo cursor as the opaque token the client echoes back.
 fn encode_cursor(cursor: &WatchlistCursor) -> String {
     use base64::Engine as _;
     let payload = CursorPayload {
@@ -208,14 +208,14 @@ fn encode_cursor(cursor: &WatchlistCursor) -> String {
         t: cursor.text.clone(),
         i: cursor.series_id.as_uuid(),
     };
-    // `to_vec` cannot fail for this shape — every field is a plain scalar or `null`.
+    // `to_vec` cannot fail for this shape: every field is a plain scalar or `null`.
     let json = serde_json::to_vec(&payload).unwrap_or_default();
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(json)
 }
 
-/// Decode a client-supplied `cursor`, refusing a malformed one.
+/// Decodes a client-supplied `cursor`, refusing a malformed one.
 ///
-/// A `400` rather than a silent fall back to page one: a client that has mangled its cursor and
+/// A `400`, not a silent fall back to page one: a client that has mangled its cursor and
 /// is served the top of the list instead reads as "the list restarted", and an infinite scroll
 /// that restarts is a loop.
 fn decode_cursor(raw: Option<&str>) -> ApiResult<Option<WatchlistCursor>> {
@@ -249,7 +249,7 @@ pub struct WatchlistParams {
     pub unread_only: bool,
     /// `24h | 7d | 30d`; absent (or `any`) means no recency constraint.
     ///
-    /// A *window* token rather than an absolute instant, despite the name. The client would
+    /// A *window* token, not an absolute instant, despite the name. The client would
     /// have to compute the instant from its own clock, and a browser minutes ahead of the
     /// server would filter out the very releases the "last 24 hours" option exists to show.
     /// The server resolves the window against the clock the timestamps were written by.
@@ -262,7 +262,7 @@ pub struct WatchlistParams {
     #[serde(default)]
     pub sort: Option<String>,
     /// `asc | desc`. Defaults to whichever direction reads as "most interesting first" for the
-    /// chosen sort — descending everywhere except `title`.
+    /// chosen sort: descending everywhere except `title`.
     #[serde(default)]
     pub order: Option<String>,
     #[serde(default = "default_limit")]
@@ -271,10 +271,10 @@ pub struct WatchlistParams {
     pub offset: i64,
     /// Opaque token from a previous response's `next_cursor`; supersedes `offset`.
     ///
-    /// Keyset, not offset: the watchlist is live — a chapter discovered between two requests
-    /// reorders the default sort — and an `OFFSET` page over a shifting list repeats one row
+    /// Keyset, not offset: the watchlist is live (a chapter discovered between two requests
+    /// reorders the default sort), and an `OFFSET` page over a shifting list repeats one row
     /// and skips another. `offset` stays accepted for callers that refetch a whole prefix
-    /// rather than appending, which is immune to the same problem by construction.
+    /// instead of appending, which is immune to the same problem by construction.
     #[serde(default)]
     pub cursor: Option<String>,
 }
@@ -283,9 +283,9 @@ fn default_limit() -> i64 {
     60
 }
 
-/// Parse an optional query-string token, refusing an unrecognised one.
+/// Parses an optional query-string token, refusing an unrecognised one.
 ///
-/// An empty value means "not supplied" — the frontend's select controls submit `""` for their
+/// An empty value means "not supplied": the frontend's select controls submit `""` for their
 /// "any" option, and treating that as a parse failure would 400 the default page.
 fn parse_param<T: std::str::FromStr>(raw: Option<&str>, name: &str) -> ApiResult<Option<T>> {
     match raw.map(str::trim).filter(|v| !v.is_empty()) {
@@ -297,9 +297,9 @@ fn parse_param<T: std::str::FromStr>(raw: Option<&str>, name: &str) -> ApiResult
     }
 }
 
-/// Resolve the `released_since` window token to an instant, refusing an unrecognised one.
+/// Resolves the `released_since` window token to an instant, refusing an unrecognised one.
 ///
-/// Refused rather than ignored: a client asking for "last 24 hours" and silently receiving the
+/// Refused, not ignored: a client asking for "last 24 hours" and silently receiving the
 /// unfiltered list is the failure mode this whole surface exists to avoid.
 fn released_cutoff(raw: Option<&str>) -> ApiResult<Option<OffsetDateTime>> {
     let Some(token) = raw.map(str::trim).filter(|v| !v.is_empty()) else {
@@ -324,11 +324,10 @@ fn released_cutoff(raw: Option<&str>) -> ApiResult<Option<OffsetDateTime>> {
 /// The user's watchlist, filtered/sorted/paginated **server-side**, with the tab counts and
 /// group-header aggregates the list renders around it.
 ///
-/// The body is an object rather than the bare `WatchlistItem[]` it used to be. That is a
-/// breaking change, made deliberately: `total`, `counts` and `groups` cannot ride on response
-/// headers without splitting one render into three requests, and the counts in particular are
-/// *not* derivable from `items` — they describe the tabs the caller is not looking at. The
-/// frontend is the only consumer, and it is regenerated from this document.
+/// The body is an object, not a bare `WatchlistItem[]`: `total`, `counts` and `groups` cannot
+/// ride on response headers without splitting one render into three requests, and the counts in
+/// particular are *not* derivable from `items`, since they describe the tabs the caller is not
+/// looking at.
 #[utoipa::path(
     get,
     path = "/v1/me/watchlist",
@@ -402,7 +401,7 @@ pub async fn watchlist(
 /// Separate from the list's `counts`, which drop only the `status` arm and keep the search,
 /// recency and source filters: those answer "how many would this tab show given what I have
 /// typed", while this answers "how big is my library" for surfaces that carry no filter state
-/// of their own — a tab badge, the More sheet, a signed-in header.
+/// of their own: a tab badge, the More sheet, a signed-in header.
 #[utoipa::path(
     get,
     path = "/v1/me/watchlist/summary",
@@ -435,9 +434,9 @@ pub async fn watchlist_summary(
 
 /// One series' watchlist entry, or `null` when the caller does not track it.
 ///
-/// An object wrapping a nullable field rather than a bare nullable body: "not tracked" is a
-/// perfectly ordinary answer to this question, so it is a `200` with `entry: null` rather than
-/// a `404` the client has to special-case out of its error path.
+/// An object wrapping a nullable field, not a bare nullable body: "not tracked" is a perfectly
+/// ordinary answer to this question, so it is a `200` with `entry: null`, not a `404` the client
+/// has to special-case out of its error path.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct WatchlistEntryView {
     pub entry: Option<WatchlistItem>,
@@ -445,9 +444,8 @@ pub struct WatchlistEntryView {
 
 /// Get one watchlist entry
 ///
-/// The same enriched row the list renders, for a single series. The Series page used to answer
-/// this by fetching the entire watchlist and scanning it — which stopped working the moment the
-/// list paginated.
+/// The same enriched row the list renders, for a single series, so the Series page does not
+/// have to page through the whole watchlist to find it.
 #[utoipa::path(
     get,
     path = "/v1/me/watchlist/{series_id}",
@@ -524,7 +522,7 @@ pub struct SourcePin {
 /// Pin a series' source
 ///
 /// Overrides the reader's global provider order for this one series. A separate resource from
-/// the entry itself rather than a field on [`WatchlistUpsert`]: that body is a full replacement,
+/// the entry itself, not a field on [`WatchlistUpsert`]: that body is a full replacement,
 /// so a reader toggling `notify` would silently drop their pin.
 #[utoipa::path(
     put,
@@ -551,8 +549,8 @@ pub async fn put_source_pin(
 
 /// Clear a series' source pin
 ///
-/// Idempotent: clearing a pin that is not set is a `200`, because the reader's intent — "stop
-/// overriding for this series" — is satisfied either way.
+/// Idempotent: clearing a pin that is not set is a `200`, because the reader's intent ("stop
+/// overriding for this series") is satisfied either way.
 #[utoipa::path(
     delete,
     path = "/v1/me/watchlist/{series_id}/source-pin",
@@ -619,7 +617,7 @@ pub async fn delete_watchlist(
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-/// The ids a bulk operation should act on, plus what to change.
+/// The ids a bulk operation should act on, and what to change.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct WatchlistBulkUpdate {
     pub series_ids: Vec<SeriesId>,
@@ -639,7 +637,7 @@ pub struct WatchlistBulkIds {
 
 /// Which ids a bulk operation actually acted on, and which it did not.
 ///
-/// Per-id rather than a count, because the two failure modes are different and the UI has to
+/// Per-id, not a count, because the two failure modes are different and the UI has to
 /// tell them apart: `skipped` means the caller asked about a series it does not track (a stale
 /// client, or a title removed in another tab), which is worth reporting, while a transport
 /// failure fails the whole call.
@@ -650,7 +648,7 @@ pub struct BulkResult {
 }
 
 impl BulkResult {
-    /// Split `requested` by which of them `applied` contains, preserving the caller's order so
+    /// Splits `requested` by which of them `applied` contains, preserving the caller's order so
     /// the client can zip the answer against the selection it sent.
     pub(super) fn new(requested: &[SeriesId], applied: Vec<SeriesId>) -> Self {
         let applied_set: std::collections::HashSet<SeriesId> = applied.into_iter().collect();
@@ -669,9 +667,9 @@ impl BulkResult {
     }
 }
 
-/// Reject an oversized or empty id list, and hand back the raw uuids the repo binds.
+/// Rejects an oversized or empty id list, and hands back the raw uuids the repo binds.
 ///
-/// Refused at [`BULK_ID_LIMIT`] rather than truncated: silently acting on only the first N ids
+/// Refused at [`BULK_ID_LIMIT`], not truncated: silently acting on only the first N ids
 /// would leave the rest unchanged with nothing in the response to say so.
 pub(super) fn bulk_ids(series_ids: &[SeriesId]) -> ApiResult<Vec<uuid::Uuid>> {
     if series_ids.is_empty() {
@@ -689,7 +687,7 @@ pub(super) fn bulk_ids(series_ids: &[SeriesId]) -> ApiResult<Vec<uuid::Uuid>> {
 /// Change many watchlist entries at once
 ///
 /// Applies a status and/or notify change across a selection. Ids the caller does not track are
-/// reported in `skipped` rather than inserted — the selection was made from the list, so an id
+/// reported in `skipped`, not inserted: the selection was made from the list, so an id
 /// that is not on it means the client is stale, and re-adding a title the user just removed is
 /// the wrong repair.
 #[utoipa::path(

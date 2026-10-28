@@ -1,6 +1,6 @@
-//! Reading dashboard reads: continue-reading and lifetime stats.
+//! Owns the reading dashboard reads: continue-reading and lifetime stats.
 //!
-//! Recommendations moved to [`super::recommendations`] when they stopped being a stub.
+//! Recommendations live in [`super::recommendations`].
 
 use crate::error::ApiResult;
 use crate::openapi::ME_DASHBOARD_TAG;

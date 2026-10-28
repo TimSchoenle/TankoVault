@@ -1,4 +1,4 @@
-//! Operator visibility and manual intervention for external-sync accounts and mappings.
+//! Owns operator visibility and manual intervention for external-sync accounts and mappings.
 
 use crate::audit::audit;
 use crate::error::{ApiError, ApiResult};
@@ -196,7 +196,7 @@ pub struct SyncMappingTarget {
 
 /// Clear a series↔external mapping
 ///
-/// Remove a bad series↔external mapping; the next pull/push (or targeted push) re-resolves it
+/// Removes a bad series↔external mapping; the next pull/push (or targeted push) re-resolves it
 /// from scratch.
 #[utoipa::path(
     post,
@@ -239,7 +239,7 @@ pub struct UpsertMapping {
 
 /// Create or correct a series↔external mapping
 ///
-/// Manually create or correct a series↔external mapping (design: admin Sync console tab).
+/// Manually creates or corrects a series↔external mapping (design: admin Sync console tab).
 /// Lets an operator fix a wrong external id or add a missing one by hand from the per-series
 /// "manga info" editor and the assign queue.
 #[utoipa::path(
@@ -422,10 +422,10 @@ pub struct SuggestedMatch {
 
 /// Suggest local matches for a remote entry
 ///
-/// Rank local catalogue series as likely matches for a fetched remote entry, so the operator
-/// gets automatic suggestions instead of blind-searching. Uses the same trigram candidates as
-/// auto-matching but returns the *full* ranked list (with scores) rather than only confident
-/// ones, so even weak-but-plausible matches are offered.
+/// Ranks local catalogue series as likely matches for a fetched remote entry, so the operator gets
+/// automatic suggestions instead of blind-searching. Uses the same trigram candidates as
+/// auto-matching but returns the *full* ranked list (with scores), not only confident ones, so even
+/// weak-but-plausible matches are offered.
 #[utoipa::path(
     get,
     path = "/v1/admin/sync/suggest",
@@ -460,8 +460,8 @@ pub async fn list_suggestions(
         normalized_title: normalized,
         content_type,
         release_year: q.start_year,
-        // No tag/author signal from this query shape yet — an operator is eyeballing the
-        // ranked list anyway, so this stays title/type/year-only for now.
+        // This query shape carries no tag or author signal; an operator is eyeballing the
+        // ranked list anyway, so scoring is title, type and year only.
         tags: Vec::new(),
         authors: Vec::new(),
     };
@@ -510,9 +510,9 @@ pub struct AssignRemoteEntry {
 
 /// Assign a remote entry to a local series
 ///
-/// Hand-assign a fetched remote entry to a local series. It records the mapping, imports the
-/// entry onto the user's watchlist (status + progress from the stored snapshot) so the result
-/// shows immediately, and clears it from the unmatched queue — no fresh pull required.
+/// Hand-assigns a fetched remote entry to a local series. It records the mapping, imports the
+/// entry onto the user's watchlist (status and progress from the stored snapshot) so the result
+/// shows immediately, and clears it from the unmatched queue, with no fresh pull required.
 #[utoipa::path(
     post,
     path = "/v1/admin/sync/assign",
@@ -592,11 +592,10 @@ pub async fn assign_remote_entry(
 
 /// What the tokenless metadata-enrichment sweep is doing, or last did.
 ///
-/// The `AniList` side of the sync service does two unrelated things, and only one of them has
-/// ever had an operator surface: reconciling a *user's* list (visible per account above) and
-/// walking the *catalogue* asking for metadata nobody's account is involved in. The second is
-/// the one that fills in cover art, descriptions, tags and release years — and until this view
-/// it reported itself only into the sync container's log.
+/// The `AniList` side of the sync service does two unrelated things: reconciling a *user's*
+/// list (visible per account above) and walking the *catalogue* asking for metadata nobody's
+/// account is involved in. This view covers the second, which fills in cover art, descriptions,
+/// tags and release years.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct EnrichmentSweepView {
     /// Whether a sweep is in flight. Advisory: the sweep is idempotent per series and does not
@@ -622,7 +621,7 @@ pub struct EnrichmentSweepView {
     /// Series the sweep has never attempted. These lead every work list, so a figure that does
     /// not fall between two reads means the sweep is not running.
     pub never_checked: i64,
-    /// Series attempted in the last 24 hours — how much ground the recent runs covered.
+    /// Series attempted in the last 24 hours: how much ground the recent runs covered.
     pub checked_last_day: i64,
 }
 
@@ -671,10 +670,10 @@ pub async fn enrichment_status(
     }))
 }
 
-/// Start a mapping re-verification.
+/// The body that starts a mapping re-verification.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct MappingReverifyStart {
-    /// Report the failing mappings without removing them. Review a dry run before a real one.
+    /// Reports the failing mappings without removing them. Review a dry run before a real one.
     pub dry_run: bool,
 }
 
@@ -733,7 +732,7 @@ pub async fn mapping_reverify_status(
         })
     };
     // Written by this deployment's sync service only; a row it cannot read is reported as an
-    // empty list rather than failing the whole view.
+    // empty list instead of failing the whole view.
     let failures = serde_json::from_value(run.failures).unwrap_or_default();
     Ok(Json(MappingReverifyView {
         running: run.running,
@@ -751,7 +750,7 @@ pub async fn mapping_reverify_status(
 
 /// Re-verify stored mappings
 ///
-/// Re-fetch every stored `AniList` mapping by id and refuse the ones whose record is not a
+/// Re-fetches every stored `AniList` mapping by id and refuses the ones whose record is not a
 /// library format (a light novel) or whose titles do not identify the series. A refused
 /// mapping is removed and blocked, so reconciliation does not write it back. Runs in the
 /// background at `AniList`'s rate limit; follow it with the status endpoint.

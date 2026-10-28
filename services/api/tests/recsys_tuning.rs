@@ -1,4 +1,4 @@
-//! The recommender's tuning surface, end to end through the real router.
+//! Tests the recommender's tuning surface, end to end through the real router.
 //!
 //! Three properties, each of which the design calls out as a way this feature fails silently:
 //! the privacy floor cannot be lowered through the API (§8.3), a change reaches the thing it
@@ -33,7 +33,7 @@ async fn credentials(app: &TestApp, user: UserId) -> (String, String) {
     (app.bearer(user), app.enrolled_and_elevated(user).await)
 }
 
-/// One tunable's row out of the list response.
+/// Returns one tunable's row out of the list response.
 fn row<'a>(body: &'a Value, key: &str) -> &'a Value {
     body.as_array()
         .expect("an array of tunables")
@@ -47,7 +47,7 @@ fn row<'a>(body: &'a Value, key: &str) -> &'a Value {
 /// The bug this pins: enforcing `recsys.cooccurrence.min_support >= 5` in the console's number
 /// input and nowhere else. The bound is the threshold below which a "readers of X also read Y"
 /// edge stops being a statistic and starts being a statement about identifiable people
-/// (`docs/RECOMMENDATIONS.md` §12.2), and a `curl` past a UI validator is not an attack — it is
+/// (`docs/RECOMMENDATIONS.md` §12.2), and a `curl` past a UI validator is not an attack; it is
 /// Tuesday.
 #[tokio::test]
 async fn the_cooccurrence_privacy_floor_cannot_be_lowered() {
@@ -160,7 +160,7 @@ async fn a_value_outside_its_range_is_refused_at_both_ends() {
 /// The bug this pins: both surfaces store their values in one `tunable_overrides` table and read
 /// them from one compiled registry, so the *only* thing separating them is which keys each
 /// endpoint will serve and accept. Without that filter, an account trusted to tune a shelf could
-/// switch off the guard that stops the sweep merging a remake into its original — a destructive
+/// switch off the guard that stops the sweep merging a remake into its original: a destructive
 /// capability reached through the permission for a cosmetic one.
 #[tokio::test]
 async fn the_merge_policy_is_not_served_or_written_by_the_recommender_surface() {
@@ -219,7 +219,7 @@ async fn zeroing_every_score_weight_is_refused() {
     let weights = Tunable::score_weights();
     let (last, rest) = weights.split_last().expect("five weights");
 
-    // Four zeroes are legitimate — that is how an operator pins the shelf to one retrieval path.
+    // Four zeroes are legitimate: that is how an operator pins the shelf to one retrieval path.
     for tunable in rest {
         let (status, body) = app
             .call_elevated(
@@ -255,10 +255,10 @@ async fn zeroing_every_score_weight_is_refused() {
 
 /// **The page cannot show a value the server does not honour.**
 ///
-/// The bug this pins is the hand-maintained-vocabulary class this repo has already been bitten by
-/// once: a console list that is not the compiled registry drifts, and the symptom is a knob that
-/// is either invisible or does nothing. Every registry entry must appear, with the bounds and the
-/// `applies` badge the console renders from.
+/// The bug this pins is the hand-maintained-vocabulary class: a console list that is not the
+/// compiled registry drifts, and the symptom is a knob that is either invisible or does nothing.
+/// Every registry entry must appear, with the bounds and the `applies` badge the console renders
+/// from.
 #[tokio::test]
 async fn the_listing_is_the_compiled_registry() {
     let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
@@ -401,7 +401,7 @@ async fn model_health_reports_an_unbuilt_model_rather_than_failing() {
     assert_eq!(body["series_with_embedding"], json!(0));
     assert_eq!(body["repair_queue_depth"], json!(0));
     // The gap between these is the diagnosis the panel exists to show, so both have to be real
-    // numbers rather than one being a stand-in for the other.
+    // numbers, not one standing in for the other.
     assert!(body["series_total"].is_number());
     assert!(body["series_recommendable"].is_number());
 }

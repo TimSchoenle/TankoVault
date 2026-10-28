@@ -1,14 +1,14 @@
-//! Transactional-email composition and out-of-band delivery for the auth flows.
+//! Owns transactional-email composition and out-of-band delivery for the auth flows.
 //!
 //! All sends are fire-and-forget, so a mail outage never fails or slows a user-facing request.
 
 use crate::state::AppState;
 use tankovault_email::EmailMessage;
 
-/// HTML-escape an interpolated value.
+/// HTML-escapes an interpolated value.
 ///
 /// `username` is user-controlled and reaches the HTML bodies below. Unescaped, it can inject
-/// an attacker-chosen link into a DKIM-signed message genuinely from this service — a
+/// an attacker-chosen link into a DKIM-signed message genuinely from this service, a
 /// high-credibility phishing primitive.
 ///
 /// `&` first, or the escapes escape each other.
@@ -27,7 +27,7 @@ fn esc(s: &str) -> String {
     out
 }
 
-/// Compose the welcome email sent after a successful registration.
+/// Composes the welcome email sent after a successful registration.
 ///
 /// `brand` is the operator's product name, and it is escaped into the HTML bodies below for the
 /// same reason `username` is: it reaches markup, and an `&` in a perfectly innocent name would
@@ -53,7 +53,7 @@ pub fn welcome(brand: &str, email: &str, username: &str) -> EmailMessage {
     EmailMessage::text(email, format!("Welcome to {brand}"), text).with_html(html)
 }
 
-/// Compose the email-confirmation message carrying the one-time verification `link`.
+/// Composes the email-confirmation message carrying the one-time verification `link`.
 #[must_use]
 pub fn verification(brand: &str, email: &str, username: &str, link: &str) -> EmailMessage {
     let username_html = esc(username);
@@ -76,7 +76,7 @@ pub fn verification(brand: &str, email: &str, username: &str, link: &str) -> Ema
     EmailMessage::text(email, format!("Confirm your {brand} email"), text).with_html(html)
 }
 
-/// Compose the password-reset email carrying the one-time `link`.
+/// Composes the password-reset email carrying the one-time `link`.
 #[must_use]
 pub fn password_reset(brand: &str, email: &str, link: &str) -> EmailMessage {
     let brand_html = esc(brand);
@@ -100,9 +100,9 @@ pub fn password_reset(brand: &str, email: &str, link: &str) -> EmailMessage {
     EmailMessage::text(email, format!("Reset your {brand} password"), text).with_html(html)
 }
 
-/// Compose the notice sent to the **old** address when the account's email is changed.
+/// Composes the notice sent to the **old** address when the account's email is changed.
 ///
-/// Sent to the address being replaced — the only inbox that can warn the legitimate owner an
+/// Sent to the address being replaced: the only inbox that can warn the legitimate owner an
 /// attacker is walking off with their account. Deliberately carries no action link, since a
 /// link in a "something changed" email is exactly the phishing shape it warns about.
 #[must_use]
@@ -142,7 +142,7 @@ pub fn email_changed(
     .with_html(html)
 }
 
-/// Send `message` on a detached task so the request path never blocks on (or fails
+/// Sends `message` on a detached task so the request path never blocks on (or fails
 /// because of) the relay. No-ops cheaply when email is unconfigured.
 pub fn send_in_background(state: &AppState, message: EmailMessage) {
     if !state.mailer.is_enabled() {
@@ -191,7 +191,7 @@ mod tests {
         assert!(msg.html.as_deref().unwrap().contains(link));
     }
 
-    /// Every message names the deployment, not this project — subject and both bodies.
+    /// Every message names the deployment, not this project: subject and both bodies.
     #[test]
     fn a_renamed_deployment_names_itself_everywhere() {
         let link = "https://app.example.com/verify";
@@ -226,7 +226,7 @@ mod tests {
     }
 
     /// The product name reaches the same HTML bodies the username does, so it takes the same
-    /// escaping — an operator naming their deployment "Tom & Jerry" must not emit a broken
+    /// escaping: an operator naming their deployment "Tom & Jerry" must not emit a broken
     /// entity, and configuration is not a licence to write raw markup into signed mail.
     #[test]
     fn the_product_name_is_escaped_into_the_html_body() {
@@ -247,8 +247,8 @@ mod tests {
         assert_eq!(esc("plain"), "plain");
     }
 
-    /// The notice goes to the address being *replaced* — that is the only inbox that can warn
-    /// the legitimate owner — and carries no link, because a link is the phishing shape.
+    /// The notice goes to the address being *replaced* (the only inbox that can warn the
+    /// legitimate owner), and carries no link, because a link is the phishing shape.
     #[test]
     fn the_change_notice_targets_the_old_address_and_carries_no_link() {
         let msg = email_changed(BRAND, "old@example.com", "aster", "attacker@evil.tld");

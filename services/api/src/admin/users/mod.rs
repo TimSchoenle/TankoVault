@@ -1,4 +1,4 @@
-//! User administration: the directory, per-account detail, identity edits, suspension, forced
+//! Owns user administration: the directory, per-account detail, identity edits, suspension, forced
 //! sign-out, permission grants and administrative erasure. The shared self-administration and
 //! last-administrator refusals live in [`guards`]; re-exports are globs so `#[utoipa::path]`'s
 //! sibling `__path_<handler>` items still resolve.

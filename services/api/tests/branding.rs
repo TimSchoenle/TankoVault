@@ -1,9 +1,9 @@
-//! `GET /v1/branding`, over the real router.
+//! Tests `GET /v1/branding`, over the real router.
 //!
 //! # What these pin
 //!
-//! **That an operator's identity actually reaches the client.** Every surface that used to spell
-//! this project's name out now renders what this endpoint returns, so a field that silently kept
+//! **That an operator's identity actually reaches the client.** Every surface that names the
+//! product renders what this endpoint returns, so a field that silently kept
 //! its shipped value would put the wrong name on a fork's sign-in screen with nothing failing.
 //!
 //! **That it answers without a token.** The sign-in card draws the wordmark and the footer; a
@@ -33,7 +33,7 @@ async fn an_unconfigured_deployment_publishes_the_shipped_identity() {
     assert_eq!(body["licence"]["name"], "PolyForm Noncommercial 1.0.0");
     assert_eq!(body["copyright"]["holder"], "Tim Schönle");
 
-    // Unset, so the server resolves it rather than serving an empty string the footer would
+    // Unset, so the server resolves it instead of serving an empty string the footer would
     // print as `© ` with nothing after it.
     let year = body["copyright"]["year"].as_str().expect("a year");
     assert_eq!(year.len(), 4, "got {year}");

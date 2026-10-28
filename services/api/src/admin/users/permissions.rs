@@ -1,4 +1,4 @@
-//! What the account may do: the grant editor's write path and the catalogue it renders from.
+//! Owns what the account may do: the grant editor's write path and the catalogue it renders from.
 //! Both are served from the same compiled registry, so the list an operator sees and the set
 //! the write path accepts cannot disagree.
 
@@ -20,10 +20,10 @@ use super::{guard_not_last_administrator, guard_not_self};
 pub struct SetPermissions {
     /// The complete permission set the account should have afterwards.
     ///
-    /// A whole set rather than add/remove operations: the editor is a checklist, and submitting
-    /// the intended end state means two administrators editing concurrently produce one of their
-    /// two intents rather than an interleaving of both. Unknown tokens are rejected by
-    /// deserialisation — a capability that does not exist cannot be granted.
+    /// A whole set, not add/remove operations: the editor is a checklist, and submitting the
+    /// intended end state means two administrators editing concurrently produce one of their two
+    /// intents instead of an interleaving of both. Unknown tokens are rejected by
+    /// deserialisation: a capability that does not exist cannot be granted.
     pub permissions: Vec<Permission>,
 }
 
@@ -60,8 +60,8 @@ pub async fn set_user_permissions(
 
     // The super user grant is minted by the installer and by nothing else, so this path may
     // only ever confirm one that already exists. Repeating it is what the console does on every
-    // save — the checklist seeds from the stored grants, and the catalogue has no toggle to
-    // clear this one with — while *adding* it is an escalation past the whole permission model,
+    // save (the checklist seeds from the stored grants, and the catalogue has no toggle to
+    // clear this one with), while *adding* it is an escalation past the whole permission model,
     // since it would outlive every capability the enum currently has.
     if desired.is_super_user() {
         let already_super = tankovault_db::repo::permissions::resolve(&state.pool, target)
@@ -89,7 +89,7 @@ pub async fn set_user_permissions(
     }
 
     // The target must exist. `replace` on a missing user would insert nothing and report an
-    // empty diff, which reads as "no change" rather than "no such user".
+    // empty diff, which reads as "no change" instead of "no such user".
     let _ = tankovault_db::repo::user_admin::detail(&state.pool, target).await?;
 
     let mut conn = state.pool.acquire().await.map_err(|e| {
@@ -125,8 +125,8 @@ pub struct PermissionInfo {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct PresetInfo {
     pub key: PermissionPreset,
-    /// The permissions this preset expands to. Sent expanded rather than by name so applying a
-    /// preset is a pure client-side operation over the same checklist the operator then edits —
+    /// The permissions this preset expands to. Sent expanded, not by name, so applying a
+    /// preset is a pure client-side operation over the same checklist the operator then edits,
     /// which is what keeps a preset from behaving like a stored role.
     pub permissions: Vec<Permission>,
 }
@@ -140,7 +140,7 @@ pub struct PermissionCatalogue {
 
 /// List assignable permissions
 ///
-/// Every capability this build defines, with its grouping and description, plus the preset
+/// Every capability this build defines, with its grouping and description, and the preset
 /// bundles the editor offers. Served from the compiled registry, so the editor can never list a
 /// capability the backend does not enforce or miss one it does.
 #[utoipa::path(

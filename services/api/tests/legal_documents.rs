@@ -1,4 +1,4 @@
-//! The legal endpoints, over the real router.
+//! Tests the legal endpoints, over the real router.
 //!
 //! # What these pin
 //!
@@ -18,7 +18,7 @@ use axum::http::{Request, StatusCode};
 use tankovault_api_test_support::{TestApp, TestConfig};
 use terrace_legal::{LegalConfig, LegalDocument};
 
-/// Two locales of the Terms, served here, and an Imprint hosted elsewhere.
+/// Configures two locales of the Terms, served here, and an Imprint hosted elsewhere.
 fn config() -> LegalConfig {
     let terms = LegalDocument {
         body: BTreeMap::from([
@@ -88,8 +88,8 @@ async fn the_documents_are_readable_without_an_account() {
     );
 }
 
-/// A locale the operator did not publish falls back to one they did — and the response says
-/// which, so the page can tell the reader rather than let them conclude the operator writes
+/// A locale the operator did not publish falls back to one they did, and the response says
+/// which, so the page can tell the reader instead of letting them conclude the operator writes
 /// their language like that.
 #[tokio::test]
 async fn an_unpublished_locale_falls_back_and_the_response_names_what_it_served() {
@@ -106,8 +106,8 @@ async fn an_unpublished_locale_falls_back_and_the_response_names_what_it_served(
 /// The title follows the body's locale.
 ///
 /// The bug: the title had its own fallback chain, so a German reader of the only-English-titled
-/// Terms got the German body under the English title "Terms of Service". Now a body served in
-/// `de` carries the `de` title or none, and the client names it from its own catalogue.
+/// Terms got the German body under the English title "Terms of Service". A body served in
+/// `de` must carry the `de` title or none, and the client names it from its own catalogue.
 #[tokio::test]
 async fn the_title_is_never_in_another_language_than_the_body() {
     let app = app().await;
@@ -121,7 +121,7 @@ async fn the_title_is_never_in_another_language_than_the_body() {
 /// A repeat request with the tag it was given is a `304`, and both answers say they vary by
 /// `Accept-Language`.
 ///
-/// The bug: the old handler sent an `ETag` it never compared, so every footer render re-fetched
+/// The bug: the handler sent an `ETag` it never compared, so every footer render re-fetched
 /// the whole document, and it sent no `Vary`, so a shared cache could hand a German reader the
 /// copy it negotiated for an English one.
 #[tokio::test]
@@ -161,7 +161,7 @@ async fn a_matching_if_none_match_is_not_modified_and_every_answer_varies_by_lan
     assert!(index.headers().contains_key(ETAG));
 }
 
-/// An unconfigured slug is a 404 — the footer only ever links what the index returned, so this
+/// An unconfigured slug is a 404: the footer only ever links what the index returned, so this
 /// is a hand-typed URL or a stale bookmark, not a broken link the app published. An external
 /// document has no body here, so it is one too, in the same problem shape.
 #[tokio::test]
@@ -174,7 +174,7 @@ async fn an_unconfigured_slug_or_an_external_document_is_not_found() {
     }
 }
 
-/// The common deployment: no `[legal]` section at all. An empty index, not an error — the
+/// The common deployment: no `[legal]` section at all. An empty index, not an error: the
 /// footer then publishes no Legal column and the register form omits its acceptance line.
 #[tokio::test]
 async fn an_instance_that_publishes_nothing_answers_with_an_empty_index() {

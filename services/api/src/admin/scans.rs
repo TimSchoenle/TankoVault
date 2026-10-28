@@ -1,4 +1,4 @@
-//! Scan triggering (proxied to the control-plane), run status, and the progress stream.
+//! Owns scan triggering (proxied to the control-plane), run status, and the progress stream.
 
 use crate::audit::audit;
 use crate::error::{ApiError, ApiResult};
@@ -89,7 +89,7 @@ pub async fn get_scan(
 ) -> ApiResult<Json<tankovault_contracts::admin::ScanRunView>> {
     user.require(Permission::ScansRead).await?;
     let run = tankovault_db::repo::scans::get_run(&state.pool, run_id).await?;
-    // The slug comes from the run's own page rather than a second lookup: a run linked to from
+    // The slug comes from the run's own page, not a second lookup: a run linked to from
     // elsewhere may predate the console's window, so the drawer fetches by id, and it needs the
     // same provider label the list shows.
     let provider_slug = match run.provider_id {
@@ -113,9 +113,9 @@ const DEFAULT_FAILURE_PAGE: u32 = 25;
 
 /// How a page of runs is ordered, as the `sort` parameter spells it.
 ///
-/// Its own wire enum rather than the repository's, so an unknown token is a 422 from the
-/// extractor instead of a silent fall back to the default ordering — a sort control that
-/// quietly ignores what it was asked for is exactly the defect this panel had.
+/// Its own wire enum, not the repository's, so an unknown token is a 422 from the extractor
+/// instead of a silent fall back to the default ordering: a sort control that quietly ignores
+/// what it was asked for reads as working.
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RunSortParam {
@@ -156,7 +156,7 @@ pub struct RunQuery {
     #[param(value_type = Option<String>)]
     pub since: Option<OffsetDateTime>,
     /// Ordering. Defaults to newest first.
-    // Inlined rather than `$ref`d: `IntoParams` does not register the schemas its fields name,
+    // Inlined, not `$ref`d: `IntoParams` does not register the schemas its fields name,
     // so a reference here publishes a component nothing defines and the client generator stops
     // on the dangling pointer.
     #[serde(default)]
@@ -235,7 +235,7 @@ pub struct FailureQuery {
     #[param(value_type = Option<String>)]
     pub since: Option<OffsetDateTime>,
     /// Include failures an operator has already cleared. Off by default, which is what clearing
-    /// is for; cleared failures are acknowledged rather than deleted, so this always reopens the
+    /// is for; cleared failures are acknowledged, not deleted, so this always reopens the
     /// full window.
     #[serde(default)]
     pub include_cleared: bool,
@@ -245,8 +245,9 @@ pub struct FailureQuery {
 
 /// List recent scan failures
 ///
-/// The most recently failed scan tasks with their errors, for triaging stuck providers and
-/// broken selectors (`docs/ARCHITECTURE.md` §17.2.7). The grouped view is `/v1/admin/scan-failures/grouped`.
+/// The most recently failed scan tasks with their errors, for triaging stuck providers and broken
+/// selectors (`docs/ARCHITECTURE.md` §17.2.7). The grouped view is
+/// `/v1/admin/scan-failures/grouped`.
 #[utoipa::path(
     get,
     path = "/v1/admin/scan-failures",
@@ -324,7 +325,7 @@ pub async fn scan_failure_groups(
 }
 
 /// How many providers the health table carries. Beyond this an operator is reading a directory,
-/// not triaging — and the panel orders worst-first, so the tail is the healthy end.
+/// not triaging, and the panel orders worst-first, so the tail is the healthy end.
 const PROVIDER_HEALTH_LIMIT: i64 = 50;
 
 /// Summarise the scan window
@@ -404,7 +405,7 @@ pub async fn scan_activity(
 
 /// How many of a run's tasks the breakdown carries.
 ///
-/// A full scan's run has one task per series — tens of thousands. The drawer answers "which of
+/// A full scan's run has one task per series: tens of thousands. The drawer answers "which of
 /// these cost me the time", and the ordering puts those first, so the tail is the part that adds
 /// nothing but bytes.
 const RUN_TASK_LIMIT: i64 = 100;
@@ -420,11 +421,11 @@ pub struct RunTaskQuery {
 /// How a run's tasks are ordered, as the `sort` parameter spells it.
 ///
 /// Its own wire enum for the same reason [`RunSortParam`] is: an unknown token must be a 422 from
-/// the extractor rather than a silent fall back to an ordering the caller did not ask for.
+/// the extractor, not a silent fall back to an ordering the caller did not ask for.
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskSortParam {
-    /// Costliest first — the default, because that is the question being asked.
+    /// Costliest first: the default, because that is the question being asked.
     #[default]
     Slowest,
     /// Most recently settled first.
@@ -444,7 +445,7 @@ impl From<TaskSortParam> for tankovault_db::repo::scans::TaskSort {
 ///
 /// Where one run's time went: the summed breakdown, the per-stage split, and the tasks behind it
 /// ordered so the expensive ones come first. This is the endpoint that answers "why has this been
-/// running for twenty minutes" — a run whose `pace_wait_ms` is most of its `busy_ms` is being
+/// running for twenty minutes": a run whose `pace_wait_ms` is most of its `busy_ms` is being
 /// crawled exactly as politely as its provider is configured for, and nothing in the code will
 /// make it faster.
 #[utoipa::path(
@@ -481,12 +482,12 @@ pub async fn scan_run_detail(
 /// Cancel a scan run
 ///
 /// Stops one run and abandons the tasks it still had outstanding. A run that has already
-/// finished is a no-op, answered as `0` runs cancelled rather than a 404 — two operators pressing
-/// the same button is ordinary.
+/// finished is a no-op, answered as `0` runs cancelled, not a 404: two operators pressing the
+/// same button is ordinary.
 ///
 /// The queued broker messages cannot be unpublished, so cancellation takes effect at the next
 /// task boundary: a task already in flight runs to its end and settles into a run that is already
-/// terminal. Behind `scans.run` for the same reason clearing failures is — it changes what every
+/// terminal. Behind `scans.run` for the same reason clearing failures is: it changes what every
 /// other operator sees.
 #[utoipa::path(
     post,
@@ -572,7 +573,7 @@ pub async fn cancel_scans(
 ///
 /// The pairing that matters is an absent `error` with `match_null_error` unset: that is "any
 /// error", not "the group with no error". Reading it the other way would turn a plain "clear
-/// everything shown" into a request that clears almost nothing — or, inverted, turn "clear the
+/// everything shown" into a request that clears almost nothing, or, inverted, turn "clear the
 /// failures with no message" into clearing the entire feed.
 const fn selected_error(error: Option<&str>, match_null: bool) -> ErrorSelector<'_> {
     match (error, match_null) {
@@ -588,7 +589,7 @@ const fn selected_error(error: Option<&str>, match_null: bool) -> ErrorSelector<
 /// task keeps its `failed` state, its error and its contribution to the run counters, so the
 /// history still reconciles and `include_cleared=true` reopens the full window.
 ///
-/// Behind `scans.run` rather than `scans.read`, because it changes what every *other* operator
+/// Behind `scans.run`, not `scans.read`, because it changes what every *other* operator
 /// sees: a reader entitled to watch the queue must not be able to hide an outage from the person
 /// on call.
 #[utoipa::path(
@@ -718,7 +719,7 @@ mod tests {
 
     /// The wire token and the repository's ordering must not drift: the parameter is published
     /// in `openapi.json` and the frontend picks from it, so a mismapped arm is a sort control
-    /// that silently orders by something else — the defect class this panel already had once.
+    /// that silently orders by something else.
     #[test]
     fn every_sort_token_maps_to_its_own_ordering() {
         let pairs = [

@@ -1,4 +1,4 @@
-//! The `OpenApi` root.
+//! Owns the `OpenApi` root.
 //!
 //! Every `#[utoipa::path(..)]` handler across the crate is collected here via `utoipa_axum`,
 //! and `xtask openapi` serialises the result to `openapi.json` to regenerate the typed
@@ -9,7 +9,7 @@ use utoipa::{Modify, OpenApi};
 
 // Not rustdoc: the sentence a *reader of the API* sees for each tag is the `description` in the
 // `tags(..)` block below, which is what `openapi.json` carries. These `///` lines answer the
-// other question — where the handlers wearing this tag live, which the tag string does not say
+// other question (where the handlers wearing this tag live), which the tag string does not say
 // once a tag spans more than one module. Each string is also a module name in the generated
 // `crates/api-client`, so renaming one renames a frontend import.
 
@@ -24,7 +24,7 @@ pub const LEGAL_TAG: &str = "legal";
 pub const BRANDING_TAG: &str = "branding";
 /// Tags the native client's update-channel routes in `crate::client`.
 pub const CLIENT_TAG: &str = "client";
-/// Tags `crate::me::watchlist`, plus the two `/v1/me/watchlist/{series_id}/sync` routes that live
+/// Tags `crate::me::watchlist`, and the two `/v1/me/watchlist/{series_id}/sync` routes that live
 /// in `crate::me::progress`.
 pub const ME_WATCHLIST_TAG: &str = "me-watchlist";
 /// Tags the series-scoped progress routes in `crate::me::progress`.
@@ -35,7 +35,7 @@ pub const ME_DASHBOARD_TAG: &str = "me-dashboard";
 /// Tags `crate::me::account` and the routes beside it that act on the signed-in user: MFA,
 /// passkeys, capabilities, content filters, source preferences and privacy requests.
 pub const ME_ACCOUNT_TAG: &str = "me-account";
-/// Tags `crate::me::notifications`, plus the delivery-channel settings in `crate::me::account`.
+/// Tags `crate::me::notifications`, and the delivery-channel settings in `crate::me::account`.
 pub const ME_NOTIFICATIONS_TAG: &str = "me-notifications";
 /// Tags the tracker-sync proxies in `crate::me::sync`, which forward to `services/sync`.
 pub const ME_SYNC_TAG: &str = "me-sync";
@@ -65,7 +65,7 @@ pub const BEARER_AUTH: &str = "bearer_auth";
 
 /// The single-use `ticket` query parameter accepted by `GET /v1/me/stream`.
 ///
-/// Replaces a raw bearer token in the query string, which no `OpenAPI` security scheme could
+/// Stands in for a raw bearer token in the query string, which no `OpenAPI` security scheme could
 /// express; an `apiKey` in `query` can.
 pub const STREAM_TICKET_AUTH: &str = "stream_ticket";
 
@@ -86,7 +86,7 @@ impl Modify for SecurityAddon {
                      `EventSource` cannot set an `Authorization` header, so the credential has \
                      to ride in the URL; making it single-use and short-lived is what stops the \
                      access log, `Referer` header and browser history that record it from being \
-                     worth reading (SEC-8).",
+                     worth reading.",
                 ))),
             );
         }
@@ -178,7 +178,8 @@ impl Modify for SecurityAddon {
     tankovault_contracts::sync::ConflictView,
     tankovault_contracts::sync::HistoryView,
     tankovault_contracts::me::MeStatsView,
-    // --- sync HTTP contract (produced by services/sync, re-published by the /v1/me/sync/* proxies) ---
+    // --- sync HTTP contract (produced by services/sync, re-published by the /v1/me/sync/* proxies)
+    // ---
     tankovault_contracts::sync::AccountStatus,
     tankovault_contracts::sync::AccountSettings,
     tankovault_contracts::sync::ProviderInfo,

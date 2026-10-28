@@ -1,4 +1,4 @@
-//! Shared application state and the authenticated-principal extractor.
+//! Owns the shared application state and the authenticated-principal extractor.
 //!
 //! Capabilities are resolved from the database per request, not read from the access token,
 //! and a suspended account is refused before any capability is consulted.
@@ -26,9 +26,9 @@ pub struct AppState {
     /// copies the heap allocation, so a bare wrapper would scatter fresh copies of the key
     /// across the heap. The `Arc` keeps one copy, zeroized at shutdown.
     pub jwt_secret: Arc<SecretSlice<u8>>,
-    /// Server-side password pepper: mixed into every argon2id hash, held here rather than the
-    /// database so a leak alone cannot be brute-forced offline. Empty reproduces un-peppered
-    /// hashing for backward compatibility.
+    /// Server-side password pepper: mixed into every argon2id hash, held here and not in the
+    /// database so a database leak alone cannot be brute-forced offline. Empty means un-peppered
+    /// hashing, which offers no such protection.
     ///
     /// `Arc` for the same reason as [`Self::jwt_secret`].
     pub password_pepper: Arc<SecretSlice<u8>>,
@@ -45,15 +45,15 @@ pub struct AppState {
     /// Core-NATS bus for relaying live per-user notifications over SSE; `None` degrades
     /// `/v1/me/stream` to `503` while every other route keeps working.
     pub bus: Option<tankovault_bus::Bus>,
-    /// Single-use, 30-second tickets for opening `GET /v1/me/stream` — replaces the access
-    /// token in that route's query string. Redis-backed where available, per-process otherwise.
+    /// Single-use, 30-second tickets for opening `GET /v1/me/stream`, carried in that route's query
+    /// string in place of the access token. Redis-backed where available, per-process otherwise.
     pub stream_tickets: Arc<dyn crate::stream_tickets::StreamTicketStore>,
 
     /// Where audit records go. A [`tankovault_service::NoopAuditSink`] when the operator
     /// disabled auditing, so no handler ever branches on the toggle.
     pub audit: Arc<dyn AuditSink>,
-    /// Which features are currently switched on. Held here — not just in the middleware layer
-    /// — because the flag-write handler has to refresh it, and `/v1/me/capabilities` has to
+    /// Which features are currently switched on. Held here, not just in the middleware layer,
+    /// because the flag-write handler has to refresh it, and `/v1/me/capabilities` has to
     /// report it.
     pub features: FeatureGate,
     /// The recommender's tuning, resolved from the compiled registry plus stored overrides.
@@ -63,13 +63,13 @@ pub struct AppState {
     /// Whether refresh cookies are marked `Secure` (true in production/TLS).
     pub cookie_secure: bool,
     /// The `WebAuthn` relying party, or `None` when this deployment configured no origin for
-    /// it. `None` is a working state, not a broken one — passkeys are simply unavailable.
+    /// it. `None` is a working state, not a broken one: passkeys are simply unavailable.
     pub webauthn: Option<crate::passkey::SharedRelyingParty>,
     /// Seals TOTP secrets at rest, or `None` when `auth.mfa_encryption_key` is unset.
     ///
     /// `None` is a working state, like [`Self::webauthn`]: TOTP enrolment answers `503` naming
     /// the setting, while security keys and recovery codes keep working. Storing the secret
-    /// unsealed instead is not an option — it is symmetric, so the database row would be a
+    /// unsealed instead is not an option: it is symmetric, so the database row would be a
     /// working second factor for whoever reads it.
     pub mfa_sealer: Option<tankovault_auth::Sealer>,
     /// The issuer an authenticator app files this deployment's entry under.
@@ -83,7 +83,7 @@ pub struct AppState {
     /// How long a half-finished sign-in may sit before it has to be restarted.
     pub mfa_challenge_ttl: time::Duration,
     /// Transactional email back-end (welcome, password reset). A no-op mailer when email
-    /// is unconfigured, so these flows degrade gracefully rather than failing.
+    /// is unconfigured, so these flows degrade gracefully instead of failing.
     pub mailer: Arc<dyn tankovault_email::EmailService>,
     /// Public base URL of the web app, used to build absolute links inside emails
     /// (e.g. the password-reset link). No trailing slash.
@@ -105,7 +105,7 @@ pub struct AppState {
     /// The genre terms that classify a series as adult, as intake applies them.
     ///
     /// The same set the worker ingests with, so the public tag facet withholds exactly the terms
-    /// that put a series behind the gate — a second, API-local list would drift from the one that
+    /// that put a series behind the gate. A second, API-local list would drift from the one that
     /// did the classifying and start naming genres the reader can, or cannot, actually reach.
     ///
     /// `Arc` because axum clones state per request, and this is a hash set.
@@ -114,7 +114,7 @@ pub struct AppState {
 
 /// Where a request came from, for the audit trail.
 ///
-/// Persisted only when the operator enabled the privacy toggle — filtering happens in the
+/// Persisted only when the operator enabled the privacy toggle. Filtering happens in the
 /// sink, so a handler can't accidentally retain an IP.
 #[derive(Debug, Clone, Default)]
 pub struct ClientContext {
@@ -122,9 +122,9 @@ pub struct ClientContext {
     pub user_agent: Option<String>,
 }
 
-/// Extract [`ClientContext`] on an unauthenticated route.
+/// Extracts [`ClientContext`] on an unauthenticated route.
 ///
-/// Infallible — a missing peer address or `User-Agent` yields `None`, not an error, since
+/// Infallible: a missing peer address or `User-Agent` yields `None`, not an error, since
 /// credential endpoints need audit context without an `AuthUser` to carry it.
 impl<S: Send + Sync> FromRequestParts<S> for ClientContext {
     type Rejection = std::convert::Infallible;
@@ -138,7 +138,7 @@ impl<S: Send + Sync> FromRequestParts<S> for ClientContext {
 }
 
 impl ClientContext {
-    /// Read the peer address and `User-Agent` from the request.
+    /// Reads the peer address and `User-Agent` from the request.
     ///
     /// Uses the connection's peer address, not `X-Forwarded-For`: a client-supplied address
     /// that reads as authoritative is worse than none. A proxy deployment should record the
@@ -167,11 +167,11 @@ pub struct AuthUser {
     /// Whether this account may see adult-gated series, as far as the *account* decides it.
     ///
     /// Half the answer. The deployment flag is the other half and both must hold, which is why
-    /// no handler reads this directly — [`crate::content_gate::AdultVisibility`] combines them.
+    /// no handler reads this directly: [`crate::content_gate::AdultVisibility`] combines them.
     pub adult_opt_in: bool,
     /// Request origin, attached to any audit record this principal produces.
     pub client: ClientContext,
-    /// Whether this account holds a second factor — a confirmed authenticator-app enrolment or
+    /// Whether this account holds a second factor: a confirmed authenticator-app enrolment or
     /// a security key.
     ///
     /// Read on every authenticated request, alongside the permission set, so a factor removed a
@@ -179,8 +179,8 @@ pub struct AuthUser {
     pub mfa_enrolled: bool,
     /// Whether this request carried a live step-up grant in `X-Step-Up`.
     ///
-    /// Resolved here rather than by a second extractor so that [`Self::require_all`] — the
-    /// funnel every privileged handler already passes through — can demand it for a mutating
+    /// Resolved here, not by a second extractor, so that [`Self::require_all`] (the funnel
+    /// every privileged handler already passes through) can demand it for a mutating
     /// capability without each of forty admin handlers being edited to ask. `crate::step_up`
     /// reads the same field for the `/v1/me` routes, which do not go through `require_all`.
     ///
@@ -193,27 +193,27 @@ pub struct AuthUser {
 }
 
 impl AuthUser {
-    /// Enforce a single capability, returning `Forbidden` otherwise.
+    /// Enforces a single capability, returning `Forbidden` otherwise.
     ///
-    /// A refusal is audited — the whole reason this is `async`: an unauthorized attempt is
-    /// the single most interesting thing an audit trail can tell you.
+    /// A refusal is audited, which is why this is `async`: an unauthorized attempt is the single
+    /// most interesting thing an audit trail can tell you.
     ///
     /// # Errors
-    /// [`ApiError::Forbidden`] if the principal does not hold `required`.
+    /// Returns [`ApiError::Forbidden`] if the principal does not hold `required`.
     pub async fn require(&self, required: Permission) -> Result<(), ApiError> {
         self.require_all(&[required]).await
     }
 
-    /// Enforce several capabilities at once.
+    /// Enforces several capabilities at once.
     ///
     /// Permissions deliberately do not imply one another, so a dual-purpose handler asks for
-    /// both at once — keeping the audit record for a refusal naming everything missing.
+    /// both at once, and the audit record for a refusal names everything missing.
     ///
     /// # Two gates before the grants
     ///
-    /// Both are checked here, and here rather than anywhere else, because this is the one
-    /// funnel every privileged handler already passes through — every call site of this method
-    /// lives under `services/api/src/admin/`. A middleware keyed on path prefix would let a
+    /// Both are checked here and nowhere else, because this is the one funnel every privileged
+    /// handler already passes through: every call site of this method lives under
+    /// `services/api/src/admin/`. A middleware keyed on path prefix would let a
     /// privileged route added outside `/v1/admin` escape silently; this way a handler cannot
     /// ask for a capability without also asking for what guards it.
     ///
@@ -224,11 +224,11 @@ impl AuthUser {
     ///    worse than not prompting. [`Permission::is_mutating`] draws the line, exhaustively.
     ///
     /// Both are ordered before the grant check on purpose: an unenrolled administrator is told
-    /// to enrol rather than told their permissions are insufficient, which is the difference
+    /// to enrol instead of being told their permissions are insufficient, which is the difference
     /// between an actionable message and a support ticket.
     ///
     /// # Errors
-    /// [`ApiError::MfaEnrolmentRequired`] if the caller has no second factor;
+    /// Returns [`ApiError::MfaEnrolmentRequired`] if the caller has no second factor;
     /// [`ApiError::StepUpRequired`] if a mutating capability was asked for without one;
     /// [`ApiError::Forbidden`] if any of `required` is missing.
     pub async fn require_all(&self, required: &[Permission]) -> Result<(), ApiError> {
@@ -288,7 +288,7 @@ impl AuthUser {
         Err(ApiError::Forbidden)
     }
 
-    /// Build an audit event already attributed to this principal and its request origin.
+    /// Builds an audit event already attributed to this principal and its request origin.
     #[must_use]
     pub fn event(&self, action: &'static str) -> AuditEvent {
         AuditEvent::new(action)
@@ -365,7 +365,7 @@ impl FromRequestParts<AppState> for AuthUser {
 /// factor is refused everywhere, including the page that would give them one, and the only
 /// recovery is a database edit.
 ///
-/// Prefix-matched rather than exact, because `/v1/me/mfa` fans out into enrolment,
+/// Prefix-matched, not exact, because `/v1/me/mfa` fans out into enrolment,
 /// confirmation, security keys and recovery codes, and a list of exact paths is a list that
 /// falls behind the router. Nothing outside `/v1/me/mfa` and `/v1/me/step-up` is exempt, and
 /// neither prefix carries a route that does anything but enrol or elevate.
@@ -375,10 +375,10 @@ fn exempt_from_mandatory_mfa(path: &str) -> bool {
         || path == "/v1/me/capabilities"
 }
 
-/// Extract an [`AuthUser`] on a route that also serves anonymous callers.
+/// Extracts an [`AuthUser`] on a route that also serves anonymous callers.
 ///
-/// `Ok(None)` for *every* reason a principal cannot be established — no header, a malformed or
-/// expired token, an erased account — because on these routes all of them mean the same thing:
+/// `Ok(None)` for *every* reason a principal cannot be established (no header, a malformed or
+/// expired token, an erased account), because on these routes all of them mean the same thing:
 /// nobody is signed in, serve the public view. A suspended account is the one case worth
 /// distinguishing, and it is not: it also gets the public view, which is strictly less than it
 /// would get by authenticating.

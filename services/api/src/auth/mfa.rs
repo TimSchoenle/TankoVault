@@ -1,13 +1,13 @@
-//! The second leg of a password sign-in: the account is known and its password verified, and a
+//! Owns the second leg of a password sign-in: the account is known and its password verified, and a
 //! second factor is still owed.
 //!
 //! # What the first leg hands over, and what it does not
 //!
-//! [`crate::auth::login`] answers `mfa_required` with an opaque handle and **no session** — no
+//! [`crate::auth::login`] answers `mfa_required` with an opaque handle and **no session**: no
 //! access token, no refresh cookie. The handle resolves a `mfa_challenges` row that says only
 //! which account is half-signed-in; holding it authorises nothing except the attempt to finish.
 //! That separation is the entire security property: a caller who has the password but not the
-//! factor must end up with strictly less than they had before.
+//! factor must end up with strictly less than they arrived with.
 //!
 //! # Passkey sign-in does not come through here
 //!
@@ -36,11 +36,11 @@ use super::session::issue_session;
 /// A TOTP code is six digits; a challenge that lives five minutes with no cap is a million
 /// guesses against a one-in-a-million secret, which is not a second factor. Five is generous for
 /// a mistyped code and far short of useful for a script. Exhausting it destroys the challenge,
-/// so the cost of trying again is a fresh password sign-in — itself on the auth rate-limit
+/// so the cost of trying again is a fresh password sign-in, itself on the auth rate-limit
 /// budget.
 const MAX_ATTEMPTS: i32 = 5;
 
-/// The handle the first leg issued, plus exactly one factor.
+/// The handle the first leg issued, and exactly one factor.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct MfaVerifyRequest {
     /// The `challenge_token` from the sign-in response.
@@ -77,7 +77,7 @@ pub struct MfaChallenge {
     pub challenge_token: SecretString,
     /// Which factors this account can actually present, so the client offers only those.
     ///
-    /// Never the account's *identity* — this response is reachable with a password alone, so
+    /// Never the account's *identity*: this response is reachable with a password alone, so
     /// anything beyond "an authenticator app and two security keys exist here" would be a
     /// disclosure bought with a credential the attacker already spent.
     pub methods: Vec<MfaMethod>,
@@ -97,7 +97,7 @@ pub enum MfaMethod {
 /// Begin a security-key challenge for a pending sign-in
 ///
 /// The assertion options for the account behind `challenge_token`. Separate from
-/// `/v1/me/step-up/security-key/start` because there is no session yet — the caller is
+/// `/v1/me/step-up/security-key/start` because there is no session yet: the caller is
 /// half-signed-in, and the handle is the only thing naming the account.
 #[utoipa::path(
     post,
@@ -131,9 +131,9 @@ pub async fn mfa_security_key_start(
 
 /// Finish signing in
 ///
-/// Trades the pending sign-in plus one factor for the session the first leg withheld.
+/// Trades the pending sign-in and one factor for the session the first leg withheld.
 ///
-/// Every outcome is audited, success and failure alike — an authentication log that records only
+/// Every outcome is audited, success and failure alike: an authentication log that records only
 /// successes cannot answer the question anyone actually asks it after an incident.
 #[utoipa::path(
     post,
@@ -252,13 +252,13 @@ pub async fn mfa_verify(
     issue_session(&state, jar, &user, Uuid::now_v7()).await
 }
 
-/// Verify whichever factor the request carried, returning whether it held and which it was.
+/// Verifies whichever factor the request carried, returning whether it held and which it was.
 ///
 /// Split out so [`mfa_verify`] reads as the sequence of gates it is. The `factor` string is for
-/// the audit record only — the caller answers identically whichever one failed.
+/// the audit record only; the caller answers identically whichever one failed.
 ///
 /// # Errors
-/// Propagates a database or configuration failure. A *wrong* factor is `Ok((false, _))`.
+/// Returns a database or configuration failure. A *wrong* factor is `Ok((false, _))`.
 async fn present_factor(
     state: &AppState,
     user_id: tankovault_domain::UserId,
@@ -283,7 +283,7 @@ async fn present_factor(
     ))
 }
 
-/// Audit a refused second leg and hand back the error to return.
+/// Audits a refused second leg and hands back the error to return.
 ///
 /// One shape for every refusal, for the reason `crate::auth::login::refuse` gives.
 async fn refuse(
@@ -307,10 +307,10 @@ async fn refuse(
     error
 }
 
-/// Open a pending sign-in for `user_id` and describe how it can be finished.
+/// Opens a pending sign-in for `user_id` and describes how it can be finished.
 ///
 /// # Errors
-/// [`ApiError::Internal`] on a database failure.
+/// Returns [`ApiError::Internal`] on a database failure.
 pub(super) async fn open_challenge(
     state: &AppState,
     user_id: tankovault_domain::UserId,

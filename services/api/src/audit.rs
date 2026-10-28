@@ -1,4 +1,4 @@
-//! Call-site helpers for the audit trail — thin wrappers so recording an action is a single
+//! Owns the call-site helpers for the audit trail: thin wrappers so recording an action is a single
 //! line, over the sink in `tankovault-service` that decides at boot whether anything is
 //! actually written.
 
@@ -7,7 +7,7 @@ use serde_json::Value;
 use tankovault_domain::UserId;
 use tankovault_service::{AuditEvent, AuditOutcome};
 
-/// Record a successful privileged action.
+/// Records a successful privileged action.
 ///
 /// Best-effort: the sink swallows its own failures, so an audit problem never fails the
 /// action the user asked for.
@@ -21,7 +21,7 @@ pub(crate) async fn audit(
     record(state, user, action, target, detail, AuditOutcome::Success).await;
 }
 
-/// Record a privileged action that was attempted and failed.
+/// Records a privileged action that was attempted and failed.
 ///
 /// Distinct from a denial: the caller was entitled to act, and the action did not take
 /// effect. Both matter after an incident, and collapsing them loses the distinction
@@ -36,7 +36,7 @@ pub(crate) async fn audit_failure(
     record(state, user, action, target, detail, AuditOutcome::Failure).await;
 }
 
-/// Record an action on an unauthenticated route.
+/// Records an action on an unauthenticated route.
 ///
 /// The credential endpoints have no [`AuthUser`] to carry the actor or the request origin,
 /// yet they are exactly where an audit trail earns its keep: a burst of failed logins, or

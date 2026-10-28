@@ -1,12 +1,12 @@
-//! In-process HTTP harness for the API service: wires the real Axum router to an isolated,
+//! Owns the in-process HTTP harness for the API service: wires the real Axum router to an isolated,
 //! migrated database and answers requests via `tower`'s `oneshot`, with no socket bound. Kept
 //! separate from `crates/test-support` so repository-layer suites don't compile the full API
 //! stack to run SQL tests.
 //!
 //! # On `# Panics`
 //!
-//! Exempt from `clippy::missing_panics_doc`: a harness helper panicking is its contract — a
-//! failed test — so documenting each site would only restate that once per function.
+//! Exempt from `clippy::missing_panics_doc`: a harness helper panicking is its contract (a
+//! failed test), so documenting each site would only restate that once per function.
 #![expect(
     clippy::missing_panics_doc,
     reason = "a test-harness helper's failure mode is a panicking test, which is its contract"
@@ -30,8 +30,8 @@ use tower::ServiceExt as _;
 
 /// What a [`TestApp`] should be wired with, for the axes that change behaviour.
 ///
-/// Defaults reproduce [`TestApp::spawn`] exactly, so an existing test is unaffected and a new
-/// one names only the axis it cares about.
+/// Defaults reproduce [`TestApp::spawn`] exactly, so a test names only the axis it cares
+/// about.
 pub struct TestConfig {
     mailer: Arc<dyn EmailService>,
     rate_limit: RateLimitConfig,
@@ -64,7 +64,7 @@ impl Default for TestConfig {
                 .expect("and is not empty"),
             )),
             // Empty by default, which is what most deployments run: `/v1/legal` answers with an
-            // empty index rather than 404ing, and the footer publishes no Legal column.
+            // empty index instead of 404ing, and the footer publishes no Legal column.
             legal: terrace_legal::LegalConfig::default(),
             // The shipped identity, so `/v1/branding` assertions read as what a stock
             // deployment publishes.
@@ -84,46 +84,46 @@ impl TestConfig {
         Self::default()
     }
 
-    /// Wire a specific mailer — see [`tankovault_test_support::RecordingMailer`].
+    /// Wires a specific mailer; see [`tankovault_test_support::RecordingMailer`].
     #[must_use]
     pub fn with_mailer(mut self, mailer: Arc<dyn EmailService>) -> Self {
         self.mailer = mailer;
         self
     }
 
-    /// Publish a set of legal documents, as an operator's `[legal]` section would.
+    /// Publishes a set of legal documents, as an operator's `[legal]` section would.
     #[must_use]
     pub fn with_legal(mut self, legal: terrace_legal::LegalConfig) -> Self {
         self.legal = legal;
         self
     }
 
-    /// Rebrand the deployment, as an operator's `[branding]` section would.
+    /// Rebrands the deployment, as an operator's `[branding]` section would.
     #[must_use]
     pub fn with_branding(mut self, branding: tankovault_config::BrandingConfig) -> Self {
         self.branding = branding;
         self
     }
 
-    /// Name a different client channel, as an operator's `[client]` section would.
+    /// Names a different client channel, as an operator's `[client]` section would.
     #[must_use]
     pub fn with_client(mut self, client: tankovault_config::ClientConfig) -> Self {
         self.client = client;
         self
     }
 
-    /// Cap how long an elevation may be honoured after it was earned, whatever it is used for.
+    /// Caps how long an elevation may be honoured after it was earned, whatever it is used for.
     ///
     /// `Duration::ZERO` is the interesting setting and is not a deployment: it makes the ceiling
     /// bite the instant a grant exists, which is the only way to observe it without moving the
-    /// clock — the sliding window otherwise keeps a used grant alive right up to it.
+    /// clock; the sliding window otherwise keeps a used grant alive right up to it.
     #[must_use]
     pub fn with_step_up_lifetime(mut self, max: Duration) -> Self {
         self.step_up_max_ttl = max;
         self
     }
 
-    /// Do not mount the rate limiter.
+    /// Leaves the rate limiter unmounted.
     ///
     /// The access-control matrix alone drives every admin route three times over; left on, a
     /// throttle would be misread as an authorization failure.
@@ -133,7 +133,7 @@ impl TestConfig {
         self
     }
 
-    /// Wire the deployment that configured no `WebAuthn` origin, so every passkey route answers
+    /// Wires the deployment that configured no `WebAuthn` origin, so every passkey route answers
     /// `503`.
     ///
     /// Distinct from a switched-off `accounts.passkeys` flag (`404`): this is an operator
@@ -144,7 +144,7 @@ impl TestConfig {
         self
     }
 
-    /// Wire the local-HTTP development cookie shape: no `Secure`, no `__Host-` prefix, and the
+    /// Wires the local-HTTP development cookie shape: no `Secure`, no `__Host-` prefix, and the
     /// narrow `Path=/v1/auth`.
     #[must_use]
     pub fn with_insecure_cookies(mut self) -> Self {
@@ -152,18 +152,17 @@ impl TestConfig {
         self
     }
 
-    /// Switch `disabled` off, as an operator would on the feature-flag page.
+    /// Switches `disabled` off, as an operator would on the feature-flag page.
     ///
-    /// Before this existed the harness pinned `FeatureGate::defaults()`, so no test could drive
-    /// a route whose feature is off — `flags.rs`'s unit tests cover resolution logic only, not
-    /// that the gate is mounted on a real router.
+    /// Lets a test drive a route whose feature is off: `flags.rs`'s unit tests cover resolution
+    /// logic only, not that the gate is mounted on a real router.
     #[must_use]
     pub fn with_features_disabled(mut self, disabled: &[tankovault_domain::Feature]) -> Self {
         self.features = FeatureGate::with_disabled(disabled);
         self
     }
 
-    /// Force named features on. Needed for the three that ship off, which no test can otherwise
+    /// Forces named features on. Needed for the three that ship off, which no test can otherwise
     /// reach from the compiled defaults.
     #[must_use]
     pub fn with_features_enabled(mut self, enabled: &[tankovault_domain::Feature]) -> Self {
@@ -171,7 +170,7 @@ impl TestConfig {
         self
     }
 
-    /// Move named tuning values, so a test can prove a knob reaches the thing it configures
+    /// Moves named tuning values, so a test can prove a knob reaches the thing it configures
     /// without going through the admin endpoint and a refresh.
     #[must_use]
     pub fn with_tunables(mut self, values: &[(tankovault_domain::Tunable, f64)]) -> Self {
@@ -195,7 +194,7 @@ pub struct TestApp {
 }
 
 impl TestApp {
-    /// Stand up an ephemeral database and the fully-wired router against it.
+    /// Stands up an ephemeral database and the fully-wired router against it.
     pub async fn spawn() -> Self {
         Self::spawn_with(TestConfig::new()).await
     }
@@ -246,13 +245,13 @@ impl TestApp {
             features: cfg.features.clone(),
             tunables: cfg.tunables.clone(),
             cookie_secure: cfg.cookie_secure,
-            // A real relying party, so passkey routes answer their genuine statuses rather than
-            // a blanket `503`. No test drives a browser, so nothing here verifies a signature —
+            // A real relying party, so passkey routes answer their genuine statuses instead of
+            // a blanket `503`. No test drives a browser, so nothing here verifies a signature;
             // only the surrounding surface (auth gates, feature flags, ownership scoping) is
             // exercised.
             webauthn: cfg.webauthn,
-            // A fixed key, so TOTP enrolment answers its real statuses rather than the `503` an
-            // unconfigured deployment gets. Fixed rather than random because a suite that seals
+            // A fixed key, so TOTP enrolment answers its real statuses instead of the `503` an
+            // unconfigured deployment gets. Fixed, not random, because a suite that seals
             // a secret in one request and opens it in the next needs both to use the same key.
             mfa_sealer: Some(test_sealer()),
             totp_issuer: "TankoVault Test".to_owned(),
@@ -293,9 +292,9 @@ impl TestApp {
         }
     }
 
-    /// Mint a single-use stream ticket for `user`, bypassing `POST /v1/me/stream-ticket`.
+    /// Mints a single-use stream ticket for `user`, bypassing `POST /v1/me/stream-ticket`.
     ///
-    /// The mint endpoint is gated by `AuthUser`, which refuses a suspended account — going
+    /// The mint endpoint is gated by `AuthUser`, which refuses a suspended account; going
     /// through the store directly keeps that leg of the access matrix testable.
     pub async fn stream_ticket(&self, user: UserId) -> String {
         // Unwrapped here because a test's next move is to put it in a query string.
@@ -307,7 +306,7 @@ impl TestApp {
             .to_owned()
     }
 
-    /// Seed a user with the given capabilities and status. See [`TestDb::seed_user`].
+    /// Seeds a user with the given capabilities and status. See [`TestDb::seed_user`].
     pub async fn seed_user(
         &self,
         username: &str,
@@ -317,15 +316,15 @@ impl TestApp {
         self.db.seed_user(username, perms, status).await
     }
 
-    /// A `Bearer …` header value carrying a freshly-minted, valid access token for `user`.
+    /// Returns a `Bearer …` header value carrying a freshly-minted, valid access token for `user`.
     #[must_use]
     pub fn bearer(&self, user: UserId) -> String {
         bearer(user)
     }
 
-    /// Enrol a confirmed authenticator app for `user`, returning its secret.
+    /// Enrols a confirmed authenticator app for `user`, returning its secret.
     ///
-    /// Goes through the repository rather than the HTTP surface because the HTTP surface is
+    /// Goes through the repository, not the HTTP surface, because the HTTP surface is
     /// often the thing under test: a suite checking that admin writes demand a step-up should
     /// not have to drive four enrolment requests first, and a failure in one of those would
     /// surface as a confusing failure in the other.
@@ -349,10 +348,10 @@ impl TestApp {
         secret
     }
 
-    /// Mint a live step-up grant for `user`, returning the `X-Step-Up` header value.
+    /// Mints a live step-up grant for `user`, returning the `X-Step-Up` header value.
     ///
-    /// Minted through the store rather than `POST /v1/me/step-up`, for the same reason
-    /// [`Self::seed_totp`] bypasses the enrolment endpoints — and because the endpoint's own
+    /// Minted through the store, not `POST /v1/me/step-up`, for the same reason
+    /// [`Self::seed_totp`] bypasses the enrolment endpoints, and because the endpoint's own
     /// gate would mask the check under test on the route the grant is being used for.
     ///
     /// `method` decides whether the grant survives enrolment: a `Password` grant stops counting
@@ -369,7 +368,7 @@ impl TestApp {
     /// [`Self::step_up`] with the lapse time chosen, including one already in the past.
     ///
     /// The window is the only thing bounding a stolen grant, and it is enforced by a predicate
-    /// in one `SELECT` — drop it and every elevation ever issued becomes permanent, with no
+    /// in one `SELECT`: drop it and every elevation ever issued becomes permanent, with no
     /// functional test noticing. Reaching the expired case needs a grant minted old, since
     /// nothing else can move the clock.
     pub async fn step_up_expiring_at(
@@ -392,14 +391,14 @@ impl TestApp {
         token.expose_secret().to_owned()
     }
 
-    /// Enrol a factor **and** elevate in one call — what most suites want, since almost every
-    /// sensitive route needs both and neither is what they are testing.
+    /// Enrols a factor **and** elevates in one call, which is what most suites want, since almost
+    /// every sensitive route needs both and neither is what they are testing.
     pub async fn enrolled_and_elevated(&self, user: UserId) -> String {
         self.seed_totp(user).await;
         self.step_up(user, StepUpMethod::Totp).await
     }
 
-    /// Drive a raw request through the real router.
+    /// Drives a raw request through the real router.
     pub async fn request(&self, req: Request<Body>) -> Response<Body> {
         self.router
             .clone()
@@ -408,7 +407,7 @@ impl TestApp {
             .expect("router is infallible")
     }
 
-    /// Issue a request and return the status and JSON body (or [`serde_json::Value::Null`] when
+    /// Issues a request and returns the status and JSON body (or [`serde_json::Value::Null`] when
     /// the body is empty), so a test reads as a single assertion.
     pub async fn call(
         &self,
@@ -422,7 +421,7 @@ impl TestApp {
 
     /// [`Self::call`], additionally presenting a step-up grant in `X-Step-Up`.
     ///
-    /// A separate entry point rather than a sixth parameter on `call`, because the overwhelming
+    /// A separate entry point, not a sixth parameter on `call`, because the overwhelming
     /// majority of calls carry no elevation and a `None` in every one of them would be noise.
     pub async fn call_elevated(
         &self,
@@ -465,17 +464,17 @@ impl TestApp {
 
 /// The fixed sealing key every harness instance uses for TOTP secrets.
 ///
-/// Fixed rather than random because a suite that seals a secret through [`TestApp::seed_totp`]
-/// and opens it through a request in the next line needs both halves to agree, and because a
-/// failure caused by two different random keys reads as "the code was wrong" — the least
-/// diagnosable outcome available.
+/// Fixed, not random, because a suite that seals a secret through [`TestApp::seed_totp`] and
+/// opens it through a request in the next line needs both halves to agree, and because a failure
+/// caused by two different random keys reads as "the code was wrong", the least diagnosable
+/// outcome available.
 fn test_sealer() -> tankovault_auth::Sealer {
     tankovault_auth::Sealer::new(&[0x2a; 32])
 }
 
 /// The code `secret` produces right now, for driving a sign-in or a step-up.
 ///
-/// Computed with the server's own implementation rather than a second one written for tests: a
+/// Computed with the server's own implementation, not a second one written for tests: a
 /// hand-rolled copy that agreed with the RFC but disagreed with this build would fail every
 /// suite with "wrong code" and point at nothing.
 #[must_use]

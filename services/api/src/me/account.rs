@@ -1,4 +1,4 @@
-//! Account settings: profile, sessions, notification preferences.
+//! Owns account settings: profile, sessions, notification preferences.
 
 use crate::error::{ApiError, ApiResult};
 use crate::openapi::{ME_ACCOUNT_TAG, ME_NOTIFICATIONS_TAG};
@@ -27,7 +27,7 @@ pub struct ProfileDto {
     pub email: String,
     pub username: String,
     /// Whether the account is active or suspended. A suspended caller cannot reach this
-    /// endpoint at all, so in practice this is always `active` — it is here because the
+    /// endpoint at all, so in practice this is always `active`; it is here because the
     /// profile is the account's identity record and omitting its state would make the DTO an
     /// incomplete picture of it.
     pub status: tankovault_domain::AccountStatus,
@@ -35,22 +35,22 @@ pub struct ProfileDto {
 
 /// Update the profile
 ///
-/// Update the caller's username and/or email (frontend §9.4). A duplicate email/username
+/// Updates the caller's username and/or email (frontend §9.4). A duplicate email/username
 /// surfaces as `409 Conflict`.
 ///
 /// Requires a **step-up**, because the address is the account's recovery channel. Without that
-/// check, anyone holding an access token for 15 minutes — a shared browser, a proxy log, a
-/// leaked SSE URL — could point the account at their own address, request a password reset to
+/// check, anyone holding an access token for 15 minutes (a shared browser, a proxy log, a
+/// leaked SSE URL) could point the account at their own address, request a password reset to
 /// it, and take the account over; `reset_password` would then revoke the real owner's sessions
 /// on the attacker's behalf.
 ///
-/// This used to take `current_password`, which defended against the wrong attacker: the person
-/// most likely to be holding a stolen token is the person who phished the password to get it.
+/// A `current_password` check would defend against the wrong attacker: the person most likely
+/// to be holding a stolen token is the person who phished the password to get it.
 /// `crate::step_up` carries the full argument.
 ///
 /// On a successful change the new address starts **unverified**
 /// (`repo::users::update_profile` clears `email_verified_at`), a confirmation link is sent to
-/// it, a warning is sent to the *old* address, and every session is revoked — matching what
+/// it, a warning is sent to the *old* address, and every session is revoked, matching what
 /// `reset_password` already does for the other credential.
 #[utoipa::path(
     patch,
@@ -90,7 +90,8 @@ pub async fn patch_profile(
     }
 
     let before = tankovault_db::repo::users::get(&state.pool, user.user_id).await?;
-    // `citext` is case-insensitive; match that so a case-only change isn't treated as an address change.
+    // `citext` is case-insensitive; match that so a case-only change isn't treated as an address
+    // change.
     let email_changing = email.is_some_and(|e| !e.eq_ignore_ascii_case(&before.email));
 
     let updated =
@@ -109,7 +110,8 @@ pub async fn patch_profile(
             ),
         );
         crate::auth::send_verification_email(&state, &updated).await?;
-        // The credential the address protects has changed hands: same rule as a password reset, every session dies.
+        // The credential the address protects has changed hands: same rule as a password reset,
+        // every session dies.
         tankovault_db::repo::users::revoke_all_for_user(&state.pool, user.user_id).await?;
     }
 
@@ -129,21 +131,20 @@ pub struct PasswordChange {
 
 /// Change the password
 ///
-/// Change the caller's password, behind a step-up.
+/// Changes the caller's password, behind a step-up.
 ///
-/// There was previously **no authenticated path to a new password at all** — the only route
-/// was the emailed reset link, so a signed-in user who simply wanted to rotate their password
-/// had to go through an out-of-band channel, and a user whose email had been taken over could
-/// not lock the attacker out.
+/// This is the authenticated path to a new password: without it the only route is the emailed
+/// reset link, so a signed-in user who wants to rotate their password needs an out-of-band
+/// channel, and a user whose email has been taken over cannot lock the attacker out.
 ///
-/// The proof is a step-up, not the old password. Against the attacker this exists to stop —
-/// someone holding a stolen session, usually because they phished the password to open it —
-/// re-typing the password proved nothing. `crate::step_up` carries the argument in full.
+/// The proof is a step-up, not the old password. Against the attacker this exists to stop
+/// (someone holding a stolen session, usually because they phished the password to open it),
+/// re-typing the password proves nothing. `crate::step_up` carries the argument in full.
 ///
 /// Every session is revoked on success, including the caller's: a password change is exactly
 /// when you want the other device signed out, and leaving the caller's own session alive would
 /// mean special-casing the one session an attacker is most likely to be holding. Every step-up
-/// grant goes with them, for the same reason — an elevation earned before the credential
+/// grant goes with them, for the same reason: an elevation earned before the credential
 /// changed must not outlive it.
 #[utoipa::path(
     post,
@@ -217,7 +218,7 @@ pub async fn sessions(
 
 /// Revoke a session
 ///
-/// Revoke one of the caller's own sessions (frontend §9.4). Scoped to ownership; a
+/// Revokes one of the caller's own sessions (frontend §9.4). Scoped to ownership; a
 /// foreign/unknown id yields `404`.
 ///
 /// Behind a step-up: the session list is where an owner *responds* to a compromise, and an
@@ -251,7 +252,7 @@ pub async fn delete_session(
 /// Get notification preferences
 ///
 /// The caller's effective notification preferences. A reader who has never saved any gets the
-/// product defaults, fully populated, rather than an empty object the client would have to know
+/// product defaults, fully populated, instead of an empty object the client would have to know
 /// how to fill in.
 #[utoipa::path(
     get,
@@ -275,11 +276,10 @@ pub async fn notification_prefs(
 /// Replace notification preferences
 ///
 /// Replaces the caller's preferences wholesale. Every field defaults, so a partial body is a
-/// valid document — the omitted fields come back to the product defaults, not to `false`.
+/// valid document: the omitted fields come back to the product defaults, not to `false`.
 ///
-/// The stored document used to be free-form and unvalidated, and nothing read it: the three
-/// toggles it held had no effect on delivery at all. It is typed now precisely so that a
-/// preference which is saved is a preference the notifier honours.
+/// The stored document is typed so that a preference which is saved is a preference the
+/// notifier honours.
 #[utoipa::path(
     put,
     path = "/v1/me/notification-prefs",

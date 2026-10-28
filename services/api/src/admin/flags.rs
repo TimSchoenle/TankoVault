@@ -1,4 +1,4 @@
-//! The feature-flag control plane: read the catalogue, switch a feature on or off, or reset it
+//! Owns the feature-flag control plane: read the catalogue, switch a feature on or off, or reset it
 //! to the value it ships with. Writing a flag refreshes this replica's gate immediately; other
 //! replicas pick it up on their next refresh tick.
 
@@ -17,8 +17,8 @@ use utoipa::ToSchema;
 /// One feature as the control plane shows it.
 ///
 /// The four booleans are not a struct that wants splitting: they answer four different
-/// questions the page asks side by side — is it on, is that the shipped value, did someone
-/// decide it, and can it be changed at all — and grouping any of them would only move the
+/// questions the page asks side by side (is it on, is that the shipped value, did someone
+/// decide it, and can it be changed at all), and grouping any of them would only move the
 /// flattening into the client.
 #[expect(
     clippy::struct_excessive_bools,
@@ -40,7 +40,7 @@ pub struct FlagView {
     /// Whether an operator has explicitly decided this one. `false` means it is following the
     /// shipped default.
     pub overridden: bool,
-    /// Whether the feature refuses to be switched off — the deployment's recovery paths. The
+    /// Whether the feature refuses to be switched off: the deployment's recovery paths. The
     /// UI disables the control; the API refuses the write regardless.
     pub locked: bool,
     /// Why the switch was last flipped, if the operator said.
@@ -211,7 +211,7 @@ async fn flag_views(state: &AppState) -> ApiResult<Vec<FlagView>> {
         .map(|feature| {
             let stored = by_key.get(feature.key()).copied();
             // A locked feature reports its default regardless of any stored row, matching what
-            // the gate actually enforces — the page must not claim a state the runtime ignores.
+            // the gate actually enforces; the page must not claim a state the runtime ignores.
             let enabled = if feature.is_locked() {
                 feature.default_enabled()
             } else {

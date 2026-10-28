@@ -1,5 +1,5 @@
-//! The duplicate-series merge queue: candidates, merges, dismissals, the standing sweep, and
-//! the normalized-key rebuild the sweep depends on.
+//! Owns the duplicate-series merge queue: candidates, merges, dismissals, the standing sweep,
+//! and the normalized-key rebuild the sweep depends on.
 
 use crate::audit::audit;
 use crate::error::{ApiError, ApiResult};
@@ -29,8 +29,8 @@ pub struct CandidateFilter {
     ///
     /// An operator works a large queue in bands: everything above 0.9 is nearly all genuine
     /// duplicates and can be actioned quickly, while the 0.6–0.7 band needs real attention per
-    /// row. Out-of-range values are clamped rather than rejected — this narrows a list, so the
-    /// worst a nonsense value can do is return nothing.
+    /// row. Out-of-range values are clamped, not rejected: this narrows a list, so the worst a
+    /// nonsense value can do is return nothing.
     #[serde(default)]
     pub min_score: Option<f32>,
 }
@@ -76,7 +76,7 @@ pub struct MergeRequest {
 
 /// Merge two series
 ///
-/// Transactional re-parent + title/tag/progress/sync union (`docs/ARCHITECTURE.md` §10).
+/// Transactional re-parent and title/tag/progress/sync union (`docs/ARCHITECTURE.md` §10).
 #[utoipa::path(
     post,
     path = "/v1/admin/series/merge",
@@ -124,9 +124,8 @@ pub struct DismissRequest {
 /// Dismiss a merge candidate
 ///
 /// Operator judged the two works distinct. The judgement is durable: the pair is suppressed
-/// against re-scans and against the standing duplicate sweep, which is what the previous
-/// implementation could not promise — a dismissed pair could be re-inserted as a fresh open row
-/// by the next scan that saw it.
+/// against re-scans and against the standing duplicate sweep, so the next scan that sees it
+/// cannot re-insert it as a fresh open row.
 #[utoipa::path(
     post,
     path = "/v1/admin/merge-candidates/dismiss",
@@ -189,7 +188,7 @@ pub async fn sweep_merge_candidates(
 ) -> ApiResult<Json<MergeSweepView>> {
     user.require(Permission::MergeWrite).await?;
     // The actor travels with the request so every candidate the sweep resolves records *who*
-    // asked for it, rather than being indistinguishable from the hourly schedule.
+    // asked for it, instead of being indistinguishable from the hourly schedule.
     let Json(report): Json<MergeSweepView> = state
         .control_plane
         .post(
@@ -211,7 +210,7 @@ pub async fn sweep_merge_candidates(
 /// Run an exhaustive duplicate sweep
 ///
 /// The same sweep as `POST /v1/admin/merge-candidates/sweep`, drawn over and over until a round
-/// shortlists nothing it has not already judged — one full rotation of the open queue and the
+/// shortlists nothing it has not already judged: one full rotation of the open queue and the
 /// recheck set, and every newly-blocked pair besides. A single sweep only covers one budget's
 /// worth of each and leaves the rest to the schedule; this is the button for "look at all of it
 /// now", after a normalization change or a policy change that should not wait hours to land.
@@ -282,11 +281,10 @@ pub struct MergeFullSweepStatusView {
     pub rounds: i32,
     /// Why the last run stopped: `exhausted` or `failed`. A run has no limit it can stop at, so
     /// anything but a failure means every shortlist was walked out. Absent before the first run,
-    /// and while one is in flight; older control planes also wrote `merge_ceiling` and
-    /// `round_cap`.
+    /// and while one is in flight. A stored row may also hold `merge_ceiling` or `round_cap`.
     pub stopped: Option<String>,
     /// How the last run ended when it ended badly. A failed run still releases its claim, so a
-    /// failure shows up here rather than as a sweep that never finishes.
+    /// failure shows up here instead of as a sweep that never finishes.
     pub error: Option<String>,
     pub pairs_examined: i64,
     pub auto_merged: i64,
@@ -302,9 +300,9 @@ pub struct MergeFullSweepStatusView {
 /// Get the exhaustive duplicate sweep's state
 ///
 /// Progress of the run `POST` of this path starts, and the outcome of the last one. Read from
-/// the database rather than from the control plane: the run writes its progress there after
-/// every round, and asking the replica that happens to answer would get the state of whichever
-/// one was asked rather than of the run.
+/// the database, not from the control plane: the run writes its progress there after every
+/// round, and asking the replica that happens to answer would get the state of whichever one was
+/// asked instead of the run's.
 #[utoipa::path(
     get,
     path = "/v1/admin/merge-candidates/sweep-all",
@@ -352,7 +350,7 @@ pub async fn full_merge_sweep_status(
 /// The threshold and the four guards the duplicate sweep applies, each with its effective
 /// value, what this deployment falls back to without an override, and who last changed it.
 ///
-/// Read from the control plane rather than resolved here: the fallback is that image's
+/// Read from the control plane, not resolved here: the fallback is that image's
 /// configured `matching` block, and a policy page that showed the *compiled* default would name
 /// a value the sweep does not use and reset knobs to it.
 #[utoipa::path(
@@ -441,11 +439,11 @@ pub async fn reset_merge_policy(
     write_merge_policy(&state, &user, &key, None, None).await
 }
 
-/// The half a set and a reset share: refuse an unknown key here, forward the decision, and
-/// record who took it.
+/// Runs the half a set and a reset share: refuses an unknown key here, forwards the decision,
+/// and records who took it.
 ///
 /// The key is parsed against the registry before it travels, so an unknown one is a `400` from
-/// this service rather than a round trip that reports the control plane's refusal — and the
+/// this service instead of a round trip that reports the control plane's refusal, and the
 /// forwarded key is the registry's own `'static` string, never the caller's.
 async fn write_merge_policy(
     state: &AppState,
@@ -498,8 +496,8 @@ async fn write_merge_policy(
 /// # Why this is an operator action
 ///
 /// The normalized title is a *persisted* key: it is written once, when a series is created, and
-/// every later match compares against the stored value. A change to the normalization rules —
-/// like making an apostrophe join a word instead of splitting one — therefore leaves the entire
+/// every later match compares against the stored value. A change to the normalization rules
+/// (like making an apostrophe join a word instead of splitting one) therefore leaves the entire
 /// catalogue on keys derived by the previous rules, and the improvement only reaches rows that
 /// happen to be re-scanned. Running this is what makes a rules change take effect, and it is
 /// safe to run repeatedly: only rows whose key actually changed are written.

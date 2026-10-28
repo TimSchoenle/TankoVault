@@ -1,9 +1,8 @@
-//! A read-through snapshot cache for read models too expensive to recompute per request.
+//! Owns a read-through snapshot cache for read models too expensive to recompute per request.
 //!
-//! The operator console's two rollups used to count `chapters` whole (5.7–48.7 s in production);
-//! their chapter figures now come from `chapter_rollup` (migration 0059), but the header still
-//! counts providers, series, sources, users and open scan work live, and the console's stats tab,
-//! providers tab and header stream all ask for the same figures. The cache keeps that to one
+//! The operator console's header counts providers, series, sources, users and open scan work
+//! live (its chapter figures come from `chapter_rollup`), and the console's stats tab, providers
+//! tab and header stream all ask for the same figures. The cache keeps that to one
 //! computation per TTL however many tabs are open.
 //!
 //! [`Cached`] is *stale-while-revalidate*: a snapshot older than the TTL is still returned, and
@@ -22,13 +21,13 @@ pub const ADMIN_STATS_TTL: Duration = Duration::from_secs(30);
 
 /// Statement ceiling for a rollup refresh, in place of the admin pool's.
 ///
-/// The refresh runs behind a response that has already been served, so the route's ceiling —
-/// sized for a request someone is waiting on — would only cancel it, and a rollup whose every
+/// The refresh runs behind a response that has already been served, so the route's ceiling
+/// (sized for a request someone is waiting on) would only cancel it, and a rollup whose every
 /// refresh is cancelled is a console that never shows a figure. This still bounds it: a refresh
 /// that cannot finish in two minutes is load, not a slow answer.
 const ROLLUP_STATEMENT_CEILING: Duration = Duration::from_secs(120);
 
-/// Load the console header rollup under [`ROLLUP_STATEMENT_CEILING`].
+/// Loads the console header rollup under [`ROLLUP_STATEMENT_CEILING`].
 pub(crate) async fn load_system_overview(
     pool: tankovault_db::PgPool,
 ) -> tankovault_db::DbResult<tankovault_db::repo::stats::SystemStats> {
@@ -39,7 +38,7 @@ pub(crate) async fn load_system_overview(
     Ok(overview)
 }
 
-/// Load the per-provider table under [`ROLLUP_STATEMENT_CEILING`].
+/// Loads the per-provider table under [`ROLLUP_STATEMENT_CEILING`].
 pub(crate) async fn load_provider_stats(
     pool: tankovault_db::PgPool,
 ) -> tankovault_db::DbResult<Vec<tankovault_db::repo::stats::ProviderStat>> {
@@ -56,7 +55,7 @@ struct Snapshot<T> {
     taken_at: Instant,
 }
 
-/// A single cached value, refreshed on demand rather than on a timer.
+/// A single cached value, refreshed on demand, not on a timer.
 ///
 /// On a timer it would aggregate the catalogue all night for nobody. Demand-driven, a console
 /// nobody has open costs nothing.
@@ -64,7 +63,7 @@ pub struct Cached<T> {
     current: RwLock<Option<Snapshot<T>>>,
     /// Held for the duration of a refresh, so only one is ever in flight.
     refreshing: Mutex<()>,
-    /// `None` disables caching outright — see [`Cached::uncached`].
+    /// `None` disables caching outright; see [`Cached::uncached`].
     ttl: Option<Duration>,
 }
 
@@ -93,13 +92,14 @@ impl<T: Clone + Send + Sync + 'static> Cached<T> {
         })
     }
 
-    /// The cached value, computing it with `load` if there is nothing to serve yet.
+    /// Returns the cached value, computing it with `load` if there is nothing to serve yet.
     ///
     /// A stale value is returned as-is and refreshed behind the response; only the very first
     /// call (and the first after a failure) waits for `load`.
     ///
     /// # Errors
-    /// Whatever `load` returns, and only when there is no snapshot at all — once one exists, a
+    /// Returns whatever `load` returns, and only when there is no snapshot at all; once one
+    /// exists, a
     /// failing refresh is logged and the previous snapshot keeps being served.
     pub async fn get<F, Fut, E>(self: &Arc<Self>, load: F) -> Result<T, E>
     where
@@ -127,7 +127,7 @@ impl<T: Clone + Send + Sync + 'static> Cached<T> {
         }
     }
 
-    /// Compute the value inline, letting concurrent callers share the one computation.
+    /// Computes the value inline, letting concurrent callers share the one computation.
     async fn refresh_now<F, Fut, E>(self: &Arc<Self>, load: F) -> Result<T, E>
     where
         F: Fn() -> Fut,
@@ -143,7 +143,7 @@ impl<T: Clone + Send + Sync + 'static> Cached<T> {
         Ok(value)
     }
 
-    /// Start a refresh that outlives this request, unless one is already running.
+    /// Starts a refresh that outlives this request, unless one is already running.
     fn refresh_behind_the_response<F, Fut, E>(self: &Arc<Self>, load: F)
     where
         F: Fn() -> Fut + Send + 'static,
@@ -180,7 +180,7 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    /// A loader counting how often it ran, so the tests assert on work done rather than timing.
+    /// A loader counting how often it ran, so the tests assert on work done, not timing.
     ///
     /// Takes the counter by value: the closure is spawned, so it has to outlive the caller.
     fn counting(
@@ -192,7 +192,7 @@ mod tests {
         }
     }
 
-    /// Give the spawned refresh a chance to run. Bounded rather than a single `yield_now` so the
+    /// Gives the spawned refresh a chance to run. Bounded, not a single `yield_now`, so the
     /// tests do not depend on how many polls the scheduler needs to drain one task.
     async fn settle() {
         for _ in 0..16 {
@@ -214,7 +214,7 @@ mod tests {
         );
     }
 
-    /// A stale read must answer from the snapshot it already has — the whole point is that the
+    /// A stale read must answer from the snapshot it already has: the whole point is that the
     /// expensive query never blocks a response once one has succeeded.
     #[tokio::test]
     async fn a_stale_snapshot_is_served_while_the_refresh_runs_behind_it() {

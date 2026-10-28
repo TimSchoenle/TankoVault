@@ -1088,7 +1088,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"series_ids\": {"]
-    #[doc = "      \"description\": \"The series to remove. Ids naming nothing are skipped rather than failing the batch.\","]
+    #[doc = "      \"description\": \"The series to remove. Ids naming nothing are skipped instead of failing the batch.\","]
     #[doc = "      \"type\": \"array\","]
     #[doc = "      \"items\": {"]
     #[doc = "        \"$ref\": \"#/components/schemas/SeriesId\""]
@@ -1100,7 +1100,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct BulkDeleteSeries {
-        #[doc = "The series to remove. Ids naming nothing are skipped rather than failing the batch."]
+        #[doc = "The series to remove. Ids naming nothing are skipped instead of failing the batch."]
         pub series_ids: ::std::vec::Vec<SeriesId>,
     }
     impl BulkDeleteSeries {
@@ -1108,13 +1108,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "Which ids a bulk operation actually acted on, and which it did not.\n\nPer-id rather than a count, because the two failure modes are different and the UI has to\ntell them apart: `skipped` means the caller asked about a series it does not track (a stale\nclient, or a title removed in another tab), which is worth reporting, while a transport\nfailure fails the whole call."]
+    #[doc = "Which ids a bulk operation actually acted on, and which it did not.\n\nPer-id, not a count, because the two failure modes are different and the UI has to\ntell them apart: `skipped` means the caller asked about a series it does not track (a stale\nclient, or a title removed in another tab), which is worth reporting, while a transport\nfailure fails the whole call."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Which ids a bulk operation actually acted on, and which it did not.\\n\\nPer-id rather than a count, because the two failure modes are different and the UI has to\\ntell them apart: `skipped` means the caller asked about a series it does not track (a stale\\nclient, or a title removed in another tab), which is worth reporting, while a transport\\nfailure fails the whole call.\","]
+    #[doc = "  \"description\": \"Which ids a bulk operation actually acted on, and which it did not.\\n\\nPer-id, not a count, because the two failure modes are different and the UI has to\\ntell them apart: `skipped` means the caller asked about a series it does not track (a stale\\nclient, or a title removed in another tab), which is worth reporting, while a transport\\nfailure fails the whole call.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"applied\","]
@@ -1205,7 +1205,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"features\": {"]
-    #[doc = "      \"description\": \"Every feature switched on for this deployment, in registry order.\\n\\nSent as the *enabled* list rather than a key→bool map: the client asks \\\"may I show\\nthis\\\", which is a membership test, and a map would invite it to distinguish\\n\\\"explicitly false\\\" from \\\"absent\\\" — a distinction that exists in the control plane's\\noverride table and nowhere else.\","]
+    #[doc = "      \"description\": \"Every feature switched on for this deployment, in registry order.\\n\\nSent as the *enabled* list, not a key-to-bool map: the client asks \\\"may I show\\nthis\\\", which is a membership test, and a map would invite it to distinguish\\n\\\"explicitly false\\\" from \\\"absent\\\", a distinction that exists in the control plane's\\noverride table and nowhere else.\","]
     #[doc = "      \"type\": \"array\","]
     #[doc = "      \"items\": {"]
     #[doc = "        \"$ref\": \"#/components/schemas/Feature\""]
@@ -1224,7 +1224,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct Capabilities {
-        #[doc = "Every feature switched on for this deployment, in registry order.\n\nSent as the *enabled* list rather than a key→bool map: the client asks \"may I show\nthis\", which is a membership test, and a map would invite it to distinguish\n\"explicitly false\" from \"absent\" — a distinction that exists in the control plane's\noverride table and nowhere else."]
+        #[doc = "Every feature switched on for this deployment, in registry order.\n\nSent as the *enabled* list, not a key-to-bool map: the client asks \"may I show\nthis\", which is a membership test, and a map would invite it to distinguish\n\"explicitly false\" from \"absent\", a distinction that exists in the control plane's\noverride table and nowhere else."]
         pub features: ::std::vec::Vec<Feature>,
         #[doc = "The permissions this caller currently holds, in registry order."]
         pub permissions: ::std::vec::Vec<Permission>,
@@ -1234,13 +1234,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "What a deletion actually removed, per table, counted rather than estimated."]
+    #[doc = "What a deletion actually removed, per table, counted, not estimated."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"What a deletion actually removed, per table, counted rather than estimated.\","]
+    #[doc = "  \"description\": \"What a deletion actually removed, per table, counted, not estimated.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"chapters\","]
@@ -1287,13 +1287,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "A page of the maintenance list plus the total matching the filter, so the pager needs no\nsecond request."]
+    #[doc = "A page of the maintenance list and the total matching the filter, so the pager needs no\nsecond request."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"A page of the maintenance list plus the total matching the filter, so the pager needs no\\nsecond request.\","]
+    #[doc = "  \"description\": \"A page of the maintenance list and the total matching the filter, so the pager needs no\\nsecond request.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"items\","]
@@ -1600,7 +1600,7 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"watcher_count\": {"]
-    #[doc = "      \"description\": \"Readers with this series on a watchlist — the part of the blast radius no re-scan\\nrestores.\","]
+    #[doc = "      \"description\": \"Readers with this series on a watchlist: the part of the blast radius no re-scan\\nrestores.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    }"]
@@ -1624,7 +1624,7 @@ pub mod types {
         pub status: ::std::string::String,
         pub title: ::std::string::String,
         pub updated_at: ::std::string::String,
-        #[doc = "Readers with this series on a watchlist — the part of the blast radius no re-scan\nrestores."]
+        #[doc = "Readers with this series on a watchlist: the part of the blast radius no re-scan\nrestores."]
         pub watcher_count: i64,
     }
     impl CatalogueRow {
@@ -2153,7 +2153,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"allowed_by_deployment\": {"]
-    #[doc = "      \"description\": \"Whether this deployment permits adult content at all.\\n\\nPublished so the client can explain an opted-in reader's empty shelf as an operator\\ndecision rather than leaving it looking like the preference failed to save.\","]
+    #[doc = "      \"description\": \"Whether this deployment permits adult content at all.\\n\\nPublished so the client can explain an opted-in reader's empty shelf as an operator\\ndecision instead of leaving it looking like the preference failed to save.\","]
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"effective\": {"]
@@ -2173,7 +2173,7 @@ pub mod types {
         #[doc = "When it attested, or `null` if it never has."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub age_attested_at: ::std::option::Option<::std::string::String>,
-        #[doc = "Whether this deployment permits adult content at all.\n\nPublished so the client can explain an opted-in reader's empty shelf as an operator\ndecision rather than leaving it looking like the preference failed to save."]
+        #[doc = "Whether this deployment permits adult content at all.\n\nPublished so the client can explain an opted-in reader's empty shelf as an operator\ndecision instead of leaving it looking like the preference failed to save."]
         pub allowed_by_deployment: bool,
         #[doc = "The resolved answer: whether adult series are actually being shown to this caller.\n\nThe conjunction of everything above, computed server-side. A client recombining the\nparts itself is a second implementation of the gate, and the two will disagree."]
         pub effective: bool,
@@ -2200,7 +2200,7 @@ pub mod types {
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"confirm_age\": {"]
-    #[doc = "      \"description\": \"The caller's confirmation, in this request, that they are of age.\\n\\nRequired to turn [`Self::adult_opt_in`] on for an account that has never attested;\\nignored when it already has, and ignored when opting out. It is a declaration the reader\\nmakes, so it is a field on the request rather than something the server infers from\\nhaving asked.\","]
+    #[doc = "      \"description\": \"The caller's confirmation, in this request, that they are of age.\\n\\nRequired to turn [`Self::adult_opt_in`] on for an account that has never attested;\\nignored when it already has, and ignored when opting out. It is a declaration the reader\\nmakes, so it is a field on the request, not something the server infers from\\nhaving asked.\","]
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    }"]
     #[doc = "  }"]
@@ -2211,7 +2211,7 @@ pub mod types {
     pub struct ContentPrefsUpdate {
         #[doc = "The preference to store."]
         pub adult_opt_in: bool,
-        #[doc = "The caller's confirmation, in this request, that they are of age.\n\nRequired to turn [`Self::adult_opt_in`] on for an account that has never attested;\nignored when it already has, and ignored when opting out. It is a declaration the reader\nmakes, so it is a field on the request rather than something the server infers from\nhaving asked."]
+        #[doc = "The caller's confirmation, in this request, that they are of age.\n\nRequired to turn [`Self::adult_opt_in`] on for an account that has never attested;\nignored when it already has, and ignored when opting out. It is a declaration the reader\nmakes, so it is a field on the request, not something the server infers from\nhaving asked."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub confirm_age: ::std::option::Option<bool>,
     }
@@ -2469,13 +2469,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "Confirmation payload for account deletion.\n\nDeletion is irreversible and cascades across every table, so it demands an explicit,\nunambiguous intent rather than being reachable by a stray `DELETE`. Requiring the\nusername back defends against both a mis-clicked button and a forced cross-site\nnavigation, neither of which can supply it."]
+    #[doc = "Confirmation payload for account deletion.\n\nDeletion is irreversible and cascades across every table, so it demands an explicit,\nunambiguous intent instead of being reachable by a stray `DELETE`. Requiring the\nusername back defends against both a mis-clicked button and a forced cross-site\nnavigation, neither of which can supply it."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Confirmation payload for account deletion.\\n\\nDeletion is irreversible and cascades across every table, so it demands an explicit,\\nunambiguous intent rather than being reachable by a stray `DELETE`. Requiring the\\nusername back defends against both a mis-clicked button and a forced cross-site\\nnavigation, neither of which can supply it.\","]
+    #[doc = "  \"description\": \"Confirmation payload for account deletion.\\n\\nDeletion is irreversible and cascades across every table, so it demands an explicit,\\nunambiguous intent instead of being reachable by a stray `DELETE`. Requiring the\\nusername back defends against both a mis-clicked button and a forced cross-site\\nnavigation, neither of which can supply it.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"confirm_username\""]
@@ -2515,7 +2515,7 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"reason\": {"]
-    #[doc = "      \"description\": \"Why the account is being erased. Recorded in the audit trail, which is the only place\\nthe reason can survive — the account itself is about to be gone.\","]
+    #[doc = "      \"description\": \"Why the account is being erased. Recorded in the audit trail, which is the only place\\nthe reason can survive; the account itself is about to be gone.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -2529,7 +2529,7 @@ pub mod types {
     pub struct DeleteUser {
         #[doc = "The target account's username, typed back as confirmation."]
         pub confirm_username: ::std::string::String,
-        #[doc = "Why the account is being erased. Recorded in the audit trail, which is the only place\nthe reason can survive — the account itself is about to be gone."]
+        #[doc = "Why the account is being erased. Recorded in the audit trail, which is the only place\nthe reason can survive; the account itself is about to be gone."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub reason: ::std::option::Option<::std::string::String>,
     }
@@ -2703,13 +2703,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "What the tokenless metadata-enrichment sweep is doing, or last did.\n\nThe `AniList` side of the sync service does two unrelated things, and only one of them has\never had an operator surface: reconciling a *user's* list (visible per account above) and\nwalking the *catalogue* asking for metadata nobody's account is involved in. The second is\nthe one that fills in cover art, descriptions, tags and release years — and until this view\nit reported itself only into the sync container's log."]
+    #[doc = "What the tokenless metadata-enrichment sweep is doing, or last did.\n\nThe `AniList` side of the sync service does two unrelated things: reconciling a *user's*\nlist (visible per account above) and walking the *catalogue* asking for metadata nobody's\naccount is involved in. This view covers the second, which fills in cover art, descriptions,\ntags and release years."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"What the tokenless metadata-enrichment sweep is doing, or last did.\\n\\nThe `AniList` side of the sync service does two unrelated things, and only one of them has\\never had an operator surface: reconciling a *user's* list (visible per account above) and\\nwalking the *catalogue* asking for metadata nobody's account is involved in. The second is\\nthe one that fills in cover art, descriptions, tags and release years — and until this view\\nit reported itself only into the sync container's log.\","]
+    #[doc = "  \"description\": \"What the tokenless metadata-enrichment sweep is doing, or last did.\\n\\nThe `AniList` side of the sync service does two unrelated things: reconciling a *user's*\\nlist (visible per account above) and walking the *catalogue* asking for metadata nobody's\\naccount is involved in. This view covers the second, which fills in cover art, descriptions,\\ntags and release years.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"checked_last_day\","]
@@ -2722,7 +2722,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"checked_last_day\": {"]
-    #[doc = "      \"description\": \"Series attempted in the last 24 hours — how much ground the recent runs covered.\","]
+    #[doc = "      \"description\": \"Series attempted in the last 24 hours: how much ground the recent runs covered.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -2787,7 +2787,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct EnrichmentSweepView {
-        #[doc = "Series attempted in the last 24 hours — how much ground the recent runs covered."]
+        #[doc = "Series attempted in the last 24 hours: how much ground the recent runs covered."]
         pub checked_last_day: i64,
         #[doc = "Series an upstream provider resolved and supplied metadata for."]
         pub enriched: i32,
@@ -3548,13 +3548,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "One feature as the control plane shows it.\n\nThe four booleans are not a struct that wants splitting: they answer four different\nquestions the page asks side by side — is it on, is that the shipped value, did someone\ndecide it, and can it be changed at all — and grouping any of them would only move the\nflattening into the client."]
+    #[doc = "One feature as the control plane shows it.\n\nThe four booleans are not a struct that wants splitting: they answer four different\nquestions the page asks side by side (is it on, is that the shipped value, did someone\ndecide it, and can it be changed at all), and grouping any of them would only move the\nflattening into the client."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"One feature as the control plane shows it.\\n\\nThe four booleans are not a struct that wants splitting: they answer four different\\nquestions the page asks side by side — is it on, is that the shipped value, did someone\\ndecide it, and can it be changed at all — and grouping any of them would only move the\\nflattening into the client.\","]
+    #[doc = "  \"description\": \"One feature as the control plane shows it.\\n\\nThe four booleans are not a struct that wants splitting: they answer four different\\nquestions the page asks side by side (is it on, is that the shipped value, did someone\\ndecide it, and can it be changed at all), and grouping any of them would only move the\\nflattening into the client.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"default_enabled\","]
@@ -3586,7 +3586,7 @@ pub mod types {
     #[doc = "      \"$ref\": \"#/components/schemas/Feature\""]
     #[doc = "    },"]
     #[doc = "    \"locked\": {"]
-    #[doc = "      \"description\": \"Whether the feature refuses to be switched off — the deployment's recovery paths. The\\nUI disables the control; the API refuses the write regardless.\","]
+    #[doc = "      \"description\": \"Whether the feature refuses to be switched off: the deployment's recovery paths. The\\nUI disables the control; the API refuses the write regardless.\","]
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"note\": {"]
@@ -3631,7 +3631,7 @@ pub mod types {
         pub enabled: bool,
         pub group: FeatureGroup,
         pub key: Feature,
-        #[doc = "Whether the feature refuses to be switched off — the deployment's recovery paths. The\nUI disables the control; the API refuses the write regardless."]
+        #[doc = "Whether the feature refuses to be switched off: the deployment's recovery paths. The\nUI disables the control; the API refuses the write regardless."]
         pub locked: bool,
         #[doc = "Why the switch was last flipped, if the operator said."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
@@ -4328,7 +4328,7 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"url\": {"]
-    #[doc = "      \"description\": \"Absent renders the label as plain text rather than a dead link.\","]
+    #[doc = "      \"description\": \"Absent renders the label as plain text instead of a dead link.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -4341,7 +4341,7 @@ pub mod types {
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct LicenceView {
         pub name: ::std::string::String,
-        #[doc = "Absent renders the label as plain text rather than a dead link."]
+        #[doc = "Absent renders the label as plain text instead of a dead link."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub url: ::std::option::Option<::std::string::String>,
     }
@@ -4350,13 +4350,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "How a page of runs is ordered, as the `sort` parameter spells it.\n\nIts own wire enum rather than the repository's, so an unknown token is a 422 from the\nextractor instead of a silent fall back to the default ordering — a sort control that\nquietly ignores what it was asked for is exactly the defect this panel had."]
+    #[doc = "How a page of runs is ordered, as the `sort` parameter spells it.\n\nIts own wire enum, not the repository's, so an unknown token is a 422 from the extractor\ninstead of a silent fall back to the default ordering: a sort control that quietly ignores\nwhat it was asked for reads as working."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"How a page of runs is ordered, as the `sort` parameter spells it.\\n\\nIts own wire enum rather than the repository's, so an unknown token is a 422 from the\\nextractor instead of a silent fall back to the default ordering — a sort control that\\nquietly ignores what it was asked for is exactly the defect this panel had.\","]
+    #[doc = "  \"description\": \"How a page of runs is ordered, as the `sort` parameter spells it.\\n\\nIts own wire enum, not the repository's, so an unknown token is a 422 from the extractor\\ninstead of a silent fall back to the default ordering: a sort control that quietly ignores\\nwhat it was asked for reads as working.\","]
     #[doc = "  \"type\": \"string\","]
     #[doc = "  \"enum\": ["]
     #[doc = "    \"recent\","]
@@ -4467,13 +4467,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "What `POST /v1/auth/login` answers.\n\nA discriminated struct rather than two response bodies on two status codes, or an untagged\nunion: one status and one schema means the generated client gets a single struct to\ndeserialise instead of a `oneOf` enum, which this generator renders awkwardly enough that it\nhas caused trouble here before. `status` is the field a client branches on; the two payloads\nare mutually exclusive and each absent when the other is present.\n\n[`TokenResponse`] is left untouched by this, so `refresh` and `register` — which answer with\na session and never a challenge — keep the shape they had."]
+    #[doc = "What `POST /v1/auth/login` answers.\n\nA discriminated struct, not two response bodies on two status codes or an untagged union:\none status and one schema means the generated client gets a single struct to deserialise\ninstead of a `oneOf` enum, which this generator renders awkwardly. `status` is the field a\nclient branches on; the two payloads are mutually exclusive and each absent when the other\nis present.\n\n[`TokenResponse`] stays a plain session, so `refresh` and `register` (which answer with a\nsession and never a challenge) share it."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"What `POST /v1/auth/login` answers.\\n\\nA discriminated struct rather than two response bodies on two status codes, or an untagged\\nunion: one status and one schema means the generated client gets a single struct to\\ndeserialise instead of a `oneOf` enum, which this generator renders awkwardly enough that it\\nhas caused trouble here before. `status` is the field a client branches on; the two payloads\\nare mutually exclusive and each absent when the other is present.\\n\\n[`TokenResponse`] is left untouched by this, so `refresh` and `register` — which answer with\\na session and never a challenge — keep the shape they had.\","]
+    #[doc = "  \"description\": \"What `POST /v1/auth/login` answers.\\n\\nA discriminated struct, not two response bodies on two status codes or an untagged union:\\none status and one schema means the generated client gets a single struct to deserialise\\ninstead of a `oneOf` enum, which this generator renders awkwardly. `status` is the field a\\nclient branches on; the two payloads are mutually exclusive and each absent when the other\\nis present.\\n\\n[`TokenResponse`] stays a plain session, so `refresh` and `register` (which answer with a\\nsession and never a challenge) share it.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"status\""]
@@ -4698,20 +4698,20 @@ pub mod types {
             value.parse()
         }
     }
-    #[doc = "Start a mapping re-verification."]
+    #[doc = "The body that starts a mapping re-verification."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Start a mapping re-verification.\","]
+    #[doc = "  \"description\": \"The body that starts a mapping re-verification.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"dry_run\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"dry_run\": {"]
-    #[doc = "      \"description\": \"Report the failing mappings without removing them. Review a dry run before a real one.\","]
+    #[doc = "      \"description\": \"Reports the failing mappings without removing them. Review a dry run before a real one.\","]
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    }"]
     #[doc = "  }"]
@@ -4720,7 +4720,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct MappingReverifyStart {
-        #[doc = "Report the failing mappings without removing them. Review a dry run before a real one."]
+        #[doc = "Reports the failing mappings without removing them. Review a dry run before a real one."]
         pub dry_run: bool,
     }
     impl MappingReverifyStart {
@@ -4852,7 +4852,7 @@ pub mod types {
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"all\": {"]
-    #[doc = "      \"description\": \"Mark the caller's whole inbox read, rather than the listed ids.\\n\\nA client only ever holds the page it loaded, so \\\"mark all read\\\" sent as a list of ids\\nmarks one page and quietly leaves the rest unread.\","]
+    #[doc = "      \"description\": \"Marks the caller's whole inbox read, instead of the listed ids.\\n\\nA client only ever holds the page it loaded, so \\\"mark all read\\\" sent as a list of ids\\nmarks one page and quietly leaves the rest unread.\","]
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"ids\": {"]
@@ -4869,7 +4869,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct MarkRead {
-        #[doc = "Mark the caller's whole inbox read, rather than the listed ids.\n\nA client only ever holds the page it loaded, so \"mark all read\" sent as a list of ids\nmarks one page and quietly leaves the rest unread."]
+        #[doc = "Marks the caller's whole inbox read, instead of the listed ids.\n\nA client only ever holds the page it loaded, so \"mark all read\" sent as a list of ids\nmarks one page and quietly leaves the rest unread."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub all: ::std::option::Option<bool>,
         #[doc = "The notifications to mark read. Ignored when `all` is set."]
@@ -5413,7 +5413,7 @@ pub mod types {
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"error\": {"]
-    #[doc = "      \"description\": \"How the last run ended when it ended badly. A failed run still releases its claim, so a\\nfailure shows up here rather than as a sweep that never finishes.\","]
+    #[doc = "      \"description\": \"How the last run ended when it ended badly. A failed run still releases its claim, so a\\nfailure shows up here instead of as a sweep that never finishes.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -5465,7 +5465,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"stopped\": {"]
-    #[doc = "      \"description\": \"Why the last run stopped: `exhausted` or `failed`. A run has no limit it can stop at, so\\nanything but a failure means every shortlist was walked out. Absent before the first run,\\nand while one is in flight; older control planes also wrote `merge_ceiling` and\\n`round_cap`.\","]
+    #[doc = "      \"description\": \"Why the last run stopped: `exhausted` or `failed`. A run has no limit it can stop at, so\\nanything but a failure means every shortlist was walked out. Absent before the first run,\\nand while one is in flight. A stored row may also hold `merge_ceiling` or `round_cap`.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -5485,7 +5485,7 @@ pub mod types {
         pub blocked: i64,
         pub deferred: i64,
         pub distinct: i64,
-        #[doc = "How the last run ended when it ended badly. A failed run still releases its claim, so a\nfailure shows up here rather than as a sweep that never finishes."]
+        #[doc = "How the last run ended when it ended badly. A failed run still releases its claim, so a\nfailure shows up here instead of as a sweep that never finishes."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub error: ::std::option::Option<::std::string::String>,
         #[doc = "RFC 3339. When the most recent run released its claim; absent while one is running."]
@@ -5502,7 +5502,7 @@ pub mod types {
         #[doc = "RFC 3339. When the current or most recent run started."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub started_at: ::std::option::Option<::std::string::String>,
-        #[doc = "Why the last run stopped: `exhausted` or `failed`. A run has no limit it can stop at, so\nanything but a failure means every shortlist was walked out. Absent before the first run,\nand while one is in flight; older control planes also wrote `merge_ceiling` and\n`round_cap`."]
+        #[doc = "Why the last run stopped: `exhausted` or `failed`. A run has no limit it can stop at, so\nanything but a failure means every shortlist was walked out. Absent before the first run,\nand while one is in flight. A stored row may also hold `merge_ceiling` or `round_cap`."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub stopped: ::std::option::Option<::std::string::String>,
         pub withdrawn: i64,
@@ -6145,7 +6145,7 @@ pub mod types {
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"methods\": {"]
-    #[doc = "      \"description\": \"Which factors this account can actually present, so the client offers only those.\\n\\nNever the account's *identity* — this response is reachable with a password alone, so\\nanything beyond \\\"an authenticator app and two security keys exist here\\\" would be a\\ndisclosure bought with a credential the attacker already spent.\","]
+    #[doc = "      \"description\": \"Which factors this account can actually present, so the client offers only those.\\n\\nNever the account's *identity*: this response is reachable with a password alone, so\\nanything beyond \\\"an authenticator app and two security keys exist here\\\" would be a\\ndisclosure bought with a credential the attacker already spent.\","]
     #[doc = "      \"type\": \"array\","]
     #[doc = "      \"items\": {"]
     #[doc = "        \"$ref\": \"#/components/schemas/MfaMethod\""]
@@ -6161,7 +6161,7 @@ pub mod types {
         pub challenge_token: ::std::string::String,
         #[doc = "Seconds until the pending sign-in lapses."]
         pub expires_in: i64,
-        #[doc = "Which factors this account can actually present, so the client offers only those.\n\nNever the account's *identity* — this response is reachable with a password alone, so\nanything beyond \"an authenticator app and two security keys exist here\" would be a\ndisclosure bought with a credential the attacker already spent."]
+        #[doc = "Which factors this account can actually present, so the client offers only those.\n\nNever the account's *identity*: this response is reachable with a password alone, so\nanything beyond \"an authenticator app and two security keys exist here\" would be a\ndisclosure bought with a credential the attacker already spent."]
         pub methods: ::std::vec::Vec<MfaMethod>,
     }
     impl MfaChallenge {
@@ -6292,7 +6292,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"enrolled\": {"]
-    #[doc = "      \"description\": \"Whether any usable factor exists. The single answer the passkey gate and the privileged\\nrequirement both consult — clients must not recompute it from the fields below.\","]
+    #[doc = "      \"description\": \"Whether any usable factor exists. The single answer the passkey gate and the privileged\\nrequirement both consult; clients must not recompute it from the fields below.\","]
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"recovery_codes_remaining\": {"]
@@ -6311,7 +6311,7 @@ pub mod types {
     #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    \"totp_available\": {"]
-    #[doc = "      \"description\": \"Whether authenticator-app enrolment is available at all. `false` when the operator has\\nconfigured no sealing key, in which case the client offers security keys only rather\\nthan a button that answers `503`.\","]
+    #[doc = "      \"description\": \"Whether authenticator-app enrolment is available at all. `false` when the operator has\\nconfigured no sealing key, in which case the client offers security keys only instead\\nof a button that answers `503`.\","]
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"totp_confirmed_at\": {"]
@@ -6327,14 +6327,14 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct MfaStatus {
-        #[doc = "Whether any usable factor exists. The single answer the passkey gate and the privileged\nrequirement both consult — clients must not recompute it from the fields below."]
+        #[doc = "Whether any usable factor exists. The single answer the passkey gate and the privileged\nrequirement both consult; clients must not recompute it from the fields below."]
         pub enrolled: bool,
         #[doc = "Unused recovery codes. Zero with a factor enrolled is a state worth warning about: the\naccount has a second factor and no way past it if the factor is lost."]
         pub recovery_codes_remaining: i64,
         #[doc = "Whether this deployment requires every account to enrol, not just privileged ones."]
         pub required: bool,
         pub security_keys: ::std::vec::Vec<SecurityKeyDto>,
-        #[doc = "Whether authenticator-app enrolment is available at all. `false` when the operator has\nconfigured no sealing key, in which case the client offers security keys only rather\nthan a button that answers `503`."]
+        #[doc = "Whether authenticator-app enrolment is available at all. `false` when the operator has\nconfigured no sealing key, in which case the client offers security keys only instead\nof a button that answers `503`."]
         pub totp_available: bool,
         #[doc = "When the authenticator app was confirmed, or absent if there is none.\n\nAn enrolment that was started and never confirmed reads as absent here, on purpose: it\nis not a factor, and showing it as one would tell a user they are protected when they\nare not."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
@@ -6345,13 +6345,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "The handle the first leg issued, plus exactly one factor."]
+    #[doc = "The handle the first leg issued, and exactly one factor."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"The handle the first leg issued, plus exactly one factor.\","]
+    #[doc = "  \"description\": \"The handle the first leg issued, and exactly one factor.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"challenge_token\""]
@@ -6433,7 +6433,7 @@ pub mod types {
     #[doc = "      \"format\": \"int32\""]
     #[doc = "    },"]
     #[doc = "    \"error\": {"]
-    #[doc = "      \"description\": \"How the last run ended, when it ended badly. The builder always releases its claim, so a\\nfailure shows up here rather than as a build that never finishes.\","]
+    #[doc = "      \"description\": \"How the last run ended, when it ended badly. The builder always releases its claim, so a\\nfailure shows up here instead of as a build that never finishes.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -6517,7 +6517,7 @@ pub mod types {
         pub building: bool,
         #[doc = "Width of the dense space the model was built in."]
         pub dense_dims: i32,
-        #[doc = "How the last run ended, when it ended badly. The builder always releases its claim, so a\nfailure shows up here rather than as a build that never finishes."]
+        #[doc = "How the last run ended, when it ended badly. The builder always releases its claim, so a\nfailure shows up here instead of as a build that never finishes."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub error: ::std::option::Option<::std::string::String>,
         #[doc = "RFC 3339. When the most recent run released the claim; absent while one is running."]
@@ -6563,7 +6563,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"detail\": {"]
-    #[doc = "      \"description\": \"What the subject is asking for, in their words. Required for rectification — \\\"correct\\nmy data\\\" without saying which field to what is not actionable — and optional otherwise.\","]
+    #[doc = "      \"description\": \"What the subject is asking for, in their words. Required for rectification (\\\"correct\\nmy data\\\" without saying which field to what is not actionable) and optional otherwise.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -6578,7 +6578,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct NewPrivacyRequest {
-        #[doc = "What the subject is asking for, in their words. Required for rectification — \"correct\nmy data\" without saying which field to what is not actionable — and optional otherwise."]
+        #[doc = "What the subject is asking for, in their words. Required for rectification (\"correct\nmy data\" without saying which field to what is not actionable) and optional otherwise."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub detail: ::std::option::Option<::std::string::String>,
         pub kind: RequestKind,
@@ -6691,13 +6691,13 @@ pub mod types {
             self.0.fmt(f)
         }
     }
-    #[doc = "One inbox row, resolved to the fields a list can render without opening it.\n\nFlat rather than a `kind`-discriminated `oneOf`: the generated client is what the frontend\nconsumes, and a `oneOf` there produces an enum that is painful to match on for a gain the\nretained `payload` already covers."]
+    #[doc = "One inbox row, resolved to the fields a list can render without opening it.\n\nFlat, not a `kind`-discriminated `oneOf`: the generated client is what the frontend\nconsumes, and a `oneOf` there produces an enum that is painful to match on for a gain the\nretained `payload` already covers."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"One inbox row, resolved to the fields a list can render without opening it.\\n\\nFlat rather than a `kind`-discriminated `oneOf`: the generated client is what the frontend\\nconsumes, and a `oneOf` there produces an enum that is painful to match on for a gain the\\nretained `payload` already covers.\","]
+    #[doc = "  \"description\": \"One inbox row, resolved to the fields a list can render without opening it.\\n\\nFlat, not a `kind`-discriminated `oneOf`: the generated client is what the frontend\\nconsumes, and a `oneOf` there produces an enum that is painful to match on for a gain the\\nretained `payload` already covers.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"chapter_count\","]
@@ -6748,7 +6748,7 @@ pub mod types {
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
     #[doc = "    \"kind\": {"]
-    #[doc = "      \"description\": \"The kind token. A string rather than the enum, because a client generated from an older\\ndocument still has to render a row a newer notifier wrote.\","]
+    #[doc = "      \"description\": \"The kind token. A string, not the enum, because a client generated from an older\\ndocument still has to render a row a newer notifier wrote.\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"last_number\": {"]
@@ -6808,7 +6808,7 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub first_number: ::std::option::Option<f64>,
         pub id: ::uuid::Uuid,
-        #[doc = "The kind token. A string rather than the enum, because a client generated from an older\ndocument still has to render a row a newer notifier wrote."]
+        #[doc = "The kind token. A string, not the enum, because a client generated from an older\ndocument still has to render a row a newer notifier wrote."]
         pub kind: ::std::string::String,
         #[doc = "Highest chapter number this row covers; equal to `first_number` on an ungrouped row."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
@@ -6969,12 +6969,12 @@ pub mod types {
     #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    \"total\": {"]
-    #[doc = "      \"description\": \"Notifications matching this request's filter — the pager's denominator.\","]
+    #[doc = "      \"description\": \"Notifications matching this request's filter: the pager's denominator.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"unread\": {"]
-    #[doc = "      \"description\": \"Unread notifications the caller has, ignoring the filter. Counted server-side on purpose:\\nderived from `items` it is only ever the unread count *of the loaded page*, which is what\\npinned the bell at 100.\","]
+    #[doc = "      \"description\": \"Unread notifications the caller has, ignoring the filter. Counted server-side on purpose:\\nderived from `items` it is only ever the unread count *of the loaded page*, which caps\\nthe bell at the page size.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    }"]
@@ -6986,9 +6986,9 @@ pub mod types {
     pub struct NotificationsView {
         #[doc = "One page of the inbox, newest first."]
         pub items: ::std::vec::Vec<NotificationItem>,
-        #[doc = "Notifications matching this request's filter — the pager's denominator."]
+        #[doc = "Notifications matching this request's filter: the pager's denominator."]
         pub total: i64,
-        #[doc = "Unread notifications the caller has, ignoring the filter. Counted server-side on purpose:\nderived from `items` it is only ever the unread count *of the loaded page*, which is what\npinned the bell at 100."]
+        #[doc = "Unread notifications the caller has, ignoring the filter. Counted server-side on purpose:\nderived from `items` it is only ever the unread count *of the loaded page*, which caps\nthe bell at the page size."]
         pub unread: i64,
     }
     impl NotificationsView {
@@ -6996,13 +6996,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "The challenge, plus the handle the client echoes back to complete it.\n\n`options` is a W3C `PublicKeyCredentialRequestOptions` envelope, passed to\n`navigator.credentials.get()` verbatim. It is typed as an opaque JSON document here on\npurpose: the shape is the `WebAuthn` specification's, not this API's, and mirroring it into\nthe `OpenAPI` document would be this service publishing a second, hand-maintained copy of a\nstandard — the exact drift that made `/v1/me/sync/*` move its DTOs into\n`crates/contracts`. Both ends parse it with the *same* crate (`webauthn-rs-proto`, pinned to\none version in both workspaces), so there is nothing for the two to disagree about."]
+    #[doc = "The challenge, and the handle the client echoes back to complete it.\n\n`options` is a W3C `PublicKeyCredentialRequestOptions` envelope, passed to\n`navigator.credentials.get()` verbatim. It is typed as an opaque JSON document here on\npurpose: the shape is the `WebAuthn` specification's, not this API's, and mirroring it into\nthe `OpenAPI` document would be this service publishing a second, hand-maintained copy of a\nstandard, which drifts. Both ends parse it with the *same* crate (`webauthn-rs-proto`, pinned to\none version in both workspaces), so there is nothing for the two to disagree about."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"The challenge, plus the handle the client echoes back to complete it.\\n\\n`options` is a W3C `PublicKeyCredentialRequestOptions` envelope, passed to\\n`navigator.credentials.get()` verbatim. It is typed as an opaque JSON document here on\\npurpose: the shape is the `WebAuthn` specification's, not this API's, and mirroring it into\\nthe `OpenAPI` document would be this service publishing a second, hand-maintained copy of a\\nstandard — the exact drift that made `/v1/me/sync/*` move its DTOs into\\n`crates/contracts`. Both ends parse it with the *same* crate (`webauthn-rs-proto`, pinned to\\none version in both workspaces), so there is nothing for the two to disagree about.\","]
+    #[doc = "  \"description\": \"The challenge, and the handle the client echoes back to complete it.\\n\\n`options` is a W3C `PublicKeyCredentialRequestOptions` envelope, passed to\\n`navigator.credentials.get()` verbatim. It is typed as an opaque JSON document here on\\npurpose: the shape is the `WebAuthn` specification's, not this API's, and mirroring it into\\nthe `OpenAPI` document would be this service publishing a second, hand-maintained copy of a\\nstandard, which drifts. Both ends parse it with the *same* crate (`webauthn-rs-proto`, pinned to\\none version in both workspaces), so there is nothing for the two to disagree about.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"ceremony_id\","]
@@ -7034,13 +7034,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "A registered passkey as the account page shows it.\n\nNote what is **not** here: the credential itself, the public key and the credential id. None\nof them is a secret, but none is useful to a browser either, and a credential id is the\nlookup key a sign-in resolves an account from — publishing every account's ids on an\nauthenticated page would hand an attacker who compromises one session the material to\nrecognise that user's authenticator elsewhere."]
+    #[doc = "A registered passkey as the account page shows it.\n\nNote what is **not** here: the credential itself, the public key and the credential id. None\nof them is a secret, but none is useful to a browser either, and a credential id is the\nlookup key a sign-in resolves an account from, and publishing every account's ids on an\nauthenticated page would hand an attacker who compromises one session the material to\nrecognise that user's authenticator elsewhere."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"A registered passkey as the account page shows it.\\n\\nNote what is **not** here: the credential itself, the public key and the credential id. None\\nof them is a secret, but none is useful to a browser either, and a credential id is the\\nlookup key a sign-in resolves an account from — publishing every account's ids on an\\nauthenticated page would hand an attacker who compromises one session the material to\\nrecognise that user's authenticator elsewhere.\","]
+    #[doc = "  \"description\": \"A registered passkey as the account page shows it.\\n\\nNote what is **not** here: the credential itself, the public key and the credential id. None\\nof them is a secret, but none is useful to a browser either, and a credential id is the\\nlookup key a sign-in resolves an account from, and publishing every account's ids on an\\nauthenticated page would hand an attacker who compromises one session the material to\\nrecognise that user's authenticator elsewhere.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"created_at\","]
@@ -7119,13 +7119,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "The challenge, plus the handle the client echoes back to complete it.\n\n`options` is a W3C `PublicKeyCredentialCreationOptions` envelope. It is an opaque JSON\ndocument here for the reason [`crate::auth::passkey::PasskeyChallenge`] gives: the shape\nbelongs to the `WebAuthn` specification, and both ends parse it with the same crate."]
+    #[doc = "The challenge, and the handle the client echoes back to complete it.\n\n`options` is a W3C `PublicKeyCredentialCreationOptions` envelope. It is an opaque JSON\ndocument here for the reason [`crate::auth::passkey::PasskeyChallenge`] gives: the shape\nbelongs to the `WebAuthn` specification, and both ends parse it with the same crate."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"The challenge, plus the handle the client echoes back to complete it.\\n\\n`options` is a W3C `PublicKeyCredentialCreationOptions` envelope. It is an opaque JSON\\ndocument here for the reason [`crate::auth::passkey::PasskeyChallenge`] gives: the shape\\nbelongs to the `WebAuthn` specification, and both ends parse it with the same crate.\","]
+    #[doc = "  \"description\": \"The challenge, and the handle the client echoes back to complete it.\\n\\n`options` is a W3C `PublicKeyCredentialCreationOptions` envelope. It is an opaque JSON\\ndocument here for the reason [`crate::auth::passkey::PasskeyChallenge`] gives: the shape\\nbelongs to the `WebAuthn` specification, and both ends parse it with the same crate.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"ceremony_id\","]
@@ -7934,7 +7934,7 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"slug\": {"]
-    #[doc = "      \"description\": \"The provider slug — the same stable client-side key the source lists are drawn with.\","]
+    #[doc = "      \"description\": \"The provider slug: the same stable client-side key the source lists are drawn with.\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    }"]
     #[doc = "  }"]
@@ -7945,7 +7945,7 @@ pub mod types {
     pub struct PreferredProvider {
         pub id: ProviderId,
         pub name: ::std::string::String,
-        #[doc = "The provider slug — the same stable client-side key the source lists are drawn with."]
+        #[doc = "The provider slug: the same stable client-side key the source lists are drawn with."]
         pub slug: ::std::string::String,
     }
     impl PreferredProvider {
@@ -8037,7 +8037,7 @@ pub mod types {
     #[doc = "      \"$ref\": \"#/components/schemas/PermissionPreset\""]
     #[doc = "    },"]
     #[doc = "    \"permissions\": {"]
-    #[doc = "      \"description\": \"The permissions this preset expands to. Sent expanded rather than by name so applying a\\npreset is a pure client-side operation over the same checklist the operator then edits —\\nwhich is what keeps a preset from behaving like a stored role.\","]
+    #[doc = "      \"description\": \"The permissions this preset expands to. Sent expanded, not by name, so applying a\\npreset is a pure client-side operation over the same checklist the operator then edits,\\nwhich is what keeps a preset from behaving like a stored role.\","]
     #[doc = "      \"type\": \"array\","]
     #[doc = "      \"items\": {"]
     #[doc = "        \"$ref\": \"#/components/schemas/Permission\""]
@@ -8050,7 +8050,7 @@ pub mod types {
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct PresetInfo {
         pub key: PermissionPreset,
-        #[doc = "The permissions this preset expands to. Sent expanded rather than by name so applying a\npreset is a pure client-side operation over the same checklist the operator then edits —\nwhich is what keeps a preset from behaving like a stored role."]
+        #[doc = "The permissions this preset expands to. Sent expanded, not by name, so applying a\npreset is a pure client-side operation over the same checklist the operator then edits,\nwhich is what keeps a preset from behaving like a stored role."]
         pub permissions: ::std::vec::Vec<Permission>,
     }
     impl PresetInfo {
@@ -8105,13 +8105,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "RFC 9457 `application/problem+json` error body shape produced by [`ApiError`]. Declared\npurely for `OpenAPI` documentation — `tankovault_service::problem` builds the JSON, so runtime\ncallers never construct this type. It mirrors `problem::ProblemBody`; a test asserts the two\nagree field for field, since only this copy is published to clients."]
+    #[doc = "RFC 9457 `application/problem+json` error body shape produced by [`ApiError`]. Declared\npurely for `OpenAPI` documentation: `tankovault_service::problem` builds the JSON, so runtime\ncallers never construct this type. It mirrors `problem::ProblemBody`; a test asserts the two\nagree field for field, since only this copy is published to clients."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"RFC 9457 `application/problem+json` error body shape produced by [`ApiError`]. Declared\\npurely for `OpenAPI` documentation — `tankovault_service::problem` builds the JSON, so runtime\\ncallers never construct this type. It mirrors `problem::ProblemBody`; a test asserts the two\\nagree field for field, since only this copy is published to clients.\","]
+    #[doc = "  \"description\": \"RFC 9457 `application/problem+json` error body shape produced by [`ApiError`]. Declared\\npurely for `OpenAPI` documentation: `tankovault_service::problem` builds the JSON, so runtime\\ncallers never construct this type. It mirrors `problem::ProblemBody`; a test asserts the two\\nagree field for field, since only this copy is published to clients.\","]
     #[doc = "  \"examples\": ["]
     #[doc = "    {"]
     #[doc = "      \"detail\": \"resource not found\","]
@@ -8156,13 +8156,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "The closed vocabulary of `title` values an API response can carry.\n\nPublished as a schema enum so clients branch on a generated type rather than on string\nliterals. That makes the list a **contract**: a token missing from here fails to deserialise\nin the generated client, which turns a clean error response into\n`progenitor_client::Error::InvalidResponsePayload` — the server's message is lost and the\ncaller sees \"unreadable response\" instead of the refusal. So every problem body reachable on\nan API route needs a variant, including the two the shared middleware emits without ever\nbuilding an [`ApiError`]: [`Self::FeatureDisabled`] and [`Self::RateLimited`]."]
+    #[doc = "The closed vocabulary of `title` values an API response can carry.\n\nPublished as a schema enum so clients branch on a generated type, not on string literals.\nThat makes the list a **contract**: a token missing from here fails to deserialise in the\ngenerated client, which turns a clean error response into\n`progenitor_client::Error::InvalidResponsePayload`; the server's message is lost and the\ncaller sees \"unreadable response\" instead of the refusal. So every problem body reachable on\nan API route needs a variant, including the two the shared middleware emits without ever\nbuilding an [`ApiError`]: [`Self::FeatureDisabled`] and [`Self::RateLimited`]."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"The closed vocabulary of `title` values an API response can carry.\\n\\nPublished as a schema enum so clients branch on a generated type rather than on string\\nliterals. That makes the list a **contract**: a token missing from here fails to deserialise\\nin the generated client, which turns a clean error response into\\n`progenitor_client::Error::InvalidResponsePayload` — the server's message is lost and the\\ncaller sees \\\"unreadable response\\\" instead of the refusal. So every problem body reachable on\\nan API route needs a variant, including the two the shared middleware emits without ever\\nbuilding an [`ApiError`]: [`Self::FeatureDisabled`] and [`Self::RateLimited`].\","]
+    #[doc = "  \"description\": \"The closed vocabulary of `title` values an API response can carry.\\n\\nPublished as a schema enum so clients branch on a generated type, not on string literals.\\nThat makes the list a **contract**: a token missing from here fails to deserialise in the\\ngenerated client, which turns a clean error response into\\n`progenitor_client::Error::InvalidResponsePayload`; the server's message is lost and the\\ncaller sees \\\"unreadable response\\\" instead of the refusal. So every problem body reachable on\\nan API route needs a variant, including the two the shared middleware emits without ever\\nbuilding an [`ApiError`]: [`Self::FeatureDisabled`] and [`Self::RateLimited`].\","]
     #[doc = "  \"type\": \"string\","]
     #[doc = "  \"enum\": ["]
     #[doc = "    \"not_found\","]
@@ -8435,7 +8435,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"last_read_whole_number\": {"]
-    #[doc = "      \"description\": \"The whole-chapter frontier to set outright (design v2 §A.6 — renamed from\\n`last_read_number`, same semantics).\","]
+    #[doc = "      \"description\": \"The whole-chapter frontier to set outright (design v2 §A.6).\","]
     #[doc = "      \"type\": \"number\","]
     #[doc = "      \"format\": \"double\""]
     #[doc = "    }"]
@@ -8445,7 +8445,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct ProgressUpdate {
-        #[doc = "The whole-chapter frontier to set outright (design v2 §A.6 — renamed from\n`last_read_number`, same semantics)."]
+        #[doc = "The whole-chapter frontier to set outright (design v2 §A.6)."]
         pub last_read_whole_number: f64,
     }
     impl ProgressUpdate {
@@ -9287,14 +9287,14 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"blurb\": {"]
-    #[doc = "      \"description\": \"The opening of the description, trimmed to a card's worth. See\\n[`crate::series::blurb`] — one wording, so a recommendation and a search hit describe a\\nseries identically.\","]
+    #[doc = "      \"description\": \"The opening of the description, trimmed to a card's worth. See\\n[`crate::series::blurb`]: one wording, so a recommendation and a search hit describe a\\nseries identically.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"chapter_count\": {"]
-    #[doc = "      \"description\": \"Distinct whole chapters across every source — the figure a reader deciding whether to\\nstart something actually wants, and the same one the series screen prints.\","]
+    #[doc = "      \"description\": \"Distinct whole chapters across every source: the figure a reader deciding whether to\\nstart something actually wants, and the same one the series screen prints.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -9363,10 +9363,10 @@ pub mod types {
         pub because_series_id: ::std::option::Option<SeriesId>,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub because_title: ::std::option::Option<::std::string::String>,
-        #[doc = "The opening of the description, trimmed to a card's worth. See\n[`crate::series::blurb`] — one wording, so a recommendation and a search hit describe a\nseries identically."]
+        #[doc = "The opening of the description, trimmed to a card's worth. See\n[`crate::series::blurb`]: one wording, so a recommendation and a search hit describe a\nseries identically."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub blurb: ::std::option::Option<::std::string::String>,
-        #[doc = "Distinct whole chapters across every source — the figure a reader deciding whether to\nstart something actually wants, and the same one the series screen prints."]
+        #[doc = "Distinct whole chapters across every source: the figure a reader deciding whether to\nstart something actually wants, and the same one the series screen prints."]
         pub chapter_count: i64,
         pub content_type: ContentType,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
@@ -9404,7 +9404,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"codes\": {"]
-    #[doc = "      \"description\": \"The plaintext codes. Only the digests are stored, so this response is the only copy\\nthat will ever exist — a client that does not show them has lost them.\","]
+    #[doc = "      \"description\": \"The plaintext codes. Only the digests are stored, so this response is the only copy\\nthat will ever exist: a client that does not show them has lost them.\","]
     #[doc = "      \"type\": \"array\","]
     #[doc = "      \"items\": {"]
     #[doc = "        \"type\": \"string\""]
@@ -9416,7 +9416,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct RecoveryCodes {
-        #[doc = "The plaintext codes. Only the digests are stored, so this response is the only copy\nthat will ever exist — a client that does not show them has lost them."]
+        #[doc = "The plaintext codes. Only the digests are stored, so this response is the only copy\nthat will ever exist: a client that does not show them has lost them."]
         pub codes: ::std::vec::Vec<::std::string::String>,
     }
     impl RecoveryCodes {
@@ -9585,7 +9585,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"access_token\": {"]
-    #[doc = "      \"description\": \"The issued bearer access token — present only when the account was activated\\nimmediately (email delivery not configured). Mirrors [`TokenResponse::access_token`].\","]
+    #[doc = "      \"description\": \"The issued bearer access token, present only when the account was activated\\nimmediately (email delivery not configured). Mirrors [`TokenResponse::access_token`].\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -9609,7 +9609,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct RegisterResponse {
-        #[doc = "The issued bearer access token — present only when the account was activated\nimmediately (email delivery not configured). Mirrors [`TokenResponse::access_token`]."]
+        #[doc = "The issued bearer access token, present only when the account was activated\nimmediately (email delivery not configured). Mirrors [`TokenResponse::access_token`]."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub access_token: ::std::option::Option<::std::string::String>,
         #[doc = "Access-token lifetime in seconds; present exactly when `access_token` is."]
@@ -10085,7 +10085,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"note\": {"]
-    #[doc = "      \"description\": \"What was done, or — for a rejection — why.\\n\\nMandatory on a rejection: Art. 12(4) obliges the controller to give reasons for refusing\\nto act, so a rejection without one is not a lawful response.\","]
+    #[doc = "      \"description\": \"What was done, or, for a rejection, why.\\n\\nMandatory on a rejection: Art. 12(4) obliges the controller to give reasons for refusing\\nto act, so a rejection without one is not a lawful response.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -10100,7 +10100,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct ResolveRequest {
-        #[doc = "What was done, or — for a rejection — why.\n\nMandatory on a rejection: Art. 12(4) obliges the controller to give reasons for refusing\nto act, so a rejection without one is not a lawful response."]
+        #[doc = "What was done, or, for a rejection, why.\n\nMandatory on a rejection: Art. 12(4) obliges the controller to give reasons for refusing\nto act, so a rejection without one is not a lawful response."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub note: ::std::option::Option<::std::string::String>,
         pub status: RequestStatus,
@@ -10688,13 +10688,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "How a run's tasks are ordered, as the `sort` parameter spells it.\n\nIts own wire enum for the same reason [`RunSortParam`] is: an unknown token must be a 422 from\nthe extractor rather than a silent fall back to an ordering the caller did not ask for."]
+    #[doc = "How a run's tasks are ordered, as the `sort` parameter spells it.\n\nIts own wire enum for the same reason [`RunSortParam`] is: an unknown token must be a 422 from\nthe extractor, not a silent fall back to an ordering the caller did not ask for."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"How a run's tasks are ordered, as the `sort` parameter spells it.\\n\\nIts own wire enum for the same reason [`RunSortParam`] is: an unknown token must be a 422 from\\nthe extractor rather than a silent fall back to an ordering the caller did not ask for.\","]
+    #[doc = "  \"description\": \"How a run's tasks are ordered, as the `sort` parameter spells it.\\n\\nIts own wire enum for the same reason [`RunSortParam`] is: an unknown token must be a 422 from\\nthe extractor, not a silent fall back to an ordering the caller did not ask for.\","]
     #[doc = "  \"type\": \"string\","]
     #[doc = "  \"enum\": ["]
     #[doc = "    \"slowest\","]
@@ -11359,13 +11359,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "A `WebAuthn` assertion challenge for the caller's security keys, plus the handle that\ncompletes it."]
+    #[doc = "A `WebAuthn` assertion challenge for the caller's security keys, and the handle that\ncompletes it."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"A `WebAuthn` assertion challenge for the caller's security keys, plus the handle that\\ncompletes it.\","]
+    #[doc = "  \"description\": \"A `WebAuthn` assertion challenge for the caller's security keys, and the handle that\\ncompletes it.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"ceremony_id\","]
@@ -11444,13 +11444,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "The creation challenge, plus the handle the client echoes back."]
+    #[doc = "The creation challenge and the handle the client echoes back."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"The creation challenge, plus the handle the client echoes back.\","]
+    #[doc = "  \"description\": \"The creation challenge and the handle the client echoes back.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"ceremony_id\","]
@@ -11552,13 +11552,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "A newly registered security key, plus the recovery codes if it was the first factor."]
+    #[doc = "A newly registered security key, with the recovery codes if it was the first factor."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"A newly registered security key, plus the recovery codes if it was the first factor.\","]
+    #[doc = "  \"description\": \"A newly registered security key, with the recovery codes if it was the first factor.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"key\""]
@@ -11680,7 +11680,7 @@ pub mod types {
     #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
     #[doc = "    },"]
     #[doc = "    \"is_adult\": {"]
-    #[doc = "      \"description\": \"Whether this series is adult-classified. See [`SeriesSummary::is_adult`] — reaching this\\nresponse at all means the caller is entitled to it.\","]
+    #[doc = "      \"description\": \"Whether this series is adult-classified. See [`SeriesSummary::is_adult`]: reaching this\\nresponse at all means the caller is entitled to it.\","]
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"release_year\": {"]
@@ -11728,7 +11728,7 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub description: ::std::option::Option<::std::string::String>,
         pub id: SeriesId,
-        #[doc = "Whether this series is adult-classified. See [`SeriesSummary::is_adult`] — reaching this\nresponse at all means the caller is entitled to it."]
+        #[doc = "Whether this series is adult-classified. See [`SeriesSummary::is_adult`]: reaching this\nresponse at all means the caller is entitled to it."]
         pub is_adult: bool,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub release_year: ::std::option::Option<i32>,
@@ -11946,13 +11946,13 @@ pub mod types {
             value.parse()
         }
     }
-    #[doc = "One card in a catalogue grid.\n\nGrown rather than replaced: a deployed SPA outlives a server change, so every field an older\nclient reads is still here and the additions are ignored by it. `source_count` is kept for\nthat reason alone — the surfaces that used to print it now print [`Self::chapter_count`],\nwhich is what a reader was actually trying to learn from it."]
+    #[doc = "One card in a catalogue grid.\n\nFields are only ever added: a deployed SPA outlives a server change, so every field an older\nclient reads stays, and it ignores the additions. `source_count` stays for that reason alone;\nreader-facing surfaces print [`Self::chapter_count`]."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"One card in a catalogue grid.\\n\\nGrown rather than replaced: a deployed SPA outlives a server change, so every field an older\\nclient reads is still here and the additions are ignored by it. `source_count` is kept for\\nthat reason alone — the surfaces that used to print it now print [`Self::chapter_count`],\\nwhich is what a reader was actually trying to learn from it.\","]
+    #[doc = "  \"description\": \"One card in a catalogue grid.\\n\\nFields are only ever added: a deployed SPA outlives a server change, so every field an older\\nclient reads stays, and it ignores the additions. `source_count` stays for that reason alone;\\nreader-facing surfaces print [`Self::chapter_count`].\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"chapter_count\","]
@@ -11966,7 +11966,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"blurb\": {"]
-    #[doc = "      \"description\": \"The opening of the description, trimmed to a card's worth. `None` when the series has\\nnone, which a card renders as nothing rather than as empty space.\","]
+    #[doc = "      \"description\": \"The opening of the description, trimmed to a card's worth. `None` when the series has\\nnone, which a card renders as nothing instead of as empty space.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -11990,7 +11990,7 @@ pub mod types {
     #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
     #[doc = "    },"]
     #[doc = "    \"is_adult\": {"]
-    #[doc = "      \"description\": \"Whether this series is adult-classified.\\n\\nOnly ever `true` for a caller who opted in — a card that reaches a client at all has\\nalready passed the gate. This labels what is on screen; it is not what hides anything.\","]
+    #[doc = "      \"description\": \"Whether this series is adult-classified.\\n\\nOnly ever `true` for a caller who opted in: a card that reaches a client at all has\\nalready passed the gate. This labels what is on screen; it is not what hides anything.\","]
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"latest_chapter\": {"]
@@ -12032,7 +12032,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct SeriesSummary {
-        #[doc = "The opening of the description, trimmed to a card's worth. `None` when the series has\nnone, which a card renders as nothing rather than as empty space."]
+        #[doc = "The opening of the description, trimmed to a card's worth. `None` when the series has\nnone, which a card renders as nothing instead of as empty space."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub blurb: ::std::option::Option<::std::string::String>,
         #[doc = "Distinct **whole** chapters across every source, so a title carried by four providers is\nnot counted four times and a part release does not count as its own chapter. This is the\nsame figure the series screen prints, so a card and the page it opens agree."]
@@ -12041,7 +12041,7 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub cover_url: ::std::option::Option<::std::string::String>,
         pub id: SeriesId,
-        #[doc = "Whether this series is adult-classified.\n\nOnly ever `true` for a caller who opted in — a card that reaches a client at all has\nalready passed the gate. This labels what is on screen; it is not what hides anything."]
+        #[doc = "Whether this series is adult-classified.\n\nOnly ever `true` for a caller who opted in: a card that reaches a client at all has\nalready passed the gate. This labels what is on screen; it is not what hides anything."]
         pub is_adult: bool,
         #[doc = "The highest chapter number any source carries, when there is one."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
@@ -12192,7 +12192,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"permissions\": {"]
-    #[doc = "      \"description\": \"The complete permission set the account should have afterwards.\\n\\nA whole set rather than add/remove operations: the editor is a checklist, and submitting\\nthe intended end state means two administrators editing concurrently produce one of their\\ntwo intents rather than an interleaving of both. Unknown tokens are rejected by\\ndeserialisation — a capability that does not exist cannot be granted.\","]
+    #[doc = "      \"description\": \"The complete permission set the account should have afterwards.\\n\\nA whole set, not add/remove operations: the editor is a checklist, and submitting the\\nintended end state means two administrators editing concurrently produce one of their two\\nintents instead of an interleaving of both. Unknown tokens are rejected by\\ndeserialisation: a capability that does not exist cannot be granted.\","]
     #[doc = "      \"type\": \"array\","]
     #[doc = "      \"items\": {"]
     #[doc = "        \"$ref\": \"#/components/schemas/Permission\""]
@@ -12204,7 +12204,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct SetPermissions {
-        #[doc = "The complete permission set the account should have afterwards.\n\nA whole set rather than add/remove operations: the editor is a checklist, and submitting\nthe intended end state means two administrators editing concurrently produce one of their\ntwo intents rather than an interleaving of both. Unknown tokens are rejected by\ndeserialisation — a capability that does not exist cannot be granted."]
+        #[doc = "The complete permission set the account should have afterwards.\n\nA whole set, not add/remove operations: the editor is a checklist, and submitting the\nintended end state means two administrators editing concurrently produce one of their two\nintents instead of an interleaving of both. Unknown tokens are rejected by\ndeserialisation: a capability that does not exist cannot be granted."]
         pub permissions: ::std::vec::Vec<Permission>,
     }
     impl SetPermissions {
@@ -12326,7 +12326,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"revoke_sessions\": {"]
-    #[doc = "      \"description\": \"Also revoke every live session, so the suspension takes effect immediately rather than\\nwhen the current access token expires.\\n\\nDefaults to `true`: a suspension that leaves the account working for the next quarter of\\nan hour is not what anyone means by suspending it. Settable to `false` for the case\\nwhere an operator wants the account frozen but the user's current tab left alone.\","]
+    #[doc = "      \"description\": \"Also revoke every live session, so the suspension takes effect immediately instead of\\nwhen the current access token expires.\\n\\nDefaults to `true`: a suspension that leaves the account working for the next quarter of\\nan hour is not what anyone means by suspending it. Settable to `false` for the case\\nwhere an operator wants the account frozen but the user's current tab left alone.\","]
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"status\": {"]
@@ -12341,7 +12341,7 @@ pub mod types {
         #[doc = "Why the account was suspended. Recorded on the account and shown to whoever looks at it\nnext; ignored when reinstating."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub reason: ::std::option::Option<::std::string::String>,
-        #[doc = "Also revoke every live session, so the suspension takes effect immediately rather than\nwhen the current access token expires.\n\nDefaults to `true`: a suspension that leaves the account working for the next quarter of\nan hour is not what anyone means by suspending it. Settable to `false` for the case\nwhere an operator wants the account frozen but the user's current tab left alone."]
+        #[doc = "Also revoke every live session, so the suspension takes effect immediately instead of\nwhen the current access token expires.\n\nDefaults to `true`: a suspension that leaves the account working for the next quarter of\nan hour is not what anyone means by suspending it. Settable to `false` for the case\nwhere an operator wants the account frozen but the user's current tab left alone."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub revoke_sessions: ::std::option::Option<bool>,
         pub status: AccountStatus,
@@ -12375,7 +12375,7 @@ pub mod types {
     #[doc = "          \"format\": \"float\""]
     #[doc = "        },"]
     #[doc = "        \"shared\": {"]
-    #[doc = "          \"description\": \"The features this shares with the seed, most explanatory first — the tag names a reader\\nwould recognise, not feature ids.\","]
+    #[doc = "          \"description\": \"The features this shares with the seed, most explanatory first: the tag names a reader\\nwould recognise, not feature ids.\","]
     #[doc = "          \"type\": \"array\","]
     #[doc = "          \"items\": {"]
     #[doc = "            \"type\": \"string\""]
@@ -12389,7 +12389,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct SimilarSeries {
-        #[doc = "The opening of the description, trimmed to a card's worth. `None` when the series has\nnone, which a card renders as nothing rather than as empty space."]
+        #[doc = "The opening of the description, trimmed to a card's worth. `None` when the series has\nnone, which a card renders as nothing instead of as empty space."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub blurb: ::std::option::Option<::std::string::String>,
         #[doc = "Distinct **whole** chapters across every source, so a title carried by four providers is\nnot counted four times and a part release does not count as its own chapter. This is the\nsame figure the series screen prints, so a card and the page it opens agree."]
@@ -12398,7 +12398,7 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub cover_url: ::std::option::Option<::std::string::String>,
         pub id: SeriesId,
-        #[doc = "Whether this series is adult-classified.\n\nOnly ever `true` for a caller who opted in — a card that reaches a client at all has\nalready passed the gate. This labels what is on screen; it is not what hides anything."]
+        #[doc = "Whether this series is adult-classified.\n\nOnly ever `true` for a caller who opted in: a card that reaches a client at all has\nalready passed the gate. This labels what is on screen; it is not what hides anything."]
         pub is_adult: bool,
         #[doc = "The highest chapter number any source carries, when there is one."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
@@ -12407,7 +12407,7 @@ pub mod types {
         pub release_year: ::std::option::Option<i32>,
         #[doc = "Cosine similarity in `[0, 1]`, as the index ranked it."]
         pub score: f32,
-        #[doc = "The features this shares with the seed, most explanatory first — the tag names a reader\nwould recognise, not feature ids."]
+        #[doc = "The features this shares with the seed, most explanatory first: the tag names a reader\nwould recognise, not feature ids."]
         pub shared: ::std::vec::Vec<::std::string::String>,
         #[doc = "Distinct providers carrying this series. Retained for compatibility; not a figure any\nreader-facing surface shows."]
         pub source_count: i64,
@@ -12435,7 +12435,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"chapters\": {"]
-    #[doc = "      \"description\": \"That source's chapters, newest first — identical to what `GET .../chapters?source=`\\nanswers for it.\","]
+    #[doc = "      \"description\": \"That source's chapters, newest first, identical to what `GET .../chapters?source=`\\nanswers for it.\","]
     #[doc = "      \"type\": \"array\","]
     #[doc = "      \"items\": {"]
     #[doc = "        \"$ref\": \"#/components/schemas/ChapterDto\""]
@@ -12450,7 +12450,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct SourceChaptersDto {
-        #[doc = "That source's chapters, newest first — identical to what `GET .../chapters?source=`\nanswers for it."]
+        #[doc = "That source's chapters, newest first, identical to what `GET .../chapters?source=`\nanswers for it."]
         pub chapters: ::std::vec::Vec<ChapterDto>,
         pub source_id: SeriesSourceId,
     }
@@ -12476,7 +12476,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"chapter_count\": {"]
-    #[doc = "      \"description\": \"Count of distinct **whole** chapters (`floor(number)`-deduped) — sub-chapter part\\nreleases don't inflate this (§ chapter grouping).\","]
+    #[doc = "      \"description\": \"Count of distinct **whole** chapters (`floor(number)`-deduped), so sub-chapter part\\nreleases don't inflate it (§ chapter grouping).\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int32\""]
     #[doc = "    },"]
@@ -12484,7 +12484,7 @@ pub mod types {
     #[doc = "      \"$ref\": \"#/components/schemas/SeriesSourceId\""]
     #[doc = "    },"]
     #[doc = "    \"is_primary\": {"]
-    #[doc = "      \"description\": \"True for the richest source (most chapters) — the one the reader should prefer\\n(frontend §9.2). Exactly one source per series is flagged.\","]
+    #[doc = "      \"description\": \"True for the richest source (most chapters), the one the reader should prefer\\n(frontend §9.2). Exactly one source per series is flagged.\","]
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"provider_name\": {"]
@@ -12503,10 +12503,10 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct SourceDto {
-        #[doc = "Count of distinct **whole** chapters (`floor(number)`-deduped) — sub-chapter part\nreleases don't inflate this (§ chapter grouping)."]
+        #[doc = "Count of distinct **whole** chapters (`floor(number)`-deduped), so sub-chapter part\nreleases don't inflate it (§ chapter grouping)."]
         pub chapter_count: i32,
         pub id: SeriesSourceId,
-        #[doc = "True for the richest source (most chapters) — the one the reader should prefer\n(frontend §9.2). Exactly one source per series is flagged."]
+        #[doc = "True for the richest source (most chapters), the one the reader should prefer\n(frontend §9.2). Exactly one source per series is flagged."]
         pub is_primary: bool,
         pub provider_name: ::std::string::String,
         pub provider_slug: ::std::string::String,
@@ -12546,13 +12546,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "The reader's provider order, most preferred first, plus their early-access opt-ins."]
+    #[doc = "The reader's provider order, most preferred first, and their early-access opt-ins."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"The reader's provider order, most preferred first, plus their early-access opt-ins.\","]
+    #[doc = "  \"description\": \"The reader's provider order, most preferred first, and their early-access opt-ins.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"early_access_providers\","]
@@ -12602,7 +12602,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"early_access_provider_ids\": {"]
-    #[doc = "      \"description\": \"Provider ids whose early-access chapters should count for this reader.\\n\\n**Omitted leaves the current set untouched**; `[]` clears it. The distinction matters\\nbecause this field was added after the endpoint shipped — treating an absent field as an\\nempty list would silently revoke the opt-in of every client that has not been updated.\","]
+    #[doc = "      \"description\": \"Provider ids whose early-access chapters should count for this reader.\\n\\n**Omitted leaves the current set untouched**; `[]` clears it. The distinction matters\\nbecause older clients do not send this field: treating an absent field as an empty list\\nwould silently revoke the opt-in of every client that has not been updated.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"array\","]
     #[doc = "        \"null\""]
@@ -12624,7 +12624,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct SourcePreferencesUpdate {
-        #[doc = "Provider ids whose early-access chapters should count for this reader.\n\n**Omitted leaves the current set untouched**; `[]` clears it. The distinction matters\nbecause this field was added after the endpoint shipped — treating an absent field as an\nempty list would silently revoke the opt-in of every client that has not been updated."]
+        #[doc = "Provider ids whose early-access chapters should count for this reader.\n\n**Omitted leaves the current set untouched**; `[]` clears it. The distinction matters\nbecause older clients do not send this field: treating an absent field as an empty list\nwould silently revoke the opt-in of every client that has not been updated."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub early_access_provider_ids: ::std::option::Option<::std::vec::Vec<ProviderId>>,
         #[doc = "Provider ids, most preferred first. Must be distinct and must all exist; an empty list\nclears the preference."]
@@ -12791,17 +12791,17 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "One factor, presented to earn an elevation.\n\nExactly one field must be set. A flat struct rather than a tagged enum because the generated\nclient renders a `oneOf` as an enum that is awkward to construct, and because \"exactly one of\nthese\" is checked here in one place either way."]
+    #[doc = "One factor, presented to earn an elevation.\n\nExactly one field must be set. A flat struct, not a tagged enum, because the generated\nclient renders a `oneOf` as an enum that is awkward to construct, and because \"exactly one of\nthese\" is checked here in one place either way."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"One factor, presented to earn an elevation.\\n\\nExactly one field must be set. A flat struct rather than a tagged enum because the generated\\nclient renders a `oneOf` as an enum that is awkward to construct, and because \\\"exactly one of\\nthese\\\" is checked here in one place either way.\","]
+    #[doc = "  \"description\": \"One factor, presented to earn an elevation.\\n\\nExactly one field must be set. A flat struct, not a tagged enum, because the generated\\nclient renders a `oneOf` as an enum that is awkward to construct, and because \\\"exactly one of\\nthese\\\" is checked here in one place either way.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"password\": {"]
-    #[doc = "      \"description\": \"The account password. Accepted **only** while no second factor is enrolled — see the\\nhandler.\","]
+    #[doc = "      \"description\": \"The account password. Accepted **only** while no second factor is enrolled; see the\\nhandler.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -12827,7 +12827,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct StepUpRequest {
-        #[doc = "The account password. Accepted **only** while no second factor is enrolled — see the\nhandler."]
+        #[doc = "The account password. Accepted **only** while no second factor is enrolled; see the\nhandler."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub password: ::std::option::Option<::std::string::String>,
         #[doc = "One unused recovery code."]
@@ -13982,7 +13982,7 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"series_count\": {"]
-    #[doc = "      \"description\": \"Series carrying this tag. What lets the filter panel order by usage and say how much a\\nchip would narrow the grid before it is clicked.\","]
+    #[doc = "      \"description\": \"Series carrying this tag. Lets the filter panel order by usage and say how much a chip\\nwould narrow the grid before it is clicked.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -13997,7 +13997,7 @@ pub mod types {
     pub struct TagFacet {
         pub id: TagId,
         pub name: ::std::string::String,
-        #[doc = "Series carrying this tag. What lets the filter panel order by usage and say how much a\nchip would narrow the grid before it is clicked."]
+        #[doc = "Series carrying this tag. Lets the filter panel order by usage and say how much a chip\nwould narrow the grid before it is clicked."]
         pub series_count: i64,
         pub slug: ::std::string::String,
     }
@@ -14309,7 +14309,7 @@ pub mod types {
     #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    \"built_at\": {"]
-    #[doc = "      \"description\": \"RFC 3339. A `String` rather than an `OffsetDateTime` because `utoipa` has no schema for\\nthe latter, and the published contract should name the format either way.\","]
+    #[doc = "      \"description\": \"RFC 3339. A `String`, not an `OffsetDateTime`, because `utoipa` has no schema for\\nthe latter, and the published contract should name the format either way.\","]
     #[doc = "      \"examples\": ["]
     #[doc = "        \"2026-08-04T12:00:00Z\""]
     #[doc = "      ],"]
@@ -14337,7 +14337,7 @@ pub mod types {
     pub struct TasteView {
         #[doc = "Features the reader has rejected, strongest first."]
         pub avoids: ::std::vec::Vec<TasteFeature>,
-        #[doc = "RFC 3339. A `String` rather than an `OffsetDateTime` because `utoipa` has no schema for\nthe latter, and the published contract should name the format either way."]
+        #[doc = "RFC 3339. A `String`, not an `OffsetDateTime`, because `utoipa` has no schema for\nthe latter, and the published contract should name the format either way."]
         pub built_at: ::std::string::String,
         #[doc = "Features the reader gravitates to, strongest first."]
         pub likes: ::std::vec::Vec<TasteFeature>,
@@ -14358,7 +14358,7 @@ pub mod types {
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"path\": {"]
-    #[doc = "      \"description\": \"Optional relative series path to also fetch metadata + chapters for.\","]
+    #[doc = "      \"description\": \"Optional relative series path to also fetch metadata and chapters for.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -14370,7 +14370,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct TestAdapterRequest {
-        #[doc = "Optional relative series path to also fetch metadata + chapters for."]
+        #[doc = "Optional relative series path to also fetch metadata and chapters for."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub path: ::std::option::Option<::std::string::String>,
     }
@@ -15125,7 +15125,7 @@ pub mod types {
     #[doc = "      \"format\": \"double\""]
     #[doc = "    },"]
     #[doc = "    \"min\": {"]
-    #[doc = "      \"description\": \"Inclusive bounds. Enforced here, not only in the UI — a `curl` is not an attack.\","]
+    #[doc = "      \"description\": \"Inclusive bounds. Enforced here, not only in the UI: a `curl` is not an attack.\","]
     #[doc = "      \"type\": \"number\","]
     #[doc = "      \"format\": \"double\""]
     #[doc = "    },"]
@@ -15141,7 +15141,7 @@ pub mod types {
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"privacy_floor\": {"]
-    #[doc = "      \"description\": \"Whether [`Self::min`] is a privacy threshold rather than a taste decision. The console\\nsays so next to the field; the API refuses the write regardless.\","]
+    #[doc = "      \"description\": \"Whether [`Self::min`] is a privacy threshold, not a taste decision. The console\\nsays so next to the field; the API refuses the write regardless.\","]
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"title\": {"]
@@ -15162,7 +15162,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"value\": {"]
-    #[doc = "      \"description\": \"The effective value: the override if there is one, else the compiled default — already\\nclamped, so it is exactly what the pipeline reads.\","]
+    #[doc = "      \"description\": \"The effective value: the override if there is one, else the compiled default, already\\nclamped, so it is exactly what the pipeline reads.\","]
     #[doc = "      \"type\": \"number\","]
     #[doc = "      \"format\": \"double\""]
     #[doc = "    }"]
@@ -15181,14 +15181,14 @@ pub mod types {
         pub key: Tunable,
         pub kind: TunableKind,
         pub max: f64,
-        #[doc = "Inclusive bounds. Enforced here, not only in the UI — a `curl` is not an attack."]
+        #[doc = "Inclusive bounds. Enforced here, not only in the UI: a `curl` is not an attack."]
         pub min: f64,
         #[doc = "Why it was last changed, if the operator said."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub note: ::std::option::Option<::std::string::String>,
         #[doc = "Whether an operator has explicitly decided this one."]
         pub overridden: bool,
-        #[doc = "Whether [`Self::min`] is a privacy threshold rather than a taste decision. The console\nsays so next to the field; the API refuses the write regardless."]
+        #[doc = "Whether [`Self::min`] is a privacy threshold, not a taste decision. The console\nsays so next to the field; the API refuses the write regardless."]
         pub privacy_floor: bool,
         pub title: ::std::string::String,
         #[doc = "When it was last changed. Absent while the value is at its default."]
@@ -15197,7 +15197,7 @@ pub mod types {
         #[doc = "Username of the operator who last changed it; `None` once that account is erased."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub updated_by: ::std::option::Option<::std::string::String>,
-        #[doc = "The effective value: the override if there is one, else the compiled default — already\nclamped, so it is exactly what the pipeline reads."]
+        #[doc = "The effective value: the override if there is one, else the compiled default, already\nclamped, so it is exactly what the pipeline reads."]
         pub value: f64,
     }
     impl TunableView {
@@ -15762,13 +15762,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "The ids a bulk operation should act on, plus what to change."]
+    #[doc = "The ids a bulk operation should act on, and what to change."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"The ids a bulk operation should act on, plus what to change.\","]
+    #[doc = "  \"description\": \"The ids a bulk operation should act on, and what to change.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"series_ids\""]
@@ -15875,13 +15875,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "One series' watchlist entry, or `null` when the caller does not track it.\n\nAn object wrapping a nullable field rather than a bare nullable body: \"not tracked\" is a\nperfectly ordinary answer to this question, so it is a `200` with `entry: null` rather than\na `404` the client has to special-case out of its error path."]
+    #[doc = "One series' watchlist entry, or `null` when the caller does not track it.\n\nAn object wrapping a nullable field, not a bare nullable body: \"not tracked\" is a perfectly\nordinary answer to this question, so it is a `200` with `entry: null`, not a `404` the client\nhas to special-case out of its error path."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"One series' watchlist entry, or `null` when the caller does not track it.\\n\\nAn object wrapping a nullable field rather than a bare nullable body: \\\"not tracked\\\" is a\\nperfectly ordinary answer to this question, so it is a `200` with `entry: null` rather than\\na `404` the client has to special-case out of its error path.\","]
+    #[doc = "  \"description\": \"One series' watchlist entry, or `null` when the caller does not track it.\\n\\nAn object wrapping a nullable field, not a bare nullable body: \\\"not tracked\\\" is a perfectly\\nordinary answer to this question, so it is a `200` with `entry: null`, not a `404` the client\\nhas to special-case out of its error path.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"entry\": {"]
@@ -16557,7 +16557,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"read_count\": {"]
-    #[doc = "      \"description\": \"Whole chapters at or below the user's progress — the progress bar's numerator.\\n\\nNot [`Self::last_read_number`]: a catalogue with gaps makes the frontier larger than the\\nnumber of chapters below it, so a bar drawn from the frontier reads past 100%.\","]
+    #[doc = "      \"description\": \"Whole chapters at or below the user's progress: the progress bar's numerator.\\n\\nNot [`Self::last_read_number`]: a catalogue with gaps makes the frontier larger than the\\nnumber of chapters below it, so a bar drawn from the frontier reads past 100%.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -16565,7 +16565,7 @@ pub mod types {
     #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
     #[doc = "    },"]
     #[doc = "    \"series_title\": {"]
-    #[doc = "      \"description\": \"Embedded series title so the Watchlist renders without a per-row detail fetch\\n(frontend §9.3, kills the N+1).\","]
+    #[doc = "      \"description\": \"Embedded series title so the Watchlist renders without a per-row detail fetch\\n(frontend §9.3).\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"source_count\": {"]
@@ -16592,7 +16592,7 @@ pub mod types {
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"total_chapters\": {"]
-    #[doc = "      \"description\": \"Distinct whole chapters known across all sources — the progress bar's denominator.\","]
+    #[doc = "      \"description\": \"Distinct whole chapters known across all sources: the progress bar's denominator.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -16628,10 +16628,10 @@ pub mod types {
         #[doc = "Display name of the provider this series is primarily carried by."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub preferred_source_name: ::std::option::Option<::std::string::String>,
-        #[doc = "Whole chapters at or below the user's progress — the progress bar's numerator.\n\nNot [`Self::last_read_number`]: a catalogue with gaps makes the frontier larger than the\nnumber of chapters below it, so a bar drawn from the frontier reads past 100%."]
+        #[doc = "Whole chapters at or below the user's progress: the progress bar's numerator.\n\nNot [`Self::last_read_number`]: a catalogue with gaps makes the frontier larger than the\nnumber of chapters below it, so a bar drawn from the frontier reads past 100%."]
         pub read_count: i64,
         pub series_id: SeriesId,
-        #[doc = "Embedded series title so the Watchlist renders without a per-row detail fetch\n(frontend §9.3, kills the N+1)."]
+        #[doc = "Embedded series title so the Watchlist renders without a per-row detail fetch\n(frontend §9.3)."]
         pub series_title: ::std::string::String,
         #[doc = "Distinct providers carrying this series."]
         pub source_count: i64,
@@ -16642,7 +16642,7 @@ pub mod types {
         pub status: WatchStatus,
         #[doc = "Whether this series is opted out of external sync (design v2 §A.5)."]
         pub sync_excluded: bool,
-        #[doc = "Distinct whole chapters known across all sources — the progress bar's denominator."]
+        #[doc = "Distinct whole chapters known across all sources: the progress bar's denominator."]
         pub total_chapters: i64,
         #[doc = "Unread chapters above the user's progress."]
         pub unread: i64,
@@ -16771,7 +16771,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"code\": {"]
-    #[doc = "      \"description\": \"The provider slug — the monogram tile's letters and a stable client-side key.\","]
+    #[doc = "      \"description\": \"The provider slug: the monogram tile's letters and a stable client-side key.\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"name\": {"]
@@ -16790,7 +16790,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct WatchlistSource {
-        #[doc = "The provider slug — the monogram tile's letters and a stable client-side key."]
+        #[doc = "The provider slug: the monogram tile's letters and a stable client-side key."]
         pub code: ::std::string::String,
         pub name: ::std::string::String,
         #[doc = "Whether this is the source `preferred_source_name` names."]
@@ -16876,13 +16876,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "The watchlist page plus the chrome around it."]
+    #[doc = "The watchlist page and the chrome around it."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"The watchlist page plus the chrome around it.\","]
+    #[doc = "  \"description\": \"The watchlist page and the chrome around it.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"counts\","]
@@ -16915,7 +16915,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"total\": {"]
-    #[doc = "      \"description\": \"Rows matching the whole filter, `status` included — the pager's denominator.\","]
+    #[doc = "      \"description\": \"Rows matching the whole filter, `status` included: the pager's denominator.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    }"]
@@ -16932,7 +16932,7 @@ pub mod types {
         #[doc = "Pass back as `cursor` to fetch the next page; `null` at the end of the list.\n\nOpaque on purpose: it encodes the sort key the server ordered by, which changes shape\nwith `sort`, and a client that parsed it would break the first time an order was added."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub next_cursor: ::std::option::Option<::std::string::String>,
-        #[doc = "Rows matching the whole filter, `status` included — the pager's denominator."]
+        #[doc = "Rows matching the whole filter, `status` included: the pager's denominator."]
         pub total: i64,
     }
     impl WatchlistView {
@@ -37688,11 +37688,11 @@ impl ClientInfo<()> for Client {
 }
 impl ClientHooks<()> for &Client {}
 impl Client {
-    #[doc = "Get the audit log\n\nA filtered, paged window on the privileged-action trail (`docs/ARCHITECTURE.md` §16), newest first.\n\nEvery filter is applied in SQL. The console cannot filter client-side here on purpose: it\nholds one page, and a filter over one page silently answers a different question than the\none asked — the defect `users/activity.rs` shipped.\n\nSends a `GET` request to `/v1/admin/audit`\n\nArguments:\n- `action`: Exact action key, e.g. `admin.user.update`.\n- `actor`: Only actions attributed to this account. Absent matches every actor and the system.\n- `limit`\n- `offset`\n- `since`: Inclusive lower bound on `created_at`, RFC 3339.\n- `target`: Case-insensitive substring of the target.\n- `until`: Exclusive upper bound on `created_at`, RFC 3339.\n```ignore\nlet response = client.audit_log()\n    .action(action)\n    .actor(actor)\n    .limit(limit)\n    .offset(offset)\n    .since(since)\n    .target(target)\n    .until(until)\n    .send()\n    .await;\n```"]
+    #[doc = "Get the audit log\n\nA filtered, paged window on the privileged-action trail (`docs/ARCHITECTURE.md` §16), newest\nfirst.\n\nEvery filter is applied in SQL. The console cannot filter client-side here on purpose: it\nholds one page, and a filter over one page silently answers a different question than the\none asked.\n\nSends a `GET` request to `/v1/admin/audit`\n\nArguments:\n- `action`: Exact action key, e.g. `admin.user.update`.\n- `actor`: Only actions attributed to this account. Absent matches every actor and the system.\n- `limit`\n- `offset`\n- `since`: Inclusive lower bound on `created_at`, RFC 3339.\n- `target`: Case-insensitive substring of the target.\n- `until`: Exclusive upper bound on `created_at`, RFC 3339.\n```ignore\nlet response = client.audit_log()\n    .action(action)\n    .actor(actor)\n    .limit(limit)\n    .offset(offset)\n    .since(since)\n    .target(target)\n    .until(until)\n    .send()\n    .await;\n```"]
     pub fn audit_log(&self) -> builder::AuditLog<'_> {
         builder::AuditLog::new(self)
     }
-    #[doc = "List audit action keys\n\nEvery distinct action present in the trail, for the console's filter picker. Read from the\ndata rather than from a hand-written list, so a newly recorded action is filterable the\nfirst time it happens.\n\nSends a `GET` request to `/v1/admin/audit/actions`\n\n```ignore\nlet response = client.audit_actions()\n    .send()\n    .await;\n```"]
+    #[doc = "List audit action keys\n\nEvery distinct action present in the trail, for the console's filter picker. Read from the\ndata, not from a hand-written list, so a newly recorded action is filterable the\nfirst time it happens.\n\nSends a `GET` request to `/v1/admin/audit/actions`\n\n```ignore\nlet response = client.audit_actions()\n    .send()\n    .await;\n```"]
     pub fn audit_actions(&self) -> builder::AuditActions<'_> {
         builder::AuditActions::new(self)
     }
@@ -37712,7 +37712,7 @@ impl Client {
     pub fn list_catalogue(&self) -> builder::ListCatalogue<'_> {
         builder::ListCatalogue::new(self)
     }
-    #[doc = "Delete series in bulk\n\nRemoves every named series and everything the schema hangs off it — sources, chapters, tag\nlinks, watchlist entries and reading positions. One transaction, so the batch either applies\nor does not.\n\nSends a `POST` request to `/v1/admin/catalogue/series/delete`\n\n```ignore\nlet response = client.bulk_delete_series()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Delete series in bulk\n\nRemoves every named series and everything the schema hangs off it: sources, chapters, tag\nlinks, watchlist entries and reading positions. One transaction, so the batch either applies\nor does not.\n\nSends a `POST` request to `/v1/admin/catalogue/series/delete`\n\n```ignore\nlet response = client.bulk_delete_series()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn bulk_delete_series(&self) -> builder::BulkDeleteSeries<'_> {
         builder::BulkDeleteSeries::new(self)
     }
@@ -37732,7 +37732,7 @@ impl Client {
     pub fn reset_flag(&self) -> builder::ResetFlag<'_> {
         builder::ResetFlag::new(self)
     }
-    #[doc = "Get the automatic-merge policy\n\nThe threshold and the four guards the duplicate sweep applies, each with its effective\nvalue, what this deployment falls back to without an override, and who last changed it.\n\nRead from the control plane rather than resolved here: the fallback is that image's\nconfigured `matching` block, and a policy page that showed the *compiled* default would name\na value the sweep does not use and reset knobs to it.\n\nSends a `GET` request to `/v1/admin/matching/policy`\n\n```ignore\nlet response = client.get_merge_policy()\n    .send()\n    .await;\n```"]
+    #[doc = "Get the automatic-merge policy\n\nThe threshold and the four guards the duplicate sweep applies, each with its effective\nvalue, what this deployment falls back to without an override, and who last changed it.\n\nRead from the control plane, not resolved here: the fallback is that image's\nconfigured `matching` block, and a policy page that showed the *compiled* default would name\na value the sweep does not use and reset knobs to it.\n\nSends a `GET` request to `/v1/admin/matching/policy`\n\n```ignore\nlet response = client.get_merge_policy()\n    .send()\n    .await;\n```"]
     pub fn get_merge_policy(&self) -> builder::GetMergePolicy<'_> {
         builder::GetMergePolicy::new(self)
     }
@@ -37744,15 +37744,15 @@ impl Client {
     pub fn reset_merge_policy(&self) -> builder::ResetMergePolicy<'_> {
         builder::ResetMergePolicy::new(self)
     }
-    #[doc = "Rebuild the normalized matching keys\n\nRe-derives `series.normalized_title` and `series_titles.normalized` for the whole catalogue\nthrough the current `normalize_title`.\n\n# Why this is an operator action\n\nThe normalized title is a *persisted* key: it is written once, when a series is created, and\nevery later match compares against the stored value. A change to the normalization rules —\nlike making an apostrophe join a word instead of splitting one — therefore leaves the entire\ncatalogue on keys derived by the previous rules, and the improvement only reaches rows that\nhappen to be re-scanned. Running this is what makes a rules change take effect, and it is\nsafe to run repeatedly: only rows whose key actually changed are written.\n\nSends a `POST` request to `/v1/admin/matching/rebuild-keys`\n\n```ignore\nlet response = client.rebuild_matching_keys()\n    .send()\n    .await;\n```"]
+    #[doc = "Rebuild the normalized matching keys\n\nRe-derives `series.normalized_title` and `series_titles.normalized` for the whole catalogue\nthrough the current `normalize_title`.\n\n# Why this is an operator action\n\nThe normalized title is a *persisted* key: it is written once, when a series is created, and\nevery later match compares against the stored value. A change to the normalization rules\n(like making an apostrophe join a word instead of splitting one) therefore leaves the entire\ncatalogue on keys derived by the previous rules, and the improvement only reaches rows that\nhappen to be re-scanned. Running this is what makes a rules change take effect, and it is\nsafe to run repeatedly: only rows whose key actually changed are written.\n\nSends a `POST` request to `/v1/admin/matching/rebuild-keys`\n\n```ignore\nlet response = client.rebuild_matching_keys()\n    .send()\n    .await;\n```"]
     pub fn rebuild_matching_keys(&self) -> builder::RebuildMatchingKeys<'_> {
         builder::RebuildMatchingKeys::new(self)
     }
-    #[doc = "List merge candidates\n\nThe canonicalisation review queue (`docs/ARCHITECTURE.md` §10), highest confidence first.\n\nSends a `GET` request to `/v1/admin/merge-candidates`\n\nArguments:\n- `min_score`: Only return candidates at or above this confidence, in `[0,1]`.\n\nAn operator works a large queue in bands: everything above 0.9 is nearly all genuine\nduplicates and can be actioned quickly, while the 0.6–0.7 band needs real attention per\nrow. Out-of-range values are clamped rather than rejected — this narrows a list, so the\nworst a nonsense value can do is return nothing.\n```ignore\nlet response = client.list_merge_candidates()\n    .min_score(min_score)\n    .send()\n    .await;\n```"]
+    #[doc = "List merge candidates\n\nThe canonicalisation review queue (`docs/ARCHITECTURE.md` §10), highest confidence first.\n\nSends a `GET` request to `/v1/admin/merge-candidates`\n\nArguments:\n- `min_score`: Only return candidates at or above this confidence, in `[0,1]`.\n\nAn operator works a large queue in bands: everything above 0.9 is nearly all genuine\nduplicates and can be actioned quickly, while the 0.6–0.7 band needs real attention per\nrow. Out-of-range values are clamped, not rejected: this narrows a list, so the worst a\nnonsense value can do is return nothing.\n```ignore\nlet response = client.list_merge_candidates()\n    .min_score(min_score)\n    .send()\n    .await;\n```"]
     pub fn list_merge_candidates(&self) -> builder::ListMergeCandidates<'_> {
         builder::ListMergeCandidates::new(self)
     }
-    #[doc = "Dismiss a merge candidate\n\nOperator judged the two works distinct. The judgement is durable: the pair is suppressed\nagainst re-scans and against the standing duplicate sweep, which is what the previous\nimplementation could not promise — a dismissed pair could be re-inserted as a fresh open row\nby the next scan that saw it.\n\nSends a `POST` request to `/v1/admin/merge-candidates/dismiss`\n\n```ignore\nlet response = client.dismiss_merge_candidate()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Dismiss a merge candidate\n\nOperator judged the two works distinct. The judgement is durable: the pair is suppressed\nagainst re-scans and against the standing duplicate sweep, so the next scan that sees it\ncannot re-insert it as a fresh open row.\n\nSends a `POST` request to `/v1/admin/merge-candidates/dismiss`\n\n```ignore\nlet response = client.dismiss_merge_candidate()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn dismiss_merge_candidate(&self) -> builder::DismissMergeCandidate<'_> {
         builder::DismissMergeCandidate::new(self)
     }
@@ -37760,19 +37760,19 @@ impl Client {
     pub fn sweep_merge_candidates(&self) -> builder::SweepMergeCandidates<'_> {
         builder::SweepMergeCandidates::new(self)
     }
-    #[doc = "Get the exhaustive duplicate sweep's state\n\nProgress of the run `POST` of this path starts, and the outcome of the last one. Read from\nthe database rather than from the control plane: the run writes its progress there after\nevery round, and asking the replica that happens to answer would get the state of whichever\none was asked rather than of the run.\n\nSends a `GET` request to `/v1/admin/merge-candidates/sweep-all`\n\n```ignore\nlet response = client.full_merge_sweep_status()\n    .send()\n    .await;\n```"]
+    #[doc = "Get the exhaustive duplicate sweep's state\n\nProgress of the run `POST` of this path starts, and the outcome of the last one. Read from\nthe database, not from the control plane: the run writes its progress there after every\nround, and asking the replica that happens to answer would get the state of whichever one was\nasked instead of the run's.\n\nSends a `GET` request to `/v1/admin/merge-candidates/sweep-all`\n\n```ignore\nlet response = client.full_merge_sweep_status()\n    .send()\n    .await;\n```"]
     pub fn full_merge_sweep_status(&self) -> builder::FullMergeSweepStatus<'_> {
         builder::FullMergeSweepStatus::new(self)
     }
-    #[doc = "Run an exhaustive duplicate sweep\n\nThe same sweep as `POST /v1/admin/merge-candidates/sweep`, drawn over and over until a round\nshortlists nothing it has not already judged — one full rotation of the open queue and the\nrecheck set, and every newly-blocked pair besides. A single sweep only covers one budget's\nworth of each and leaves the rest to the schedule; this is the button for \"look at all of it\nnow\", after a normalization change or a policy change that should not wait hours to land.\n\nIt runs to the end: the per-sweep automatic-merge ceiling bounds the *scheduled* sweeps, which\nmerge without anyone watching, and is lifted here because this is an operator asking for the\nwhole catalogue. `scanning.auto_merge` remains the switch for whether it may merge at all.\n\nThe run is detached and takes minutes, so this answers only whether one *started*. Progress,\nthe totals so far and how the last one ended are on `GET` of this same path, which the console\npolls. A request arriving while a run is live answers `started: false`: the claim is what keeps\ntwo runs off the same merges.\n\nSends a `POST` request to `/v1/admin/merge-candidates/sweep-all`\n\n```ignore\nlet response = client.sweep_all_merge_candidates()\n    .send()\n    .await;\n```"]
+    #[doc = "Run an exhaustive duplicate sweep\n\nThe same sweep as `POST /v1/admin/merge-candidates/sweep`, drawn over and over until a round\nshortlists nothing it has not already judged: one full rotation of the open queue and the\nrecheck set, and every newly-blocked pair besides. A single sweep only covers one budget's\nworth of each and leaves the rest to the schedule; this is the button for \"look at all of it\nnow\", after a normalization change or a policy change that should not wait hours to land.\n\nIt runs to the end: the per-sweep automatic-merge ceiling bounds the *scheduled* sweeps, which\nmerge without anyone watching, and is lifted here because this is an operator asking for the\nwhole catalogue. `scanning.auto_merge` remains the switch for whether it may merge at all.\n\nThe run is detached and takes minutes, so this answers only whether one *started*. Progress,\nthe totals so far and how the last one ended are on `GET` of this same path, which the console\npolls. A request arriving while a run is live answers `started: false`: the claim is what keeps\ntwo runs off the same merges.\n\nSends a `POST` request to `/v1/admin/merge-candidates/sweep-all`\n\n```ignore\nlet response = client.sweep_all_merge_candidates()\n    .send()\n    .await;\n```"]
     pub fn sweep_all_merge_candidates(&self) -> builder::SweepAllMergeCandidates<'_> {
         builder::SweepAllMergeCandidates::new(self)
     }
-    #[doc = "List merge decisions\n\nThe automatic-merge journal, newest first: the itemised score behind each decision, the rule\nthat produced the verdict, the guards that overrode it, and whether it can still be undone.\n\nSends a `GET` request to `/v1/admin/merge-decisions`\n\nArguments:\n- `blocked`: Only decisions a guard held back: the near misses.\n- `flagged`: Only decisions an operator has flagged wrong.\n- `limit`\n- `offset`\n- `outcome`: Restrict to one outcome: `merged`, `queued`, `requeued`, `reopened`, `withdrawn`,\n`distinct`, `deferred`.\n- `reverted`: Only merges that have since been undone.\n- `revertible`: Only merges that can still be undone.\n- `search`: A series or decision id matches exactly on any of the three ids; any other text is a\ncase-insensitive substring of either title.\n- `series_id`: Only decisions naming this series on either side. Survives the merge — an absorbed id is\nstill on the row that absorbed it, which is the one you go looking for.\n\nA bare `Uuid`, not `SeriesId`: an optional newtype in a query parameter generates a\none-variant `oneOf` that the client generator cannot render.\n- `trigger`: Restrict to one trigger: `operator`, `sweep_new`, `sweep_requeue`, `sweep_recheck`,\n`sweep_twin`.\n```ignore\nlet response = client.list_merge_decisions()\n    .blocked(blocked)\n    .flagged(flagged)\n    .limit(limit)\n    .offset(offset)\n    .outcome(outcome)\n    .reverted(reverted)\n    .revertible(revertible)\n    .search(search)\n    .series_id(series_id)\n    .trigger(trigger)\n    .send()\n    .await;\n```"]
+    #[doc = "List merge decisions\n\nThe automatic-merge journal, newest first: the itemised score behind each decision, the rule\nthat produced the verdict, the guards that overrode it, and whether it can still be undone.\n\nSends a `GET` request to `/v1/admin/merge-decisions`\n\nArguments:\n- `blocked`: Only decisions a guard held back: the near misses.\n- `flagged`: Only decisions an operator has flagged wrong.\n- `limit`\n- `offset`\n- `outcome`: Restrict to one outcome: `merged`, `queued`, `requeued`, `reopened`, `withdrawn`,\n`distinct`, `deferred`.\n- `reverted`: Only merges that have since been undone.\n- `revertible`: Only merges that can still be undone.\n- `search`: A series or decision id matches exactly on any of the three ids; any other text is a\ncase-insensitive substring of either title.\n- `series_id`: Only decisions naming this series on either side. Survives the merge: an absorbed id is\nstill on the row that absorbed it, which is the one you go looking for.\n\nA bare `Uuid`, not `SeriesId`: an optional newtype in a query parameter generates a\none-variant `oneOf` that the client generator cannot render.\n- `trigger`: Restrict to one trigger: `operator`, `sweep_new`, `sweep_requeue`, `sweep_recheck`,\n`sweep_twin`.\n```ignore\nlet response = client.list_merge_decisions()\n    .blocked(blocked)\n    .flagged(flagged)\n    .limit(limit)\n    .offset(offset)\n    .outcome(outcome)\n    .reverted(reverted)\n    .revertible(revertible)\n    .search(search)\n    .series_id(series_id)\n    .trigger(trigger)\n    .send()\n    .await;\n```"]
     pub fn list_merge_decisions(&self) -> builder::ListMergeDecisions<'_> {
         builder::ListMergeDecisions::new(self)
     }
-    #[doc = "Revert merges in a batch\n\nRevert a reviewed list of automatic merges, each exactly as the single revert does it\n(restore, suppress, disentangle), newest first: a merge whose survivor a later merge absorbed\ncan only be reverted after that later one, so newest first lets a chain inside one batch\nunwind. One decision's refusal does not stop the others; each item reports its own outcome.\nA dry run checks each decision as stored and changes nothing, so it cannot predict a refusal\nthat depends on another decision in the batch.\n\nSends a `POST` request to `/v1/admin/merge-decisions/revert-batch`\n\n```ignore\nlet response = client.revert_merge_decisions()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Revert merges in a batch\n\nReverts a reviewed list of automatic merges, each exactly as the single revert does it\n(restore, suppress, disentangle), newest first: a merge whose survivor a later merge absorbed\ncan only be reverted after that later one, so newest first lets a chain inside one batch\nunwind. One decision's refusal does not stop the others; each item reports its own outcome.\nA dry run checks each decision as stored and changes nothing, so it cannot predict a refusal\nthat depends on another decision in the batch.\n\nSends a `POST` request to `/v1/admin/merge-decisions/revert-batch`\n\n```ignore\nlet response = client.revert_merge_decisions()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn revert_merge_decisions(&self) -> builder::RevertMergeDecisions<'_> {
         builder::RevertMergeDecisions::new(self)
     }
@@ -37780,27 +37780,27 @@ impl Client {
     pub fn get_merge_decision(&self) -> builder::GetMergeDecision<'_> {
         builder::GetMergeDecision::new(self)
     }
-    #[doc = "Flag a merge as wrong\n\nRecord that an automatic merge was the wrong call, and suppress the pair permanently, without\nundoing it. Deliberately independent of the revert: a merge can be wrong and no longer worth\nthe disruption of unpicking, and a merge can be undone as a precaution while still having been\ncorrect. Either way the flag is what stops the sweep re-making the same decision.\n\nSends a `POST` request to `/v1/admin/merge-decisions/{id}/flag`\n\nArguments:\n- `id`: The merge decision to flag\n- `body`\n```ignore\nlet response = client.flag_merge_decision()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Flag a merge as wrong\n\nRecords that an automatic merge was the wrong call, and suppress the pair permanently, without\nundoing it. Deliberately independent of the revert: a merge can be wrong and no longer worth\nthe disruption of unpicking, and a merge can be undone as a precaution while still having been\ncorrect. Either way the flag is what stops the sweep re-making the same decision.\n\nSends a `POST` request to `/v1/admin/merge-decisions/{id}/flag`\n\nArguments:\n- `id`: The merge decision to flag\n- `body`\n```ignore\nlet response = client.flag_merge_decision()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn flag_merge_decision(&self) -> builder::FlagMergeDecision<'_> {
         builder::FlagMergeDecision::new(self)
     }
-    #[doc = "Revert a merge\n\nUndo one automatic merge: the absorbed series exists again under its **original id**, every\nrow that moved is moved back, and every row the merge created on the survivor is removed.\n\nTwo things happen alongside, in the same transaction, because a bare inverse does not survive\nthe next hour. The pair is **suppressed**, or the next sweep merges it again on the same score\nagainst the same titles. And the survivor is **disentangled**: the names both rows answered to\nare removed from it, and the sources whose provider title is one of those names go back to the\nrestored series, taking their chapters with them. Without that second half the create-time\nattach path — which reads `series_titles` and knows nothing of the suppression — re-attaches\non the next scan, and the chapters that prompted the revert never move at all.\n\nThe survivor's own canonical title is never removed, and no reader's watchlist entry or read\nprogress moves; see `MergeReverted` for the counts this reports.\n\nSends a `POST` request to `/v1/admin/merge-decisions/{id}/revert`\n\nArguments:\n- `id`: The merge decision to undo\n- `body`\n```ignore\nlet response = client.revert_merge_decision()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Revert a merge\n\nUndoes one automatic merge: the absorbed series exists again under its **original id**, every\nrow that moved is moved back, and every row the merge created on the survivor is removed.\n\nTwo things happen alongside, in the same transaction, because a bare inverse does not survive\nthe next hour. The pair is **suppressed**, or the next sweep merges it again on the same score\nagainst the same titles. And the survivor is **disentangled**: the names both rows answered to\nare removed from it, and the sources whose provider title is one of those names go back to the\nrestored series, taking their chapters with them. Without that second half the create-time\nattach path (which reads `series_titles` and knows nothing of the suppression) re-attaches\non the next scan, and the chapters that prompted the revert never move at all.\n\nThe survivor's own canonical title is never removed, and no reader's watchlist entry or read\nprogress moves; see `MergeReverted` for the counts this reports.\n\nSends a `POST` request to `/v1/admin/merge-decisions/{id}/revert`\n\nArguments:\n- `id`: The merge decision to undo\n- `body`\n```ignore\nlet response = client.revert_merge_decision()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn revert_merge_decision(&self) -> builder::RevertMergeDecision<'_> {
         builder::RevertMergeDecision::new(self)
     }
-    #[doc = "List assignable permissions\n\nEvery capability this build defines, with its grouping and description, plus the preset\nbundles the editor offers. Served from the compiled registry, so the editor can never list a\ncapability the backend does not enforce or miss one it does.\n\nSends a `GET` request to `/v1/admin/permissions`\n\n```ignore\nlet response = client.permission_catalogue()\n    .send()\n    .await;\n```"]
+    #[doc = "List assignable permissions\n\nEvery capability this build defines, with its grouping and description, and the preset\nbundles the editor offers. Served from the compiled registry, so the editor can never list a\ncapability the backend does not enforce or miss one it does.\n\nSends a `GET` request to `/v1/admin/permissions`\n\n```ignore\nlet response = client.permission_catalogue()\n    .send()\n    .await;\n```"]
     pub fn permission_catalogue(&self) -> builder::PermissionCatalogue<'_> {
         builder::PermissionCatalogue::new(self)
     }
-    #[doc = "List data-subject requests\n\nThe privacy queue, most urgent first: open requests ordered by their Art. 12(3) deadline,\neach flagged if that deadline has passed.\n\nSends a `GET` request to `/v1/admin/privacy/requests`\n\nArguments:\n- `include_resolved`: Show only unresolved requests. Defaults to `true` — the queue's job is the work\noutstanding, and resolved requests are the compliance record behind it.\n```ignore\nlet response = client.list_privacy_queue()\n    .include_resolved(include_resolved)\n    .send()\n    .await;\n```"]
+    #[doc = "List data-subject requests\n\nThe privacy queue, most urgent first: open requests ordered by their Art. 12(3) deadline,\neach flagged if that deadline has passed.\n\nSends a `GET` request to `/v1/admin/privacy/requests`\n\nArguments:\n- `include_resolved`: Show only unresolved requests. Defaults to `true`: the queue's job is the work\noutstanding, and resolved requests are the compliance record behind it.\n```ignore\nlet response = client.list_privacy_queue()\n    .include_resolved(include_resolved)\n    .send()\n    .await;\n```"]
     pub fn list_privacy_queue(&self) -> builder::ListPrivacyQueue<'_> {
         builder::ListPrivacyQueue::new(self)
     }
-    #[doc = "Claim a data-subject request\n\nTakes ownership of a pending request so two operators do not work the same one. Refuses if\nsomebody already claimed it, rather than silently taking it over.\n\nSends a `POST` request to `/v1/admin/privacy/requests/{id}/claim`\n\nArguments:\n- `id`: Request id\n```ignore\nlet response = client.claim_privacy_request()\n    .id(id)\n    .send()\n    .await;\n```"]
+    #[doc = "Claim a data-subject request\n\nTakes ownership of a pending request so two operators do not work the same one. Refuses if\nsomebody already claimed it, instead of silently taking it over.\n\nSends a `POST` request to `/v1/admin/privacy/requests/{id}/claim`\n\nArguments:\n- `id`: Request id\n```ignore\nlet response = client.claim_privacy_request()\n    .id(id)\n    .send()\n    .await;\n```"]
     pub fn claim_privacy_request(&self) -> builder::ClaimPrivacyRequest<'_> {
         builder::ClaimPrivacyRequest::new(self)
     }
-    #[doc = "Export a subject's data for a request\n\nProduces the same document as the subject's own export, for delivery in answer to an access\n(Art. 15) or portability (Art. 20) request.\n\nGated on [`Permission::PrivacyExport`] rather than `privacy.write`, and audited under its own\naction: this is the one operation in the queue that *discloses* another person's entire\nrecord, and it needs to be separately grantable and separately searchable afterwards.\n\nRefused for request kinds that are not about disclosure — an erasure request is not a licence\nto read the account first.\n\nSends a `GET` request to `/v1/admin/privacy/requests/{id}/export`\n\nArguments:\n- `id`: Request id\n```ignore\nlet response = client.export_subject_data()\n    .id(id)\n    .send()\n    .await;\n```"]
+    #[doc = "Export a subject's data for a request\n\nProduces the same document as the subject's own export, for delivery in answer to an access\n(Art. 15) or portability (Art. 20) request.\n\nGated on [`Permission::PrivacyExport`], not `privacy.write`, and audited under its own\naction: this is the one operation in the queue that *discloses* another person's entire\nrecord, and it needs to be separately grantable and separately searchable afterwards.\n\nRefused for request kinds that are not about disclosure: an erasure request is not a licence\nto read the account first.\n\nSends a `GET` request to `/v1/admin/privacy/requests/{id}/export`\n\nArguments:\n- `id`: Request id\n```ignore\nlet response = client.export_subject_data()\n    .id(id)\n    .send()\n    .await;\n```"]
     pub fn export_subject_data(&self) -> builder::ExportSubjectData<'_> {
         builder::ExportSubjectData::new(self)
     }
@@ -37808,11 +37808,11 @@ impl Client {
     pub fn extend_privacy_request(&self) -> builder::ExtendPrivacyRequest<'_> {
         builder::ExtendPrivacyRequest::new(self)
     }
-    #[doc = "Carry out an erasure request\n\nErases the subject's account and everything it owns, then resolves the request as completed\nin the same call — so the compliance record cannot end up saying an erasure was done when it\nwas not, or the reverse.\n\nRequires [`Permission::UsersDelete`] as well as [`Permission::PrivacyWrite`]: working the\nprivacy queue and being able to destroy an account are separate authorities, and this is the\none action that needs both.\n\nSends a `POST` request to `/v1/admin/privacy/requests/{id}/fulfil-erasure`\n\nArguments:\n- `id`: Request id\n- `body`\n```ignore\nlet response = client.fulfil_erasure()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Carry out an erasure request\n\nErases the subject's account and everything it owns, then resolves the request as completed\nin the same call, so the compliance record cannot end up saying an erasure was done when it\nwas not, or the reverse.\n\nRequires [`Permission::UsersDelete`] as well as [`Permission::PrivacyWrite`]: working the\nprivacy queue and being able to destroy an account are separate authorities, and this is the\none action that needs both.\n\nSends a `POST` request to `/v1/admin/privacy/requests/{id}/fulfil-erasure`\n\nArguments:\n- `id`: Request id\n- `body`\n```ignore\nlet response = client.fulfil_erasure()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn fulfil_erasure(&self) -> builder::FulfilErasure<'_> {
         builder::FulfilErasure::new(self)
     }
-    #[doc = "Resolve a data-subject request\n\nMarks a request completed or rejected. Only transitions out of an open state, so a\nresolution cannot be recorded twice or rewritten later.\n\nDoes **not** perform the underlying action — completing an erasure request does not erase.\nFulfilment is [`fulfil_erasure`] and [`export_subject_data`], each with its own permission,\nso \"we said we did it\" and \"we did it\" are separate records.\n\nSends a `POST` request to `/v1/admin/privacy/requests/{id}/resolve`\n\nArguments:\n- `id`: Request id\n- `body`\n```ignore\nlet response = client.resolve_privacy_request()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Resolve a data-subject request\n\nMarks a request completed or rejected. Only transitions out of an open state, so a\nresolution cannot be recorded twice or rewritten later.\n\nDoes **not** perform the underlying action: completing an erasure request does not erase.\nFulfilment is [`fulfil_erasure`] and [`export_subject_data`], each with its own permission,\nso \"we said we did it\" and \"we did it\" are separate records.\n\nSends a `POST` request to `/v1/admin/privacy/requests/{id}/resolve`\n\nArguments:\n- `id`: Request id\n- `body`\n```ignore\nlet response = client.resolve_privacy_request()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn resolve_privacy_request(&self) -> builder::ResolvePrivacyRequest<'_> {
         builder::ResolvePrivacyRequest::new(self)
     }
@@ -37824,7 +37824,7 @@ impl Client {
     pub fn create_provider(&self) -> builder::CreateProvider<'_> {
         builder::CreateProvider::new(self)
     }
-    #[doc = "List the built-in provider presets\n\nThe preset catalogue this deployment's last install run recorded — the definitions\n`bootstrap seed-providers` installs from and re-applies to every locked provider. The\nconsole reads it to show what a managed provider would look like if it followed its preset\nagain, and what crawl budget the preset suggests.\n\nAn empty list means the install job has not run since the preset catalogue became data;\n`updated_at` on each entry is how old the recorded catalogue is.\n\nSends a `GET` request to `/v1/admin/providers/presets`\n\n```ignore\nlet response = client.list_provider_presets()\n    .send()\n    .await;\n```"]
+    #[doc = "List the built-in provider presets\n\nThe preset catalogue this deployment's last install run recorded: the definitions\n`bootstrap seed-providers` installs from and re-applies to every locked provider. The\nconsole reads it to show what a managed provider would look like if it followed its preset\nagain, and what crawl budget the preset suggests.\n\nAn empty list means the install job has not recorded the catalogue; `updated_at` on each\nentry is how old the recorded catalogue is.\n\nSends a `GET` request to `/v1/admin/providers/presets`\n\n```ignore\nlet response = client.list_provider_presets()\n    .send()\n    .await;\n```"]
     pub fn list_provider_presets(&self) -> builder::ListProviderPresets<'_> {
         builder::ListProviderPresets::new(self)
     }
@@ -37832,7 +37832,7 @@ impl Client {
     pub fn provider_stats(&self) -> builder::ProviderStats<'_> {
         builder::ProviderStats::new(self)
     }
-    #[doc = "Delete a provider\n\nRemove a provider entirely. Its stored source links cascade-delete (FK `ON DELETE\nCASCADE`); scan-run history is retained with a nulled provider. Admin-only because it is\ndestructive and irreversible.\n\nSends a `DELETE` request to `/v1/admin/providers/{id}`\n\nArguments:\n- `id`: Provider id\n```ignore\nlet response = client.delete_provider()\n    .id(id)\n    .send()\n    .await;\n```"]
+    #[doc = "Delete a provider\n\nRemoves a provider entirely. Its stored source links cascade-delete (FK `ON DELETE\nCASCADE`); scan-run history is retained with a nulled provider. Admin-only because it is\ndestructive and irreversible.\n\nSends a `DELETE` request to `/v1/admin/providers/{id}`\n\nArguments:\n- `id`: Provider id\n```ignore\nlet response = client.delete_provider()\n    .id(id)\n    .send()\n    .await;\n```"]
     pub fn delete_provider(&self) -> builder::DeleteProvider<'_> {
         builder::DeleteProvider::new(self)
     }
@@ -37840,11 +37840,11 @@ impl Client {
     pub fn update_provider(&self) -> builder::UpdateProvider<'_> {
         builder::UpdateProvider::new(self)
     }
-    #[doc = "Follow or stop following a provider's preset\n\nUnlocking is the console's \"edit freely\" action: the provider keeps naming the preset it came\nfrom, but no rollout rewrites it again, and the preset-owned fields become editable.\n\nLocking is the reverse, and it is **destructive to local edits**: it re-applies the preset's\n`name`, `base_url`, `adapter` and `config` immediately, discarding whatever the operator had\nthere. Politeness and health state are untouched in both directions — they are not\npreset-owned.\n\nSends a `POST` request to `/v1/admin/providers/{id}/preset`\n\nArguments:\n- `id`: Provider id\n- `body`\n```ignore\nlet response = client.set_provider_preset_lock()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Follow or stop following a provider's preset\n\nUnlocking is the console's \"edit freely\" action: the provider keeps naming the preset it came\nfrom, but no rollout rewrites it again, and the preset-owned fields become editable.\n\nLocking is the reverse, and it is **destructive to local edits**: it re-applies the preset's\n`name`, `base_url`, `adapter` and `config` immediately, discarding whatever the operator had\nthere. Politeness and health state are untouched in both directions: they are not\npreset-owned.\n\nSends a `POST` request to `/v1/admin/providers/{id}/preset`\n\nArguments:\n- `id`: Provider id\n- `body`\n```ignore\nlet response = client.set_provider_preset_lock()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn set_provider_preset_lock(&self) -> builder::SetProviderPresetLock<'_> {
         builder::SetProviderPresetLock::new(self)
     }
-    #[doc = "Re-solve a provider\n\nRe-solve/refresh a single provider by queuing a **fast** re-scan (frontend §9.5). This is\nthe console \"Re-solve\" action; it is proxied to the control-plane planner exactly like\n[`trigger_scan`], scoped to one provider.\n\nSends a `POST` request to `/v1/admin/providers/{id}/resolve`\n\nArguments:\n- `id`: Provider id\n```ignore\nlet response = client.resolve_provider()\n    .id(id)\n    .send()\n    .await;\n```"]
+    #[doc = "Re-solve a provider\n\nRe-solves a single provider by queuing a **fast** re-scan (frontend §9.5). This is\nthe console \"Re-solve\" action; it is proxied to the control-plane planner exactly like\n[`trigger_scan`], scoped to one provider.\n\nSends a `POST` request to `/v1/admin/providers/{id}/resolve`\n\nArguments:\n- `id`: Provider id\n```ignore\nlet response = client.resolve_provider()\n    .id(id)\n    .send()\n    .await;\n```"]
     pub fn resolve_provider(&self) -> builder::ResolveProvider<'_> {
         builder::ResolveProvider::new(self)
     }
@@ -37852,15 +37852,15 @@ impl Client {
     pub fn set_provider_state(&self) -> builder::SetProviderState<'_> {
         builder::SetProviderState::new(self)
     }
-    #[doc = "Dry-run a provider's adapter\n\nDry-run the provider's adapter against the live site and return the parsed sample so\noperators can fix selectors without a deploy (`docs/ARCHITECTURE.md` §11/§17). Bounded by a timeout;\nSSRF and rate limits are enforced by the injected fetch stack.\n\nThe body is deliberately free-form JSON: it is a diagnostic dump whose shape follows\nwhatever the adapter managed to parse, and the console renders it verbatim. It is still\ndeclared as a schema so the generated client can return it, rather than forcing callers\nonto an untyped side channel.\n\nSends a `POST` request to `/v1/admin/providers/{id}/test`\n\nArguments:\n- `id`: Provider id\n- `body`: Optional relative series path to also fetch metadata + chapters for\n```ignore\nlet response = client.test_adapter()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Dry-run a provider's adapter\n\nDry-runs the provider's adapter against the live site and returns the parsed sample so\noperators can fix selectors without a deploy (`docs/ARCHITECTURE.md` §11/§17). Bounded by a\ntimeout; SSRF and rate limits are enforced by the injected fetch stack.\n\nThe body is deliberately free-form JSON: it is a diagnostic dump whose shape follows\nwhatever the adapter managed to parse, and the console renders it verbatim. It is still\ndeclared as a schema so the generated client can return it, instead of forcing callers\nonto an untyped side channel.\n\nSends a `POST` request to `/v1/admin/providers/{id}/test`\n\nArguments:\n- `id`: Provider id\n- `body`: Optional relative series path to also fetch metadata + chapters for\n```ignore\nlet response = client.test_adapter()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn test_adapter(&self) -> builder::TestAdapter<'_> {
         builder::TestAdapter::new(self)
     }
-    #[doc = "Get recommendation model health\n\nGeneration, build state, catalogue coverage and repair-queue depth — what an operator needs\nbefore changing a tuning value, and the only way to tell an unbuilt model from a broken one.\n\nSends a `GET` request to `/v1/admin/recommendations/health`\n\n```ignore\nlet response = client.model_health()\n    .send()\n    .await;\n```"]
+    #[doc = "Get recommendation model health\n\nGeneration, build state, catalogue coverage and repair-queue depth: what an operator needs\nbefore changing a tuning value, and the only way to tell an unbuilt model from a broken one.\n\nSends a `GET` request to `/v1/admin/recommendations/health`\n\n```ignore\nlet response = client.model_health()\n    .send()\n    .await;\n```"]
     pub fn model_health(&self) -> builder::ModelHealth<'_> {
         builder::ModelHealth::new(self)
     }
-    #[doc = "Rebuild the recommendation model\n\nStarts a build now rather than waiting for the schedule. A `next_build` tuning change takes\neffect after an incremental run; a `next_full_build` one is baked into stored vectors and the\nindex, and needs `full`.\n\nThe build is a singleton over the whole catalogue, so this runs in the control plane behind\nthe same claim the scheduled runs take. It answers once that claim is taken and the build\nruns on: poll `GET /v1/admin/recommendations/health` for progress and the outcome.\n\nSends a `POST` request to `/v1/admin/recommendations/rebuild`\n\n```ignore\nlet response = client.rebuild_model()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Rebuild the recommendation model\n\nStarts a build now instead of waiting for the schedule. A `next_build` tuning change takes\neffect after an incremental run; a `next_full_build` one is baked into stored vectors and the\nindex, and needs `full`.\n\nThe build is a singleton over the whole catalogue, so this runs in the control plane behind\nthe same claim the scheduled runs take. It answers once that claim is taken and the build\nruns on: poll `GET /v1/admin/recommendations/health` for progress and the outcome.\n\nSends a `POST` request to `/v1/admin/recommendations/rebuild`\n\n```ignore\nlet response = client.rebuild_model()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn rebuild_model(&self) -> builder::RebuildModel<'_> {
         builder::RebuildModel::new(self)
     }
@@ -37876,15 +37876,15 @@ impl Client {
     pub fn reset_tunable(&self) -> builder::ResetTunable<'_> {
         builder::ResetTunable::new(self)
     }
-    #[doc = "List recent scan failures\n\nThe most recently failed scan tasks with their errors, for triaging stuck providers and\nbroken selectors (`docs/ARCHITECTURE.md` §17.2.7). The grouped view is `/v1/admin/scan-failures/grouped`.\n\nSends a `GET` request to `/v1/admin/scan-failures`\n\nArguments:\n- `include_cleared`: Include failures an operator has already cleared. Off by default, which is what clearing\nis for; cleared failures are acknowledged rather than deleted, so this always reopens the\nfull window.\n- `limit`\n- `provider`: Provider slug. Absent lists every provider's failures.\n- `since`: Inclusive lower bound on `finished_at`, RFC 3339.\n```ignore\nlet response = client.scan_failures()\n    .include_cleared(include_cleared)\n    .limit(limit)\n    .provider(provider)\n    .since(since)\n    .send()\n    .await;\n```"]
+    #[doc = "List recent scan failures\n\nThe most recently failed scan tasks with their errors, for triaging stuck providers and broken\nselectors (`docs/ARCHITECTURE.md` §17.2.7). The grouped view is\n`/v1/admin/scan-failures/grouped`.\n\nSends a `GET` request to `/v1/admin/scan-failures`\n\nArguments:\n- `include_cleared`: Include failures an operator has already cleared. Off by default, which is what clearing\nis for; cleared failures are acknowledged, not deleted, so this always reopens the\nfull window.\n- `limit`\n- `provider`: Provider slug. Absent lists every provider's failures.\n- `since`: Inclusive lower bound on `finished_at`, RFC 3339.\n```ignore\nlet response = client.scan_failures()\n    .include_cleared(include_cleared)\n    .limit(limit)\n    .provider(provider)\n    .since(since)\n    .send()\n    .await;\n```"]
     pub fn scan_failures(&self) -> builder::ScanFailures<'_> {
         builder::ScanFailures::new(self)
     }
-    #[doc = "Clear scan failures\n\nAcknowledges the selected failures so they leave the triage feed. Nothing is deleted: the\ntask keeps its `failed` state, its error and its contribution to the run counters, so the\nhistory still reconciles and `include_cleared=true` reopens the full window.\n\nBehind `scans.run` rather than `scans.read`, because it changes what every *other* operator\nsees: a reader entitled to watch the queue must not be able to hide an outage from the person\non call.\n\nSends a `POST` request to `/v1/admin/scan-failures/clear`\n\n```ignore\nlet response = client.clear_scan_failures()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Clear scan failures\n\nAcknowledges the selected failures so they leave the triage feed. Nothing is deleted: the\ntask keeps its `failed` state, its error and its contribution to the run counters, so the\nhistory still reconciles and `include_cleared=true` reopens the full window.\n\nBehind `scans.run`, not `scans.read`, because it changes what every *other* operator\nsees: a reader entitled to watch the queue must not be able to hide an outage from the person\non call.\n\nSends a `POST` request to `/v1/admin/scan-failures/clear`\n\n```ignore\nlet response = client.clear_scan_failures()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn clear_scan_failures(&self) -> builder::ClearScanFailures<'_> {
         builder::ClearScanFailures::new(self)
     }
-    #[doc = "Group scan failures by error\n\nThe same failures collapsed by their error text, worst first: one broken selector that hit\ntwelve series is one row with a count, not twelve rows of the same sentence.\n\nSends a `GET` request to `/v1/admin/scan-failures/grouped`\n\nArguments:\n- `include_cleared`: Include failures an operator has already cleared. Off by default, which is what clearing\nis for; cleared failures are acknowledged rather than deleted, so this always reopens the\nfull window.\n- `limit`\n- `provider`: Provider slug. Absent lists every provider's failures.\n- `since`: Inclusive lower bound on `finished_at`, RFC 3339.\n```ignore\nlet response = client.scan_failure_groups()\n    .include_cleared(include_cleared)\n    .limit(limit)\n    .provider(provider)\n    .since(since)\n    .send()\n    .await;\n```"]
+    #[doc = "Group scan failures by error\n\nThe same failures collapsed by their error text, worst first: one broken selector that hit\ntwelve series is one row with a count, not twelve rows of the same sentence.\n\nSends a `GET` request to `/v1/admin/scan-failures/grouped`\n\nArguments:\n- `include_cleared`: Include failures an operator has already cleared. Off by default, which is what clearing\nis for; cleared failures are acknowledged, not deleted, so this always reopens the\nfull window.\n- `limit`\n- `provider`: Provider slug. Absent lists every provider's failures.\n- `since`: Inclusive lower bound on `finished_at`, RFC 3339.\n```ignore\nlet response = client.scan_failure_groups()\n    .include_cleared(include_cleared)\n    .limit(limit)\n    .provider(provider)\n    .since(since)\n    .send()\n    .await;\n```"]
     pub fn scan_failure_groups(&self) -> builder::ScanFailureGroups<'_> {
         builder::ScanFailureGroups::new(self)
     }
@@ -37916,15 +37916,15 @@ impl Client {
     pub fn get_scan(&self) -> builder::GetScan<'_> {
         builder::GetScan::new(self)
     }
-    #[doc = "Cancel a scan run\n\nStops one run and abandons the tasks it still had outstanding. A run that has already\nfinished is a no-op, answered as `0` runs cancelled rather than a 404 — two operators pressing\nthe same button is ordinary.\n\nThe queued broker messages cannot be unpublished, so cancellation takes effect at the next\ntask boundary: a task already in flight runs to its end and settles into a run that is already\nterminal. Behind `scans.run` for the same reason clearing failures is — it changes what every\nother operator sees.\n\nSends a `POST` request to `/v1/admin/scans/{run_id}/cancel`\n\nArguments:\n- `run_id`: Scan run id\n```ignore\nlet response = client.cancel_scan()\n    .run_id(run_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Cancel a scan run\n\nStops one run and abandons the tasks it still had outstanding. A run that has already\nfinished is a no-op, answered as `0` runs cancelled, not a 404: two operators pressing the\nsame button is ordinary.\n\nThe queued broker messages cannot be unpublished, so cancellation takes effect at the next\ntask boundary: a task already in flight runs to its end and settles into a run that is already\nterminal. Behind `scans.run` for the same reason clearing failures is: it changes what every\nother operator sees.\n\nSends a `POST` request to `/v1/admin/scans/{run_id}/cancel`\n\nArguments:\n- `run_id`: Scan run id\n```ignore\nlet response = client.cancel_scan()\n    .run_id(run_id)\n    .send()\n    .await;\n```"]
     pub fn cancel_scan(&self) -> builder::CancelScan<'_> {
         builder::CancelScan::new(self)
     }
-    #[doc = "Explain a scan run\n\nWhere one run's time went: the summed breakdown, the per-stage split, and the tasks behind it\nordered so the expensive ones come first. This is the endpoint that answers \"why has this been\nrunning for twenty minutes\" — a run whose `pace_wait_ms` is most of its `busy_ms` is being\ncrawled exactly as politely as its provider is configured for, and nothing in the code will\nmake it faster.\n\nSends a `GET` request to `/v1/admin/scans/{run_id}/tasks`\n\nArguments:\n- `run_id`: Scan run id\n- `sort`: Ordering: `slowest` (default) or `recent`.\n```ignore\nlet response = client.scan_run_detail()\n    .run_id(run_id)\n    .sort(sort)\n    .send()\n    .await;\n```"]
+    #[doc = "Explain a scan run\n\nWhere one run's time went: the summed breakdown, the per-stage split, and the tasks behind it\nordered so the expensive ones come first. This is the endpoint that answers \"why has this been\nrunning for twenty minutes\": a run whose `pace_wait_ms` is most of its `busy_ms` is being\ncrawled exactly as politely as its provider is configured for, and nothing in the code will\nmake it faster.\n\nSends a `GET` request to `/v1/admin/scans/{run_id}/tasks`\n\nArguments:\n- `run_id`: Scan run id\n- `sort`: Ordering: `slowest` (default) or `recent`.\n```ignore\nlet response = client.scan_run_detail()\n    .run_id(run_id)\n    .sort(sort)\n    .send()\n    .await;\n```"]
     pub fn scan_run_detail(&self) -> builder::ScanRunDetail<'_> {
         builder::ScanRunDetail::new(self)
     }
-    #[doc = "Merge two series\n\nTransactional re-parent + title/tag/progress/sync union (`docs/ARCHITECTURE.md` §10).\n\nSends a `POST` request to `/v1/admin/series/merge`\n\n```ignore\nlet response = client.merge_series()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Merge two series\n\nTransactional re-parent and title/tag/progress/sync union (`docs/ARCHITECTURE.md` §10).\n\nSends a `POST` request to `/v1/admin/series/merge`\n\n```ignore\nlet response = client.merge_series()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn merge_series(&self) -> builder::MergeSeries<'_> {
         builder::MergeSeries::new(self)
     }
@@ -37932,7 +37932,7 @@ impl Client {
     pub fn system_stats(&self) -> builder::SystemStats<'_> {
         builder::SystemStats::new(self)
     }
-    #[doc = "Console live stream\n\nServer-Sent Events for the operator console: `stats` every 10 s, and `runs` plus `activity` —\nthe task-level state and current stage of the runs in flight — every 2 s.\n\nAuthenticated by a single-use `ticket` query parameter from `POST /v1/me/stream-ticket`,\nbecause `EventSource` cannot set an `Authorization` header. A ticket proves a session\nexisted thirty seconds ago and nothing more, so the permission check below happens *after*\nredemption and gates each event separately: a caller entitled to scan runs but not to system\ncounters receives `runs` and never `stats`. Emitting an event the caller could not fetch\nover its own GET would be a disclosure, and the access-matrix suites would not catch it —\nthey reconcile status codes, not event names.\n\nSends a `GET` request to `/v1/admin/stream`\n\nArguments:\n- `ticket`: Single-use ticket from `POST /v1/me/stream-ticket`, passed as a query parameter because\nthe browser `EventSource` API cannot attach an `Authorization` header (`docs/ARCHITECTURE.md` §17.4).\n\nWas the raw access token until SEC-8. A query string is recorded by `TraceLayer` as a\nspan field, preserved verbatim by the frontend proxy, written to every reverse-proxy\naccess log and kept in browser history — so the credential that rides here must be worth\nnothing by the time anyone reads it back. This one is spent by the request that carries\nit, expires in 30 seconds, and opens nothing but this stream.\n```ignore\nlet response = client.admin_stream()\n    .ticket(ticket)\n    .send()\n    .await;\n```"]
+    #[doc = "Console live stream\n\nServer-Sent Events for the operator console: `stats` every 10 s, and `runs` and `activity`\n(the task-level state and current stage of the runs in flight) every 2 s.\n\nAuthenticated by a single-use `ticket` query parameter from `POST /v1/me/stream-ticket`,\nbecause `EventSource` cannot set an `Authorization` header. A ticket proves a session\nexisted thirty seconds ago and nothing more, so the permission check below happens *after*\nredemption and gates each event separately: a caller entitled to scan runs but not to system\ncounters receives `runs` and never `stats`. Emitting an event the caller could not fetch\nover its own GET would be a disclosure, and the access-matrix suites would not catch it:\nthey reconcile status codes, not event names.\n\nSends a `GET` request to `/v1/admin/stream`\n\nArguments:\n- `ticket`: Single-use ticket from `POST /v1/me/stream-ticket`, passed as a query parameter because the\nbrowser `EventSource` API cannot attach an `Authorization` header (`docs/ARCHITECTURE.md`\n§17.4).\n\nA query string is recorded by `TraceLayer` as a span field, preserved verbatim by the\nfrontend proxy, written to every reverse-proxy access log and kept in browser history, so\nthe credential that rides here must be worth\nnothing by the time anyone reads it back. This one is spent by the request that carries\nit, expires in 30 seconds, and opens nothing but this stream.\n```ignore\nlet response = client.admin_stream()\n    .ticket(ticket)\n    .send()\n    .await;\n```"]
     pub fn admin_stream(&self) -> builder::AdminStream<'_> {
         builder::AdminStream::new(self)
     }
@@ -37940,19 +37940,19 @@ impl Client {
     pub fn list_sync_accounts(&self) -> builder::ListSyncAccounts<'_> {
         builder::ListSyncAccounts::new(self)
     }
-    #[doc = "Assign a remote entry to a local series\n\nHand-assign a fetched remote entry to a local series. It records the mapping, imports the\nentry onto the user's watchlist (status + progress from the stored snapshot) so the result\nshows immediately, and clears it from the unmatched queue — no fresh pull required.\n\nSends a `POST` request to `/v1/admin/sync/assign`\n\n```ignore\nlet response = client.assign_remote_entry()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Assign a remote entry to a local series\n\nHand-assigns a fetched remote entry to a local series. It records the mapping, imports the\nentry onto the user's watchlist (status and progress from the stored snapshot) so the result\nshows immediately, and clears it from the unmatched queue, with no fresh pull required.\n\nSends a `POST` request to `/v1/admin/sync/assign`\n\n```ignore\nlet response = client.assign_remote_entry()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn assign_remote_entry(&self) -> builder::AssignRemoteEntry<'_> {
         builder::AssignRemoteEntry::new(self)
     }
-    #[doc = "List sync decisions\n\nThe automatic-sync journal across every user, newest first. Covers what the per-user sync\nhistory never did: the remote entries that matched nothing, the series skipped as excluded,\nthe fields both sides already agreed on, and the scored title match behind every mapping.\n\nSends a `GET` request to `/v1/admin/sync/decisions`\n\nArguments:\n- `action`: Restrict to one action: `matched`, `unmatched`, `pull`, `push`, `conflict`, `noop`, …\n- `applied`: Only decisions that wrote something. A run is mostly considerations, so this is the\nfilter to reach for when asking \"what did the sync change?\".\n- `flagged`\n- `limit`\n- `offset`\n- `provider`\n- `run_id`: One reconciliation run.\n- `series_id`: A bare `Uuid` for the same reason as above.\n- `user_id`\n```ignore\nlet response = client.list_sync_decisions()\n    .action(action)\n    .applied(applied)\n    .flagged(flagged)\n    .limit(limit)\n    .offset(offset)\n    .provider(provider)\n    .run_id(run_id)\n    .series_id(series_id)\n    .user_id(user_id)\n    .send()\n    .await;\n```"]
+    #[doc = "List sync decisions\n\nThe automatic-sync journal across every user, newest first. Covers what the per-user sync\nhistory does not: the remote entries that matched nothing, the series skipped as excluded,\nthe fields both sides already agreed on, and the scored title match behind every mapping.\n\nSends a `GET` request to `/v1/admin/sync/decisions`\n\nArguments:\n- `action`: Restrict to one action: `matched`, `unmatched`, `pull`, `push`, `conflict`, `noop`, …\n- `applied`: Only decisions that wrote something. A run is mostly considerations, so this is the\nfilter to reach for when asking \"what did the sync change?\".\n- `flagged`\n- `limit`\n- `offset`\n- `provider`\n- `run_id`: One reconciliation run.\n- `series_id`: A bare `Uuid` for the same reason as above.\n- `user_id`\n```ignore\nlet response = client.list_sync_decisions()\n    .action(action)\n    .applied(applied)\n    .flagged(flagged)\n    .limit(limit)\n    .offset(offset)\n    .provider(provider)\n    .run_id(run_id)\n    .series_id(series_id)\n    .user_id(user_id)\n    .send()\n    .await;\n```"]
     pub fn list_sync_decisions(&self) -> builder::ListSyncDecisions<'_> {
         builder::ListSyncDecisions::new(self)
     }
-    #[doc = "Flag a sync decision as wrong\n\nRecord that an automatic sync action was the wrong call without undoing it, and — with\n`block_match` — refuse the title match it made so no later run can re-make it.\n\nSends a `POST` request to `/v1/admin/sync/decisions/{id}/flag`\n\nArguments:\n- `id`: The sync decision to flag\n- `body`\n```ignore\nlet response = client.flag_sync_decision()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Flag a sync decision as wrong\n\nRecords that an automatic sync action was the wrong call without undoing it, and, with\n`block_match`, refuses the title match it made so no later run can re-make it.\n\nSends a `POST` request to `/v1/admin/sync/decisions/{id}/flag`\n\nArguments:\n- `id`: The sync decision to flag\n- `body`\n```ignore\nlet response = client.flag_sync_decision()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn flag_sync_decision(&self) -> builder::FlagSyncDecision<'_> {
         builder::FlagSyncDecision::new(self)
     }
-    #[doc = "Revert a sync decision\n\nUndo one journalled sync action. Forwarded to the sync service, which is the tier holding the\nprovider token: taking back a *push* means writing the remote's previous values back, and only\nthat service can.\n\nNot every action has an inverse. A series the sync created on the remote cannot be removed\nfrom here — no provider in this system exposes a delete — and that case answers with an error\nsaying so rather than silently doing half of it.\n\nSends a `POST` request to `/v1/admin/sync/decisions/{id}/revert`\n\nArguments:\n- `id`: The sync decision to undo\n- `body`\n```ignore\nlet response = client.revert_sync_decision()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Revert a sync decision\n\nUndoes one journalled sync action. Forwarded to the sync service, which is the tier holding the\nprovider token: taking back a *push* means writing the remote's previous values back, and only\nthat service can.\n\nNot every action has an inverse. A series the sync created on the remote cannot be removed\nfrom here (no provider in this system exposes a delete), and that case answers with an error\nsaying so instead of silently doing half of it.\n\nSends a `POST` request to `/v1/admin/sync/decisions/{id}/revert`\n\nArguments:\n- `id`: The sync decision to undo\n- `body`\n```ignore\nlet response = client.revert_sync_decision()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn revert_sync_decision(&self) -> builder::RevertSyncDecision<'_> {
         builder::RevertSyncDecision::new(self)
     }
@@ -37964,11 +37964,11 @@ impl Client {
     pub fn list_sync_mappings(&self) -> builder::ListSyncMappings<'_> {
         builder::ListSyncMappings::new(self)
     }
-    #[doc = "Create or correct a series↔external mapping\n\nManually create or correct a series↔external mapping (design: admin Sync console tab).\nLets an operator fix a wrong external id or add a missing one by hand from the per-series\n\"manga info\" editor and the assign queue.\n\nSends a `POST` request to `/v1/admin/sync/mappings`\n\n```ignore\nlet response = client.upsert_sync_mapping()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Create or correct a series↔external mapping\n\nManually creates or corrects a series↔external mapping (design: admin Sync console tab).\nLets an operator fix a wrong external id or add a missing one by hand from the per-series\n\"manga info\" editor and the assign queue.\n\nSends a `POST` request to `/v1/admin/sync/mappings`\n\n```ignore\nlet response = client.upsert_sync_mapping()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn upsert_sync_mapping(&self) -> builder::UpsertSyncMapping<'_> {
         builder::UpsertSyncMapping::new(self)
     }
-    #[doc = "Clear a series↔external mapping\n\nRemove a bad series↔external mapping; the next pull/push (or targeted push) re-resolves it\nfrom scratch.\n\nSends a `POST` request to `/v1/admin/sync/mappings/clear`\n\n```ignore\nlet response = client.clear_sync_mapping()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Clear a series↔external mapping\n\nRemoves a bad series↔external mapping; the next pull/push (or targeted push) re-resolves it\nfrom scratch.\n\nSends a `POST` request to `/v1/admin/sync/mappings/clear`\n\n```ignore\nlet response = client.clear_sync_mapping()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn clear_sync_mapping(&self) -> builder::ClearSyncMapping<'_> {
         builder::ClearSyncMapping::new(self)
     }
@@ -37976,7 +37976,7 @@ impl Client {
     pub fn mapping_reverify_status(&self) -> builder::MappingReverifyStatus<'_> {
         builder::MappingReverifyStatus::new(self)
     }
-    #[doc = "Re-verify stored mappings\n\nRe-fetch every stored `AniList` mapping by id and refuse the ones whose record is not a\nlibrary format (a light novel) or whose titles do not identify the series. A refused\nmapping is removed and blocked, so reconciliation does not write it back. Runs in the\nbackground at `AniList`'s rate limit; follow it with the status endpoint.\n\nSends a `POST` request to `/v1/admin/sync/mappings/reverify`\n\n```ignore\nlet response = client.start_mapping_reverify()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Re-verify stored mappings\n\nRe-fetches every stored `AniList` mapping by id and refuses the ones whose record is not a\nlibrary format (a light novel) or whose titles do not identify the series. A refused\nmapping is removed and blocked, so reconciliation does not write it back. Runs in the\nbackground at `AniList`'s rate limit; follow it with the status endpoint.\n\nSends a `POST` request to `/v1/admin/sync/mappings/reverify`\n\n```ignore\nlet response = client.start_mapping_reverify()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn start_mapping_reverify(&self) -> builder::StartMappingReverify<'_> {
         builder::StartMappingReverify::new(self)
     }
@@ -37992,7 +37992,7 @@ impl Client {
     pub fn list_sync_mappings_for_series(&self) -> builder::ListSyncMappingsForSeries<'_> {
         builder::ListSyncMappingsForSeries::new(self)
     }
-    #[doc = "Suggest local matches for a remote entry\n\nRank local catalogue series as likely matches for a fetched remote entry, so the operator\ngets automatic suggestions instead of blind-searching. Uses the same trigram candidates as\nauto-matching but returns the *full* ranked list (with scores) rather than only confident\nones, so even weak-but-plausible matches are offered.\n\nSends a `GET` request to `/v1/admin/sync/suggest`\n\nArguments:\n- `content_type`: Optional local content-type token (`manga`/`manhwa`/…) to sharpen scoring.\n- `start_year`: Optional release year to sharpen scoring.\n- `title`: The remote entry's title to match against the local catalogue.\n```ignore\nlet response = client.list_suggestions()\n    .content_type(content_type)\n    .start_year(start_year)\n    .title(title)\n    .send()\n    .await;\n```"]
+    #[doc = "Suggest local matches for a remote entry\n\nRanks local catalogue series as likely matches for a fetched remote entry, so the operator gets\nautomatic suggestions instead of blind-searching. Uses the same trigram candidates as\nauto-matching but returns the *full* ranked list (with scores), not only confident ones, so even\nweak-but-plausible matches are offered.\n\nSends a `GET` request to `/v1/admin/sync/suggest`\n\nArguments:\n- `content_type`: Optional local content-type token (`manga`/`manhwa`/…) to sharpen scoring.\n- `start_year`: Optional release year to sharpen scoring.\n- `title`: The remote entry's title to match against the local catalogue.\n```ignore\nlet response = client.list_suggestions()\n    .content_type(content_type)\n    .start_year(start_year)\n    .title(title)\n    .send()\n    .await;\n```"]
     pub fn list_suggestions(&self) -> builder::ListSuggestions<'_> {
         builder::ListSuggestions::new(self)
     }
@@ -38016,7 +38016,7 @@ impl Client {
     pub fn get_user(&self) -> builder::GetUser<'_> {
         builder::GetUser::new(self)
     }
-    #[doc = "Erase a user\n\nDeletes the account and every row it owns, using the same cascade as self-service erasure\n(GDPR Art. 17) so there is one implementation rather than two that can diverge. The\naccount's audit records survive in pseudonymised form; see\n`tankovault_db::repo::privacy::erase_user`.\n\nIrreversible. Requires the username back, refuses the caller's own account, the deployment's\nsuper user, and the last active administrator.\n\nSends a `DELETE` request to `/v1/admin/users/{id}`\n\nArguments:\n- `id`: User id\n- `body`\n```ignore\nlet response = client.delete_user()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Erase a user\n\nDeletes the account and every row it owns, using the same cascade as self-service erasure\n(GDPR Art. 17) so there is one implementation, not two that can diverge. The\naccount's audit records survive in pseudonymised form; see\n`tankovault_db::repo::privacy::erase_user`.\n\nIrreversible. Requires the username back, refuses the caller's own account, the deployment's\nsuper user, and the last active administrator.\n\nSends a `DELETE` request to `/v1/admin/users/{id}`\n\nArguments:\n- `id`: User id\n- `body`\n```ignore\nlet response = client.delete_user()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn delete_user(&self) -> builder::DeleteUser<'_> {
         builder::DeleteUser::new(self)
     }
@@ -38028,11 +38028,11 @@ impl Client {
     pub fn set_user_permissions(&self) -> builder::SetUserPermissions<'_> {
         builder::SetUserPermissions::new(self)
     }
-    #[doc = "Revoke a user's sessions\n\nSigns the account out of every device. Does not change what the account may do — use\nsuspension for that; this only ends the sessions currently in flight.\n\nSends a `POST` request to `/v1/admin/users/{id}/revoke-sessions`\n\nArguments:\n- `id`: User id\n```ignore\nlet response = client.revoke_user_sessions()\n    .id(id)\n    .send()\n    .await;\n```"]
+    #[doc = "Revoke a user's sessions\n\nSigns the account out of every device. Does not change what the account may do (use\nsuspension for that); this only ends the sessions currently in flight.\n\nSends a `POST` request to `/v1/admin/users/{id}/revoke-sessions`\n\nArguments:\n- `id`: User id\n```ignore\nlet response = client.revoke_user_sessions()\n    .id(id)\n    .send()\n    .await;\n```"]
     pub fn revoke_user_sessions(&self) -> builder::RevokeUserSessions<'_> {
         builder::RevokeUserSessions::new(self)
     }
-    #[doc = "Suspend or reinstate a user\n\nA suspended account cannot sign in, refresh a session, or take any action — the check\nhappens before authorization, so it is not something a permission can override. Nothing the\naccount owns is deleted, so the change is fully reversible.\n\nRefuses the deployment's super user: suspending the owner cannot be undone by the owner.\n\nSends a `POST` request to `/v1/admin/users/{id}/status`\n\nArguments:\n- `id`: User id\n- `body`\n```ignore\nlet response = client.set_user_status()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Suspend or reinstate a user\n\nA suspended account cannot sign in, refresh a session, or take any action: the check\nhappens before authorization, so it is not something a permission can override. Nothing the\naccount owns is deleted, so the change is fully reversible.\n\nRefuses the deployment's super user: suspending the owner cannot be undone by the owner.\n\nSends a `POST` request to `/v1/admin/users/{id}/status`\n\nArguments:\n- `id`: User id\n- `body`\n```ignore\nlet response = client.set_user_status()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn set_user_status(&self) -> builder::SetUserStatus<'_> {
         builder::SetUserStatus::new(self)
     }
@@ -38040,7 +38040,7 @@ impl Client {
     pub fn verify_user_email(&self) -> builder::VerifyUserEmail<'_> {
         builder::VerifyUserEmail::new(self)
     }
-    #[doc = "Log in\n\nAuthenticates by email or username + password.\n\nAnswers one of two things, told apart by `status`. An account with **no** second factor gets\na session outright, as before. An account **with** one gets a challenge and no session at\nall — no access token, no refresh cookie — and finishes at `POST /v1/auth/mfa/verify`. That\nis the whole point: a caller who has the password but not the factor must come away with\nstrictly less than they arrived with.\n\nEvery outcome — success, unknown identifier, bad password, unverified address, second factor\nowed — is audited. An authentication log that only records successes cannot answer the\nquestion anyone actually asks it after an incident.\n\nSends a `POST` request to `/v1/auth/login`\n\n```ignore\nlet response = client.login()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Log in\n\nAuthenticates by email or username + password.\n\nAnswers one of two things, told apart by `status`. An account with **no** second factor gets\na session outright. An account **with** one gets a challenge and no session at all (no\naccess token, no refresh cookie) and finishes at `POST /v1/auth/mfa/verify`. That\nis the whole point: a caller who has the password but not the factor must come away with\nstrictly less than they arrived with.\n\nEvery outcome (success, unknown identifier, bad password, unverified address, second factor\nowed) is audited. An authentication log that only records successes cannot answer the\nquestion anyone actually asks it after an incident.\n\nSends a `POST` request to `/v1/auth/login`\n\n```ignore\nlet response = client.login()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn login(&self) -> builder::Login<'_> {
         builder::Login::new(self)
     }
@@ -38048,23 +38048,23 @@ impl Client {
     pub fn logout(&self) -> builder::Logout<'_> {
         builder::Logout::new(self)
     }
-    #[doc = "Begin a security-key challenge for a pending sign-in\n\nThe assertion options for the account behind `challenge_token`. Separate from\n`/v1/me/step-up/security-key/start` because there is no session yet — the caller is\nhalf-signed-in, and the handle is the only thing naming the account.\n\nSends a `POST` request to `/v1/auth/mfa/security-key/start`\n\n```ignore\nlet response = client.mfa_security_key_start()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Begin a security-key challenge for a pending sign-in\n\nThe assertion options for the account behind `challenge_token`. Separate from\n`/v1/me/step-up/security-key/start` because there is no session yet: the caller is\nhalf-signed-in, and the handle is the only thing naming the account.\n\nSends a `POST` request to `/v1/auth/mfa/security-key/start`\n\n```ignore\nlet response = client.mfa_security_key_start()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn mfa_security_key_start(&self) -> builder::MfaSecurityKeyStart<'_> {
         builder::MfaSecurityKeyStart::new(self)
     }
-    #[doc = "Finish signing in\n\nTrades the pending sign-in plus one factor for the session the first leg withheld.\n\nEvery outcome is audited, success and failure alike — an authentication log that records only\nsuccesses cannot answer the question anyone actually asks it after an incident.\n\nSends a `POST` request to `/v1/auth/mfa/verify`\n\n```ignore\nlet response = client.mfa_verify()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Finish signing in\n\nTrades the pending sign-in and one factor for the session the first leg withheld.\n\nEvery outcome is audited, success and failure alike: an authentication log that records only\nsuccesses cannot answer the question anyone actually asks it after an incident.\n\nSends a `POST` request to `/v1/auth/mfa/verify`\n\n```ignore\nlet response = client.mfa_verify()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn mfa_verify(&self) -> builder::MfaVerify<'_> {
         builder::MfaVerify::new(self)
     }
-    #[doc = "Complete a passkey sign-in\n\nVerifies the assertion against the challenge issued by\n[`passkey_login_start`](passkey_login_start) and, on success, issues an access token and a\nrotating refresh cookie — the same session a password sign-in produces.\n\nEvery outcome is audited under `auth.passkey_login`, matching\n[`login`](super::login::login): an authentication log that only records successes cannot\nanswer the question anyone asks it after an incident.\n\nSends a `POST` request to `/v1/auth/passkey/login/finish`\n\n```ignore\nlet response = client.passkey_login_finish()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Complete a passkey sign-in\n\nVerifies the assertion against the challenge issued by\n[`passkey_login_start`](passkey_login_start) and, on success, issues an access token and a\nrotating refresh cookie, the same session a password sign-in produces.\n\nEvery outcome is audited under `auth.passkey_login`, matching\n[`login`](super::login::login): an authentication log that only records successes cannot\nanswer the question anyone asks it after an incident.\n\nSends a `POST` request to `/v1/auth/passkey/login/finish`\n\n```ignore\nlet response = client.passkey_login_finish()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn passkey_login_finish(&self) -> builder::PasskeyLoginFinish<'_> {
         builder::PasskeyLoginFinish::new(self)
     }
-    #[doc = "Begin a passkey sign-in\n\nIssues a discoverable-credential challenge. Deliberately unauthenticated and deliberately\nidentifier-free: the account is learned from the response, not asked for here.\n\nThe response is safe to hand to any caller. It contains a random challenge and no\ninformation about which accounts exist — mint one for a nonexistent user and it is\nindistinguishable from any other, because no user was named.\n\nSends a `POST` request to `/v1/auth/passkey/login/start`\n\n```ignore\nlet response = client.passkey_login_start()\n    .send()\n    .await;\n```"]
+    #[doc = "Begin a passkey sign-in\n\nIssues a discoverable-credential challenge. Deliberately unauthenticated and deliberately\nidentifier-free: the account is learned from the response, not asked for here.\n\nThe response is safe to hand to any caller. It contains a random challenge and no\ninformation about which accounts exist: mint one for a nonexistent user and it is\nindistinguishable from any other, because no user was named.\n\nSends a `POST` request to `/v1/auth/passkey/login/start`\n\n```ignore\nlet response = client.passkey_login_start()\n    .send()\n    .await;\n```"]
     pub fn passkey_login_start(&self) -> builder::PasskeyLoginStart<'_> {
         builder::PasskeyLoginStart::new(self)
     }
-    #[doc = "Request a password-reset email\n\nAlways responds `202 Accepted`, whether or not the address is registered, so the\nendpoint can't be used to probe which emails have accounts. When the address does exist\nand email is configured, a single-use, time-limited reset link is sent.\n\n**Every** account-dependent step happens on a detached task (SEC-10). The uniform `202`\nwas previously defeated by timing: the known-address branch generated a token, hashed it\nand performed an `INSERT` — a write, so a WAL flush — before answering, while the unknown\nbranch returned straight after the lookup. That is a smaller gap than `login`'s two orders\nof magnitude but it is the same oracle, and it needs no credentials at all to read. With\nthe whole body spawned, this handler's only statement is the spawn, so there is no branch\nleft for a response time to disclose.\n\nThe return type is deliberately `StatusCode` rather than `ApiResult<StatusCode>`: the\nanti-enumeration property is \"this endpoint has exactly one answer\", and making that a\ntype rather than a convention means a later edit cannot reintroduce a second one.\n\nSends a `POST` request to `/v1/auth/password/forgot`\n\n```ignore\nlet response = client.forgot_password()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Request a password-reset email\n\nAlways responds `202 Accepted`, whether or not the address is registered, so the\nendpoint can't be used to probe which emails have accounts. When the address does exist\nand email is configured, a single-use, time-limited reset link is sent.\n\n**Every** account-dependent step happens on a detached task. Otherwise timing defeats the\nuniform `202`: the known-address branch generates a token, hashes it and performs an\n`INSERT` (a write, so a WAL flush) before answering, while the unknown branch returns\nstraight after the lookup. That is a smaller gap than `login`'s two orders of magnitude but\nit is the same oracle, and it needs no credentials at all to read. With the whole body\nspawned, this handler's only statement is the spawn, so there is no branch for a response\ntime to disclose.\n\nThe return type is deliberately `StatusCode`, not `ApiResult<StatusCode>`: the\nanti-enumeration property is \"this endpoint has exactly one answer\", and making that a\ntype instead of a convention means a later edit cannot introduce a second one.\n\nSends a `POST` request to `/v1/auth/password/forgot`\n\n```ignore\nlet response = client.forgot_password()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn forgot_password(&self) -> builder::ForgotPassword<'_> {
         builder::ForgotPassword::new(self)
     }
@@ -38072,19 +38072,19 @@ impl Client {
     pub fn reset_password(&self) -> builder::ResetPassword<'_> {
         builder::ResetPassword::new(self)
     }
-    #[doc = "Refresh the access token\n\nReads the `refresh_token` `HttpOnly` cookie, rotates it, and issues a fresh access token.\nPresenting a token that was already rotated (reuse) revokes the whole token family. The one\nexception is a token presented within a short grace window of its own rotation while its\nfamily is still live: that is an interrupted or raced rotation by a client that never took\ndelivery of the successor, and it is served — collapsing the family to the single token it\nissues — rather than counted as theft.\n\nSends a `POST` request to `/v1/auth/refresh`\n\n```ignore\nlet response = client.refresh()\n    .send()\n    .await;\n```"]
+    #[doc = "Refresh the access token\n\nReads the `refresh_token` `HttpOnly` cookie, rotates it, and issues a fresh access token.\nPresenting a token that was already rotated (reuse) revokes the whole token family. The one\nexception is a token presented within a short grace window of its own rotation while its\nfamily is still live: that is an interrupted or raced rotation by a client that never took\ndelivery of the successor, and it is served (collapsing the family to the single token it\nissues) instead of counted as theft.\n\nSends a `POST` request to `/v1/auth/refresh`\n\n```ignore\nlet response = client.refresh()\n    .send()\n    .await;\n```"]
     pub fn refresh(&self) -> builder::Refresh<'_> {
         builder::Refresh::new(self)
     }
-    #[doc = "Register a new account\n\nValidates the request and creates the user. When email delivery is configured the account\nis created **unconfirmed** and a confirmation link is emailed — the user must click it\nbefore they can sign in, and no session is issued. When email is not configured the\naccount is activated immediately and a session is issued exactly like [`login`], so\ndevelopment and SMTP-less self-hosting keep working.\n\nSends a `POST` request to `/v1/auth/register`\n\n```ignore\nlet response = client.register()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Register a new account\n\nValidates the request and creates the user. When email delivery is configured the account\nis created **unconfirmed** and a confirmation link is emailed; the user must click it\nbefore they can sign in, and no session is issued. When email is not configured the\naccount is activated immediately and a session is issued exactly like [`login`], so\ndevelopment and SMTP-less self-hosting keep working.\n\nSends a `POST` request to `/v1/auth/register`\n\n```ignore\nlet response = client.register()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn register(&self) -> builder::Register<'_> {
         builder::Register::new(self)
     }
-    #[doc = "Confirm an email address with a token\n\nConsumes a valid, unexpired, unused confirmation token, marks the address verified, and\nsigns the user in — issuing an access token and a rotating refresh cookie exactly like\n[`login`] so clicking the link lands the user in the app.\n\nSends a `POST` request to `/v1/auth/verify-email`\n\n```ignore\nlet response = client.verify_email()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Confirm an email address with a token\n\nConsumes a valid, unexpired, unused confirmation token, marks the address verified, and\nsigns the user in, issuing an access token and a rotating refresh cookie exactly like\n[`login`] so clicking the link lands the user in the app.\n\nSends a `POST` request to `/v1/auth/verify-email`\n\n```ignore\nlet response = client.verify_email()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn verify_email(&self) -> builder::VerifyEmail<'_> {
         builder::VerifyEmail::new(self)
     }
-    #[doc = "Resend the email-confirmation link\n\nAlways responds `202 Accepted`, whether or not the address is registered or already\nconfirmed, so the endpoint can't be used to probe which emails have accounts. A fresh\nlink is only sent when the address exists, is still unconfirmed, and email is configured.\n\nSpawned in full, for the reason `auth::password::forgot_password` explains at length\n(SEC-10). This endpoint's channel was in fact the wider of the two: the known-and-unconfirmed\nbranch performed the token `INSERT`, while both \"no such address\" *and* \"already confirmed\"\nreturned straight after the lookup — so the timing separated three states rather than two,\nand \"this address exists and has not been confirmed\" is the more useful answer of the pair.\nThe audit named `forgot_password`; this is the same defect in the sibling handler.\n\nSends a `POST` request to `/v1/auth/verify-email/resend`\n\n```ignore\nlet response = client.resend_verification()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Resend the email-confirmation link\n\nAlways responds `202 Accepted`, whether or not the address is registered or already\nconfirmed, so the endpoint can't be used to probe which emails have accounts. A fresh\nlink is only sent when the address exists, is still unconfirmed, and email is configured.\n\nSpawned in full, for the reason `auth::password::forgot_password` explains at length. This\nendpoint's channel is the wider of the two: the known-and-unconfirmed branch performs the\ntoken `INSERT`, while both \"no such address\" *and* \"already confirmed\" return straight after\nthe lookup, so the timing would separate three states, not two, and \"this address exists and\nhas not been confirmed\" is the more useful answer of the pair.\n\nSends a `POST` request to `/v1/auth/verify-email/resend`\n\n```ignore\nlet response = client.resend_verification()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn resend_verification(&self) -> builder::ResendVerification<'_> {
         builder::ResendVerification::new(self)
     }
@@ -38096,19 +38096,19 @@ impl Client {
     pub fn client_channel(&self) -> builder::ClientChannel<'_> {
         builder::ClientChannel::new(self)
     }
-    #[doc = "List the legal documents\n\nOnly what this deployment actually publishes. An operator who configures no Imprint gets no\nImprint entry, so the footer renders no dead link rather than one that 404s.\n\nSends a `GET` request to `/v1/legal`\n\nArguments:\n- `lang`: Language code (`en`, `de`). Falls back to `Accept-Language`, then to the first locale\nthe operator configured.\n```ignore\nlet response = client.legal_index()\n    .lang(lang)\n    .send()\n    .await;\n```"]
+    #[doc = "List the legal documents\n\nOnly what this deployment actually publishes. An operator who configures no Imprint gets no\nImprint entry, so the footer renders no dead link instead of one that 404s.\n\nSends a `GET` request to `/v1/legal`\n\nArguments:\n- `lang`: Language code (`en`, `de`). Falls back to `Accept-Language`, then to the first locale\nthe operator configured.\n```ignore\nlet response = client.legal_index()\n    .lang(lang)\n    .send()\n    .await;\n```"]
     pub fn legal_index(&self) -> builder::LegalIndex<'_> {
         builder::LegalIndex::new(self)
     }
-    #[doc = "Get one legal document\n\nThe Markdown as the operator wrote it. Rendering — and sanitising the result — is the\nclient's job: this is operator input, not developer input, so it is never trusted as HTML.\n\nSends a `GET` request to `/v1/legal/{slug}`\n\nArguments:\n- `slug`: Document slug\n- `lang`: Language code (`en`, `de`). Falls back to `Accept-Language`, then to the first locale\nthe operator configured.\n```ignore\nlet response = client.legal_document()\n    .slug(slug)\n    .lang(lang)\n    .send()\n    .await;\n```"]
+    #[doc = "Get one legal document\n\nThe Markdown as the operator wrote it. Rendering (and sanitising the result) is the\nclient's job: this is operator input, not developer input, so it is never trusted as HTML.\n\nSends a `GET` request to `/v1/legal/{slug}`\n\nArguments:\n- `slug`: Document slug\n- `lang`: Language code (`en`, `de`). Falls back to `Accept-Language`, then to the first locale\nthe operator configured.\n```ignore\nlet response = client.legal_document()\n    .slug(slug)\n    .lang(lang)\n    .send()\n    .await;\n```"]
     pub fn legal_document(&self) -> builder::LegalDocument<'_> {
         builder::LegalDocument::new(self)
     }
-    #[doc = "Delete my account\n\nErases the account and every row owned by it (GDPR Art. 17, right to erasure).\n\nAudit records of privileged actions the user performed are **retained in pseudonymised\nform**: the actor reference is nulled, so the record of what happened survives while\nthe link to a person does not. Documented on\n`tankovault_db::repo::privacy::erase_user`.\n\nAny of the user's own open data-subject requests are resolved as completed *before* the\ncascade, so the compliance record shows the erasure was carried out rather than leaving a\nrequest that appears abandoned.\n\nSends a `DELETE` request to `/v1/me`\n\n```ignore\nlet response = client.delete_account()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Delete my account\n\nErases the account and every row owned by it (GDPR Art. 17, right to erasure).\n\nAudit records of privileged actions the user performed are **retained in pseudonymised\nform**: the actor reference is nulled, so the record of what happened survives while\nthe link to a person does not. Documented on\n`tankovault_db::repo::privacy::erase_user`.\n\nAny of the user's own open data-subject requests are resolved as completed *before* the\ncascade, so the compliance record shows the erasure was carried out instead of leaving a\nrequest that appears abandoned.\n\nSends a `DELETE` request to `/v1/me`\n\n```ignore\nlet response = client.delete_account()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn delete_account(&self) -> builder::DeleteAccount<'_> {
         builder::DeleteAccount::new(self)
     }
-    #[doc = "Get my capabilities\n\nThe permissions the caller holds and the features this deployment has enabled — everything\na client needs to decide which navigation, panels and controls to render.\n\nNot cacheable: a permission revoked or a feature switched off must be reflected on the next\nfetch, and this is the endpoint a client polls to find out.\n\nThe grants as stored, not as they resolve: a super user's list is the single\n`system.superuser` token, and a client must treat that token the way the server does —\nas holding everything — rather than reading the array as exhaustive.\n\nSends a `GET` request to `/v1/me/capabilities`\n\n```ignore\nlet response = client.capabilities()\n    .send()\n    .await;\n```"]
+    #[doc = "Get my capabilities\n\nThe permissions the caller holds and the features this deployment has enabled: everything\na client needs to decide which navigation, panels and controls to render.\n\nNot cacheable: a permission revoked or a feature switched off must be reflected on the next\nfetch, and this is the endpoint a client polls to find out.\n\nThe grants as stored, not as they resolve: a super user's list is the single\n`system.superuser` token, and a client must treat that token the way the server does (as\nholding everything) instead of reading the array as exhaustive.\n\nSends a `GET` request to `/v1/me/capabilities`\n\n```ignore\nlet response = client.capabilities()\n    .send()\n    .await;\n```"]
     pub fn capabilities(&self) -> builder::Capabilities<'_> {
         builder::Capabilities::new(self)
     }
@@ -38116,7 +38116,7 @@ impl Client {
     pub fn content_prefs(&self) -> builder::ContentPrefs<'_> {
         builder::ContentPrefs::new(self)
     }
-    #[doc = "Replace content preferences\n\nStores the caller's adult-content decision. Turning it on requires `confirm_age` unless the\naccount has attested before; the attestation is recorded once and kept across later changes,\nso opting out and back in does not ask again.\n\nA `409` means the opt-in was refused for want of an attestation. The preference is unchanged\n— this endpoint does not partially apply.\n\nSends a `PUT` request to `/v1/me/content-prefs`\n\n```ignore\nlet response = client.put_content_prefs()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Replace content preferences\n\nStores the caller's adult-content decision. Turning it on requires `confirm_age` unless the\naccount has attested before; the attestation is recorded once and kept across later changes,\nso opting out and back in does not ask again.\n\nA `409` means the opt-in was refused for want of an attestation. The preference is\nunchanged: this endpoint does not partially apply.\n\nSends a `PUT` request to `/v1/me/content-prefs`\n\n```ignore\nlet response = client.put_content_prefs()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn put_content_prefs(&self) -> builder::PutContentPrefs<'_> {
         builder::PutContentPrefs::new(self)
     }
@@ -38124,11 +38124,11 @@ impl Client {
     pub fn continue_reading(&self) -> builder::ContinueReading<'_> {
         builder::ContinueReading::new(self)
     }
-    #[doc = "Export my data\n\nEverything the system holds about the authenticated user, as a single JSON document\n(GDPR Art. 20, right to data portability).\n\nServed as an attachment rather than an inline body: the response is the user's entire\npersonal record and a browser should offer to save it rather than render it.\nCredentials — password hash, session token hashes, third-party OAuth tokens, the TOTP\nsecret — are excluded; see `tankovault_db::repo::privacy::export_user_data`.\n\nBehind a step-up. This one response is every reading habit, every linked account and every\naddress the system holds about one person, assembled into a file designed to be saved and\nmailed. It is the single highest-value thing a stolen session can ask for.\n\nSends a `GET` request to `/v1/me/export`\n\n```ignore\nlet response = client.export_data()\n    .send()\n    .await;\n```"]
+    #[doc = "Export my data\n\nEverything the system holds about the authenticated user, as a single JSON document\n(GDPR Art. 20, right to data portability).\n\nServed as an attachment, not an inline body: the response is the user's entire personal record\nand a browser should offer to save it instead of rendering it. Credentials (password hash,\nsession token hashes, third-party OAuth tokens, the TOTP secret) are excluded; see\n`tankovault_db::repo::privacy::export_user_data`.\n\nBehind a step-up. This one response is every reading habit, every linked account and every\naddress the system holds about one person, assembled into a file designed to be saved and\nmailed. It is the single highest-value thing a stolen session can ask for.\n\nSends a `GET` request to `/v1/me/export`\n\n```ignore\nlet response = client.export_data()\n    .send()\n    .await;\n```"]
     pub fn export_data(&self) -> builder::ExportData<'_> {
         builder::ExportData::new(self)
     }
-    #[doc = "Get the unread-chapters feed\n\nUnread chapters across the watchlist (the reading dashboard), one entry per chapter: a series\ncarried by several sources — which is what a merge leaves behind — contributes each chapter\nonce, resolved to that series' preferred carrier.\n\nSends a `GET` request to `/v1/me/feed`\n\n```ignore\nlet response = client.feed()\n    .send()\n    .await;\n```"]
+    #[doc = "Get the unread-chapters feed\n\nUnread chapters across the watchlist (the reading dashboard), one entry per chapter: a series\ncarried by several sources (which is what a merge leaves behind) contributes each chapter\nonce, resolved to that series' preferred carrier.\n\nSends a `GET` request to `/v1/me/feed`\n\n```ignore\nlet response = client.feed()\n    .send()\n    .await;\n```"]
     pub fn feed(&self) -> builder::Feed<'_> {
         builder::Feed::new(self)
     }
@@ -38140,11 +38140,11 @@ impl Client {
     pub fn regenerate_recovery_codes(&self) -> builder::RegenerateRecoveryCodes<'_> {
         builder::RegenerateRecoveryCodes::new(self)
     }
-    #[doc = "Finish registering a security key\n\nVerifies the attestation and stores the credential as a second factor.\n\nWhen this is the caller's **first** factor, a recovery-code set is issued with it and\nreturned once — the same rule authenticator-app enrolment follows, for the same reason.\n\nSends a `POST` request to `/v1/me/mfa/security-keys/register/finish`\n\n```ignore\nlet response = client.security_key_register_finish()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Finish registering a security key\n\nVerifies the attestation and stores the credential as a second factor.\n\nWhen this is the caller's **first** factor, a recovery-code set is issued with it and\nreturned once: the same rule authenticator-app enrolment follows, for the same reason.\n\nSends a `POST` request to `/v1/me/mfa/security-keys/register/finish`\n\n```ignore\nlet response = client.security_key_register_finish()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn security_key_register_finish(&self) -> builder::SecurityKeyRegisterFinish<'_> {
         builder::SecurityKeyRegisterFinish::new(self)
     }
-    #[doc = "Begin registering a security key\n\nIssues a `WebAuthn` creation challenge hinted toward a cross-platform authenticator.\n\nThe exclusion list is every credential already registered to the account — passkeys\n**included**. That cross-purpose exclusion is the point: an authenticator that already holds\nthis account's passkey must not also become its second factor, or one touch would clear both\nlegs of a sign-in that is supposed to need two independent proofs.\n\nSends a `POST` request to `/v1/me/mfa/security-keys/register/start`\n\n```ignore\nlet response = client.security_key_register_start()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Begin registering a security key\n\nIssues a `WebAuthn` creation challenge hinted toward a cross-platform authenticator.\n\nThe exclusion list is every credential already registered to the account, passkeys\n**included**. That cross-purpose exclusion is the point: an authenticator that already holds\nthis account's passkey must not also become its second factor, or one touch would clear both\nlegs of a sign-in that is supposed to need two independent proofs.\n\nSends a `POST` request to `/v1/me/mfa/security-keys/register/start`\n\n```ignore\nlet response = client.security_key_register_start()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn security_key_register_start(&self) -> builder::SecurityKeyRegisterStart<'_> {
         builder::SecurityKeyRegisterStart::new(self)
     }
@@ -38156,7 +38156,7 @@ impl Client {
     pub fn rename_security_key(&self) -> builder::RenameSecurityKey<'_> {
         builder::RenameSecurityKey::new(self)
     }
-    #[doc = "Begin authenticator-app enrolment\n\nIssues a fresh shared secret and the `otpauth://` URI for it. Nothing is a usable factor\nuntil [`confirm_totp`] accepts a code generated from it.\n\nRestarting is allowed and simply replaces the pending secret — a user whose QR code never\nreached their phone asks again. Replacing a *confirmed* enrolment is refused; remove it\nfirst, which costs a step-up, so a stolen session cannot swap the owner's factor for its own.\n\nSends a `POST` request to `/v1/me/mfa/totp`\n\n```ignore\nlet response = client.begin_totp()\n    .send()\n    .await;\n```"]
+    #[doc = "Begin authenticator-app enrolment\n\nIssues a fresh shared secret and the `otpauth://` URI for it. Nothing is a usable factor\nuntil [`confirm_totp`] accepts a code generated from it.\n\nRestarting is allowed and simply replaces the pending secret: a user whose QR code never\nreached their phone asks again. Replacing a *confirmed* enrolment is refused; remove it\nfirst, which costs a step-up, so a stolen session cannot swap the owner's factor for its own.\n\nSends a `POST` request to `/v1/me/mfa/totp`\n\n```ignore\nlet response = client.begin_totp()\n    .send()\n    .await;\n```"]
     pub fn begin_totp(&self) -> builder::BeginTotp<'_> {
         builder::BeginTotp::new(self)
     }
@@ -38164,19 +38164,19 @@ impl Client {
     pub fn delete_totp(&self) -> builder::DeleteTotp<'_> {
         builder::DeleteTotp::new(self)
     }
-    #[doc = "Confirm authenticator-app enrolment\n\nAccepts a code generated from the pending secret, which is the only proof the user actually\nstored it. On success the enrolment becomes a live factor and a **recovery-code set is\nissued** — returned here and never again.\n\nThe codes come with the first factor rather than being a separate opt-in step, because a\nsecond factor without an escape hatch is a way to lose an account, and an escape hatch\nnobody clicked through to is the same thing.\n\nSends a `POST` request to `/v1/me/mfa/totp/confirm`\n\n```ignore\nlet response = client.confirm_totp()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Confirm authenticator-app enrolment\n\nAccepts a code generated from the pending secret, which is the only proof the user actually\nstored it. On success the enrolment becomes a live factor and a **recovery-code set is\nissued**, returned here and never again.\n\nThe codes come with the first factor, not as a separate opt-in step, because a\nsecond factor without an escape hatch is a way to lose an account, and an escape hatch\nnobody clicked through to is the same thing.\n\nSends a `POST` request to `/v1/me/mfa/totp/confirm`\n\n```ignore\nlet response = client.confirm_totp()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn confirm_totp(&self) -> builder::ConfirmTotp<'_> {
         builder::ConfirmTotp::new(self)
     }
-    #[doc = "Get notification preferences\n\nThe caller's effective notification preferences. A reader who has never saved any gets the\nproduct defaults, fully populated, rather than an empty object the client would have to know\nhow to fill in.\n\nSends a `GET` request to `/v1/me/notification-prefs`\n\n```ignore\nlet response = client.notification_prefs()\n    .send()\n    .await;\n```"]
+    #[doc = "Get notification preferences\n\nThe caller's effective notification preferences. A reader who has never saved any gets the\nproduct defaults, fully populated, instead of an empty object the client would have to know\nhow to fill in.\n\nSends a `GET` request to `/v1/me/notification-prefs`\n\n```ignore\nlet response = client.notification_prefs()\n    .send()\n    .await;\n```"]
     pub fn notification_prefs(&self) -> builder::NotificationPrefs<'_> {
         builder::NotificationPrefs::new(self)
     }
-    #[doc = "Replace notification preferences\n\nReplaces the caller's preferences wholesale. Every field defaults, so a partial body is a\nvalid document — the omitted fields come back to the product defaults, not to `false`.\n\nThe stored document used to be free-form and unvalidated, and nothing read it: the three\ntoggles it held had no effect on delivery at all. It is typed now precisely so that a\npreference which is saved is a preference the notifier honours.\n\nSends a `PUT` request to `/v1/me/notification-prefs`\n\n```ignore\nlet response = client.put_notification_prefs()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Replace notification preferences\n\nReplaces the caller's preferences wholesale. Every field defaults, so a partial body is a\nvalid document: the omitted fields come back to the product defaults, not to `false`.\n\nThe stored document is typed so that a preference which is saved is a preference the\nnotifier honours.\n\nSends a `PUT` request to `/v1/me/notification-prefs`\n\n```ignore\nlet response = client.put_notification_prefs()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn put_notification_prefs(&self) -> builder::PutNotificationPrefs<'_> {
         builder::PutNotificationPrefs::new(self)
     }
-    #[doc = "List notifications\n\nA page of the caller's inbox, newest first, with the filtered `total` and the inbox-wide\n`unread`.\n\nThe body is an object rather than the bare array it used to be, for the same reason\n`/v1/me/watchlist` is: neither count is derivable from a page of items, and the frontend —\nthe only consumer, and regenerated from this document — needs both to page and to keep the\nbell honest past the first page.\n\n`unread` and `kind` filter server-side. They exist because the client used to filter the one\npage it had loaded, so a tab could show nothing while matching rows sat on the next page.\n\nSends a `GET` request to `/v1/me/notifications`\n\nArguments:\n- `kind`: Return only rows of this `kind`.\n- `limit`: Page size, clamped to `1..=200`.\n- `offset`\n- `unread`: Return only unread rows.\n```ignore\nlet response = client.notifications()\n    .kind(kind)\n    .limit(limit)\n    .offset(offset)\n    .unread(unread)\n    .send()\n    .await;\n```"]
+    #[doc = "List notifications\n\nA page of the caller's inbox, newest first, with the filtered `total` and the inbox-wide\n`unread`.\n\nThe body is an object, not a bare array, for the same reason `/v1/me/watchlist` is: neither\ncount is derivable from a page of items, and the frontend (the only consumer, regenerated from\nthis document) needs both to page and to keep the bell honest past the first page.\n\n`unread` and `kind` filter server-side: a client filtering the one page it loaded can show\nan empty tab while matching rows sit on the next page.\n\nSends a `GET` request to `/v1/me/notifications`\n\nArguments:\n- `kind`: Returns only rows of this `kind`.\n- `limit`: Page size, clamped to `1..=200`.\n- `offset`\n- `unread`: Returns only unread rows.\n```ignore\nlet response = client.notifications()\n    .kind(kind)\n    .limit(limit)\n    .offset(offset)\n    .unread(unread)\n    .send()\n    .await;\n```"]
     pub fn notifications(&self) -> builder::Notifications<'_> {
         builder::Notifications::new(self)
     }
@@ -38192,23 +38192,23 @@ impl Client {
     pub fn passkey_register_finish(&self) -> builder::PasskeyRegisterFinish<'_> {
         builder::PasskeyRegisterFinish::new(self)
     }
-    #[doc = "Begin registering a passkey\n\nIssues a `WebAuthn` creation challenge for the caller's account.\n\n# Two gates, and why a passkey has the strictest one on the account\n\nA passkey is a **permanent** credential, and an access token is a 15-minute one. Anyone who\ngot hold of a token for those fifteen minutes — a shared browser, a proxy log, an XSS\npayload that survives one page — could otherwise register their own authenticator and keep\nthe account forever, surviving every password change and session revocation the real owner\nperforms. So installing a credential requires proving you hold one:\n\n1. **A second factor must already be enrolled.** Not merely presented — enrolled. A passkey\n   signs in on its own, with no second leg, so minting one is the act of creating a\n   single-factor bypass of everything below it. An account that has not yet decided to hold\n   a second factor has not earned the right to create something that outranks it.\n2. **A step-up.** The factor must be presented *now*, not merely exist.\n\nThis used to take `current_password` instead, which defended against the wrong attacker: the\nperson most likely to be holding a stolen token is the person who phished the password to\nopen it.\n\nCredentials already registered to the account — passkeys **and** security keys — are sent as\nthe exclusion list, so an authenticator that already holds one for this account says so at\nthe prompt instead of silently minting a second credential that would let one touch satisfy\nboth legs of a sign-in.\n\nSends a `POST` request to `/v1/me/passkeys/register/start`\n\n```ignore\nlet response = client.passkey_register_start()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Begin registering a passkey\n\nIssues a `WebAuthn` creation challenge for the caller's account.\n\n# Two gates, and why a passkey has the strictest one on the account\n\nA passkey is a **permanent** credential, and an access token is a 15-minute one. Anyone who\ngot hold of a token for those fifteen minutes (a shared browser, a proxy log, an XSS\npayload that survives one page) could otherwise register their own authenticator and keep\nthe account forever, surviving every password change and session revocation the real owner\nperforms. So installing a credential requires proving you hold one:\n\n1. **A second factor must already be enrolled.** Not merely presented: enrolled. A passkey\n   signs in on its own, with no second leg, so minting one is the act of creating a\n   single-factor bypass of everything below it. An account that has not yet decided to hold\n   a second factor has not earned the right to create something that outranks it.\n2. **A step-up.** The factor must be presented *now*, not merely exist.\n\nA `current_password` check would defend against the wrong attacker: the person most likely\nto be holding a stolen token is the person who phished the password to open it.\n\nCredentials already registered to the account (passkeys **and** security keys) are sent as\nthe exclusion list, so an authenticator that already holds one for this account says so at\nthe prompt instead of silently minting a second credential that would let one touch satisfy\nboth legs of a sign-in.\n\nSends a `POST` request to `/v1/me/passkeys/register/start`\n\n```ignore\nlet response = client.passkey_register_start()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn passkey_register_start(&self) -> builder::PasskeyRegisterStart<'_> {
         builder::PasskeyRegisterStart::new(self)
     }
-    #[doc = "Revoke a passkey\n\nDelete one of the caller's own passkeys. Scoped to ownership; a foreign or unknown id yields\n`404`.\n\nDeleting the last passkey is allowed, and is not a lockout: every account on this deployment\nhas a password, and passkeys are additive to it. Refusing would be the wrong protection\nanyway — the case a user most urgently needs this for is a device they have just lost.\n\nSends a `DELETE` request to `/v1/me/passkeys/{id}`\n\nArguments:\n- `id`: Passkey id\n```ignore\nlet response = client.delete_passkey()\n    .id(id)\n    .send()\n    .await;\n```"]
+    #[doc = "Revoke a passkey\n\nDeletes one of the caller's own passkeys. Scoped to ownership; a foreign or unknown id yields\n`404`.\n\nDeleting the last passkey is allowed, and is not a lockout: every account on this deployment\nhas a password, and passkeys are additive to it. Refusing would be the wrong protection\nanyway: the case a user most urgently needs this for is a device they have just lost.\n\nSends a `DELETE` request to `/v1/me/passkeys/{id}`\n\nArguments:\n- `id`: Passkey id\n```ignore\nlet response = client.delete_passkey()\n    .id(id)\n    .send()\n    .await;\n```"]
     pub fn delete_passkey(&self) -> builder::DeletePasskey<'_> {
         builder::DeletePasskey::new(self)
     }
-    #[doc = "Rename a passkey\n\nChange the label on one of the caller's own passkeys. Scoped to ownership; a foreign or\nunknown id yields `404`.\n\nSends a `PATCH` request to `/v1/me/passkeys/{id}`\n\nArguments:\n- `id`: Passkey id\n- `body`\n```ignore\nlet response = client.rename_passkey()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Rename a passkey\n\nChanges the label on one of the caller's own passkeys. Scoped to ownership; a foreign or\nunknown id yields `404`.\n\nSends a `PATCH` request to `/v1/me/passkeys/{id}`\n\nArguments:\n- `id`: Passkey id\n- `body`\n```ignore\nlet response = client.rename_passkey()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn rename_passkey(&self) -> builder::RenamePasskey<'_> {
         builder::RenamePasskey::new(self)
     }
-    #[doc = "Change the password\n\nChange the caller's password, behind a step-up.\n\nThere was previously **no authenticated path to a new password at all** — the only route\nwas the emailed reset link, so a signed-in user who simply wanted to rotate their password\nhad to go through an out-of-band channel, and a user whose email had been taken over could\nnot lock the attacker out.\n\nThe proof is a step-up, not the old password. Against the attacker this exists to stop —\nsomeone holding a stolen session, usually because they phished the password to open it —\nre-typing the password proved nothing. `crate::step_up` carries the argument in full.\n\nEvery session is revoked on success, including the caller's: a password change is exactly\nwhen you want the other device signed out, and leaving the caller's own session alive would\nmean special-casing the one session an attacker is most likely to be holding. Every step-up\ngrant goes with them, for the same reason — an elevation earned before the credential\nchanged must not outlive it.\n\nSends a `POST` request to `/v1/me/password`\n\n```ignore\nlet response = client.change_password()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Change the password\n\nChanges the caller's password, behind a step-up.\n\nThis is the authenticated path to a new password: without it the only route is the emailed\nreset link, so a signed-in user who wants to rotate their password needs an out-of-band\nchannel, and a user whose email has been taken over cannot lock the attacker out.\n\nThe proof is a step-up, not the old password. Against the attacker this exists to stop\n(someone holding a stolen session, usually because they phished the password to open it),\nre-typing the password proves nothing. `crate::step_up` carries the argument in full.\n\nEvery session is revoked on success, including the caller's: a password change is exactly\nwhen you want the other device signed out, and leaving the caller's own session alive would\nmean special-casing the one session an attacker is most likely to be holding. Every step-up\ngrant goes with them, for the same reason: an elevation earned before the credential\nchanged must not outlive it.\n\nSends a `POST` request to `/v1/me/password`\n\n```ignore\nlet response = client.change_password()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn change_password(&self) -> builder::ChangePassword<'_> {
         builder::ChangePassword::new(self)
     }
-    #[doc = "List my data-subject requests\n\nThe authenticated account's own requests, newest first, including resolved ones — the\nsubject is entitled to see how their requests were handled, not only which are outstanding.\n\nSends a `GET` request to `/v1/me/privacy/requests`\n\n```ignore\nlet response = client.list_privacy_requests()\n    .send()\n    .await;\n```"]
+    #[doc = "List my data-subject requests\n\nThe authenticated account's own requests, newest first, including resolved ones: the\nsubject is entitled to see how their requests were handled, not only which are outstanding.\n\nSends a `GET` request to `/v1/me/privacy/requests`\n\n```ignore\nlet response = client.list_privacy_requests()\n    .send()\n    .await;\n```"]
     pub fn list_privacy_requests(&self) -> builder::ListPrivacyRequests<'_> {
         builder::ListPrivacyRequests::new(self)
     }
@@ -38216,11 +38216,11 @@ impl Client {
     pub fn create_privacy_request(&self) -> builder::CreatePrivacyRequest<'_> {
         builder::CreatePrivacyRequest::new(self)
     }
-    #[doc = "Withdraw a data-subject request\n\nCancels one of the caller's own open requests. Scoped to ownership, so the id alone is not\nauthority to cancel someone else's, and refused once resolved — a request that has already\nbeen answered is a compliance record, not a draft.\n\nSends a `DELETE` request to `/v1/me/privacy/requests/{id}`\n\nArguments:\n- `id`: Request id\n```ignore\nlet response = client.cancel_privacy_request()\n    .id(id)\n    .send()\n    .await;\n```"]
+    #[doc = "Withdraw a data-subject request\n\nCancels one of the caller's own open requests. Scoped to ownership, so the id alone is not\nauthority to cancel someone else's, and refused once resolved: a request that has already\nbeen answered is a compliance record, not a draft.\n\nSends a `DELETE` request to `/v1/me/privacy/requests/{id}`\n\nArguments:\n- `id`: Request id\n```ignore\nlet response = client.cancel_privacy_request()\n    .id(id)\n    .send()\n    .await;\n```"]
     pub fn cancel_privacy_request(&self) -> builder::CancelPrivacyRequest<'_> {
         builder::CancelPrivacyRequest::new(self)
     }
-    #[doc = "Update the profile\n\nUpdate the caller's username and/or email (frontend §9.4). A duplicate email/username\nsurfaces as `409 Conflict`.\n\nRequires a **step-up**, because the address is the account's recovery channel. Without that\ncheck, anyone holding an access token for 15 minutes — a shared browser, a proxy log, a\nleaked SSE URL — could point the account at their own address, request a password reset to\nit, and take the account over; `reset_password` would then revoke the real owner's sessions\non the attacker's behalf.\n\nThis used to take `current_password`, which defended against the wrong attacker: the person\nmost likely to be holding a stolen token is the person who phished the password to get it.\n`crate::step_up` carries the full argument.\n\nOn a successful change the new address starts **unverified**\n(`repo::users::update_profile` clears `email_verified_at`), a confirmation link is sent to\nit, a warning is sent to the *old* address, and every session is revoked — matching what\n`reset_password` already does for the other credential.\n\nSends a `PATCH` request to `/v1/me/profile`\n\n```ignore\nlet response = client.patch_profile()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Update the profile\n\nUpdates the caller's username and/or email (frontend §9.4). A duplicate email/username\nsurfaces as `409 Conflict`.\n\nRequires a **step-up**, because the address is the account's recovery channel. Without that\ncheck, anyone holding an access token for 15 minutes (a shared browser, a proxy log, a\nleaked SSE URL) could point the account at their own address, request a password reset to\nit, and take the account over; `reset_password` would then revoke the real owner's sessions\non the attacker's behalf.\n\nA `current_password` check would defend against the wrong attacker: the person most likely\nto be holding a stolen token is the person who phished the password to get it.\n`crate::step_up` carries the full argument.\n\nOn a successful change the new address starts **unverified**\n(`repo::users::update_profile` clears `email_verified_at`), a confirmation link is sent to\nit, a warning is sent to the *old* address, and every session is revoked, matching what\n`reset_password` already does for the other credential.\n\nSends a `PATCH` request to `/v1/me/profile`\n\n```ignore\nlet response = client.patch_profile()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn patch_profile(&self) -> builder::PatchProfile<'_> {
         builder::PatchProfile::new(self)
     }
@@ -38232,11 +38232,11 @@ impl Client {
     pub fn get_progress(&self) -> builder::GetProgress<'_> {
         builder::GetProgress::new(self)
     }
-    #[doc = "Set the read-progress frontier\n\nSet the whole-chapter frontier outright (design v2 §A.6). A series the caller does not track\nyet is added to their watchlist.\n\nSends a `PUT` request to `/v1/me/progress/{series_id}`\n\nArguments:\n- `series_id`: Series id\n- `body`\n```ignore\nlet response = client.put_progress()\n    .series_id(series_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Set the read-progress frontier\n\nSets the whole-chapter frontier outright (design v2 §A.6). A series the caller does not track\nyet is added to their watchlist.\n\nSends a `PUT` request to `/v1/me/progress/{series_id}`\n\nArguments:\n- `series_id`: Series id\n- `body`\n```ignore\nlet response = client.put_progress()\n    .series_id(series_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn put_progress(&self) -> builder::PutProgress<'_> {
         builder::PutProgress::new(self)
     }
-    #[doc = "Mark a single chapter read or unread\n\nApply the §A.3 mark-read/mark-unread rule for one chapter number. Unmarking an older\n(non-frontier) chapter retreats progress past it too; the client must confirm with the user\nfirst in that case (design v2 §A.6).\n\nMarking read also adds a series the caller does not track yet to their watchlist; marking\nunread never removes it.\n\nSends a `PUT` request to `/v1/me/progress/{series_id}/chapters/{number}`\n\nArguments:\n- `series_id`: Series id\n- `number`: Chapter number\n- `body`\n```ignore\nlet response = client.put_chapter_progress()\n    .series_id(series_id)\n    .number(number)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Mark a single chapter read or unread\n\nApplies the §A.3 mark-read/mark-unread rule for one chapter number. Unmarking an older\n(non-frontier) chapter retreats progress past it too; the client must confirm with the user\nfirst in that case (design v2 §A.6).\n\nMarking read also adds a series the caller does not track yet to their watchlist; marking\nunread never removes it.\n\nSends a `PUT` request to `/v1/me/progress/{series_id}/chapters/{number}`\n\nArguments:\n- `series_id`: Series id\n- `number`: Chapter number\n- `body`\n```ignore\nlet response = client.put_chapter_progress()\n    .series_id(series_id)\n    .number(number)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn put_chapter_progress(&self) -> builder::PutChapterProgress<'_> {
         builder::PutChapterProgress::new(self)
     }
@@ -38256,11 +38256,11 @@ impl Client {
     pub fn sessions(&self) -> builder::Sessions<'_> {
         builder::Sessions::new(self)
     }
-    #[doc = "Revoke a session\n\nRevoke one of the caller's own sessions (frontend §9.4). Scoped to ownership; a\nforeign/unknown id yields `404`.\n\nBehind a step-up: the session list is where an owner *responds* to a compromise, and an\nattacker holding one of those sessions must not be able to use it to sign the owner out of\nthe others first.\n\nSends a `DELETE` request to `/v1/me/sessions/{id}`\n\nArguments:\n- `id`: Session id\n```ignore\nlet response = client.delete_session()\n    .id(id)\n    .send()\n    .await;\n```"]
+    #[doc = "Revoke a session\n\nRevokes one of the caller's own sessions (frontend §9.4). Scoped to ownership; a\nforeign/unknown id yields `404`.\n\nBehind a step-up: the session list is where an owner *responds* to a compromise, and an\nattacker holding one of those sessions must not be able to use it to sign the owner out of\nthe others first.\n\nSends a `DELETE` request to `/v1/me/sessions/{id}`\n\nArguments:\n- `id`: Session id\n```ignore\nlet response = client.delete_session()\n    .id(id)\n    .send()\n    .await;\n```"]
     pub fn delete_session(&self) -> builder::DeleteSession<'_> {
         builder::DeleteSession::new(self)
     }
-    #[doc = "Get source preferences\n\nThe caller's provider order. Providers that have since been disabled are dropped rather than\nreturned — they carry nothing a reader can open, so ranking them would be a preference that\ncan never apply.\n\nSends a `GET` request to `/v1/me/source-preferences`\n\n```ignore\nlet response = client.source_preferences()\n    .send()\n    .await;\n```"]
+    #[doc = "Get source preferences\n\nThe caller's provider order. Providers that have since been disabled are dropped, not\nreturned: they carry nothing a reader can open, so ranking them would be a preference that\ncan never apply.\n\nSends a `GET` request to `/v1/me/source-preferences`\n\n```ignore\nlet response = client.source_preferences()\n    .send()\n    .await;\n```"]
     pub fn source_preferences(&self) -> builder::SourcePreferences<'_> {
         builder::SourcePreferences::new(self)
     }
@@ -38272,7 +38272,7 @@ impl Client {
     pub fn stats(&self) -> builder::Stats<'_> {
         builder::Stats::new(self)
     }
-    #[doc = "Step up\n\nTrades a second factor for a short-lived elevation, presented in `X-Step-Up` on the\nsensitive request that demanded it.\n\n# The password branch\n\nAccepted only while the account has **no** factor enrolled. Such an account has no stronger\nproof to offer, and refusing it would leave the sensitive routes unreachable — including the\nenrolment that would fix that. The moment a factor exists the branch is refused here, and\ngrants it already issued stop being honoured (`crate::step_up`), so enrolling never leaves a\nweaker proof usable beside the stronger one.\n\nSends a `POST` request to `/v1/me/step-up`\n\n```ignore\nlet response = client.step_up()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Step up\n\nTrades a second factor for a short-lived elevation, presented in `X-Step-Up` on the\nsensitive request that demanded it.\n\n# The password branch\n\nAccepted only while the account has **no** factor enrolled. Such an account has no stronger\nproof to offer, and refusing it would leave the sensitive routes unreachable, including the\nenrolment that would fix that. The moment a factor exists the branch is refused here, and\ngrants it already issued stop being honoured (`crate::step_up`), so enrolling never leaves a\nweaker proof usable beside the stronger one.\n\nSends a `POST` request to `/v1/me/step-up`\n\n```ignore\nlet response = client.step_up()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn step_up(&self) -> builder::StepUp<'_> {
         builder::StepUp::new(self)
     }
@@ -38284,11 +38284,11 @@ impl Client {
     pub fn step_up_security_key_start(&self) -> builder::StepUpSecurityKeyStart<'_> {
         builder::StepUpSecurityKeyStart::new(self)
     }
-    #[doc = "Live notification stream\n\nServer-Sent Events of live per-user notifications (`docs/ARCHITECTURE.md` §14, §17.4). Authenticated by a\nsingle-use `ticket` query parameter obtained from `POST /v1/me/stream-ticket` — not the\n`Authorization` header, which `EventSource` cannot set. It subscribes to the ticket's own\nuser's core-NATS subject and relays each `UserNotification` as a `notification` SSE event,\nwith a periodic keep-alive comment so proxies keep the connection open. Ownership is\nimplicit: the subscription is scoped to the user the ticket was minted for.\n\nThe ticket is consumed here, so `EventSource`'s *automatic* reconnect cannot re-open this\nstream — the client has to mint a new ticket per attempt (`web/frontend/src/live.rs` does).\nThat is a feature rather than a cost: re-minting goes through `AuthUser`, so a suspension\napplied mid-stream is caught by the mint call as well as by the check below.\n\nSends a `GET` request to `/v1/me/stream`\n\nArguments:\n- `ticket`: Single-use ticket from `POST /v1/me/stream-ticket`, passed as a query parameter because\nthe browser `EventSource` API cannot attach an `Authorization` header (`docs/ARCHITECTURE.md` §17.4).\n\nWas the raw access token until SEC-8. A query string is recorded by `TraceLayer` as a\nspan field, preserved verbatim by the frontend proxy, written to every reverse-proxy\naccess log and kept in browser history — so the credential that rides here must be worth\nnothing by the time anyone reads it back. This one is spent by the request that carries\nit, expires in 30 seconds, and opens nothing but this stream.\n```ignore\nlet response = client.stream()\n    .ticket(ticket)\n    .send()\n    .await;\n```"]
+    #[doc = "Live notification stream\n\nServer-Sent Events of live per-user notifications (`docs/ARCHITECTURE.md` §14, §17.4).\nAuthenticated by a single-use `ticket` query parameter obtained from `POST\n/v1/me/stream-ticket`, not the `Authorization` header, which `EventSource` cannot set. It\nsubscribes to the ticket's own user's core-NATS subject and relays each `UserNotification` as a\n`notification` SSE event, with a periodic keep-alive comment so proxies keep the connection\nopen. Ownership is implicit: the subscription is scoped to the user the ticket was minted for.\n\nThe ticket is consumed here, so `EventSource`'s *automatic* reconnect cannot re-open this\nstream: the client has to mint a new ticket per attempt (`web/frontend/src/live.rs` does).\nThat is a feature, not a cost: re-minting goes through `AuthUser`, so a suspension\napplied mid-stream is caught by the mint call as well as by the check below.\n\nSends a `GET` request to `/v1/me/stream`\n\nArguments:\n- `ticket`: Single-use ticket from `POST /v1/me/stream-ticket`, passed as a query parameter because the\nbrowser `EventSource` API cannot attach an `Authorization` header (`docs/ARCHITECTURE.md`\n§17.4).\n\nA query string is recorded by `TraceLayer` as a span field, preserved verbatim by the\nfrontend proxy, written to every reverse-proxy access log and kept in browser history, so\nthe credential that rides here must be worth\nnothing by the time anyone reads it back. This one is spent by the request that carries\nit, expires in 30 seconds, and opens nothing but this stream.\n```ignore\nlet response = client.stream()\n    .ticket(ticket)\n    .send()\n    .await;\n```"]
     pub fn stream(&self) -> builder::Stream<'_> {
         builder::Stream::new(self)
     }
-    #[doc = "Mint a stream ticket\n\nExchanges the caller's `Bearer` session for a single-use, 30-second credential that\n`EventSource` can carry in a query string. Mint one per connection attempt — including each\nreconnect, since redeeming a ticket spends it.\n\nSends a `POST` request to `/v1/me/stream-ticket`\n\n```ignore\nlet response = client.stream_ticket()\n    .send()\n    .await;\n```"]
+    #[doc = "Mint a stream ticket\n\nExchanges the caller's `Bearer` session for a single-use, 30-second credential that\n`EventSource` can carry in a query string. Mint one per connection attempt, including each\nreconnect, since redeeming a ticket spends it.\n\nSends a `POST` request to `/v1/me/stream-ticket`\n\n```ignore\nlet response = client.stream_ticket()\n    .send()\n    .await;\n```"]
     pub fn stream_ticket(&self) -> builder::StreamTicket<'_> {
         builder::StreamTicket::new(self)
     }
@@ -38296,7 +38296,7 @@ impl Client {
     pub fn sync_conflicts(&self) -> builder::SyncConflicts<'_> {
         builder::SyncConflicts::new(self)
     }
-    #[doc = "Resolve a sync conflict\n\nApply the caller's chosen resolution (§B.6).\n\nSends a `POST` request to `/v1/me/sync/conflicts/{id}/resolve`\n\nArguments:\n- `id`: Conflict id\n- `body`\n```ignore\nlet response = client.sync_resolve_conflict()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Resolve a sync conflict\n\nApplies the caller's chosen resolution (§B.6).\n\nSends a `POST` request to `/v1/me/sync/conflicts/{id}/resolve`\n\nArguments:\n- `id`: Conflict id\n- `body`\n```ignore\nlet response = client.sync_resolve_conflict()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn sync_resolve_conflict(&self) -> builder::SyncResolveConflict<'_> {
         builder::SyncResolveConflict::new(self)
     }
@@ -38308,7 +38308,7 @@ impl Client {
     pub fn sync_providers(&self) -> builder::SyncProviders<'_> {
         builder::SyncProviders::new(self)
     }
-    #[doc = "Unlink a provider\n\nUnlink the caller's account at `provider`.\n\nSends a `DELETE` request to `/v1/me/sync/{provider}`\n\nArguments:\n- `provider`: Provider slug\n```ignore\nlet response = client.sync_disconnect()\n    .provider(provider)\n    .send()\n    .await;\n```"]
+    #[doc = "Unlink a provider\n\nUnlinks the caller's account at `provider`.\n\nSends a `DELETE` request to `/v1/me/sync/{provider}`\n\nArguments:\n- `provider`: Provider slug\n```ignore\nlet response = client.sync_disconnect()\n    .provider(provider)\n    .send()\n    .await;\n```"]
     pub fn sync_disconnect(&self) -> builder::SyncDisconnect<'_> {
         builder::SyncDisconnect::new(self)
     }
@@ -38320,11 +38320,11 @@ impl Client {
     pub fn sync_callback(&self) -> builder::SyncCallback<'_> {
         builder::SyncCallback::new(self)
     }
-    #[doc = "Pull a provider's list into local state\n\nImport `provider`'s list into the local watchlist.\n\nSends a `POST` request to `/v1/me/sync/{provider}/pull`\n\nArguments:\n- `provider`: Provider slug\n- `body`: Optional sync options; omitted body uses the service default\n```ignore\nlet response = client.sync_pull()\n    .provider(provider)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Pull a provider's list into local state\n\nImports `provider`'s list into the local watchlist.\n\nSends a `POST` request to `/v1/me/sync/{provider}/pull`\n\nArguments:\n- `provider`: Provider slug\n- `body`: Optional sync options; omitted body uses the service default\n```ignore\nlet response = client.sync_pull()\n    .provider(provider)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn sync_pull(&self) -> builder::SyncPull<'_> {
         builder::SyncPull::new(self)
     }
-    #[doc = "Push local state to a provider\n\nReflect local watchlist/progress to `provider` (bulk, full-reconciliation walk — see\n`spawn_targeted_push` for the fast per-series path used automatically when marking a\nchapter/series read).\n\nSends a `POST` request to `/v1/me/sync/{provider}/push`\n\nArguments:\n- `provider`: Provider slug\n- `body`: Optional sync options; omitted body uses the service default\n```ignore\nlet response = client.sync_push()\n    .provider(provider)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Push local state to a provider\n\nReflects local watchlist/progress to `provider` (bulk, full-reconciliation walk; see\n`spawn_targeted_push` for the fast per-series path used automatically when marking a\nchapter/series read).\n\nSends a `POST` request to `/v1/me/sync/{provider}/push`\n\nArguments:\n- `provider`: Provider slug\n- `body`: Optional sync options; omitted body uses the service default\n```ignore\nlet response = client.sync_push()\n    .provider(provider)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn sync_push(&self) -> builder::SyncPush<'_> {
         builder::SyncPush::new(self)
     }
@@ -38332,23 +38332,23 @@ impl Client {
     pub fn sync_settings(&self) -> builder::SyncSettings<'_> {
         builder::SyncSettings::new(self)
     }
-    #[doc = "Update automatic-sync settings\n\nUpdate automatic sync + conflict policy (design v2 §B.6).\n\nSends a `PATCH` request to `/v1/me/sync/{provider}/settings`\n\nArguments:\n- `provider`: Provider slug\n- `body`\n```ignore\nlet response = client.sync_settings_patch()\n    .provider(provider)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Update automatic-sync settings\n\nUpdates automatic sync and conflict policy (design v2 §B.6).\n\nSends a `PATCH` request to `/v1/me/sync/{provider}/settings`\n\nArguments:\n- `provider`: Provider slug\n- `body`\n```ignore\nlet response = client.sync_settings_patch()\n    .provider(provider)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn sync_settings_patch(&self) -> builder::SyncSettingsPatch<'_> {
         builder::SyncSettingsPatch::new(self)
     }
-    #[doc = "Get link status for a provider\n\nWhether the caller has a linked account at `provider`, plus the connected display name and\nmost recent sync time (Sync & integrations panel, header pill, Series tracking card).\nAlways `200`; an unlinked account reads `{ \"linked\": false }`. The body type is shared with\nthe sync service via `tankovault_contracts::sync`.\n\nSends a `GET` request to `/v1/me/sync/{provider}/status`\n\nArguments:\n- `provider`: Provider slug\n```ignore\nlet response = client.sync_status()\n    .provider(provider)\n    .send()\n    .await;\n```"]
+    #[doc = "Get link status for a provider\n\nWhether the caller has a linked account at `provider`, and the connected display name and\nmost recent sync time (Sync & integrations panel, header pill, Series tracking card).\nAlways `200`; an unlinked account reads `{ \"linked\": false }`. The body type is shared with\nthe sync service via `tankovault_contracts::sync`.\n\nSends a `GET` request to `/v1/me/sync/{provider}/status`\n\nArguments:\n- `provider`: Provider slug\n```ignore\nlet response = client.sync_status()\n    .provider(provider)\n    .send()\n    .await;\n```"]
     pub fn sync_status(&self) -> builder::SyncStatus<'_> {
         builder::SyncStatus::new(self)
     }
-    #[doc = "Get the reader's taste profile\n\nWhat the recommender believes about this reader, in their own terms. Exists so the profile is\ninspectable by the person it describes — and so a bad shelf can be diagnosed without anyone\nreading a watchlist.\n\nSends a `GET` request to `/v1/me/taste`\n\n```ignore\nlet response = client.taste()\n    .send()\n    .await;\n```"]
+    #[doc = "Get the reader's taste profile\n\nWhat the recommender believes about this reader, in their own terms. Exists so the profile is\ninspectable by the person it describes, and so a bad shelf can be diagnosed without anyone\nreading a watchlist.\n\nSends a `GET` request to `/v1/me/taste`\n\n```ignore\nlet response = client.taste()\n    .send()\n    .await;\n```"]
     pub fn taste(&self) -> builder::Taste<'_> {
         builder::Taste::new(self)
     }
-    #[doc = "Get the watchlist\n\nThe user's watchlist, filtered/sorted/paginated **server-side**, with the tab counts and\ngroup-header aggregates the list renders around it.\n\nThe body is an object rather than the bare `WatchlistItem[]` it used to be. That is a\nbreaking change, made deliberately: `total`, `counts` and `groups` cannot ride on response\nheaders without splitting one render into three requests, and the counts in particular are\n*not* derivable from `items` — they describe the tabs the caller is not looking at. The\nfrontend is the only consumer, and it is regenerated from this document.\n\nSends a `GET` request to `/v1/me/watchlist`\n\nArguments:\n- `cursor`: Opaque token from a previous response's `next_cursor`; supersedes `offset`.\n\nKeyset, not offset: the watchlist is live — a chapter discovered between two requests\nreorders the default sort — and an `OFFSET` page over a shifting list repeats one row\nand skips another. `offset` stays accepted for callers that refetch a whole prefix\nrather than appending, which is immune to the same problem by construction.\n- `limit`\n- `offset`\n- `order`: `asc | desc`. Defaults to whichever direction reads as \"most interesting first\" for the\nchosen sort — descending everywhere except `title`.\n- `q`: Free-text filter over title, alternative titles, tags and authors.\n- `released_since`: `24h | 7d | 30d`; absent (or `any`) means no recency constraint.\n\nA *window* token rather than an absolute instant, despite the name. The client would\nhave to compute the instant from its own clock, and a browser minutes ahead of the\nserver would filter out the very releases the \"last 24 hours\" option exists to show.\nThe server resolves the window against the clock the timestamps were written by.\n- `sort`: `released | unread | added | title | progress` (default `released`).\n- `source_issues`: Only rows whose preferred source is unhealthy.\n- `status`: `reading | planned | paused | completed | dropped`; absent means every status.\n- `unread_only`\n```ignore\nlet response = client.watchlist()\n    .cursor(cursor)\n    .limit(limit)\n    .offset(offset)\n    .order(order)\n    .q(q)\n    .released_since(released_since)\n    .sort(sort)\n    .source_issues(source_issues)\n    .status(status)\n    .unread_only(unread_only)\n    .send()\n    .await;\n```"]
+    #[doc = "Get the watchlist\n\nThe user's watchlist, filtered/sorted/paginated **server-side**, with the tab counts and\ngroup-header aggregates the list renders around it.\n\nThe body is an object, not a bare `WatchlistItem[]`: `total`, `counts` and `groups` cannot\nride on response headers without splitting one render into three requests, and the counts in\nparticular are *not* derivable from `items`, since they describe the tabs the caller is not\nlooking at.\n\nSends a `GET` request to `/v1/me/watchlist`\n\nArguments:\n- `cursor`: Opaque token from a previous response's `next_cursor`; supersedes `offset`.\n\nKeyset, not offset: the watchlist is live (a chapter discovered between two requests\nreorders the default sort), and an `OFFSET` page over a shifting list repeats one row\nand skips another. `offset` stays accepted for callers that refetch a whole prefix\ninstead of appending, which is immune to the same problem by construction.\n- `limit`\n- `offset`\n- `order`: `asc | desc`. Defaults to whichever direction reads as \"most interesting first\" for the\nchosen sort: descending everywhere except `title`.\n- `q`: Free-text filter over title, alternative titles, tags and authors.\n- `released_since`: `24h | 7d | 30d`; absent (or `any`) means no recency constraint.\n\nA *window* token, not an absolute instant, despite the name. The client would\nhave to compute the instant from its own clock, and a browser minutes ahead of the\nserver would filter out the very releases the \"last 24 hours\" option exists to show.\nThe server resolves the window against the clock the timestamps were written by.\n- `sort`: `released | unread | added | title | progress` (default `released`).\n- `source_issues`: Only rows whose preferred source is unhealthy.\n- `status`: `reading | planned | paused | completed | dropped`; absent means every status.\n- `unread_only`\n```ignore\nlet response = client.watchlist()\n    .cursor(cursor)\n    .limit(limit)\n    .offset(offset)\n    .order(order)\n    .q(q)\n    .released_since(released_since)\n    .sort(sort)\n    .source_issues(source_issues)\n    .status(status)\n    .unread_only(unread_only)\n    .send()\n    .await;\n```"]
     pub fn watchlist(&self) -> builder::Watchlist<'_> {
         builder::Watchlist::new(self)
     }
-    #[doc = "Change many watchlist entries at once\n\nApplies a status and/or notify change across a selection. Ids the caller does not track are\nreported in `skipped` rather than inserted — the selection was made from the list, so an id\nthat is not on it means the client is stale, and re-adding a title the user just removed is\nthe wrong repair.\n\nSends a `POST` request to `/v1/me/watchlist/bulk`\n\n```ignore\nlet response = client.bulk_update_watchlist()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Change many watchlist entries at once\n\nApplies a status and/or notify change across a selection. Ids the caller does not track are\nreported in `skipped`, not inserted: the selection was made from the list, so an id\nthat is not on it means the client is stale, and re-adding a title the user just removed is\nthe wrong repair.\n\nSends a `POST` request to `/v1/me/watchlist/bulk`\n\n```ignore\nlet response = client.bulk_update_watchlist()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn bulk_update_watchlist(&self) -> builder::BulkUpdateWatchlist<'_> {
         builder::BulkUpdateWatchlist::new(self)
     }
@@ -38356,11 +38356,11 @@ impl Client {
     pub fn bulk_remove_watchlist(&self) -> builder::BulkRemoveWatchlist<'_> {
         builder::BulkRemoveWatchlist::new(self)
     }
-    #[doc = "Export the watchlist\n\nThe reader's whole watchlist — statuses, notification and sync choices, read progress, pinned\nsources — as a versioned JSON document that identifies each series without database ids, so\nit imports into a wiped database or another deployment.\n\nNot behind a step-up: every value in it is already readable page by page through\n`GET /v1/me/watchlist`, so elevation here would inconvenience the owner without denying a\nstolen session anything.\n\nSends a `GET` request to `/v1/me/watchlist/export`\n\n```ignore\nlet response = client.export_watchlist()\n    .send()\n    .await;\n```"]
+    #[doc = "Export the watchlist\n\nThe reader's whole watchlist (statuses, notification and sync choices, read progress, pinned\nsources) as a versioned JSON document that identifies each series without database ids, so\nit imports into a wiped database or another deployment.\n\nNot behind a step-up: every value in it is already readable page by page through\n`GET /v1/me/watchlist`, so elevation here would inconvenience the owner without denying a\nstolen session anything.\n\nSends a `GET` request to `/v1/me/watchlist/export`\n\n```ignore\nlet response = client.export_watchlist()\n    .send()\n    .await;\n```"]
     pub fn export_watchlist(&self) -> builder::ExportWatchlist<'_> {
         builder::ExportWatchlist::new(self)
     }
-    #[doc = "Import a watchlist backup\n\nApplies a backup in one transaction. Entries whose series this deployment has not crawled yet\nare queued rather than dropped, and attach automatically once a scan brings the series in;\nsee `GET /v1/me/watchlist/import/pending`.\n\nBehind a step-up. `replace` removes every entry the backup lacks and `overwrite` rewrites\nevery one it names, so a single call can undo a reader's whole library.\n\nA body over 8 MiB is refused with `413` before it is read.\n\nSends a `POST` request to `/v1/me/watchlist/import`\n\nArguments:\n- `match_titles`: Also match an entry by a title naming exactly one series, when no provider page or\nexternal id matches. Off by default: two different works share titles often enough that\nthis is the reader's call.\n- `mode`: `merge` (default) | `overwrite` | `replace`.\n- `body`: A watchlist backup, any supported version\n```ignore\nlet response = client.import_watchlist()\n    .match_titles(match_titles)\n    .mode(mode)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Import a watchlist backup\n\nApplies a backup in one transaction. Entries whose series this deployment has not crawled yet\nare queued, not dropped, and attach automatically once a scan brings the series in;\nsee `GET /v1/me/watchlist/import/pending`.\n\nBehind a step-up. `replace` removes every entry the backup lacks and `overwrite` rewrites\nevery one it names, so a single call can undo a reader's whole library.\n\nA body over 8 MiB is refused with `413` before it is read.\n\nSends a `POST` request to `/v1/me/watchlist/import`\n\nArguments:\n- `match_titles`: Also match an entry by a title naming exactly one series, when no provider page or\nexternal id matches. Off by default: two different works share titles often enough that\nthis is the reader's call.\n- `mode`: `merge` (default) | `overwrite` | `replace`.\n- `body`: A watchlist backup, any supported version\n```ignore\nlet response = client.import_watchlist()\n    .match_titles(match_titles)\n    .mode(mode)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn import_watchlist(&self) -> builder::ImportWatchlist<'_> {
         builder::ImportWatchlist::new(self)
     }
@@ -38372,15 +38372,15 @@ impl Client {
     pub fn clear_watchlist_import_pending(&self) -> builder::ClearWatchlistImportPending<'_> {
         builder::ClearWatchlistImportPending::new(self)
     }
-    #[doc = "Preview a watchlist import\n\nEverything [`import_watchlist`] would do with this document — what it adds, changes, removes\nand queues — computed against the current watchlist and then rolled back. Nothing is written.\n\nA body over 8 MiB is refused with `413` before it is read.\n\nSends a `POST` request to `/v1/me/watchlist/import/preview`\n\nArguments:\n- `match_titles`: Also match an entry by a title naming exactly one series, when no provider page or\nexternal id matches. Off by default: two different works share titles often enough that\nthis is the reader's call.\n- `mode`: `merge` (default) | `overwrite` | `replace`.\n- `body`: A watchlist backup, any supported version\n```ignore\nlet response = client.preview_watchlist_import()\n    .match_titles(match_titles)\n    .mode(mode)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Preview a watchlist import\n\nEverything [`import_watchlist`] would do with this document (what it adds, changes, removes\nand queues), computed against the current watchlist and then rolled back. Nothing is written.\n\nA body over 8 MiB is refused with `413` before it is read.\n\nSends a `POST` request to `/v1/me/watchlist/import/preview`\n\nArguments:\n- `match_titles`: Also match an entry by a title naming exactly one series, when no provider page or\nexternal id matches. Off by default: two different works share titles often enough that\nthis is the reader's call.\n- `mode`: `merge` (default) | `overwrite` | `replace`.\n- `body`: A watchlist backup, any supported version\n```ignore\nlet response = client.preview_watchlist_import()\n    .match_titles(match_titles)\n    .mode(mode)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn preview_watchlist_import(&self) -> builder::PreviewWatchlistImport<'_> {
         builder::PreviewWatchlistImport::new(self)
     }
-    #[doc = "Get the watchlist summary\n\nPer-status counts and the unread total over the **whole** watchlist, under no filters.\n\nSeparate from the list's `counts`, which drop only the `status` arm and keep the search,\nrecency and source filters: those answer \"how many would this tab show given what I have\ntyped\", while this answers \"how big is my library\" for surfaces that carry no filter state\nof their own — a tab badge, the More sheet, a signed-in header.\n\nSends a `GET` request to `/v1/me/watchlist/summary`\n\n```ignore\nlet response = client.watchlist_summary()\n    .send()\n    .await;\n```"]
+    #[doc = "Get the watchlist summary\n\nPer-status counts and the unread total over the **whole** watchlist, under no filters.\n\nSeparate from the list's `counts`, which drop only the `status` arm and keep the search,\nrecency and source filters: those answer \"how many would this tab show given what I have\ntyped\", while this answers \"how big is my library\" for surfaces that carry no filter state\nof their own: a tab badge, the More sheet, a signed-in header.\n\nSends a `GET` request to `/v1/me/watchlist/summary`\n\n```ignore\nlet response = client.watchlist_summary()\n    .send()\n    .await;\n```"]
     pub fn watchlist_summary(&self) -> builder::WatchlistSummary<'_> {
         builder::WatchlistSummary::new(self)
     }
-    #[doc = "Get one watchlist entry\n\nThe same enriched row the list renders, for a single series. The Series page used to answer\nthis by fetching the entire watchlist and scanning it — which stopped working the moment the\nlist paginated.\n\nSends a `GET` request to `/v1/me/watchlist/{series_id}`\n\nArguments:\n- `series_id`: Series id\n```ignore\nlet response = client.get_watchlist_entry()\n    .series_id(series_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Get one watchlist entry\n\nThe same enriched row the list renders, for a single series, so the Series page does not\nhave to page through the whole watchlist to find it.\n\nSends a `GET` request to `/v1/me/watchlist/{series_id}`\n\nArguments:\n- `series_id`: Series id\n```ignore\nlet response = client.get_watchlist_entry()\n    .series_id(series_id)\n    .send()\n    .await;\n```"]
     pub fn get_watchlist_entry(&self) -> builder::GetWatchlistEntry<'_> {
         builder::GetWatchlistEntry::new(self)
     }
@@ -38392,15 +38392,15 @@ impl Client {
     pub fn delete_watchlist(&self) -> builder::DeleteWatchlist<'_> {
         builder::DeleteWatchlist::new(self)
     }
-    #[doc = "Pin a series' source\n\nOverrides the reader's global provider order for this one series. A separate resource from\nthe entry itself rather than a field on [`WatchlistUpsert`]: that body is a full replacement,\nso a reader toggling `notify` would silently drop their pin.\n\nSends a `PUT` request to `/v1/me/watchlist/{series_id}/source-pin`\n\nArguments:\n- `series_id`: Series id\n- `body`\n```ignore\nlet response = client.put_source_pin()\n    .series_id(series_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Pin a series' source\n\nOverrides the reader's global provider order for this one series. A separate resource from\nthe entry itself, not a field on [`WatchlistUpsert`]: that body is a full replacement,\nso a reader toggling `notify` would silently drop their pin.\n\nSends a `PUT` request to `/v1/me/watchlist/{series_id}/source-pin`\n\nArguments:\n- `series_id`: Series id\n- `body`\n```ignore\nlet response = client.put_source_pin()\n    .series_id(series_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn put_source_pin(&self) -> builder::PutSourcePin<'_> {
         builder::PutSourcePin::new(self)
     }
-    #[doc = "Clear a series' source pin\n\nIdempotent: clearing a pin that is not set is a `200`, because the reader's intent — \"stop\noverriding for this series\" — is satisfied either way.\n\nSends a `DELETE` request to `/v1/me/watchlist/{series_id}/source-pin`\n\nArguments:\n- `series_id`: Series id\n```ignore\nlet response = client.delete_source_pin()\n    .series_id(series_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Clear a series' source pin\n\nIdempotent: clearing a pin that is not set is a `200`, because the reader's intent (\"stop\noverriding for this series\") is satisfied either way.\n\nSends a `DELETE` request to `/v1/me/watchlist/{series_id}/source-pin`\n\nArguments:\n- `series_id`: Series id\n```ignore\nlet response = client.delete_source_pin()\n    .series_id(series_id)\n    .send()\n    .await;\n```"]
     pub fn delete_source_pin(&self) -> builder::DeleteSourcePin<'_> {
         builder::DeleteSourcePin::new(self)
     }
-    #[doc = "Set the per-series sync-exclusion flag\n\nSet the blanket per-series sync-exclusion flag (design v2 §A.5).\n\nThe flag lives on the watchlist entry, so the series must already be tracked. It answers\n`404` when it is not, rather than the `{\"ok\": true}` it used to answer unconditionally\n(OPS-2.2d): this decides whether the caller's reading progress is pushed to an external\nprovider, and a privacy setting that reports success without persisting is worse than one\nthat refuses.\n\nSends a `PUT` request to `/v1/me/watchlist/{series_id}/sync`\n\nArguments:\n- `series_id`: Series id\n- `body`\n```ignore\nlet response = client.put_sync_excluded()\n    .series_id(series_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Set the per-series sync-exclusion flag\n\nSets the blanket per-series sync-exclusion flag (design v2 §A.5).\n\nThe flag lives on the watchlist entry, so the series must already be tracked. It answers `404`\nwhen it is not, instead of `{\"ok\": true}`: this decides whether the caller's reading progress is\npushed to an external provider, and a privacy setting that reports success without persisting is\nworse than one that refuses.\n\nSends a `PUT` request to `/v1/me/watchlist/{series_id}/sync`\n\nArguments:\n- `series_id`: Series id\n- `body`\n```ignore\nlet response = client.put_sync_excluded()\n    .series_id(series_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn put_sync_excluded(&self) -> builder::PutSyncExcluded<'_> {
         builder::PutSyncExcluded::new(self)
     }
@@ -38408,11 +38408,11 @@ impl Client {
     pub fn put_sync_override(&self) -> builder::PutSyncOverride<'_> {
         builder::PutSyncOverride::new(self)
     }
-    #[doc = "List public providers\n\nProvider list + per-provider series counts, for the Discover provider filter (frontend\n§9.3). Operator-only fields (config/politeness/health) are not exposed; disabled providers\nare hidden.\n\nSends a `GET` request to `/v1/providers`\n\n```ignore\nlet response = client.providers()\n    .send()\n    .await;\n```"]
+    #[doc = "List public providers\n\nProvider list and per-provider series counts, for the Discover provider filter (frontend\n§9.3). Operator-only fields (config/politeness/health) are not exposed; disabled providers\nare hidden.\n\nSends a `GET` request to `/v1/providers`\n\n```ignore\nlet response = client.providers()\n    .send()\n    .await;\n```"]
     pub fn providers(&self) -> builder::Providers<'_> {
         builder::Providers::new(self)
     }
-    #[doc = "Browse the catalogue\n\nFilter/sort/paginate the public series list (frontend §9.1). The body remains a plain\n`SeriesSummary[]`; pagination metadata rides on the `X-Total-Count` (rows matching the\nfilter, omitted when `with_total=false`) and `X-Next-Cursor` (next page index, absent on the\nlast page) headers so existing array-decoding clients keep working.\n\nSends a `GET` request to `/v1/series`\n\nArguments:\n- `content_type`\n- `cursor`\n- `exclude_tag`: Tag slugs the series must not carry.\n- `limit`\n- `min_chapters`\n- `page`: Zero-based page index (alias: `cursor`).\n- `provider`: Provider slug the series must have a source on.\n- `query`\n- `sort`: `relevance | updated | title | chapters | sources | year | rating`. Defaults to\n`relevance` when `query` is supplied and `updated` when it is not; `relevance` without a\n`query` has nothing to rank and falls back to `updated`.\n- `status`\n- `tag`: Tag slugs the series must all carry.\n- `tracking`: `tracked` narrows the list to series the caller already has on their watchlist,\n`untracked` to the rest. Requires an authenticated caller — whose watchlist it is comes\nfrom the token, never from a parameter.\n- `with_total`: `false` skips counting the matching rows, and `X-Total-Count` is then omitted. For a client\nthat already holds the total for this filter, or never shows one. Defaults to `true`.\n- `year_max`\n- `year_min`\n```ignore\nlet response = client.list()\n    .content_type(content_type)\n    .cursor(cursor)\n    .exclude_tag(exclude_tag)\n    .limit(limit)\n    .min_chapters(min_chapters)\n    .page(page)\n    .provider(provider)\n    .query(query)\n    .sort(sort)\n    .status(status)\n    .tag(tag)\n    .tracking(tracking)\n    .with_total(with_total)\n    .year_max(year_max)\n    .year_min(year_min)\n    .send()\n    .await;\n```"]
+    #[doc = "Browse the catalogue\n\nFilter/sort/paginate the public series list (frontend §9.1). The body remains a plain\n`SeriesSummary[]`; pagination metadata rides on the `X-Total-Count` (rows matching the\nfilter, omitted when `with_total=false`) and `X-Next-Cursor` (next page index, absent on the\nlast page) headers so existing array-decoding clients keep working.\n\nSends a `GET` request to `/v1/series`\n\nArguments:\n- `content_type`\n- `cursor`\n- `exclude_tag`: Tag slugs the series must not carry.\n- `limit`\n- `min_chapters`\n- `page`: Zero-based page index (alias: `cursor`).\n- `provider`: Provider slug the series must have a source on.\n- `query`\n- `sort`: `relevance | updated | title | chapters | sources | year | rating`. Defaults to\n`relevance` when `query` is supplied and `updated` when it is not; `relevance` without a\n`query` has nothing to rank and falls back to `updated`.\n- `status`\n- `tag`: Tag slugs the series must all carry.\n- `tracking`: `tracked` narrows the list to series the caller already has on their watchlist,\n`untracked` to the rest. Requires an authenticated caller; whose watchlist it is comes\nfrom the token, never from a parameter.\n- `with_total`: `false` skips counting the matching rows, and `X-Total-Count` is then omitted. For a client\nthat already holds the total for this filter, or never shows one. Defaults to `true`.\n- `year_max`\n- `year_min`\n```ignore\nlet response = client.list()\n    .content_type(content_type)\n    .cursor(cursor)\n    .exclude_tag(exclude_tag)\n    .limit(limit)\n    .min_chapters(min_chapters)\n    .page(page)\n    .provider(provider)\n    .query(query)\n    .sort(sort)\n    .status(status)\n    .tag(tag)\n    .tracking(tracking)\n    .with_total(with_total)\n    .year_max(year_max)\n    .year_min(year_min)\n    .send()\n    .await;\n```"]
     pub fn list(&self) -> builder::List<'_> {
         builder::List::new(self)
     }
@@ -38428,11 +38428,11 @@ impl Client {
     pub fn chapters_by_source(&self) -> builder::ChaptersBySource<'_> {
         builder::ChaptersBySource::new(self)
     }
-    #[doc = "Get similar series\n\nContent-similar series, ranked by an approximate nearest-neighbour search over the\nrecommendation model's embedding space, with the features each match shares with the seed.\n\nFalls back to the catalogue's popularity prior when the seed has no embedding yet — a series\nadded since the last model build, or a deployment that has never run one. An empty array\nmeans the model has never been built at all.\n\nSends a `GET` request to `/v1/series/{id}/similar`\n\nArguments:\n- `id`: Series id\n- `limit`: How many to return (default 12, max 50)\n```ignore\nlet response = client.similar()\n    .id(id)\n    .limit(limit)\n    .send()\n    .await;\n```"]
+    #[doc = "Get similar series\n\nContent-similar series, ranked by an approximate nearest-neighbour search over the\nrecommendation model's embedding space, with the features each match shares with the seed.\n\nFalls back to the catalogue's popularity prior when the seed has no embedding yet: a series\nadded since the last model build, or a deployment that has never run one. An empty array\nmeans the model has never been built at all.\n\nSends a `GET` request to `/v1/series/{id}/similar`\n\nArguments:\n- `id`: Series id\n- `limit`: How many to return (default 12, max 50)\n```ignore\nlet response = client.similar()\n    .id(id)\n    .limit(limit)\n    .send()\n    .await;\n```"]
     pub fn similar(&self) -> builder::Similar<'_> {
         builder::Similar::new(self)
     }
-    #[doc = "List all tags\n\nEvery genre/tag in the catalogue with the number of series carrying it, commonest first\n(public).\n\nOrdered by usage rather than alphabetically because the facet panel that consumes this can\nonly show so many chips at once: an alphabetical list truncated to fit cuts off at whatever\nletter the cap lands on, hiding the genres most of the catalogue actually uses. The body is a\nsuperset of the previous `Tag[]`, so an older client reading only `id`/`slug`/`name` is\nunaffected — it just sees them in a different order.\n\nAdult-classifying genres are withheld from a caller the gate closes on. They are the terms\nthat put a series behind [`crate::content_gate`] in the first place, so offering them as\nfilter chips advertises a slice of the catalogue the same request cannot return a single row\nof — and names it in the reader's own filter panel, which is the part the gate exists to\navoid.\n\nSends a `GET` request to `/v1/tags`\n\n```ignore\nlet response = client.tags()\n    .send()\n    .await;\n```"]
+    #[doc = "List all tags\n\nEvery genre/tag in the catalogue with the number of series carrying it, commonest first\n(public).\n\nOrdered by usage, not alphabetically, because the facet panel can only show so many chips at\nonce: an alphabetical list truncated to fit cuts off at whatever letter the cap lands on,\nhiding the genres most of the catalogue uses. Each entry is a `Tag` plus `series_count`, so a\nclient reading only `id`/`slug`/`name` still decodes it.\n\nAdult-classifying genres are withheld from a caller the gate closes on. They are the terms\nthat put a series behind [`crate::content_gate`] in the first place, so offering them as\nfilter chips advertises a slice of the catalogue the same request cannot return a single row\nof, and names it in the reader's own filter panel, which is what the gate exists to avoid.\n\nSends a `GET` request to `/v1/tags`\n\n```ignore\nlet response = client.tags()\n    .send()\n    .await;\n```"]
     pub fn tags(&self) -> builder::Tags<'_> {
         builder::Tags::new(self)
     }

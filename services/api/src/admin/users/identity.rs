@@ -1,4 +1,4 @@
-//! Who the account *is*: its username, its email address, and whether that address is
+//! Owns who the account *is*: its username, its email address, and whether that address is
 //! confirmed.
 
 use crate::audit::audit;

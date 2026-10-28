@@ -1,4 +1,5 @@
-//! `GET /v1/series` paging headers: `X-Total-Count` on request, `X-Next-Cursor` from the page.
+//! Tests the `GET /v1/series` paging headers: `X-Total-Count` on request, `X-Next-Cursor` from the
+//! page.
 
 #![cfg(feature = "integration")]
 

@@ -1,7 +1,7 @@
-//! Two-factor authentication end to end: the sign-in second leg, enrolment, recovery codes, and
-//! the step-up prompt in front of every sensitive action.
+//! Tests two-factor authentication end to end: the sign-in second leg, enrolment, recovery codes,
+//! and the step-up prompt in front of every sensitive action.
 //!
-//! What is *not* here is `WebAuthn` signature verification — no authenticator exists in a test
+//! What is *not* here is `WebAuthn` signature verification: no authenticator exists in a test
 //! process, so that stays `webauthn-rs`'s job, exactly as `passkeys.rs` leaves it. Everything
 //! around it is here: which routes demand what, which refusals are distinguishable, and the
 //! handful of rules whose absence would be silent.
@@ -18,10 +18,10 @@ use tankovault_domain::{AccountStatus, UserId};
 /// The password every seeded account in this file is created with.
 const PASSWORD: &str = "correct horse battery staple";
 
-/// Register an account through the real sign-up route, so its password hash is one the login
+/// Registers an account through the real sign-up route, so its password hash is one the login
 /// path can actually verify.
 ///
-/// `TestDb::seed_user` writes a placeholder hash — fine for suites that only ever mint bearer
+/// `TestDb::seed_user` writes a placeholder hash: fine for suites that only ever mint bearer
 /// tokens directly, useless here, where the whole subject is what happens *during* a sign-in.
 async fn register(app: &TestApp, username: &str) -> UserId {
     let (status, _) = app
@@ -63,7 +63,7 @@ async fn login(app: &TestApp, username: &str) -> (StatusCode, Value) {
 /// A password alone stops being a session the moment a second factor exists.
 ///
 /// This is the whole feature in one test. The failure it guards against is not a wrong status
-/// code — it is `login` continuing to hand out a token *and* a challenge, which would look
+/// code; it is `login` continuing to hand out a token *and* a challenge, which would look
 /// correct in a browser (the user is signed in, and is also asked for a code) while leaving the
 /// password a complete credential for anyone who skipped the prompt.
 #[tokio::test]
@@ -71,7 +71,7 @@ async fn a_password_alone_yields_a_challenge_and_no_session_once_a_factor_is_enr
     let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
     let user = register(&app, "enrolled").await;
 
-    // Before enrolment: a session, as it always was.
+    // Before enrolment: a session.
     let (status, body) = login(&app, "enrolled").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["status"], "authenticated");
@@ -117,8 +117,8 @@ async fn a_password_alone_yields_a_challenge_and_no_session_once_a_factor_is_enr
 /// A six-digit code is only a second factor if the guesses are counted.
 ///
 /// The bug this pins is subtle and total: count failures in the handler's error path instead of
-/// in the statement that resolves the challenge, and any early return — a malformed body, a
-/// dropped connection, a client that simply does not read the response — skips the increment.
+/// in the statement that resolves the challenge, and any early return (a malformed body, a
+/// dropped connection, a client that simply does not read the response) skips the increment.
 /// The challenge then lives its full five minutes at a million guesses, which is not a second
 /// factor, and every functional test still passes because a *correct* code still works.
 #[tokio::test]
@@ -209,8 +209,8 @@ async fn a_challenge_is_consumed_by_the_sign_in_it_completes() {
 /// The asymmetry is deliberate and is exactly the kind a later reviewer "fixes" for
 /// consistency. A passkey is already phishing-resistant and user-verified; asking for a code
 /// after one teaches users that the strongest credential is the weakest. The endpoint is driven
-/// with an unsigned assertion here — it cannot verify, and that is fine: what is pinned is that
-/// it answers `401` rather than `200 mfa_required`, i.e. that it never grew a second leg.
+/// with an unsigned assertion here; it cannot verify, and that is fine: what is pinned is that
+/// it answers `401`, not `200 mfa_required`, i.e. that it never grew a second leg.
 #[tokio::test]
 async fn a_passkey_sign_in_is_never_asked_for_a_second_factor() {
     let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
@@ -243,7 +243,7 @@ async fn a_passkey_sign_in_is_never_asked_for_a_second_factor() {
         .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     // A problem document, not a `LoginResponse`. `status` is checked for the *string*
-    // `mfa_required` rather than for absence, because a problem body carries a numeric `status`
+    // `mfa_required`, not for absence, because a problem body carries a numeric `status`
     // of its own and asserting absence would pass for the wrong reason.
     assert!(
         body.get("mfa").is_none() && body["status"] != json!("mfa_required"),
@@ -258,7 +258,7 @@ async fn a_passkey_sign_in_is_never_asked_for_a_second_factor() {
 /// Enrolment is two steps, and only the second one produces a factor.
 ///
 /// The bug this pins: treating the row written by `POST /v1/me/mfa/totp` as an enrolment. The
-/// user has been *shown* a secret at that point and may have closed the tab before storing it —
+/// user has been *shown* a secret at that point and may have closed the tab before storing it;
 /// counting it would demand a code at the next sign-in that nobody on earth can produce.
 #[tokio::test]
 async fn an_unconfirmed_enrolment_is_not_a_factor() {
@@ -322,7 +322,7 @@ async fn confirming_the_first_factor_issues_recovery_codes() {
 /// A recovery code signs its owner in exactly once.
 ///
 /// The bug this pins: verifying a code without consuming it. A printed sheet would then be a
-/// permanent bypass of the second factor rather than an escape hatch — and the account page
+/// permanent bypass of the second factor instead of an escape hatch, and the account page
 /// would keep reporting ten codes remaining while one of them let anybody in forever.
 #[tokio::test]
 async fn a_recovery_code_signs_in_once_and_never_again() {
@@ -383,7 +383,7 @@ async fn a_recovery_code_signs_in_once_and_never_again() {
 ///
 /// The attack this closes: a stolen session silently re-enrolling TOTP against the attacker's
 /// own authenticator, which would replace the owner's factor and lock them out using the very
-/// mechanism meant to protect them. Removal is allowed, but only behind a step-up — which the
+/// mechanism meant to protect them. Removal is allowed, but only behind a step-up, which the
 /// attacker cannot satisfy, because satisfying it needs the factor they are trying to replace.
 #[tokio::test]
 async fn a_confirmed_enrolment_cannot_be_silently_replaced() {
@@ -415,7 +415,7 @@ async fn a_confirmed_enrolment_cannot_be_silently_replaced() {
     assert_eq!(unelevated, StatusCode::FORBIDDEN);
     assert_eq!(body["title"], "step_up_required");
 
-    // Removal, elevated, works — and takes the elevation with it.
+    // Removal, elevated, works, and takes the elevation with it.
     let elevated = app.step_up(user, StepUpMethod::Totp).await;
     let (removed, _) = app
         .call_elevated(
@@ -450,7 +450,7 @@ async fn a_confirmed_enrolment_cannot_be_silently_replaced() {
 /// A sensitive route refuses without an elevation and answers with it.
 ///
 /// `403` with a distinct problem type, not `401`: the caller *is* authenticated, and a `401`
-/// would drive the SPA's sign-out path — turning "confirm it is you" into "you have been logged
+/// would drive the SPA's sign-out path, turning "confirm it is you" into "you have been logged
 /// out". The type is asserted for that reason, not the status.
 #[tokio::test]
 async fn a_sensitive_route_demands_an_elevation_and_names_the_reason() {
@@ -481,7 +481,7 @@ async fn a_sensitive_route_demands_an_elevation_and_names_the_reason() {
     assert_eq!(status, StatusCode::OK);
 }
 
-/// The password fallback exists for accounts with no factor — and stops the moment one does.
+/// The password fallback exists for accounts with no factor, and stops the moment one does.
 ///
 /// Both halves matter. Without the fallback, an account that has never enrolled cannot reach
 /// the sensitive routes at all, *including the enrolment that would fix that*. Without the
@@ -563,9 +563,9 @@ async fn one_account_cannot_present_anothers_elevation() {
 /// An administrator without a second factor cannot administer anything.
 ///
 /// Enforced in `AuthUser::require_all`, which every privileged handler funnels through, so this
-/// holds for a route nobody thought about — including one added outside `/v1/admin`. The
+/// holds for a route nobody thought about, including one added outside `/v1/admin`. The
 /// refusal is distinguishable from "insufficient privileges" on purpose: the console routes the
-/// operator to enrolment rather than showing them a permissions error they cannot act on.
+/// operator to enrolment instead of showing them a permissions error they cannot act on.
 #[tokio::test]
 async fn a_privileged_account_must_hold_a_second_factor() {
     let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
@@ -597,7 +597,7 @@ async fn a_privileged_account_must_hold_a_second_factor() {
 /// A *mutating* capability additionally needs the factor presented; a read does not.
 ///
 /// The line is drawn by `Permission::is_mutating`, exhaustively. Prompting to load a dashboard
-/// would keep a standing elevation open all day, which is worse than not prompting at all — so
+/// would keep a standing elevation open all day, which is worse than not prompting at all, so
 /// reads are deliberately exempt, and this test is what stops that exemption widening.
 #[tokio::test]
 async fn an_administrative_write_needs_an_elevation_and_a_read_does_not() {
@@ -648,7 +648,7 @@ async fn an_administrative_write_needs_an_elevation_and_a_read_does_not() {
     );
 }
 
-/// Read a base32 secret out of an enrolment response.
+/// Reads a base32 secret out of an enrolment response.
 fn secret_from(body: &Value) -> secrecy::SecretSlice<u8> {
     let encoded = body["secret"].as_str().expect("an enrolment secret");
     secrecy::SecretSlice::from(

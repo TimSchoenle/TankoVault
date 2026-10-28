@@ -1,8 +1,8 @@
-//! Personalised recommendations: the taste profile, the shelf, and the reader's verdict on it.
+//! Owns personalised recommendations: the taste profile, the shelf, and the reader's verdict on
+//! it.
 //!
-//! Replaces the stub that scored every series in the catalogue against the reader's tags on every
-//! request. Retrieval is now four bounded paths — none of which grows with the catalogue — blended,
-//! diversified and explained.
+//! Retrieval is four bounded paths, none of which grows with the catalogue, blended, diversified
+//! and explained.
 
 use crate::content_gate::AdultVisibility;
 use crate::error::{ApiError, ApiResult};
@@ -21,8 +21,8 @@ use utoipa::{IntoParams, ToSchema};
 /// How many series shape the taste profile.
 ///
 /// Well above the seed count: the profile vector is a sum over all of them, and truncating it to
-/// the seeds would make the reader's *shape* identical to their twenty-five favourites rather
-/// than to their taste. Not a tunable — it is a property of what a profile *is*, not a value an
+/// the seeds would make the reader's *shape* identical to their twenty-five favourites instead
+/// of to their taste. Not a tunable: it is a property of what a profile *is*, not a value an
 /// operator trades anything against.
 const PROFILE_DEPTH: i64 = 200;
 
@@ -35,14 +35,14 @@ const OVERFETCH: i64 = 6;
 
 /// Candidates the prior path may contribute.
 ///
-/// Fixed rather than tunable: the prior is the backfill of last resort and its own weight already
+/// Fixed, not tunable: the prior is the backfill of last resort and its own weight already
 /// controls how much of the shelf it can take.
 const PRIOR_CANDIDATES: i64 = 60;
 
 /// Everything the request path reads out of the tuning registry, resolved once per request.
 ///
-/// One read of the snapshot rather than a lock acquisition per candidate, and — more usefully —
-/// one place to look for what a request was actually configured with.
+/// One read of the snapshot instead of a lock acquisition per candidate, and, more usefully, one
+/// place to look for what a request was actually configured with.
 struct ShelfTuning {
     affinity: AffinityParams,
     weights: PathWeights,
@@ -108,12 +108,10 @@ const CARD_TAGS: usize = 3;
 /// One recommended series and why it is here.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Recommendation {
-    /// `id`, not `series_id`, on purpose. This endpoint used to return `SeriesSummary`, and the
-    /// SPA ships as its own image — so a deployed client always outlives a server change by some
-    /// window. Keeping the name makes the new body a strict *superset* of the old one: every
-    /// field an older client reads is still there, and the additions are ignored. Renaming it
-    /// would have been a deserialization failure in somebody's browser, which is precisely what
-    /// the `openapi breaking changes` gate exists to catch.
+    /// `id`, not `series_id`, on purpose: the body is a strict *superset* of `SeriesSummary`,
+    /// and the SPA ships as its own image, so a deployed client outlives a server change by some
+    /// window. Renaming the field would be a deserialization failure in somebody's browser,
+    /// which is what the `openapi breaking changes` gate exists to catch.
     pub id: SeriesId,
     pub title: String,
     pub cover_url: Option<String>,
@@ -122,13 +120,13 @@ pub struct Recommendation {
     /// Distinct providers carrying this series. Retained for compatibility; not a figure any
     /// reader-facing surface shows.
     pub source_count: i64,
-    /// Distinct whole chapters across every source — the figure a reader deciding whether to
+    /// Distinct whole chapters across every source: the figure a reader deciding whether to
     /// start something actually wants, and the same one the series screen prints.
     pub chapter_count: i64,
     pub latest_chapter: Option<f64>,
     pub release_year: Option<i32>,
     /// The opening of the description, trimmed to a card's worth. See
-    /// [`crate::series::blurb`] — one wording, so a recommendation and a search hit describe a
+    /// [`crate::series::blurb`]: one wording, so a recommendation and a search hit describe a
     /// series identically.
     pub blurb: Option<String>,
     /// Tag names, alphabetically, capped for the card that shows them.
@@ -206,7 +204,7 @@ pub async fn recommendations(
     Ok(Json(shelf))
 }
 
-/// Record how a shelf was served.
+/// Records how a shelf was served.
 ///
 /// The size matters as much as the latency: a shelf that is fast because it is empty looks
 /// perfectly healthy in a duration histogram, and an unbuilt model produces exactly that.
@@ -220,9 +218,9 @@ fn record_serve(started: std::time::Instant, path: &'static str, size: usize) {
     metrics::histogram!(tankovault_service::metrics::names::RECSYS_SHELF_SIZE).record(size as f64);
 }
 
-/// Read the reader's profile, rebuilding it first if it is stale or has never existed.
+/// Reads the reader's profile, rebuilding it first if it is stale or has never existed.
 ///
-/// Lazily, on the read path, rather than on a background sweep: the profile is one indexed query
+/// Lazily, on the read path, not on a background sweep: the profile is one indexed query
 /// over the reader's own rows, and a sweep would do that work for every account that never signs
 /// in.
 async fn ensure_profile(
@@ -236,14 +234,14 @@ async fn ensure_profile(
         return Ok(profile);
     }
     rebuild_profile(state, user_id, tuning).await?;
-    // The row is written by the rebuild, so its absence here would be a lost write rather than an
-    // empty profile.
+    // The row is written by the rebuild, so its absence here would be a lost write, not an empty
+    // profile.
     recsys::read_profile(&state.pool, user_id)
         .await?
         .ok_or(ApiError::Internal)
 }
 
-/// Recompute affinity and the taste profile from the reader's watchlist and progress.
+/// Recomputes affinity and the taste profile from the reader's watchlist and progress.
 async fn rebuild_profile(state: &AppState, user_id: UserId, tuning: &ShelfTuning) -> ApiResult<()> {
     let interactions = recsys::reader_interactions(&state.pool, user_id).await?;
 
@@ -280,7 +278,7 @@ async fn rebuild_profile(state: &AppState, user_id: UserId, tuning: &ShelfTuning
 
     // Two accumulators, not one signed vector. A rejection is evidence about what to avoid, and
     // subtracting it from the positive vector would let a strongly disliked feature cancel a
-    // strongly liked one into indifference — which is not what either signal means.
+    // strongly liked one into indifference, which is not what either signal means.
     let mut positive: HashMap<i32, f32> = HashMap::new();
     let mut negative: HashMap<i32, f32> = HashMap::new();
     for (series_id, affinity) in &ranked {
@@ -327,7 +325,7 @@ async fn rebuild_profile(state: &AppState, user_id: UserId, tuning: &ShelfTuning
     Ok(())
 }
 
-/// Keep the strongest `limit` features, normalised, sorted by id.
+/// Keeps the strongest `limit` features, normalised, sorted by id.
 ///
 /// Sorted by *id* because every consumer merges two vectors on that assumption; sorting by weight
 /// would silently break `cosine` and `shared_features`.
@@ -342,7 +340,7 @@ fn top_features(accumulated: HashMap<i32, f32>, limit: usize) -> (Vec<i32>, Vec<
     (entries.into_iter().map(|(id, _)| id).collect(), weights)
 }
 
-/// Retrieve, blend, filter, diversify and explain.
+/// Retrieves, blends, filters, diversifies and explains.
 async fn compute_shelf(
     state: &AppState,
     user_id: UserId,
@@ -357,8 +355,8 @@ async fn compute_shelf(
     if candidates.is_empty() {
         return Ok(Vec::new());
     }
-    // The backstop on one request's cost, applied after retrieval rather than as a smaller limit
-    // on each path: the paths are bounded individually already, and shrinking one of them to fit
+    // The backstop on one request's cost, applied after retrieval, not as a smaller limit on
+    // each path: the paths are bounded individually already, and shrinking one of them to fit
     // a global budget would silently make that path's own knob mean something else.
     candidates.truncate(tuning.candidate_cap);
     rank_and_render(state, profile, candidates, limit, tuning).await
@@ -377,14 +375,14 @@ async fn retrieve(
     // One connection for the whole of retrieval, because `hnsw.ef_search` is a session setting.
     // Setting it "on the pool" would configure whichever connection served that one call and
     // leave every search below running on a different one at whatever the last request left
-    // behind — a recall knob that appears to work and does nothing.
+    // behind: a recall knob that appears to work and does nothing.
     let mut conn = state.pool.acquire().await.map_err(|error| {
         tracing::warn!(%error, "no connection available for recommendation retrieval");
         ApiError::Internal
     })?;
     recsys::set_ef_search(&mut conn, tuning.ef_search).await?;
 
-    // R1 — one ANN search per seed. The only path that can say "because you read X".
+    // R1: one ANN search per seed. The only path that can say "because you read X".
     for seed in profile.seeds.iter().take(tuning.seeds) {
         let Some(embedding) = recsys::embedding_of(&mut *conn, *seed).await? else {
             continue;
@@ -406,7 +404,7 @@ async fn retrieve(
         }));
     }
 
-    // R2 — one search from the reader's centre of gravity. Catches what no single seed is near.
+    // R2: one search from the reader's centre of gravity. Catches what no single seed is near.
     if let Some(embedding) = profile.embedding.as_deref() {
         let found = recsys::nearest_excluding(
             &mut *conn,
@@ -425,7 +423,7 @@ async fn retrieve(
         }));
     }
 
-    // R3 — exact overlap on the reader's rarest features. This is the path that sees authors,
+    // R3: exact overlap on the reader's rarest features. This is the path that sees authors,
     // which the embedding cannot represent at all.
     let rare = recsys::rarest_features(&mut *conn, &profile.feature_ids, 8).await?;
     if !rare.is_empty() && tuning.exact_candidates > 0 {
@@ -449,7 +447,7 @@ async fn retrieve(
         }));
     }
 
-    // R5 — the popularity prior. Cold start, and backfill when the rest come up short.
+    // R5: the popularity prior. Cold start, and backfill when the rest come up short.
     let suppressed_set: HashSet<SeriesId> = suppressed.iter().copied().collect();
     let popular = recsys::top_by_prior(&mut *conn, adult.include_adult(), PRIOR_CANDIDATES).await?;
     candidates.extend(
@@ -473,7 +471,7 @@ async fn retrieve(
     Ok(candidates)
 }
 
-/// Blend, penalise against what the reader avoids, diversify, and explain.
+/// Blends, penalises against what the reader avoids, diversifies, and explains.
 async fn rank_and_render(
     state: &AppState,
     profile: &recsys::TasteProfile,
@@ -550,10 +548,10 @@ async fn rank_and_render(
     render(state, profile, &chosen, &vector_of, &feature_of).await
 }
 
-/// Turn the chosen ranking into the response, with the explanation attached.
+/// Turns the chosen ranking into the response, with the explanation attached.
 ///
 /// Split from [`rank_and_render`] at the point where the shelf stops being decided and starts
-/// being described — which is also where the last database reads happen.
+/// being described, which is also where the last database reads happen.
 async fn render(
     state: &AppState,
     profile: &recsys::TasteProfile,
@@ -675,7 +673,7 @@ pub struct TasteView {
     pub avoids: Vec<TasteFeature>,
     /// Series the profile was built from, in affinity order.
     pub seeds: Vec<SeriesId>,
-    /// RFC 3339. A `String` rather than an `OffsetDateTime` because `utoipa` has no schema for
+    /// RFC 3339. A `String`, not an `OffsetDateTime`, because `utoipa` has no schema for
     /// the latter, and the published contract should name the format either way.
     #[schema(example = "2026-08-04T12:00:00Z")]
     pub built_at: String,
@@ -692,7 +690,7 @@ pub struct TasteFeature {
 /// Get the reader's taste profile
 ///
 /// What the recommender believes about this reader, in their own terms. Exists so the profile is
-/// inspectable by the person it describes — and so a bad shelf can be diagnosed without anyone
+/// inspectable by the person it describes, and so a bad shelf can be diagnosed without anyone
 /// reading a watchlist.
 #[utoipa::path(
     get,

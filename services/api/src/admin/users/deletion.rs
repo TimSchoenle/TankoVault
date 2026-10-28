@@ -1,5 +1,5 @@
-//! Administrative erasure — irreversible, unlike everything else in `users`, which is why it
-//! gets its own module: confirmation, the pre-emptive audit write, and both guards are all
+//! Owns administrative erasure: irreversible, unlike everything else in `users`, which is why
+//! it gets its own module: confirmation, the pre-emptive audit write, and both guards are all
 //! load-bearing here.
 
 use crate::audit::{audit, audit_failure};
@@ -21,7 +21,7 @@ pub struct DeleteUser {
     /// The target account's username, typed back as confirmation.
     pub confirm_username: String,
     /// Why the account is being erased. Recorded in the audit trail, which is the only place
-    /// the reason can survive — the account itself is about to be gone.
+    /// the reason can survive; the account itself is about to be gone.
     #[serde(default)]
     pub reason: Option<String>,
 }
@@ -29,7 +29,7 @@ pub struct DeleteUser {
 /// Erase a user
 ///
 /// Deletes the account and every row it owns, using the same cascade as self-service erasure
-/// (GDPR Art. 17) so there is one implementation rather than two that can diverge. The
+/// (GDPR Art. 17) so there is one implementation, not two that can diverge. The
 /// account's audit records survive in pseudonymised form; see
 /// `tankovault_db::repo::privacy::erase_user`.
 ///
@@ -77,8 +77,8 @@ pub async fn delete_user(
         ));
     }
 
-    // Recorded before deletion: afterward the username — the only human-readable handle on
-    // what was erased — is gone. The id is kept though it no longer identifies anything.
+    // Recorded before deletion: afterward the username (the only human-readable handle on
+    // what was erased) is gone. The id is kept though it no longer identifies anything.
     audit(
         &state,
         &user,

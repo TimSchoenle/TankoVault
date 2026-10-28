@@ -1,5 +1,5 @@
-//! Authentication handlers — register, login, refresh, logout, password-reset, email
-//! confirmation — and the field validators they share with other credential-writing paths.
+//! Owns the authentication handlers (register, login, refresh, logout, password-reset, email
+//! confirmation) and the field validators they share with other credential-writing paths.
 //! Re-exports are globs so `#[utoipa::path]`'s generated `__path_<handler>` items resolve
 //! alongside each handler in `lib.rs`'s route table.
 

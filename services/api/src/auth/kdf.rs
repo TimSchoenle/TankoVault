@@ -1,10 +1,10 @@
-//! Argon2id, run off the async runtime.
+//! Owns running Argon2id off the async runtime.
 //!
 //! One hash is tens of milliseconds of CPU over 19 MiB. Run inline it occupies a Tokio worker for
-//! that long, so a handful of concurrent sign-ins stalled every other request scheduled on those
-//! workers — SSE streams and `/ready` included. Each call here takes a permit from a pool sized to
+//! that long, so a handful of concurrent sign-ins stall every other request scheduled on those
+//! workers, SSE streams and `/ready` included. Each call here takes a permit from a pool sized to
 //! the CPU count and runs on the blocking pool; a caller that cannot get a permit within
-//! [`QUEUE_WAIT`] is answered `503` rather than queued without bound.
+//! [`QUEUE_WAIT`] is answered `503` instead of queued without bound.
 
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
@@ -23,10 +23,10 @@ static PERMITS: LazyLock<Arc<Semaphore>> = LazyLock::new(|| {
     Arc::new(Semaphore::new(cores))
 });
 
-/// Run `work` on the blocking pool under a hashing permit.
+/// Runs `work` on the blocking pool under a hashing permit.
 ///
 /// The permit moves into the closure, so a request cancelled mid-hash still holds its slot until
-/// the CPU work actually ends — otherwise abandoned hashes would oversubscribe the pool.
+/// the CPU work actually ends; otherwise abandoned hashes would oversubscribe the pool.
 async fn offload<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> ApiResult<T> {
     let permit = tokio::time::timeout(QUEUE_WAIT, Arc::clone(&PERMITS).acquire_owned())
         .await
@@ -46,8 +46,8 @@ async fn offload<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -
 /// [`tankovault_auth::hash_password`], off the runtime.
 ///
 /// # Errors
-/// [`ApiError::Unavailable`] when no slot frees up in time; [`ApiError::Internal`] when hashing
-/// fails.
+/// Returns [`ApiError::Unavailable`] when no slot frees up in time, and [`ApiError::Internal`]
+/// when hashing fails.
 pub(crate) async fn hash_password(
     password: &SecretString,
     pepper: &Arc<SecretSlice<u8>>,
@@ -62,7 +62,7 @@ pub(crate) async fn hash_password(
 /// [`tankovault_auth::verify_password`], off the runtime.
 ///
 /// # Errors
-/// As [`hash_password`]; an unparseable stored hash is [`ApiError::Internal`].
+/// Returns what [`hash_password`] returns; an unparseable stored hash is [`ApiError::Internal`].
 pub(crate) async fn verify_password(
     password: &SecretString,
     hash: &str,
@@ -85,7 +85,8 @@ mod tests {
 
     #[tokio::test]
     async fn an_offloaded_hash_verifies_and_rejects_like_the_inline_one() {
-        // Generated, not literal: the test needs no particular value and the scanner flags literals.
+        // Generated, not literal: the test needs no particular value and the scanner flags
+        // literals.
         let pepper = Arc::new(SecretSlice::from(uuid::Uuid::new_v4().as_bytes().to_vec()));
         let password = generate_handle();
         let hash = hash_password(&password, &pepper).await.expect("hashes");

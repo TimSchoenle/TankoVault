@@ -1,4 +1,4 @@
-//! Provider CRUD, re-solve, per-provider stats, and the dry-run adapter test.
+//! Owns provider CRUD, re-solve, per-provider stats, and the dry-run adapter test.
 
 use super::scans::TriggerScan;
 use crate::audit::audit;
@@ -55,8 +55,8 @@ pub struct CreateProvider {
 /// sent none.
 ///
 /// The two absences are different statements. No `emulation` key *inside* a block means "no
-/// emulation" — that is what lets the console turn impersonation off, since a generated client
-/// omits a `None` field rather than sending `null`. No block at all means the caller is not
+/// emulation": that is what lets the console turn impersonation off, since a generated client
+/// omits a `None` field instead of sending `null`. No block at all means the caller is not
 /// specifying a crawl budget, and the registration form deliberately never guesses one.
 fn resolve_politeness(sent: Option<PolitenessInput>) -> Politeness {
     sent.map_or_else(Politeness::default, Into::into)
@@ -66,8 +66,8 @@ fn empty_object() -> serde_json::Value {
     serde_json::json!({})
 }
 
-/// Refuses a `base_url` the crawler must not reach — persisted, so a limited role could
-/// otherwise point the scheduled scanner at internal hosts indefinitely, not just once.
+/// Refuses a `base_url` the crawler must not reach. The value is persisted, so a limited role
+/// could otherwise point the scheduled scanner at internal hosts indefinitely, not just once.
 async fn validate_base_url(base_url: &str) -> ApiResult<()> {
     tankovault_domain::ssrf::validate_and_resolve(base_url)
         .await
@@ -118,7 +118,7 @@ pub async fn create_provider(
             adapter: req.adapter,
             config: req.config,
             politeness: resolve_politeness(req.politeness),
-            // Never preset-managed, and that includes the console's "clone" — which posts here
+            // Never preset-managed, and that includes the console's "clone", which posts here
             // with another provider's fields. A copy is the operator's from the moment it
             // exists; only the installer creates rows that follow a preset.
             preset_slug: None,
@@ -151,7 +151,7 @@ pub struct UpdateProvider {
     pub politeness: Option<PolitenessInput>,
 }
 
-/// Refuse an edit to a preset-owned field of a provider that still follows its preset.
+/// Refuses an edit to a preset-owned field of a provider that still follows its preset.
 ///
 /// The next install run would overwrite the edit anyway, so accepting it would mean storing a
 /// change that quietly disappears at the next rollout. Politeness is deliberately absent from
@@ -159,10 +159,10 @@ pub struct UpdateProvider {
 /// meant to work without unlocking anything.
 ///
 /// The console disables these inputs, so reaching this is either a direct API call or a stale
-/// tab — both of which are exactly why the rule lives here and not only in the UI.
+/// tab, both of which are exactly why the rule lives here and not only in the UI.
 ///
 /// # Errors
-/// `Conflict` (409) naming the fields that would have been overwritten.
+/// Returns `Conflict` (409) naming the fields that would have been overwritten.
 fn refuse_locked_edit(before: &Provider, req: &UpdateProvider) -> ApiResult<()> {
     if !before.preset.as_ref().is_some_and(|link| link.locked) {
         return Ok(());
@@ -245,13 +245,13 @@ pub async fn update_provider(
 
 /// List the built-in provider presets
 ///
-/// The preset catalogue this deployment's last install run recorded — the definitions
+/// The preset catalogue this deployment's last install run recorded: the definitions
 /// `bootstrap seed-providers` installs from and re-applies to every locked provider. The
 /// console reads it to show what a managed provider would look like if it followed its preset
 /// again, and what crawl budget the preset suggests.
 ///
-/// An empty list means the install job has not run since the preset catalogue became data;
-/// `updated_at` on each entry is how old the recorded catalogue is.
+/// An empty list means the install job has not recorded the catalogue; `updated_at` on each
+/// entry is how old the recorded catalogue is.
 #[utoipa::path(
     get,
     path = "/v1/admin/providers/presets",
@@ -287,7 +287,7 @@ pub struct SetPresetLock {
 ///
 /// Locking is the reverse, and it is **destructive to local edits**: it re-applies the preset's
 /// `name`, `base_url`, `adapter` and `config` immediately, discarding whatever the operator had
-/// there. Politeness and health state are untouched in both directions — they are not
+/// there. Politeness and health state are untouched in both directions: they are not
 /// preset-owned.
 #[utoipa::path(
     post,
@@ -321,7 +321,7 @@ pub async fn set_provider_preset_lock(
 
     let provider = if req.locked {
         // Re-linking has to write the preset it is re-linking to, so a build that no longer
-        // ships it is refused rather than leaving the row locked to nothing.
+        // ships it is refused instead of leaving the row locked to nothing.
         let preset = tankovault_db::repo::provider_presets::get(&state.pool, &link.slug)
             .await?
             .ok_or_else(|| {
@@ -356,7 +356,7 @@ pub async fn set_provider_preset_lock(
 
 /// Delete a provider
 ///
-/// Remove a provider entirely. Its stored source links cascade-delete (FK `ON DELETE
+/// Removes a provider entirely. Its stored source links cascade-delete (FK `ON DELETE
 /// CASCADE`); scan-run history is retained with a nulled provider. Admin-only because it is
 /// destructive and irreversible.
 #[utoipa::path(
@@ -437,7 +437,7 @@ pub async fn set_provider_state(
 
 /// Re-solve a provider
 ///
-/// Re-solve/refresh a single provider by queuing a **fast** re-scan (frontend §9.5). This is
+/// Re-solves a single provider by queuing a **fast** re-scan (frontend §9.5). This is
 /// the console "Re-solve" action; it is proxied to the control-plane planner exactly like
 /// [`trigger_scan`], scoped to one provider.
 #[utoipa::path(
@@ -513,20 +513,20 @@ pub async fn provider_stats(
 
 #[derive(Debug, Deserialize, Serialize, Default, ToSchema)]
 pub struct TestAdapterRequest {
-    /// Optional relative series path to also fetch metadata + chapters for.
+    /// Optional relative series path to also fetch metadata and chapters for.
     #[serde(default)]
     pub path: Option<String>,
 }
 
 /// Dry-run a provider's adapter
 ///
-/// Dry-run the provider's adapter against the live site and return the parsed sample so
-/// operators can fix selectors without a deploy (`docs/ARCHITECTURE.md` §11/§17). Bounded by a timeout;
-/// SSRF and rate limits are enforced by the injected fetch stack.
+/// Dry-runs the provider's adapter against the live site and returns the parsed sample so
+/// operators can fix selectors without a deploy (`docs/ARCHITECTURE.md` §11/§17). Bounded by a
+/// timeout; SSRF and rate limits are enforced by the injected fetch stack.
 ///
 /// The body is deliberately free-form JSON: it is a diagnostic dump whose shape follows
 /// whatever the adapter managed to parse, and the console renders it verbatim. It is still
-/// declared as a schema so the generated client can return it, rather than forcing callers
+/// declared as a schema so the generated client can return it, instead of forcing callers
 /// onto an untyped side channel.
 #[utoipa::path(
     post,
@@ -554,7 +554,7 @@ pub async fn test_adapter(
 
     // Proxied to the worker: it already carries the fetch stack, so hosting the dry-run here
     // would double the TLS stack in the API image. Authorization and the audit record stay
-    // here — the worker trusts only the internal token, so this tier still answers "may this
+    // here: the worker trusts only the internal token, so this tier still answers "may this
     // operator dry-run this provider?".
     let Json(sample): Json<serde_json::Value> = state
         .worker
@@ -609,9 +609,9 @@ mod tests {
 
     /// Registering a provider without a politeness block must leave it emulating Chrome.
     ///
-    /// A block that carries no `emulation` key means "no emulation" — that is what makes the
+    /// A block that carries no `emulation` key means "no emulation": that is what makes the
     /// console's picker work at all, since a generated client omits a `None` field instead of
-    /// sending `null`. Reading an absent *block* the same way put every newly registered
+    /// sending `null`. The bug: reading an absent *block* the same way puts every newly registered
     /// provider behind an identifiable bot user-agent, which is what the sites this crawls sit
     /// behind Cloudflare to refuse. The registration form sends no block by design.
     #[test]
@@ -633,7 +633,7 @@ mod tests {
     ///
     /// The lock exists to keep *layout* in step with the build; a rate limit answers to the
     /// operator's own infrastructure and legal position. A guard that compared whole request
-    /// bodies would refuse this and push operators to unlock — permanently detaching the
+    /// bodies would refuse this and push operators to unlock, permanently detaching the
     /// provider from the fixes the lock exists to deliver, to change a number the lock was
     /// never about.
     #[test]

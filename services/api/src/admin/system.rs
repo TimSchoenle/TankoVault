@@ -1,4 +1,4 @@
-//! Read-only operator dashboard surfaces: the system overview and the audit trail.
+//! Owns the read-only operator dashboard surfaces: the system overview and the audit trail.
 
 use crate::error::ApiResult;
 use crate::openapi::ADMIN_OVERVIEW_TAG;
@@ -82,11 +82,12 @@ pub struct AuditQuery {
 
 /// Get the audit log
 ///
-/// A filtered, paged window on the privileged-action trail (`docs/ARCHITECTURE.md` §16), newest first.
+/// A filtered, paged window on the privileged-action trail (`docs/ARCHITECTURE.md` §16), newest
+/// first.
 ///
 /// Every filter is applied in SQL. The console cannot filter client-side here on purpose: it
 /// holds one page, and a filter over one page silently answers a different question than the
-/// one asked — the defect `users/activity.rs` shipped.
+/// one asked.
 #[utoipa::path(
     get,
     path = "/v1/admin/audit",
@@ -112,7 +113,7 @@ pub async fn audit_log(
         .clamp(1, MAX_AUDIT_PAGE);
     let filter = tankovault_db::repo::audit::AuditFilter {
         actor_id: q.actor.map(UserId::from),
-        // Blank is the absence of a filter, not a search for the empty string — a cleared
+        // Blank is the absence of a filter, not a search for the empty string: a cleared
         // filter box sends `?action=`.
         action: q.action.as_deref().map(str::trim).filter(|s| !s.is_empty()),
         target: q.target.as_deref().map(str::trim).filter(|s| !s.is_empty()),
@@ -132,7 +133,7 @@ pub async fn audit_log(
 /// List audit action keys
 ///
 /// Every distinct action present in the trail, for the console's filter picker. Read from the
-/// data rather than from a hand-written list, so a newly recorded action is filterable the
+/// data, not from a hand-written list, so a newly recorded action is filterable the
 /// first time it happens.
 #[utoipa::path(
     get,

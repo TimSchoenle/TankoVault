@@ -1,6 +1,6 @@
-//! What `accounts.required` does to a real request: that the layer is mounted, that it refuses
-//! an anonymous caller everywhere the wall applies, and — the leg that keeps it a feature rather
-//! than a lockout — that the surface a visitor needs in order to *get* an account stays open.
+//! Tests what `accounts.required` does to a real request: that the layer is mounted, that it
+//! refuses an anonymous caller everywhere the wall applies, and (the leg that keeps it a feature
+//! instead of a lockout) that the surface a visitor needs in order to *get* an account stays open.
 //!
 //! `services/api/src/account_gate.rs`'s unit tests cover the path predicate alone; only this
 //! suite proves the predicate is wired to anything.
@@ -22,7 +22,7 @@ async fn walled() -> TestApp {
     .await
 }
 
-/// With the wall up, a signed-out caller gets `401 account_required` — its own problem type,
+/// With the wall up, a signed-out caller gets `401 account_required`, its own problem type,
 /// not the generic `unauthorized`, because the client has to tell "this deployment is private"
 /// apart from "your session ended" to decide between its sign-in screen and an error.
 #[tokio::test]
@@ -54,7 +54,7 @@ async fn an_anonymous_caller_is_refused_with_its_own_problem_type() {
 
 /// The capability probe is refused *by the wall*, and that refusal is the discovery channel:
 /// it is how a signed-out client learns the deployment is private at all. Exempting it would
-/// answer `unauthorized` here — indistinguishable from an expired session — and the web app
+/// answer `unauthorized` here (indistinguishable from an expired session), and the web app
 /// would have no way to know it should show the sign-in screen instead of an error.
 #[tokio::test]
 async fn the_capability_probe_carries_the_answer_the_client_needs() {
@@ -68,7 +68,7 @@ async fn the_capability_probe_carries_the_answer_the_client_needs() {
 /// The way in stays open, or the flag is not a private deployment but a bricked one.
 ///
 /// The sign-in assertion is about *reaching the handler*: bad credentials answer `401
-/// unauthorized`, and that token — rather than `account_required` — is what proves the request
+/// unauthorized`, and that token (not `account_required`) is what proves the request
 /// got past the wall instead of being turned away at it.
 #[tokio::test]
 async fn the_surface_that_grants_an_account_stays_open() {

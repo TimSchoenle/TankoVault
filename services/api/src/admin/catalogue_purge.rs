@@ -1,11 +1,9 @@
-//! The catalogue purge: a detached run that empties the catalogue in batches, and the routes that
-//! start it, report on it and cancel it.
+//! Owns the catalogue purge: a detached run that empties the catalogue in batches, and the routes
+//! that start it, report on it and cancel it.
 //!
-//! The purge used to run inside the request, deleting batches until a deadline and answering
-//! with what was left, with the console calling it in a loop. A single batch on a large
-//! catalogue could outlast the 30 s request timeout on its own; the timeout then dropped the
-//! handler mid-transaction, the batch rolled back, and the purge could never make progress.
-//! Nothing in a request's lifetime bounds this run now. It commits one batch at a time, sizes
+//! The run is detached because a single batch on a large catalogue can outlast the 30 s request
+//! timeout on its own; inside a request the timeout drops the handler mid-transaction, the batch
+//! rolls back, and the purge never makes progress. It commits one batch at a time, sizes
 //! each batch to a time target, and records its progress in `catalogue_purge_state`, which the
 //! console polls.
 
@@ -53,7 +51,7 @@ pub enum PurgeScope {
 
 impl PurgeScope {
     /// The word the caller has to echo back. Its own token, so a request that names one scope
-    /// and confirms another is refused rather than resolved in either direction.
+    /// and confirms another is refused instead of resolved in either direction.
     const fn token(self) -> &'static str {
         self.target().as_str()
     }
@@ -301,7 +299,7 @@ struct Outcome {
     error: Option<String>,
 }
 
-/// Drive the purge to its end, release the claim, and audit the result.
+/// Drives the purge to its end, releases the claim, and audits the result.
 ///
 /// Every path out of [`drive`] reaches the release: a run that skipped it would hold the claim
 /// until its lease expired, with the console showing a purge that is doing nothing.
@@ -417,7 +415,7 @@ async fn batch(
 /// A batch size that halves when a batch overruns [`BATCH_TARGET`] and doubles when it finishes
 /// well inside it.
 ///
-/// Fixed sizes were wrong in both directions: what a series costs to delete depends on how much
+/// A fixed size is wrong in both directions: what a series costs to delete depends on how much
 /// hangs off it, which varies by orders of magnitude between deployments and between the old
 /// and new ends of one catalogue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1,5 +1,5 @@
-//! GDPR data-subject endpoints: portability (Art. 20), erasure (Art. 17), and a request queue
-//! for rights needing human judgment (rectification, restriction, objection).
+//! Owns the GDPR data-subject endpoints: portability (Art. 20), erasure (Art. 17), and a request
+//! queue for rights needing human judgment (rectification, restriction, objection).
 //!
 //! Every handler acts only on the authenticated principal; administrator-initiated actions go
 //! through [`crate::admin::privacy`] instead.
@@ -25,10 +25,10 @@ use uuid::Uuid;
 /// Everything the system holds about the authenticated user, as a single JSON document
 /// (GDPR Art. 20, right to data portability).
 ///
-/// Served as an attachment rather than an inline body: the response is the user's entire
-/// personal record and a browser should offer to save it rather than render it.
-/// Credentials — password hash, session token hashes, third-party OAuth tokens, the TOTP
-/// secret — are excluded; see `tankovault_db::repo::privacy::export_user_data`.
+/// Served as an attachment, not an inline body: the response is the user's entire personal record
+/// and a browser should offer to save it instead of rendering it. Credentials (password hash,
+/// session token hashes, third-party OAuth tokens, the TOTP secret) are excluded; see
+/// `tankovault_db::repo::privacy::export_user_data`.
 ///
 /// Behind a step-up. This one response is every reading habit, every linked account and every
 /// address the system holds about one person, assembled into a file designed to be saved and
@@ -74,7 +74,7 @@ pub async fn export_data(
 /// Confirmation payload for account deletion.
 ///
 /// Deletion is irreversible and cascades across every table, so it demands an explicit,
-/// unambiguous intent rather than being reachable by a stray `DELETE`. Requiring the
+/// unambiguous intent instead of being reachable by a stray `DELETE`. Requiring the
 /// username back defends against both a mis-clicked button and a forced cross-site
 /// navigation, neither of which can supply it.
 #[derive(Debug, Deserialize, ToSchema)]
@@ -93,7 +93,7 @@ pub struct DeleteAccount {
 /// `tankovault_db::repo::privacy::erase_user`.
 ///
 /// Any of the user's own open data-subject requests are resolved as completed *before* the
-/// cascade, so the compliance record shows the erasure was carried out rather than leaving a
+/// cascade, so the compliance record shows the erasure was carried out instead of leaving a
 /// request that appears abandoned.
 #[utoipa::path(
     delete,
@@ -112,8 +112,8 @@ pub struct DeleteAccount {
 pub async fn delete_account(
     State(state): State<AppState>,
     // Behind a step-up *in addition to* the typed-username confirmation below. The confirmation
-    // guards against a misclick; it is not a credential, and on its own it left the single
-    // irreversible action on the account reachable by anyone holding a token.
+    // guards against a misclick; it is not a credential, and on its own it would leave the
+    // single irreversible action on the account reachable by anyone holding a token.
     Elevated(user): Elevated,
     Json(req): Json<DeleteAccount>,
 ) -> ApiResult<StatusCode> {
@@ -153,7 +153,7 @@ pub async fn delete_account(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Resolve the user's open requests as completed, immediately before their account is erased.
+/// Resolves the user's open requests as completed, immediately before their account is erased.
 ///
 /// Best-effort: a failure here must not block someone exercising Art. 17.
 async fn close_open_requests_for_self_erasure(
@@ -186,8 +186,8 @@ async fn close_open_requests_for_self_erasure(
 pub struct NewPrivacyRequest {
     /// Which right is being exercised.
     pub kind: PrivacyRequestKind,
-    /// What the subject is asking for, in their words. Required for rectification — "correct
-    /// my data" without saying which field to what is not actionable — and optional otherwise.
+    /// What the subject is asking for, in their words. Required for rectification ("correct
+    /// my data" without saying which field to what is not actionable) and optional otherwise.
     #[serde(default)]
     pub detail: Option<String>,
 }
@@ -270,7 +270,7 @@ pub async fn create_privacy_request(
 
 /// List my data-subject requests
 ///
-/// The authenticated account's own requests, newest first, including resolved ones — the
+/// The authenticated account's own requests, newest first, including resolved ones: the
 /// subject is entitled to see how their requests were handled, not only which are outstanding.
 #[utoipa::path(
     get,
@@ -294,7 +294,7 @@ pub async fn list_privacy_requests(
 /// Withdraw a data-subject request
 ///
 /// Cancels one of the caller's own open requests. Scoped to ownership, so the id alone is not
-/// authority to cancel someone else's, and refused once resolved — a request that has already
+/// authority to cancel someone else's, and refused once resolved: a request that has already
 /// been answered is a compliance record, not a draft.
 #[utoipa::path(
     delete,

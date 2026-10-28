@@ -1,4 +1,4 @@
-//! Watchlist backup and restore: a portable export of the reader's watchlist, an import that
+//! Owns watchlist backup and restore: a portable export of the reader's watchlist, an import that
 //! merges one back in on any deployment, and the queue of imported entries still waiting for
 //! their series.
 //!
@@ -53,8 +53,8 @@ pub struct WatchlistImportParams {
 
 /// Export the watchlist
 ///
-/// The reader's whole watchlist — statuses, notification and sync choices, read progress, pinned
-/// sources — as a versioned JSON document that identifies each series without database ids, so
+/// The reader's whole watchlist (statuses, notification and sync choices, read progress, pinned
+/// sources) as a versioned JSON document that identifies each series without database ids, so
 /// it imports into a wiped database or another deployment.
 ///
 /// Not behind a step-up: every value in it is already readable page by page through
@@ -105,10 +105,10 @@ pub async fn export_watchlist(
     Ok(response)
 }
 
-/// Refuse anything but a JSON body before parsing it.
+/// Refuses anything but a JSON body before parsing it.
 ///
 /// The bearer token already rules out a cross-site form post, so this is about an honest client
-/// sending the wrong file: a `400` naming the problem, rather than a serde error about line 1.
+/// sending the wrong file: a `400` naming the problem, not a serde error about line 1.
 fn require_json(headers: &HeaderMap) -> ApiResult<()> {
     let is_json = headers
         .get(header::CONTENT_TYPE)
@@ -158,7 +158,7 @@ fn count(n: usize) -> i64 {
     i64::try_from(n).unwrap_or(i64::MAX)
 }
 
-/// Run an import, or its dry run, and describe the outcome.
+/// Runs an import, or its dry run, and describes the outcome.
 async fn run(
     state: &AppState,
     user: &AuthUser,
@@ -210,8 +210,8 @@ async fn run(
 
 /// Preview a watchlist import
 ///
-/// Everything [`import_watchlist`] would do with this document — what it adds, changes, removes
-/// and queues — computed against the current watchlist and then rolled back. Nothing is written.
+/// Everything [`import_watchlist`] would do with this document (what it adds, changes, removes
+/// and queues), computed against the current watchlist and then rolled back. Nothing is written.
 ///
 /// A body over 8 MiB is refused with `413` before it is read.
 #[utoipa::path(
@@ -253,7 +253,7 @@ pub async fn preview_watchlist_import(
 /// Import a watchlist backup
 ///
 /// Applies a backup in one transaction. Entries whose series this deployment has not crawled yet
-/// are queued rather than dropped, and attach automatically once a scan brings the series in;
+/// are queued, not dropped, and attach automatically once a scan brings the series in;
 /// see `GET /v1/me/watchlist/import/pending`.
 ///
 /// Behind a step-up. `replace` removes every entry the backup lacks and `overwrite` rewrites
@@ -314,7 +314,7 @@ pub async fn import_watchlist(
     .await;
 
     // Reflected to linked trackers the way a bulk edit is, up to the same bound; past it the
-    // periodic reconciliation carries the change, rather than one import queueing thousands of
+    // periodic reconciliation carries the change, instead of one import queueing thousands of
     // third-party writes behind each other.
     if touched.len() <= BULK_ID_LIMIT {
         spawn_targeted_push_many(&state, user.user_id, touched);

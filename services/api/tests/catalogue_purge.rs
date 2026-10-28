@@ -1,4 +1,4 @@
-//! The catalogue purge runs detached from the request that starts it.
+//! Tests that the catalogue purge runs detached from the request that starts it.
 //!
 //! # The bug this exists to stop
 //!
@@ -6,7 +6,7 @@
 //! console called it in a loop. On a large catalogue one batch alone outlasted the 30 s request
 //! timeout, the handler future was dropped mid-transaction, the batch rolled back, and "Wipe the
 //! entire catalogue" failed with a `408` on every attempt without removing a single row. The run
-//! now outlives the request: `POST` claims and answers at once, and the work is read back from
+//! outlives the request: `POST` claims and answers at once, and the work is read back from
 //! `GET`. A handler that awaited the run again would pass the access matrix and fail here.
 //!
 //! Gated behind the `integration` feature (requires Docker).

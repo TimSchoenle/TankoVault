@@ -12,6 +12,30 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [11.1.2](https://github.com/TimSchoenle/TankoVault/compare/v11.1.1...v11.1.2) (2026-10-29)
+
+
+### Bug Fixes
+
+* **api:** key the cached recommendation shelf on adult visibility ([#593](https://github.com/TimSchoenle/TankoVault/issues/593)) ([a81974b](https://github.com/TimSchoenle/TankoVault/commit/a81974bd88cdc092cc3a6cf8d5e4a48e90fdf552))
+* close five defects found in the comment review ([#575](https://github.com/TimSchoenle/TankoVault/issues/575)) ([524f186](https://github.com/TimSchoenle/TankoVault/commit/524f186a3316394ee10ef41bcf8dc3ab930a9432))
+
+
+### Code Refactoring
+
+* **frontend:** hold every component to 250 lines and split the long ones ([#571](https://github.com/TimSchoenle/TankoVault/issues/571)) ([2ad0d04](https://github.com/TimSchoenle/TankoVault/commit/2ad0d0416a3ffa8d87a8b184527ca8b04bf09a2e))
+* **workspace:** split the oversized modules and functions by concern ([#570](https://github.com/TimSchoenle/TankoVault/issues/570)) ([39fe3ea](https://github.com/TimSchoenle/TankoVault/commit/39fe3eaeef026ae6f5d21ab82fdbba1fb35a21ce))
+
+
+### Dependencies
+
+* **deps:** update rust crate arc-swap to v1.9.3 ([#543](https://github.com/TimSchoenle/TankoVault/issues/543)) ([e8ac45c](https://github.com/TimSchoenle/TankoVault/commit/e8ac45c874b1ed5cf8edb395983802e73f3098de))
+* **deps:** update rust crate csp-shell to csp-shell-v0.2.1 ([#549](https://github.com/TimSchoenle/TankoVault/issues/549)) ([90113c5](https://github.com/TimSchoenle/TankoVault/commit/90113c52e1fc9c051d6888e5e421d9a244415b96))
+* **deps:** update rust crate scraper to 0.29 ([#555](https://github.com/TimSchoenle/TankoVault/issues/555)) ([3c868a7](https://github.com/TimSchoenle/TankoVault/commit/3c868a7daf49dc6b15f3f0fc21837680387e9777))
+* **deps:** update rust crate terrace-config to v0.15.2 ([#540](https://github.com/TimSchoenle/TankoVault/issues/540)) ([2e46b1c](https://github.com/TimSchoenle/TankoVault/commit/2e46b1ccdc2180fb10d5ac5648967b157ac49ce6))
+* **deps:** update rust crate tokio to v1.54.1 ([#556](https://github.com/TimSchoenle/TankoVault/issues/556)) ([3dfa15f](https://github.com/TimSchoenle/TankoVault/commit/3dfa15f614faa8d6c9a8dbd930ceadf512fa964c))
+* **deps:** update rust crate uuid to v1.29.0 ([#589](https://github.com/TimSchoenle/TankoVault/issues/589)) ([a8bdab9](https://github.com/TimSchoenle/TankoVault/commit/a8bdab9d3d1a0f694b4caf9b28e8507a35c724c7))
+
 ## [11.1.1](https://github.com/TimSchoenle/TankoVault/compare/v11.1.0...v11.1.1) (2026-10-27)
 
 

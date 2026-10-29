@@ -1,4 +1,4 @@
-# TankoVault — working agreement
+# TankoVault: working agreement
 
 Read [`docs/ENGINEERING_GUIDE.md`](docs/ENGINEERING_GUIDE.md). It is the canonical guide to
 structure, style and security, and it labels every rule with what enforces it. This file is the
@@ -6,13 +6,13 @@ short version, kept here because it is what gets loaded first.
 
 ## The definition of done
 
-`cargo run -p xtask -- ci` is still the gate a change has to pass — every offline gate CI runs,
+`cargo run -p xtask -- ci` is still the gate a change has to pass: every offline gate CI runs,
 in CI's order. It is **not** what you run by default. One pass rebuilds the workspace under
 `--all-features` and `wasm32-unknown-unknown`, runs `test --workspace`, the doc tests, rustdoc
 and the six `web/frontend` gates (both its feature sets); that is minutes per iteration, and
 spending it after every edit buys nothing CI will not report anyway.
 
-Default while working — the whole obligation:
+By default while working, this is the whole obligation:
 
 ```bash
 cargo check -p <the crate you touched>
@@ -26,7 +26,7 @@ gates, or the `web/frontend` gates on your own initiative. Run them when, and on
 - you are chasing a failure those gates already reported, in which case run *that* gate, scoped
   as narrowly as it will go (`cargo test -p <crate> <test_name>`), not the suite around it.
 
-"It compiles" is not done — but it is as far as *you* take it unless told otherwise. What the
+"It compiles" is not done, but it is as far as *you* take it unless told otherwise. What the
 remaining gates cost is the user's call to spend, not yours.
 
 Regeneration is the exception and stays mandatory, because the artefacts are committed and
@@ -34,21 +34,21 @@ hand-editing them is banned (rule 6): OpenAPI surface changed → `cargo run -p 
 a `query!`/`query_as!` changed → `cargo run -p xtask -- sqlx-prepare` against a migrated
 database; config surface changed → update `docs/CONFIGURATION.md` (`cargo run -p xtask --
 config-docs` prints the current surface) **and** run `just regenerate`, which rewrites the nine
-documents every image publishes and the Dockerfile's `dev.terrace.config.*` regions —
+documents every image publishes and the Dockerfile's `dev.terrace.config.*` regions;
 `cargo run -p xtask -- config-contract` is the gate that checks both and does not write; either
-`Cargo.lock` moved → `cargo run -p xtask -- notices`, which needs `cargo-about` installed. The
-gates check these, they do not fix them.
+`Cargo.lock` moved → `cargo run -p xtask -- notices`, which requires `cargo-about` to be
+installed. The gates check these, they do not fix them.
 
 ## What `xtask ci` cannot tell you
 
-`xtask ci` runs the **offline** gates only — no Docker, no database. CI runs more, and that gap
+`xtask ci` runs the **offline** gates only: no Docker, no database. CI runs more, and that gap
 is where a green local run still turns the pull request red.
 
 The one that actually bites: **a published endpoint you added, renamed or removed.**
 `services/api/tests/me_access_matrix.rs` and `admin_access_matrix.rs` reconcile the OpenAPI
 document against their access-control tables, so a route nobody classified fails with the
 operation id in the message. Writing the handler and regenerating `openapi.json` is *not*
-enough — the route also needs a row in `me_gates()`, `public_gates()` or `covered_elsewhere()`
+enough: the route also needs a row in `me_gates()`, `public_gates()` or `covered_elsewhere()`
 (that last one carries the reason and where it is covered instead). Both suites need Docker, so
 no offline gate mentions it:
 
@@ -69,27 +69,27 @@ cargo test -p tankovault-db -p tankovault-api -p tankovault-sync --features inte
 
 1. **Never widen a Content-Security-Policy to make code work.** Change the code. The SPA's access
    token is in memory; the CSP is the ceiling on where an injected script could send it.
-2. **Never call `document::eval` in the frontend** — it is `new Function(…)`, the served CSP
-   blocks it, and the failure *aborts the WASM instance* rather than returning an error. Add a
+2. **Never call `document::eval` in the frontend**: it is `new Function(…)`, the served CSP
+   blocks it, and the failure *aborts the WASM instance* instead of returning an error. Add a
    typed wrapper to `web/frontend/src/platform/`. Banned in `web/frontend/clippy.toml`.
 3. **`#[expect(…, reason = "…")]`, never `#[allow]`.** An `expect` warns when its claim stops
    holding; an `allow` never does.
 4. **Comments are short by default.** One summary line of rustdoc per public item; a module `//!`
    says what the module owns in a sentence or two. An inline `//` only where correct-looking code
    would otherwise be misread. No restating the code, no numbered walkthroughs of the lines below,
-   no history prose. `# Errors`/`# Panics` stay — one line, naming the reachable variants.
+   no history prose. `# Errors`/`# Panics` stay: one line, naming the reachable variants.
    **Go long only for** (a) security rationale, (b) an invariant or ordering constraint the next
    refactor would silently break, (c) a test doc comment naming the bug it pins (rule 8). When
    trimming, keep the sentence that carries the risk and drop the narration around it.
 5. **Do not simplify a test you do not understand.** If its doc comment describes a bug, it is
    there to stop that bug returning.
-6. **Never hand-edit generated files** — `openapi.json`, `crates/api-client/src/lib.rs`,
+6. **Never hand-edit generated files**: `openapi.json`, `crates/api-client/src/lib.rs`,
    `THIRD-PARTY-NOTICES`, `docs/contracts/*.json`. Run `cargo run -p xtask -- openapi` /
    `-- notices`; the nine `docs/contracts/*.json` are `just regenerate`. `README.md` is
-   generated too, by CI rather than by `xtask`: edit `.github/templates/README.md.hbs`, and let
+   generated too, by CI, not by `xtask`: edit `.github/templates/README.md.hbs`, and let
    `auto-fix.yaml` render it. The payload is `Cargo.toml` and `docs/`, read by `readme-variables`,
-   plus `bash .github/scripts/readme-stack.sh` for the toolchain and service majors.
-7. **`web/frontend` is a separate workspace and inherits nothing from the host** — not lints, not
+   and `bash .github/scripts/readme-stack.sh` for the toolchain and service majors.
+7. **`web/frontend` is a separate workspace and inherits nothing from the host**: not lints, not
    `clippy.toml`. It is a workspace *root* with one member of its own,
    `crates/inkstone-ui` (the design system's components, extracted so they can be lifted into
    another Dioxus app); both take their lints from its `[workspace.lints]`, and a `cargo` command
@@ -98,10 +98,10 @@ cargo test -p tankovault-db -p tankovault-api -p tankovault-sync --features inte
    is the only connector. It also builds **two ways**: `web` (the wasm SPA, the default) and
    `desktop` (a wry webview, shipped as installers). They are mutually exclusive, everything
    platform-specific is behind `src/platform/`, and a check of one proves nothing about the
-   other — so `cargo check` there is twice:
+   other, so `cargo check` there is twice:
    `cargo check` and `cargo check --no-default-features --features desktop`.
 8. **A fix that could silently come back gets a test whose doc comment says what the bug was.**
-9. **Every secret value is a `secrecy` type — never a `String`, `&str` or `Vec<u8>`.**
+9. **Every secret value is a `secrecy` type: never a `String`, `&str` or `Vec<u8>`.**
    `SecretString` for text (DSNs, broker URLs, tokens, passwords, the pepper, webhook URLs with an
    embedded token), `SecretSlice<u8>` for key material, `Arc<…>` when it lives in an `AppState`
    that axum clones per request. Reading one is an explicit `expose_secret()`, and `rg
@@ -109,16 +109,16 @@ cargo test -p tankovault-db -p tankovault-api -p tankovault-sync --features inte
    `SerializableSecret`: a value that must go on the wire opts in at that one field with
    `#[serde(serialize_with = "crate::secret::expose_onto_wire")]`. A wrapped API DTO field needs
    `#[schema(value_type = String)]` so `openapi.json` stays byte-identical, and its rationale goes
-   in a `//` comment — utoipa publishes `///` as the public `description`. Values that are *not*
+   in a `//` comment: utoipa publishes `///` as the public `description`. Values that are *not*
    secrets (a PHC hash, a token digest, ciphertext) keep their plain types on purpose.
    Full table and the two deliberate exceptions: `docs/ENGINEERING_GUIDE.md` §2.2.
-10. **Every commit message is a Conventional Commit** — `type(scope): subject`, always, with no
+10. **Every commit message is a Conventional Commit**: `type(scope): subject`, always, with no
     exceptions for a one-line fix. Types in use: `feat`, `fix`, `docs`, `refactor`, `test`,
     `perf`, `build`, `ci`, `chore`. The scope is the crate or surface the change owns
     (`console`, `api`, `db`, `sync`, `deps`, …). The subject is imperative, lower-case and
     unpunctuated. A breaking change says so with `!` before the colon and a `BREAKING CHANGE:`
     footer. Release-please reads these to cut the changelog and pick the next version, so a
-    mistyped type silently mis-versions the release rather than failing anything.
+    mistyped type silently mis-versions the release instead of failing anything.
 
 ## When a gate fails
 
@@ -135,5 +135,5 @@ Say what actually happened. If a suite fails, quote it. If you skipped a step, n
 of the task is blocked, finish the rest and say what you left.
 
 Verification is deliberately scoped now, so it has to be reported as scoped: name the command
-you actually ran and state that the full gate was not run — "`cargo check -p tankovault-api`
+you actually ran and state that the full gate was not run: "`cargo check -p tankovault-api`
 passed; `xtask ci` not run". Never let a type-check be read as a green CI run.

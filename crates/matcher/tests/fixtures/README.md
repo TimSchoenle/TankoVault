@@ -23,5 +23,5 @@ corpus the plan specifies:
 - `confirmed_wrong.jsonl` is meant to grow with every wrong merge confirmed by hand during the
   undo campaign (WP8c). Append rows as they are confirmed; do not edit the existing ones.
 
-A row's stored `signals` must be what the matcher of the time recorded — the replay test reads
+A row's stored `signals` must be what the matcher of the time recorded: the replay test reads
 them to decide which correct merges must stay automatic.

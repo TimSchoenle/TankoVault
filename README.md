@@ -68,10 +68,10 @@ when it publishes a port, so exposing one of those would put it on every interfa
   scoring and the merge bands are pure functions in `crates/matcher`.
 - Two scan cadences. A full scan rebuilds a provider's archive; a fast scan reads only its
   latest feed, and that is the one that runs on a schedule.
-- **Adding a provider is usually configuration rather than code.** A config-driven adapter covers
+- **Adding a provider is usually configuration, not code.** A config-driven adapter covers
   the common CMS shape, and anything else drops in behind the same `SourceAdapter` trait.
 - Chapter links are stored as paths relative to the provider's base URL and resolved at read
-  time, so a site changing domain is a one-field edit rather than a migration.
+  time, so a site changing domain is a one-field edit, not a migration.
 - Providers behind Cloudflare or DDoS-Guard fingerprint the TLS ClientHello and the HTTP/2
   SETTINGS frame, so the crawl path uses `wreq` with browser emulation while internal
   service-to-service HTTP stays on `reqwest`. A cheap classifier spots an interstitial in
@@ -87,7 +87,7 @@ when it publishes a port, so exposing one of those would put it on every interfa
 
 ### Container images
 
-Nine images per release, each a `linux/amd64` + `linux/arm64` manifest list, on two registries:
+Nine images per release, each a `linux/amd64` and `linux/arm64` manifest list, on two registries:
 
 ```bash
 docker pull ghcr.io/timschoenle/tankovault/api:v11.1.1
@@ -156,7 +156,7 @@ cargo run -p xtask -- config-contract  # check the nine contracts and the Docker
 ```
 
 `config-contract` checks and `just regenerate` writes. Splitting them is deliberate: a gate that
-carried its own copy of the rendering it judges would be a second opinion rather than a check.
+carried its own copy of the rendering it judges would be a second opinion, not a check.
 
 ```bash
 just regenerate                # rewrite docs/contracts/*.json and the Dockerfile LABEL regions
@@ -180,23 +180,22 @@ Coverage-guided fuzzing needs nightly and lives in [`fuzz/`](fuzz/README.md), wh
 Every service loads the same five layers through `terrace-config`, each overriding the one above
 it:
 
-1. **Defaults** — the `Default` impl of each typed block.
-2. **TOML** at `$TANKOVAULT_CONFIG` — a file, or every `*.toml` inside it when it names a
+1. **Defaults**: the `Default` impl of each typed block.
+2. **TOML** at `$TANKOVAULT_CONFIG`: a file, or every `*.toml` inside it when it names a
    directory.
-3. **Environment** — `TANKOVAULT_`-prefixed variables, `__` for nesting.
-4. **Secrets directory** at `$TANKOVAULT_SECRETS_DIR` — one file per key, named after it.
-5. **File indirection** — `TANKOVAULT_<KEY>_FILE=/path` names a file holding the value.
+3. **Environment**: `TANKOVAULT_`-prefixed variables, `__` for nesting.
+4. **Secrets directory** at `$TANKOVAULT_SECRETS_DIR`: one file per key, named after it.
+5. **File indirection**: `TANKOVAULT_<KEY>_FILE=/path` names a file holding the value.
 
 Prefer the two file layers for anything secret. They keep the value out of `/proc/<pid>/environ`
-and out of every child process, and a rotated file is picked up by rebuilding the configuration
-rather than by restarting the process.
+and out of every child process, and a rotated file is picked up by rebuilding the configuration, not by restarting the process.
 
 At boot each service reports which layer supplied each key, in precedence order, and warns when
 two layers supply the same one. That warning is the shape of "the rotated secret is not being
 read": the mount is there and a stale `TANKOVAULT_*` variable is sitting on top of it. Keys and
 layers only. No value is ever logged.
 
-These have no working default, and the stack refuses to boot rather than starting insecure:
+These have no working default, and the stack refuses to boot instead of starting insecure:
 
 - `TANKOVAULT_AUTH__JWT_SECRET` signs the API access tokens.
 - `TANKOVAULT_AUTH__PASSWORD_PEPPER` is mixed into every argon2id hash. It is optional, but once
@@ -239,7 +238,7 @@ PostgreSQL is the system of record, and `pgvector` has been a hard dependency of
 migration 0027. NATS JetStream carries tasks and domain events. Redis backs caching, rate-limit
 state, and the control-plane's leader election, which is what makes a second replica of it safe.
 
-Migration is a discrete one-shot step in the `bootstrap` image rather than something a service
+Migration is a discrete one-shot step in the `bootstrap` image instead of something a service
 does at startup. Resetting a schema exists only in `xtask`, from a checkout, behind an explicit
 confirmation variable, so nothing published carries a destructive command.
 
@@ -253,7 +252,7 @@ confirmation variable, so nothing published carries a destructive command.
 | NATS | JetStream |
 | Platforms | `linux/amd64`, `linux/arm64` |
 
-The minimum is checked by its own CI job rather than asserted. It and the pinned channel are
+The minimum is checked by its own CI job, not asserted. It and the pinned channel are
 separate claims that happen to agree today.
 
 ## Documentation
@@ -316,6 +315,6 @@ require their licence text to accompany a binary distribution, which an image an
 both are. [THIRD-PARTY-NOTICES](THIRD-PARTY-NOTICES) is that text for both dependency graphs,
 generated from the lockfiles by `cargo run -p xtask -- notices`. Every image ships it at
 `/THIRD-PARTY-NOTICES`, and a running instance serves it at `/third-party-notices`. The app's
-`/licenses` screen renders the same notices grouped by licence — each distinct text once, naming
-the dependencies that ship it — so the person whose browser ran the code can read the terms it
+`/licenses` screen renders the same notices grouped by licence (each distinct text once, naming
+the dependencies that ship it) so the person whose browser ran the code can read the terms it
 came under without scrolling half a megabyte of plain text.

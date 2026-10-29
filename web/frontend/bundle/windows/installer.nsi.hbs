@@ -1,4 +1,4 @@
-; TankoVault's Windows installer script — a Handlebars template rendered by `dx bundle`, wired
+; TankoVault's Windows installer script: a Handlebars template rendered by `dx bundle`, wired
 ; up through `[bundle.windows.nsis] template` in `Dioxus.toml`.
 ;
 ; It is a fork of the one embedded in dioxus-cli 0.7.10 (`src/bundler/windows.rs`,
@@ -6,18 +6,19 @@
 ; shortcut whether or not one is wanted, and exits. Everything below that is not one of the
 ; three options is that template unchanged, so a `dx` upgrade can be diffed against it.
 ;
-; **Every `{{…}}` is supplied by `dx` and the set is closed** — it builds the map in
+; **Every `{{…}}` is supplied by `dx` and the set is closed**: it builds the map in
 ; `Bundler::build_nsis`, and Handlebars runs in non-strict mode, so a typo'd name renders as
-; nothing rather than failing the build. Check a new one against that function before using it.
+; nothing instead of failing the build. Check a new one against that function before using it.
 ;
 ; Reader-facing choices, and why each defaults the way it does:
 ;
-;   * **Desktop shortcut** — on. Replaces the unconditional one the stock template created, so
-;     the default is what shipped before and the checkbox only takes something away.
-;   * **Start with Windows** — off. An app that adds itself to startup uninvited is a thing
+;   * **Desktop shortcut**: on. It stands in for the unconditional one the stock template
+;     creates, so the default matches the stock behaviour and the checkbox only takes something
+;     away.
+;   * **Start with Windows**: off. An app that adds itself to startup uninvited is a thing
 ;     readers uninstall. The same switch lives in the app (`crate::platform::set_autostart`),
 ;     writing the same registry value, so it can be turned on later without reinstalling.
-;   * **Run after install** — on, via MUI's finish page.
+;   * **Run after install**: on, via MUI's finish page.
 
 !include "MUI2.nsh"
 !include "FileFunc.nsh"
@@ -50,8 +51,8 @@ VIAddVersionKey "ProductName" "{{product_name}}"
 VIAddVersionKey "FileVersion" "{{version}}"
 VIAddVersionKey "ProductVersion" "{{version}}"
 ; The installer's own description, so the UAC prompt and the file's Details tab name what this
-; executable is rather than what the product is. `{{short_description}}` is the *product* name —
-; see the note on it in `Dioxus.toml` — and using it here would give the setup program and the
+; executable is, not what the product is. `{{short_description}}` is the *product* name (see
+; the note on it in `Dioxus.toml`), and using it here would give the setup program and the
 ; app it installs the same identity in the process list.
 VIAddVersionKey "FileDescription" "{{product_name}} Setup"
 {{#if publisher}}
@@ -81,8 +82,8 @@ VIAddVersionKey "LegalCopyright" "{{copyright}}"
 ; The finish page's "run it now" checkbox, ticked by default.
 ;
 ; It launches with the installer's own token, which is only the reader's because this bundle
-; installs per user and therefore runs unelevated — see `install_mode` in `Dioxus.toml`, which
-; states that rather than inheriting it. Switching to `PerMachine` would hand the app an
+; installs per user and therefore runs unelevated; see `install_mode` in `Dioxus.toml`, which
+; states that instead of inheriting it. Switching to `PerMachine` would hand the app an
 ; administrator token on first run and this define would have to go, or go through a
 ; run-as-user shim.
 !define MUI_FINISHPAGE_RUN "$INSTDIR\{{main_binary_name}}"
@@ -171,7 +172,7 @@ SectionEnd
 
 ; `/o`: present but unticked. See the header for why this one, alone, is opt-in.
 ;
-; HKCU rather than SHCTX even under a per-machine install: "start when *I* log in" is a property
+; HKCU, not SHCTX, even under a per-machine install: "start when *I* log in" is a property
 ; of the reader who ran the installer, and the HKLM equivalent would start the app for every
 ; account on the machine.
 Section /o "Start {{product_name}} when I sign in" SecAutostart
@@ -190,13 +191,13 @@ Section "-Reconcile"
     ${EndIf}
 
     ; Deliberately no matching branch for ${SecAutostart}. It defaults to unselected, so one
-    ; would fire on every silent update and switch off a reader who had turned autostart on —
+    ; would fire on every silent update and switch off a reader who had turned autostart on,
     ; either in the app or in a previous install. Turning it *off* is the app's job, and the
     ; uninstaller's.
 SectionEnd
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
-    ; Written out rather than taken from `{{short_description}}`, which is now the product name
+    ; Written out, not taken from `{{short_description}}`, which is the product name
     ; and would describe the component as itself.
     !insertmacro MUI_DESCRIPTION_TEXT ${SecMain} "The {{product_name}} desktop client. Required."
     !insertmacro MUI_DESCRIPTION_TEXT ${SecDesktop} "Put a {{product_name}} shortcut on the desktop."
@@ -218,7 +219,7 @@ Section "Uninstall"
     ; Remove Desktop shortcut
     Delete "$DESKTOP\{{product_name}}.lnk"
 
-    ; Remove the autostart entry, however it was set — installer checkbox or in-app switch.
+    ; Remove the autostart entry, however it was set: installer checkbox or in-app switch.
     DeleteRegValue HKCU "${AUTOSTART_KEY}" "${AUTOSTART_VALUE}"
 
     ; Remove registry keys

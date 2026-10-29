@@ -525,7 +525,7 @@ jobs:
       # Same Node major as `ci.yml`'s `css` job, which is what judges the result.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "24"
+          node-version: "26"
 
       # `--ignore-scripts`: the only install hook in the lockfile is `@parcel/watcher`'s
       # build-from-source fallback, which the Tailwind CLI needs for `--watch` and not for a

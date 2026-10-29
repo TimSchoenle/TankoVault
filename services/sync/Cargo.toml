@@ -30,7 +30,7 @@ tankovault-db = { workspace = true }
 tankovault-contracts = { workspace = true }
 # `schema` because `MetadataConfig::priority` is a `MetadataPriority` and this root is described:
 # terrace-config refuses a key whose type publishes no shape. Optional there because that crate
-# also compiles for `wasm32`; named here rather than left to `tankovault-config` unifying it, so
+# also compiles for `wasm32`; named here instead of left to `tankovault-config` unifying it, so
 # the bound this crate relies on is one it asked for.
 tankovault-domain = { workspace = true, features = ["schema"] }
 tankovault-auth = { workspace = true }
@@ -42,7 +42,7 @@ axum = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }
 reqwest = { workspace = true }
-# Percent-encodes the OAuth consent URL's query, replacing a hand-rolled encoder (ARCH-7).
+# Percent-encodes the OAuth consent URL's query.
 url = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -63,9 +63,8 @@ integration = []
 
 [dev-dependencies]
 tankovault-test-support = { path = "../../crates/test-support" }
-# A scriptable `AniList`. F-06 fakes the provider at the *trait* boundary, so until this
-# everything below it — the `OAuth` token exchange, the pacer, the `429` retry — was untested
-# (TEST F-09).
+# A scriptable `AniList`. The engine tests fake the provider at the *trait* boundary; this
+# covers everything below it: the `OAuth` token exchange, the pacer, the `429` retry.
 wiremock = { workspace = true }
 
 [lints]

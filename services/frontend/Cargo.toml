@@ -32,15 +32,14 @@ anyhow = { workspace = true }
 tracing = { workspace = true }
 reqwest = { workspace = true }
 tower = { workspace = true }
-# `fs` adds ServeDir/ServeFile (static bundle + SPA fallback); `set-header` and `trace`
+# `fs` adds ServeDir/ServeFile (static bundle and SPA fallback); `set-header` and `trace`
 # already ride on the workspace feature set, merged here.
-# `compression-full`: the WASM bundle is the largest thing this tier serves and was
-# shipped uncompressed. `set-header`/`trace` come from the workspace default set.
+# `compression-full`: the WASM bundle is the largest thing this tier serves.
 tower-http = { workspace = true, features = ["fs", "compression-full"] }
 # The whole Content-Security-Policy: the scan that admits the shell's inline boot scripts by
-# hash (computed from the served `index.html` at startup rather than hardcoded — a constant
-# drifts the moment the shell is edited, and silently, since the only symptom is a browser
-# refusing to run it), the typed directives, and the per-response nonce behind
+# hash (computed from the served `index.html` at startup, not hardcoded: a constant drifts the
+# moment the shell is edited, and silently, since the only symptom is a browser refusing to run
+# it), the typed directives, and the per-response nonce behind
 # `TANKOVAULT_FRONTEND__CLOUDFLARE__SCRIPT_NONCE`.
 csp-shell = { workspace = true }
 

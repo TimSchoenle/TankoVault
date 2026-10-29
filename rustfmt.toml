@@ -1,4 +1,4 @@
 # Default rustfmt settings, deliberately. `ignore` (to exclude the generated
-# `crates/api-client/src/lib.rs`) is nightly-only; on stable it warned and reformatted the file
-# anyway, so `xtask openapi` now pipes its output through rustfmt itself instead. Do not
-# reintroduce `ignore` unless CI moves to nightly.
+# `crates/api-client/src/lib.rs`) is nightly-only; on stable it warns and reformats the file
+# anyway, so `xtask openapi` pipes its output through rustfmt itself instead. Do not
+# introduce `ignore` unless CI moves to nightly.

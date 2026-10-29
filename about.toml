@@ -1,9 +1,9 @@
-# cargo-about configuration for the backend workspace — the input to `THIRD-PARTY-NOTICES`.
+# cargo-about configuration for the backend workspace: the input to `THIRD-PARTY-NOTICES`.
 #
 # Why this file exists at all: `deny.toml`'s `[licenses] allow` list is entirely permissive, and
 # every licence on it except `CC0-1.0` and `0BSD` requires its notice text to travel with a
 # binary distribution. A published image is a binary distribution, and the attested SBOM is
-# evidence of *composition*, not a notice — it carries no licence text. So the terms of every
+# evidence of *composition*, not a notice; it carries no licence text. So the terms of every
 # dependency ship as one generated file, beside the project's own `LICENSE`.
 #
 # Regenerate with `cargo run -p xtask -- notices` whenever `Cargo.lock` moves; CI's `notices` job
@@ -17,7 +17,7 @@
 #
 # **This list must equal `deny.toml`'s `[licenses] allow`**, and `xtask repo-lint` holds it
 # there. A licence cargo-deny admits but this file does not accept fails generation (`--fail`)
-# rather than being omitted; one this file accepts but cargo-deny forbids would publish a notice
+# instead of being omitted; one this file accepts but cargo-deny forbids would publish a notice
 # for a licence that must never enter the graph. Both directions are silent without the rule.
 accepted = [
     "Apache-2.0",
@@ -36,7 +36,7 @@ accepted = [
 ]
 
 # What the images actually run. Every shipped backend binary is musl-linked on one of these two
-# architectures — including `render`, which is built in the Alpine builder stage and only *runs*
+# architectures, including `render`, which is built in the Alpine builder stage and only *runs*
 # on Debian (see `deploy/docker/Dockerfile`). Naming them drops the Windows and macOS shims that
 # `cargo metadata` reports and no image contains; notices for code that is not distributed are
 # noise in a document whose whole purpose is to be read.
@@ -49,8 +49,8 @@ targets = [
 # `proptest` and the rest reach the graph as dev-dependencies alone.
 ignore-dev-dependencies = true
 # Build dependencies are deliberately **not** ignored. A build dependency can and does put code
-# into the shipped artefact — a proc macro expands into it, `bindgen` emits bindings from it, and
-# `cmake`/`cc` compile BoringSSL's vendored C into it — and nothing in the dependency graph
+# into the shipped artefact (a proc macro expands into it, `bindgen` emits bindings from it, and
+# `cmake`/`cc` compile BoringSSL's vendored C into it), and nothing in the dependency graph
 # records which of them did. Over-inclusion cannot breach an attribution obligation; omission can.
 ignore-build-dependencies = false
 

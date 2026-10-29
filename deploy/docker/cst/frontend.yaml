@@ -1,13 +1,12 @@
 # Container-structure-test contract for the frontend image built from
-# deploy/docker/Dockerfile (target `frontend`): the musl axum server plus the built Dioxus SPA
+# deploy/docker/Dockerfile (target `frontend`): the musl axum server and the built Dioxus SPA
 # bundle, on a `scratch` runtime.
 #
-# The server binary used to be a *static* musl cross-build from its own Dockerfile. It is now
-# produced by the shared Alpine `builder` alongside every other service binary, which links
-# dynamically against musl (see that file's `cook` stage for why BoringSSL forces it) — hence
-# the loader and `libgcc_s` assertions below, which the static build did not need.
+# The server binary comes from the shared Alpine `builder` alongside every other service binary,
+# which links dynamically against musl (see that file's `cook` stage for why BoringSSL forces
+# it): hence the loader and `libgcc_s` assertions below.
 #
-# `scratch` ships no shell, so this suite is metadata + file assertions only. Run with:
+# `scratch` ships no shell, so this suite is metadata and file assertions only. Run with:
 #   container-structure-test test --image <ref> --config deploy/docker/cst/frontend.yaml
 schemaVersion: "2.0.0"
 
@@ -18,9 +17,9 @@ metadataTest:
   entrypoint: ["/usr/local/bin/tankovault-frontend"]
   # What a deployment pipeline discovers this image's configuration contract by, read off the
   # config blob with no layer pull. `.github/scripts/verify-config-contract.sh` is the check that
-  # matters — it compares these against the generator's own output, which is what makes them more
-  # than three strings someone typed — and this restatement is what keeps a `docker save` tarball
-  # and a local build honest too.
+  # matters: it compares these against the generator's own output, which is what makes them more
+  # than three strings someone typed. This restatement is what keeps a `docker save` tarball and
+  # a local build honest too.
   labels:
     - key: "dev.terrace.config.contract.version"
       value: "1"
@@ -71,16 +70,16 @@ fileExistenceTests:
     path: "/THIRD-PARTY-NOTICES.json"
     shouldExist: true
   # What the dynamically linked musl binary resolves at load time. On `scratch` there is no
-  # package manager to supply them, so a missing one is a container that exits before `main` —
+  # package manager to supply them, so a missing one is a container that exits before `main`,
   # with no shell to diagnose it in. The architecture-specific loader is asserted by
   # `loader-amd64.yaml` / `loader-arm64.yaml`, passed as a second `--config`.
   - name: "libgcc_s present for the unwinder"
     path: "/usr/lib/libgcc_s.so.1"
     shouldExist: true
   # Deliberately **absent**: `libstdc++.so.6`. The `frontend` binary does not link the C++
-  # standard library — unlike `worker` and `challenge-solver`, which do since `wreq` 6 — and its
-  # runtime stage ships none. Asserting the absence keeps that an intentional property rather
-  # than an accident nobody would notice until the image grew one.
+  # standard library (unlike `worker` and `challenge-solver`, which do through `btls-sys`), and
+  # its runtime stage ships none. Asserting the absence keeps that an intentional property, not
+  # an accident nobody would notice until the image grew one.
   - name: "no libstdc++ (frontend links no C++ runtime)"
     path: "/usr/lib/libstdc++.so.6"
     shouldExist: false
@@ -90,7 +89,7 @@ fileExistenceTests:
 
 fileContentTests:
   # Existence alone would be satisfied by an empty file. These three are the envelope's own
-  # fields, so a truncated document fails here rather than in the chart repo.
+  # fields, so a truncated document fails here, not in the chart repo.
   - name: "the contract is the generated document, not an empty placeholder"
     path: "/config/contract.json"
     expectedContents: ['"terrace_contract": 1', '"prefix": "TANKOVAULT_"', '"json_schema"']

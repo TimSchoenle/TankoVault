@@ -4,7 +4,7 @@
 # runtime stage, so one contract covers the lot: the only per-binary difference is which
 # service logic the identical entrypoint runs.
 #
-# `scratch` ships no shell, so this suite is limited to metadata + file assertions
+# `scratch` ships no shell, so this suite is limited to metadata and file assertions
 # (commandTests would need a shell that does not exist here). Run with:
 #   container-structure-test test --image <ref> --config deploy/docker/cst/service.yaml
 schemaVersion: "2.0.0"
@@ -15,9 +15,9 @@ metadataTest:
   entrypoint: ["/usr/local/bin/tankovault-service"]
   # What a deployment pipeline discovers this image's configuration contract by, read off the
   # config blob with no layer pull. `.github/scripts/verify-config-contract.sh` is the check that
-  # matters — it compares these against the generator's own output, which is what makes them more
-  # than three strings someone typed — and this restatement is what keeps a `docker save` tarball
-  # and a local build honest too.
+  # matters: it compares these against the generator's own output, which is what makes them more
+  # than three strings someone typed. This restatement is what keeps a `docker save` tarball and
+  # a local build honest too.
   labels:
     - key: "dev.terrace.config.contract.version"
       value: "1"
@@ -42,7 +42,7 @@ fileExistenceTests:
     shouldExist: true
   # PolyForm Noncommercial's Notices clause: the terms must reach anyone who gets a copy of any
   # part of the software, and a published image is a copy. `.dockerignore` exempts LICENSE from
-  # its docs exclusion so the Dockerfile can COPY it here — an assertion because re-adding the
+  # its docs exclusion so the Dockerfile can COPY it here: an assertion because re-adding the
   # exclusion is a one-line change that would otherwise fail silently.
   - name: "licence terms ship with the image"
     path: "/LICENSE"
@@ -53,7 +53,7 @@ fileExistenceTests:
   - name: "third-party licence notices ship with the image"
     path: "/THIRD-PARTY-NOTICES"
     shouldExist: true
-  # The binary is musl-dynamic (BoringSSL forces a native, non-crt-static build — see the
+  # The binary is musl-dynamic (BoringSSL forces a native, non-crt-static build; see the
   # Dockerfile builder stage). Without these the container fails at exec time with a bare
   # "no such file or directory", which is why they are part of the contract.
   #
@@ -64,11 +64,10 @@ fileExistenceTests:
   - name: "libgcc_s present (unwinder referenced by BoringSSL's C++ objects)"
     path: "/usr/lib/libgcc_s.so.1"
     shouldExist: true
-  # `challenge-solver` and `worker` link the C++ standard library through `btls-sys`, the
-  # BoringSSL binding `wreq` 6 replaced `boring-sys2` with. They share this runtime stage with
-  # the six binaries that do not, so the contract covers the union. Absent it, those two die at
-  # exec with "Error loading shared library libstdc++.so.6" — which is how this was found, after
-  # the images built and passed everything else.
+  # `challenge-solver` and `worker` link the C++ standard library through `btls-sys`, `wreq`'s
+  # BoringSSL binding. They share this runtime stage with the six binaries that do not, so the
+  # contract covers the union. Absent it, those two die at exec with "Error loading shared
+  # library libstdc++.so.6" after the images build and pass everything else.
   - name: "libstdc++ present (C++ runtime referenced by btls-sys/BoringSSL)"
     path: "/usr/lib/libstdc++.so.6"
     shouldExist: true
@@ -83,7 +82,7 @@ fileExistenceTests:
 
 fileContentTests:
   # Existence alone would be satisfied by an empty file. These three are the envelope's own
-  # fields, so a truncated document fails here rather than in the chart repo.
+  # fields, so a truncated document fails here, not in the chart repo.
   - name: "the contract is the generated document, not an empty placeholder"
     path: "/config/contract.json"
     expectedContents: ['"terrace_contract": 1', '"prefix": "TANKOVAULT_"', '"json_schema"']

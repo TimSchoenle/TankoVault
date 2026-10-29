@@ -4,10 +4,10 @@
 # This file is what makes a plain `cargo build` *inside* this directory work, and it is where the
 # requirement is written down. It is deliberately NOT how `cargo fuzz` selects its toolchain:
 # `cargo fuzz` has to be invoked from the repository root (it locates `./fuzz` from there), where
-# the root `rust-toolchain.toml`'s pinned stable wins — hence the explicit `cargo +nightly fuzz …`
+# the root `rust-toolchain.toml`'s pinned stable wins; hence the explicit `cargo +nightly fuzz …`
 # in README.md.
 #
-# The reason `fuzz/` is excluded from the host workspace rather than being a member is this
+# The reason `fuzz/` is excluded from the host workspace instead of being a member is this
 # channel: as a member it would drag nightly into `cargo fmt --all`, `cargo clippy --workspace`
 # and the `--locked` resolution the `msrv` (1.94) and `supply-chain` jobs measure.
 [toolchain]

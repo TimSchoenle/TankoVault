@@ -1,4 +1,4 @@
-# Frontend clippy configuration — the WASM-side bans.
+# Frontend clippy configuration: the WASM-side bans.
 #
 # This crate is its own workspace root (the host `Cargo.toml` excludes it), so it inherits
 # neither the root `clippy.toml` nor `[workspace.lints]`. Both are mirrored here deliberately;
@@ -7,7 +7,7 @@
 # Enforced by `cargo clippy --all-targets -- -D warnings` in `web/frontend`, which runs in CI
 # (the `frontend` job) and in `xtask ci`.
 #
-# **A path clippy cannot resolve is silently ignored** — there is no "unknown path"
+# **A path clippy cannot resolve is silently ignored**: there is no "unknown path"
 # diagnostic. Every entry below was proved to fire by temporarily writing the call it forbids;
 # do the same for anything you add. `docs/ENGINEERING_GUIDE.md` §6 has the procedure.
 
@@ -17,13 +17,13 @@ too-many-lines-threshold = 250
 
 disallowed-macros = [
     { path = "std::dbg", reason = "writes to the browser console outside any structure. Use `tracing`" },
-    { path = "std::todo", reason = "a `todo!()` in WASM is an `unreachable` trap that takes the whole app down — there is no unwinding and no recovery (`panic = \"abort\"`)" },
+    { path = "std::todo", reason = "a `todo!()` in WASM is an `unreachable` trap that takes the whole app down: there is no unwinding and no recovery (`panic = \"abort\"`)" },
     { path = "std::unimplemented", reason = "see `todo!`" },
 ]
 
 disallowed-methods = [
     # ------------------------------------------------------------------------------------
-    # The Content-Security-Policy contract. Read `src/browser.rs` before relaxing any of it.
+    # The Content-Security-Policy contract. Read `src/platform/web.rs` before relaxing any of it.
     # ------------------------------------------------------------------------------------
     # `services/frontend` serves this app under a CSP with **no `'unsafe-eval'`**, because the
     # access token lives in memory and that directive is the one primitive an injected script
@@ -32,14 +32,13 @@ disallowed-methods = [
     #
     # The refusal is not graceful. `dioxus-web` implements `Document::eval` as
     # `Function::new_with_args`, and its `wasm-bindgen` import is not marked `catch`: the
-    # thrown `EvalError` is not returned to Rust, it aborts the WASM instance. The app read its
-    # appearance preferences on boot, so the first eval killed it — a white page and
-    # `RuntimeError: unreachable executed`, with nothing in the server logs. That is the whole
-    # reason these are bans rather than review notes: the failure is invisible to every gate
-    # this repository runs, and only a human loading the page in a browser sees it.
+    # thrown `EvalError` is not returned to Rust, it aborts the WASM instance. An eval on boot
+    # leaves a white page and `RuntimeError: unreachable executed`, with nothing in the server
+    # logs. That is the whole reason these are bans, not review notes: the failure is invisible
+    # to every gate this repository runs, and only a human loading the page in a browser sees it.
     #
-    # Whatever you were reaching for, `src/browser.rs` either has it or is where to add it.
-    { path = "dioxus::document::eval", reason = "compiles to `new Function(...)`, which the served CSP blocks — and the failure aborts the WASM instance rather than returning an error. Add a typed `web-sys` wrapper to `src/browser.rs` instead" },
+    # Whatever you were reaching for, `src/platform/web.rs` either has it or is where to add it.
+    { path = "dioxus::document::eval", reason = "compiles to `new Function(...)`, which the served CSP blocks, and the failure aborts the WASM instance instead of returning an error. Add a typed `web-sys` wrapper to `src/platform/web.rs` instead" },
     { path = "js_sys::Function::new_with_args", reason = "`new Function(...)`; see `dioxus::document::eval` above" },
     { path = "js_sys::Function::new_no_args", reason = "`new Function(...)`; see `dioxus::document::eval` above" },
     { path = "js_sys::eval", reason = "`eval(...)`; see `dioxus::document::eval` above" },
@@ -61,9 +60,9 @@ disallowed-methods = [
     # while it constructs the app, and both crates keep that handler in a `OnceCell`: once set,
     # every event goes to the handler *instead of* the channel, and a later `set` is discarded.
     # First writer wins and it is never us. So `receiver()` here is not a slower route to the
-    # same events — it is a queue that stays empty for the life of the process, and the tray's
-    # Open and Quit entries silently did nothing until this was found. Nothing warns: the code
-    # compiles, the icon appears and the menu opens.
+    # same events: it is a queue that stays empty for the life of the process, and the tray's
+    # Open and Quit entries would silently do nothing. Nothing warns: the code compiles, the icon
+    # appears and the menu opens.
     #
     # Subscribe through `platform::use_tray_commands`, which reads the events back out of the
     # event loop where `dioxus-desktop` forwards them.

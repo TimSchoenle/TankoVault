@@ -12,15 +12,16 @@ name = "xtask"
 path = "src/main.rs"
 
 # `full` is the developer build and the default. Everything it adds is a command that needs this
-# workspace *compiled* — `migrate`, `reset`, `seed`, `prune-chapters` (a live pool), `openapi`
-# (the api crate's utoipa schemas) and `matching-replay` (the matcher). What is left without it are the commands that only read files:
-# `ci`, `repo-lint`, `release-plan`, `coverage-ratchet`, `config-docs`, `notices`, `install-hooks`.
+# workspace *compiled*: `migrate`, `reset`, `seed`, `prune-chapters` (a live pool), `openapi`
+# (the api crate's utoipa schemas) and `matching-replay` (the matcher). What is left without it
+# are the commands that only read files: `ci`, `repo-lint`, `release-plan`, `coverage-ratchet`,
+# `config-docs`, `notices`, `install-hooks`.
 #
 # The split exists for `release-plan`. It is the first thing a release runs and it decides what a
 # signed release publishes, so it deliberately has no compilation cache (see the `plan` job in
-# `.github/workflows/release-please.yaml`) — and through `tankovault-api` it used to drag in most
-# of the backend and BoringSSL, making a three-line program a ~9 minute cold build at the head of
-# every release. `--no-default-features` builds it from `anyhow` + `serde_json` instead.
+# `.github/workflows/release-please.yaml`), and through `tankovault-api` it would drag in most of
+# the backend and BoringSSL, making a three-line program a ~9 minute cold build at the head of
+# every release. `--no-default-features` builds it from `anyhow` and `serde_json` instead.
 [features]
 default = ["full"]
 full = [
@@ -43,17 +44,17 @@ anyhow = { workspace = true }
 # the four fields of that output this repository's notices document actually needs.
 serde = { workspace = true }
 serde_json = { workspace = true }
-# `config-docs` parses the config structs' attributes rather than matching on their text, so this
+# `config-docs` parses the config structs' attributes instead of matching on their text, so this
 # stays outside `full`: it is the one lightweight crate a file-scanning command needs.
 syn = { workspace = true }
 
 tankovault-db = { workspace = true, optional = true }
 tankovault-domain = { workspace = true, optional = true }
 # `repair-series` decides which stored sources do not belong by asking the *same* scorer the
-# ingest path asks, rather than by a similarity rule of its own that would drift away from it.
+# ingest path asks, not a similarity rule of its own that would drift away from it.
 # `replay` is `matching-replay`'s reader for exported sweep decisions.
 tankovault-matcher = { workspace = true, optional = true, features = ["replay"] }
-# The install steps themselves: shared with the shipped `bootstrap` image rather than
+# The install steps themselves: shared with the shipped `bootstrap` image instead of
 # reimplemented, so "the first admin holds every permission" has one definition.
 tankovault-bootstrap = { workspace = true, optional = true }
 # `connect` takes a wrapped DSN, and the seed hands the hasher a wrapped password and pepper.

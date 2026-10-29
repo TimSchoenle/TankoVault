@@ -1,4 +1,4 @@
-# The arm64 half of the split described in `loader-amd64.yaml` — read that file first.
+# The arm64 half of the split described in `loader-amd64.yaml`; read that file first.
 #
 # On the Debian `runtime-browser` image this path resolves through the merged-`/usr` symlink
 # (`/lib` -> `/usr/lib`), because BuildKit cannot copy a directory over that symlink and the

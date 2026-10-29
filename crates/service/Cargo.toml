@@ -17,7 +17,7 @@ default = []
 # Postgres-backed audit sink and connection-pool health check. Enabled by the services
 # that own a database handle; `render` and `challenge-solver` deliberately do not.
 db = ["dep:tankovault-db", "dep:sqlx"]
-# Redis-backed rate-limit store, so a limit holds across replicas rather than per process.
+# Redis-backed rate-limit store, so a limit holds across replicas, not per process.
 redis = ["dep:fred"]
 
 [dependencies]
@@ -61,8 +61,8 @@ fred = { workspace = true, optional = true, features = ["i-scripts"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }
-# The reload tests: `testing` sandboxes the environment *and* a temporary directory —
-# `std::env::set_var` is `unsafe` in edition 2024, which `unsafe_code = "forbid"` rules out —
+# The reload tests: `testing` sandboxes the environment *and* a temporary directory
+# (`std::env::set_var` is `unsafe` in edition 2024, which `unsafe_code = "forbid"` rules out),
 # and, because `reload` is on, adds `Rebuilds`, which records what the supervisor handed the
 # build closure and waits on it. Both halves of a supervisor assertion are that record: the
 # rebuild that must happen, and the one that must not.

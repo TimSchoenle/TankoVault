@@ -1,6 +1,6 @@
 # Local tooling. `just` with no arguments lists what there is.
 #
-# Everything a contributor has to run by hand lives here rather than in a script under
+# Everything a contributor has to run by hand lives here instead of in a script under
 # `.github/scripts/`, so that the command a README quotes, the command CI runs and the command a
 # developer types are one string. Recipes that only wrap `cargo` are here for the same reason:
 # the flags are the part people get wrong.
@@ -14,7 +14,7 @@
 # needs an image and a build's own export and so cannot live here at all.
 
 # The generator, and where its output belongs. These four lines are the only per-repository part
-# of this file. `package` rather than `example`: this generator is a binary, because it takes a
+# of this file. `package`, not `example`: this generator is a binary, because it takes a
 # `--service` naming which of the nine published images to describe, and a `--service` is not
 # something `cargo run --example` has anywhere to put.
 package := "tankovault-config-contract"
@@ -23,7 +23,7 @@ contracts := "docs/contracts"
 dockerfile := "deploy/docker/Dockerfile"
 
 # Exported to every recipe, matching the workflow-level `env:` in `ci.yml`: the `sqlx` macros
-# resolve against the committed `.sqlx/` cache rather than against a live database. Without it a
+# resolve against the committed `.sqlx/` cache instead of against a live database. Without it a
 # developer whose `DATABASE_URL` points at an unmigrated database gets a compile error from a
 # macro, about a query, in a crate they were not editing.
 export SQLX_OFFLINE := "true"
@@ -77,12 +77,12 @@ contract-json:
     done
 
 # One rendering for every region, and any service will do: all three values are constants of the
-# *deployment* — the envelope version, the in-image path and the loader prefix — which is what
+# *deployment* (the envelope version, the in-image path and the loader prefix), which is what
 # lets one block serve nine images and why this does not render nine identical ones.
 #
 # Every marked region is rewritten, not the first: this Dockerfile carries three runtime stages
 # and each needs the labels, so a rewrite that stopped at the first would leave two stale and
-# report success. The file is rebuilt around the markers rather than substituted in place —
+# report success. The file is rebuilt around the markers instead of substituted in place:
 # `sed` cannot replace a multi-line block portably, and `--format dockerfile` emits both markers
 # along with the block between them.
 
@@ -122,7 +122,7 @@ verify: fmt lint test
 fmt:
     cargo fmt --all
 
-# `--workspace --all-targets` rather than `--all-features`, because that is what `ci.yml`'s `lint`
+# `--workspace --all-targets` instead of `--all-features`, because that is what `ci.yml`'s `lint`
 # job runs: the feature combinations are a job of their own, and compiling the tree a second way
 # for a check nobody is waiting on is how a local gate stops being run.
 [doc('Clippy, with the flags the gate uses')]
@@ -131,7 +131,7 @@ lint:
     cargo clippy --workspace --all-targets -- -D warnings
 
 # `SQLX_OFFLINE` is set at the workflow level in `ci.yml` and has to be set here too: the `sqlx`
-# macros resolve against `.sqlx/` rather than against a live database, and without it a developer
+# macros resolve against `.sqlx/` instead of against a live database, and without it a developer
 # with no `DATABASE_URL` gets a compile error that says nothing about the cause.
 [doc('The test suite, resolving the sqlx macros offline')]
 [group('check')]

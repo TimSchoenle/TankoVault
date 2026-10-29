@@ -25,12 +25,12 @@ utoipa = { workspace = true }
 sqlx = { workspace = true, optional = true, default-features = false, features = ["derive", "postgres"] }
 # Optional and feature-gated for the same reason as `sqlx`: `ssrf`'s resolving half needs a DNS
 # lookup, and `tokio`'s networking cannot build for `wasm32`. Only the native crates that
-# validate a URL they are about to store enable `dns`; `crates/api-client` — and through it the
-# browser bundle — depends on this crate with both features off.
+# validate a URL they are about to store enable `dns`; `crates/api-client` (and through it the
+# browser bundle) depends on this crate with both features off.
 tokio = { workspace = true, optional = true }
 # Optional and feature-gated for the third time, and for the same reason: `terrace-config` pulls
 # figment, which does not build for `wasm32`. Only `tankovault-config` enables `schema`, so the
-# browser bundle — which reaches this crate through `crates/api-client` — links none of it.
+# browser bundle, which reaches this crate through `crates/api-client`, links none of it.
 terrace-config = { workspace = true, optional = true, features = ["schema"] }
 
 [features]
@@ -43,7 +43,7 @@ sqlx = ["dep:sqlx"]
 # `ssrf::validate_unpinned` / `ssrf::lookup` are the variant for a target a browser or TRAWL
 # fetches, enabled by `tankovault-solver` and `services/render`.
 dns = ["dep:tokio"]
-# Derives `Describe` on the two types a *configuration* key holds — `MetadataPriority` and the
+# Derives `Describe` on the two types a *configuration* key holds: `MetadataPriority` and the
 # `MetadataSource` its lists are made of. Enabled by `tankovault-config`, which owns the
 # `metadata.priority` key: terrace-config refuses a key whose type publishes no shape, and a
 # mirror cannot stand in for a struct the way `values_from` does for an enum, so the type itself

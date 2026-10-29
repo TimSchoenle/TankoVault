@@ -10,12 +10,12 @@ description = "The typed configuration blocks every TankoVault service reads, an
 publish = false
 
 [dependencies]
-# For `MatchingConfig`: its defaults are the scorer's own — so a knob and the value it overrides
-# cannot drift apart — and its `impl Canonicaliser` is the one place the configured thresholds
-# meet the scorer, which is what keeps both out of `crates/db` (ARCH-16). `tankovault-matcher` is
-# a leaf crate over `domain`.
+# For `MatchingConfig`: its defaults are the scorer's own, so a knob and the value it overrides
+# cannot drift apart, and its `impl Canonicaliser` is the one place the configured thresholds
+# meet the scorer, which is what keeps both out of `crates/db`. `tankovault-matcher` is a leaf
+# crate over `domain`.
 tankovault-matcher = { workspace = true }
-# For the `Canonicaliser` port itself, which is domain vocabulary rather than the scorer's.
+# For the `Canonicaliser` port itself, which is domain vocabulary, not the scorer's.
 #
 # `schema` because `metadata.priority` is a `MetadataPriority`, and terrace-config refuses a key
 # whose type publishes no shape. A `values_from` mirror answers that for a foreign *enum*; a
@@ -33,21 +33,19 @@ secrecy = { workspace = true }
 # shadow-key rejection. The reload supervisor is `crates/service`'s half; taking it here would
 # link notify into every consumer of a config struct.
 #
-# `explain` is what `super::explain` reports at boot — where every key came from, and which of
+# `explain` is what `super::explain` reports at boot: where every key came from, and which of
 # them a higher layer is quietly shadowing. It costs no dependency, only a second walk of the
 # layers and the strings that render them.
 #
 # `schema` is the `Describe` derive every block in this crate carries, and the `Contract` the
-# image build publishes from it. On unconditionally rather than behind a feature of ours: see the
+# image build publishes from it. On unconditionally, not behind a feature of ours: see the
 # workspace manifest's entry for why a feature would cost a second compile of the service tree.
 terrace-config = { workspace = true, features = ["loader", "explain", "schema"] }
 
 [dev-dependencies]
 # The loader's own test harness: a temporary directory, a cleared environment restored on the
 # way out, and arrangement methods that derive every file and variable name from the dialect
-# under test rather than restating it. It replaced a hand-rolled `figment::Jail` fixture, and
-# with it the `#[expect(clippy::result_large_err)]` that `figment::Error` forced onto every
-# test in this crate.
+# under test instead of restating it.
 terrace-config = { workspace = true, features = ["testing"] }
 
 [lints]

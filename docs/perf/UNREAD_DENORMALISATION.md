@@ -19,7 +19,7 @@ every request. The production slow log showed them at 1.3–30 s. Local measurem
 | | warm | cold |
 |---|---|---|
 | `me_stats` + `continue_reading` + `summary`, today | 33 + 34 + 39 ms | 593 + 786 + 508 ms |
-| every stored value below, recomputed for all 859 rows | 165 ms (est. cost 39 k, no JIT) | — |
+| every stored value below, recomputed for all 859 rows | 165 ms (est. cost 39 k, no JIT) | not measured |
 | the same figures read back from a stored row per series | **0.29 ms** | an index range read |
 
 The work does not disappear. It moves from *every read* to *every change*, and changes are
@@ -114,7 +114,7 @@ noticed. Triggers cannot be bypassed by a writer that does not know about them.
 
 ### The triggers
 
-Statement-level, with transition tables, so a 500-chapter batch is one trigger call rather than
+Statement-level, with transition tables, so a 500-chapter batch is one trigger call, not
 500. Postgres refuses transition tables on a trigger with **more than one event** or with an
 **`UPDATE OF` column list** (both verified on PG 18). So each table gets one trigger per event, and
 an `UPDATE` trigger finds the rows that matter by joining `OLD TABLE` to `NEW TABLE` on the primary
@@ -146,8 +146,8 @@ Three details that are load-bearing:
 - **A converged rescan costs nothing.** 0055's `WHERE … IS DISTINCT FROM` guard means an upsert
   that changes nothing updates no row, so the transition tables are empty.
 - **Keys are processed in `(user_id, series_id)` order.** A chapter batch touching several
-  watchers and a reader's progress write both lock stored rows; a fixed order means they queue
-  rather than deadlock.
+  watchers and a reader's progress write both lock stored rows; a fixed order means they queue,
+  not deadlock.
 
 ### Cost on the write path
 
@@ -220,8 +220,8 @@ per-source top list.
 The proposal's two-phase rewrite (bound `T` from per-source top lists, then collect every sighting
 with `discovered_at ≥ T`) was **also not exact**, and was not implemented. Every chapter in the
 true top has all its sightings collected, but a chapter *outside* it can have its old sightings
-clipped by the bound: its `e` computed over the collected set is then its newest sighting rather
-than its earliest, and it displaces a genuine top-`$2` chapter. Repairing that needs a second
+clipped by the bound: its `e` computed over the collected set is then its newest sighting,
+not its earliest, and it displaces a genuine top-`$2` chapter. Repairing that needs a second
 lookup of every collected number's full sightings, which is most of the original work again.
 
 What shipped is three stages, exact by construction because it computes the same `e` over the
@@ -303,13 +303,13 @@ nothing after. **Recommendation: skip it.**
 
 ## 12. Decisions
 
-1. Triggers (§4) rather than call sites. **Approved.**
-2. A 60 s unlock sweeper with a stored deadline (§5), rather than live evaluation. **Approved**;
+1. Triggers (§4), not call sites. **Approved.**
+2. A 60 s unlock sweeper with a stored deadline (§5), not live evaluation. **Approved**;
    `scheduler.unread_unlock_interval_secs`, default 60.
 3. Backfill path (§9). **In the migration**, confirmed by production's `watchlist_entries` count
    of 2 601 rows (2026-09-14). At the measured 0.32 ms per row that holds the writers' locks for
    about 0.8 s warm; on a cold production cache, 4–8 s. Readers are unaffected, and ingest and
-   progress writes wait rather than fail. Deploying off-peak keeps the pause invisible.
+   progress writes wait, not fail. Deploying off-peak keeps the pause invisible.
 4. Skip the Redis cache (§11). **Approved.**
 
 ## 13. Measurements

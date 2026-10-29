@@ -19,7 +19,7 @@ healthy replica look unhealthy to its orchestrator.
 
 | Path | Meaning |
 |---|---|
-| `GET /health` | **Liveness.** The process is up and its executor is scheduling. Checks nothing external — a failing dependency must not trigger a restart loop that deepens the outage. |
+| `GET /health` | **Liveness.** The process is up and its executor is scheduling. Checks nothing external: a failing dependency must not trigger a restart loop that deepens the outage. |
 | `GET /ready` | **Readiness.** Probes every registered dependency concurrently, each bounded at 2s. `200` when all answer; `503` with a per-dependency JSON body otherwise. |
 | `GET /metrics` | Prometheus exposition, or `404` when metrics are disabled. Served on its own listener (`TANKOVAULT_METRICS__LISTEN`, default `0.0.0.0:9090`), not the request-facing port. |
 
@@ -40,10 +40,10 @@ Per-service readiness dependencies:
 | `notifier` | postgres, nats | Same. |
 | `sync` | postgres | A third-party provider outage is expected and degrades per-request; probing it would flap readiness on someone else's uptime. |
 | `render`, `challenge-solver` | *(none)* | Stateless. The browser is launched lazily by design, so probing it would report a healthy replica as down until its first render. |
-| `frontend` | api upstream | The only dependency it has. Nothing checked it before, so a frontend whose upstream was gone still reported healthy and kept serving an app that could not load a page of data. |
+| `frontend` | api upstream | The only dependency it has. Without it, a frontend whose upstream is gone reports healthy and keeps serving an app that cannot load a page of data. |
 
-The `worker` has no HTTP contract of its own but now serves this listener anyway
-(`TANKOVAULT_BIND_ADDR`, default `0.0.0.0:8085`) — previously a wedged worker was invisible.
+The `worker` has no HTTP contract of its own but serves this listener anyway
+(`TANKOVAULT_BIND_ADDR`, default `0.0.0.0:8085`), so a wedged worker is visible.
 
 The `frontend` also exposes `GET /healthz` as a legacy alias of `/health`, kept only because
 the retired nginx image published that path. Nothing in the stack uses it.
@@ -51,9 +51,9 @@ the retired nginx image published that path. Nothing in the stack uses it.
 ### The container healthcheck
 
 Every service image carries a Docker `HEALTHCHECK`, which is what lets `depends_on` say
-`service_healthy` rather than `service_started`. It cannot be an HTTP probe: these are
+`service_healthy`, not `service_started`. It cannot be an HTTP probe: these are
 `scratch` images with no shell, no `wget` and no `curl`, so there is nothing to run a
-`CMD-SHELL` with. The binary probes **itself** instead —
+`CMD-SHELL` with. The binary probes **itself** instead:
 
 ```yaml
 test: ["CMD", "/usr/local/bin/tankovault-service", "--healthcheck"]
@@ -61,8 +61,8 @@ test: ["CMD", "/usr/local/bin/tankovault-service", "--healthcheck"]
 
 `--healthcheck` is an argv branch taken at the very top of `main`, before config loading and
 telemetry (`crates/service/src/healthcheck.rs`). It TCP-connects to the service's own
-`bind_addr` — read from the same configuration the server binds, so a rebind is followed
-automatically — and exits `0` or `1`.
+`bind_addr` (read from the same configuration the server binds, so a rebind is followed
+automatically) and exits `0` or `1`.
 
 It is a **liveness** probe by design, and deliberately not an HTTP `GET /ready`: "the listener
 is accepting" is what should trigger a restart, whereas "Postgres is reachable" is a traffic
@@ -74,7 +74,7 @@ routing decision, and conflating them turns a database blip into a fleet-wide re
 ## 2. Toggles
 
 Each toggle is a **wiring** decision resolved once at boot, never an `if` at a call site.
-These are deployment settings, distinct from the runtime **feature flags** in §4 — see the
+These are deployment settings, distinct from the runtime **feature flags** in §4: see the
 comparison there for which mechanism a given switch belongs in.
 
 ### `metrics`
@@ -90,7 +90,7 @@ http_requests = true            # per-request counter/histogram/gauge
 `enabled = false` means the process-wide Prometheus recorder is never installed, so
 `metrics::counter!` calls throughout the workspace dispatch to the crate's default dropping
 recorder and retain nothing. Domain code is unchanged either way. The scrape route answers
-`404` rather than an empty body, so a misconfigured scrape target fails loudly in Prometheus
+`404`, not an empty body, so a misconfigured scrape target fails loudly in Prometheus
 instead of drawing a silently flat graph.
 
 `http_requests` is separate because the request histogram is the expensive part: a service
@@ -102,13 +102,12 @@ metric's type, unit, help text and emitting services, and is what publishes the 
 lines on the scrape. `xtask repo-lint` fails on any call site whose metric has no row there, and
 on any row nothing emits.
 
-A hand-maintained copy lived in this file and drifted twice — it was four rows short until
-OPS-8.3 enumerated the call sites, and one row short again after that. A second list is how the
-first one goes stale, so there is now one list and a gate on it.
+This file deliberately holds no copy of that list. A second list is how the first one goes
+stale, so there is one list and a gate on it.
 [`OBSERVABILITY.md`](./OBSERVABILITY.md) groups the same metrics by concern with the label values
 and the operator notes.
 
-`route` is axum's **matched path** (`/v1/series/{id}`), never the concrete URI — an
+`route` is axum's **matched path** (`/v1/series/{id}`), never the concrete URI: an
 unrouted path is attacker-controlled and would otherwise be an unbounded label source, so
 those are folded into a single `unmatched` label. `status` is the **exact code**, not a class.
 
@@ -126,7 +125,7 @@ largely invisible in the counter and the histogram while being fully visible in 
 
 **Collection, dashboards and alerts:** [`OBSERVABILITY.md`](./OBSERVABILITY.md). It carries the
 metric inventory above with its label values, the recording and alerting rules, the runbook entry
-for every alert, and — the part worth reading before writing a new rule — the list of documented
+for every alert, and (the part worth reading before writing a new rule) the list of documented
 failure modes this stack currently emits **nothing** for.
 
 ### `telemetry.sentry`
@@ -142,7 +141,7 @@ send_default_pii   = false   # true → client IP, resolved user and unredacted 
 ```
 
 Off is the default and the published compose value. `enabled = true` with no DSN **fails the
-boot** — a reporter that reports nowhere is what `telemetry.otlp_endpoint` was removed for, and
+boot**: a reporter that reports nowhere is what `telemetry.otlp_endpoint` was removed for, and
 refusing it is cheaper than finding out during an incident. So is a sample rate outside
 `0.0..=1.0`, or a DSN that does not parse; the error names the key and never quotes the DSN.
 
@@ -154,13 +153,13 @@ Rotating a DSN is a restart.
 
 - Every `tracing` record at or above `capture_level` becomes an issue; everything down to
   `breadcrumb_level` becomes the breadcrumb trail attached to the next one. Both sit *under* the
-  subscriber's `EnvFilter`, so `TANKOVAULT_TELEMETRY__LOG_FILTER` is a ceiling on them — a filter
+  subscriber's `EnvFilter`, so `TANKOVAULT_TELEMETRY__LOG_FILTER` is a ceiling on them: a filter
   of `warn` silently removes every `info` breadcrumb.
 - A panic in any handler. The `CatchPanicLayer` still turns the same panic into a `500` for that
   one request; the two are complementary, not alternatives.
 - Every routed endpoint of every HTTP service, through the shared stack: a hub per request (so
   concurrent requests cannot share a breadcrumb trail) and one transaction named by the
-  **matched path** — `/v1/series/{id}`, never the concrete URI, for the same cardinality reason
+  **matched path**: `/v1/series/{id}`, never the concrete URI, for the same cardinality reason
   the metrics layer uses it.
 - Every unit of **background work**, as its own transaction: one per scan task
   (`scan_task`), scheduler sweep (`scheduler_sweep`), duplicate sweep (`merge_sweep`),
@@ -172,9 +171,9 @@ Rotating a DSN is a restart.
   stack, exactly as it is for metrics.
 
 **`send_default_pii` is a security setting.** On, events carry the client IP, the resolved user
-and the full request header set — `Authorization` and `Cookie` included — to a third party. Off
-is also what keeps `sentry-tower` redacting sensitive headers, so leaving it off is two controls
-rather than one. A deployment that publishes a data policy should treat turning it on as a change
+and the full request header set (`Authorization` and `Cookie` included) to a third party. Off
+is also what keeps `sentry-tower` redacting sensitive headers, so leaving it off is two controls,
+not one. A deployment that publishes a data policy should treat turning it on as a change
 to that policy.
 
 #### The trace, end to end
@@ -184,27 +183,27 @@ stops:
 
 | From | Carried on | To | Transaction there |
 |---|---|---|---|
-| browser → `frontend` | — (the trace starts here) | proxy | request |
+| browser → `frontend` | none (the trace starts here) | proxy | request |
 | `frontend` | HTTP header | `api` | request |
 | `api` | HTTP header | `control-plane`, `sync`, `worker` | request |
 | `control-plane` sweep | **NATS header** | `worker` | `scan_task` |
 | `worker` progress event | **NATS header** | `control-plane` | `bus_delivery` |
 | `worker` chapter event | **NATS header** | `notifier` | `bus_delivery` |
-| `notifier` live push | **NATS header** | `api` SSE relay | — |
+| `notifier` live push | **NATS header** | `api` SSE relay | none |
 | `worker` solve | HTTP header | `challenge-solver`, `render` | request |
 
 Two mechanisms, one header name. Over HTTP it is
-`tankovault_service::trace_headers()`, attached at three choke points — the API's `Upstream`
+`tankovault_service::trace_headers()`, attached at three choke points: the API's `Upstream`
 client, the shared solve client in `crates/fetch`, and the frontend proxy. Over the broker it is
 `tankovault_bus`, which writes the header on **every** publish and reads it on **every**
-delivery, so a new subject inherits the behaviour rather than having to remember it. A message
+delivery, so a new subject inherits the behaviour instead of having to remember it. A message
 published while tracing is off carries no header block at all, so the wire bytes of a
 Sentry-less deployment are unchanged.
 
 The frontend proxy *overwrites* any inbound `sentry-trace`: that value is a client claim, and
 the first hop under our control is the parent worth recording.
 
-Work a request **detaches** stays in its trace too — the targeted sync push, a transactional
+Work a request **detaches** stays in its trace too: the targeted sync push, a transactional
 email, an operator-triggered duplicate sweep or model build. A `tokio::spawn` starts with a
 fresh Sentry hub, so each of those is wrapped in `tankovault_service::in_current_trace`, which
 binds the spawning task's hub. The rule when adding one: call it *outside* the spawned future,
@@ -212,7 +211,7 @@ because it captures the hub that is current when it runs.
 
 `traces_sample_rate` is the fraction of traces a service **starts**, not a switch for taking
 part in one. A service left at `0.0` still continues a trace handed to it, so a rate set on the
-edge alone still produces a whole trace — but set it uniformly, because the service that starts
+edge alone still produces a whole trace, but set it uniformly, because the service that starts
 a trace is the one whose rate decides whether it exists at all.
 
 The one hop deliberately **not** propagated is the call out to TRAWL from `render` and
@@ -220,7 +219,7 @@ The one hop deliberately **not** propagated is the call out to TRAWL from `rende
 
 #### `release`, and whether a stack trace is readable
 
-Left unset, `release` is `tankovault@<version of the binary>` — one tag across the tier, because
+Left unset, `release` is `tankovault@<version of the binary>`: one tag across the tier, because
 the nine images are cut from one workspace version and deployed together. Set it only to override
 that, and set it to the same string everywhere if you do: a per-service release splits one
 regression across nine of them.
@@ -228,7 +227,7 @@ regression across nine of them.
 Whether an issue arrives with **functions and line numbers or with bare addresses** is decided by
 the release pipeline, not by anything here. Published images are stripped, so the SDK sends the
 build-id of each loaded module and Sentry resolves the frames against debug files the `symbols`
-job uploaded for that build — including a source bundle, so the frame opens on the actual line.
+job uploaded for that build, including a source bundle, so the frame opens on the actual line.
 This happens only for images built by `release-please.yaml`, and only for an organisation that has
 opted in with the `SENTRY_ORG` / `SENTRY_PROJECT` repository variables; a locally built image or a
 private fork that has not will report addresses. [`RELEASING.md`](./RELEASING.md#sentry-debug-information-and-the-release-object)
@@ -242,7 +241,7 @@ browser or machine and no JavaScript source maps exist anywhere in this reposito
 ```toml
 [audit]
 enabled              = true
-record_ip            = false   # personal data (GDPR Art. 4(1)) — opt in deliberately
+record_ip            = false   # personal data (GDPR Art. 4(1)); opt in deliberately
 record_user_agent    = false
 retention_days       = 365     # 0 disables the sweep and keeps records forever
 sweep_interval_hours = 24
@@ -270,7 +269,7 @@ trust_forwarded_for  = false
 [rate_limit.global]    # anything without a stricter class
 per_minute = 300
 burst      = 60
-[rate_limit.auth]      # login, register, reset, refresh — the guessing control
+[rate_limit.auth]      # login, register, reset, refresh: the guessing control
 per_minute = 10
 burst      = 5
 [rate_limit.expensive] # data export, scan triggers, sync push/pull
@@ -282,24 +281,24 @@ burst      = 10
 sustained rate is the normal case: 300/min with a 60-deep bucket absorbs a page load without
 letting one client spend a whole minute's budget instantly.
 
-`enabled = false` leaves the layer unmounted entirely — no per-request cost, and no
+`enabled = false` leaves the layer unmounted entirely: no per-request cost, and no
 `X-RateLimit-*` headers.
 
 **Backends.** `memory` is process-local: correct for one replica, but with `N` replicas the
 effective limit is `N` times the configured one. `redis` holds one token bucket per
 `(class, client)` in a Lua check-and-consume, so the limit means what it says across a
-fleet. When Redis is unreachable the Redis backend **degrades to per-replica limits** — an
-outage must neither take the edge down nor lift the limit — and logs plus counts every such
+fleet. When Redis is unreachable the Redis backend **degrades to per-replica limits** (an
+outage must neither take the edge down nor lift the limit) and logs and counts every such
 failure. Every command is bounded by a 250 ms timeout and the client reconnects with backoff.
 
 > **`trust_forwarded_for` is a security setting.** Enable it *only* behind a reverse proxy
 > that overwrites `X-Forwarded-For`/`X-Real-IP`. With it on and no such proxy, any client
 > can forge a fresh identity per request and bypass the limiter entirely.
 
-Buckets are keyed by client IP, deliberately not by anything the client supplies — keying
+Buckets are keyed by client IP, deliberately not by anything the client supplies: keying
 on a bearer token would let an attacker mint a fresh bucket per request by sending a
 different (even invalid) one. A service that has already *verified* a principal in an outer
-layer may insert a `ratelimit::Principal` request extension, which the limiter prefers —
+layer may insert a `ratelimit::Principal` request extension, which the limiter prefers:
 except on the `auth` class, which stays keyed by address because accounts cost nothing to
 create.
 
@@ -322,7 +321,7 @@ max_age_secs      = 3600
 
 The CORS default is an **empty allowlist**, which rejects every cross-origin request. This
 replaces `CorsLayer::permissive()`, which reflected any origin and allowed any method and
-header — on an API serving authenticated user data, that let any site on the internet read a
+header: on an API serving authenticated user data, that let any site on the internet read a
 signed-in user's watchlist, progress and account settings. The reference deployment serves
 the frontend and API from one origin (the axum `frontend` server proxies `/v1/*` to the API),
 so no CORS hop exists; a split-origin deployment must name its origins explicitly.
@@ -349,14 +348,14 @@ to the timeout's `408`, not only to handler responses.
 
 Authorization is **per-capability**. There is no role, no tier, and no ordering: a principal
 holds a set of named [`Permission`](../crates/domain/src/permissions.rs) grants, each endpoint
-asks for the specific thing it does, and permissions never imply one another —
+asks for the specific thing it does, and permissions never imply one another:
 `users.write` does not confer `users.read`. The single exception is the super user grant below,
 which is deliberately not a role either.
 
-The previous `user < operator < admin` tier was removed rather than extended. It could not
+The previous `user < operator < admin` tier was removed, not extended. It could not
 express least privilege (letting someone triage the merge queue also handed them provider
 editing, scan triggering and every user's linked-account state), and it made the requirement
-invisible in the model — `at_least(Operator)` says how privileged a caller must be, not what
+invisible in the model: `at_least(Operator)` says how privileged a caller must be, not what
 they are allowed to do.
 
 **Grants are resolved from the database on every authenticated request**, not read out of the
@@ -369,7 +368,7 @@ offer at any price.
 | The capability registry (every permission, its group and description) | `tankovault_domain::Permission` |
 | Storage | `user_permissions` (one row per user × capability, with `granted_by` provenance) |
 | Resolution | `tankovault_db::repo::permissions::resolve` |
-| Enforcement | `AuthUser::require` / `require_all` — a refusal is audited as `authz.denied` |
+| Enforcement | `AuthUser::require` / `require_all`: a refusal is audited as `authz.denied` |
 | What a caller may do | `GET /v1/me/capabilities` (also carries the enabled feature list) |
 | Catalogue + preset bundles for the admin UI | `GET /v1/admin/permissions` |
 
@@ -380,7 +379,7 @@ exist.
 
 ### The super user
 
-One account holds `system.superuser`, a grant that answers **every** permission check —
+One account holds `system.superuser`, a grant that answers **every** permission check,
 including checks for capabilities added by a later release, which the enumerated grants of a
 fully-privileged administrator would not cover until someone re-granted them.
 
@@ -390,19 +389,19 @@ It is created by the installer and by nothing else:
   the **only** one in the database. Re-running the job, or seeding a second administrator later,
   promotes nobody; the job's log line says which happened.
 - Migration `0042_super_user` grants it retroactively to the earliest account that holds
-  `users.permissions` — an existing deployment's owner, who could already grant themselves
+  `users.permissions`: an existing deployment's owner, who could already grant themselves
   anything. A deployment whose accounts include no such holder gets no super user.
 - A partial unique index makes a second one impossible, whatever writes the row.
 
 **A deployment with no super user is reconciled at boot.** The installer's claim only covers an
 empty database, so it misses the deployment whose users registered before the seed job ran, and
-the one whose owner was erased — and nothing in the API can mint the grant afterwards, so
+the one whose owner was erased, and nothing in the API can mint the grant afterwards, so
 neither state is recoverable by hand. `tankovault_db::repo::permissions::ensure_super_user`
 therefore runs from the api's startup (and again from `bootstrap seed-admin`) and promotes
 migration `0042`'s candidate: the **earliest active account holding `users.permissions`**, which
 is nobody who could not already grant themselves everything enumerable. It is a no-op on an owned
 deployment, and logs a warning (`promoted its earliest active administrator`) when it is not.
-Suspended candidates are skipped — the grant is single-slot, and spending it on an account that
+Suspended candidates are skipped: the grant is single-slot, and spending it on an account that
 cannot sign in would leave the deployment unowned in a way that looks fixed.
 
 **The owner cannot be suspended or erased from the console** (400, audited as
@@ -413,15 +412,15 @@ the reconciler's own next candidate.
 
 The permission editor cannot hand it out: it is absent from `GET /v1/admin/permissions`, from
 every preset, and `PUT /v1/admin/users/{id}/permissions` refuses (400, audited) a request that
-would add one. An edit that *omits* it leaves it alone rather than revoking it — the console's
+would add one. An edit that *omits* it leaves it alone instead of revoking it: the console's
 checklist omits it on every save, so any other behaviour would demote the owner on their first
 edit. Removing it is therefore a deliberate `DELETE` against `user_permissions`, or the account
-erasing itself — an administrator cannot erase it (below), and the next boot would reconcile the
+erasing itself: an administrator cannot erase it (below), and the next boot would reconcile the
 vacancy either way.
 
 ### Account status
 
-Suspension is *not* modelled as the absence of every permission — an account with no grants can
+Suspension is *not* modelled as the absence of every permission: an account with no grants can
 still read its own watchlist, which is not what suspending it means. `users.status` is an
 identity-level state checked **before** authorization: a suspended account cannot sign in,
 cannot refresh, and is refused at the extractor with `403 account_suspended`.
@@ -432,7 +431,7 @@ Three refusals are properties of the deployment that no constraint can express, 
 `services/api/src/admin/users.rs`:
 
 1. **No self-administration.** Suspension, erasure and permission edits refuse to target the
-   caller — `/v1/me` is where someone acts on their own account, and an administrator who can
+   caller: `/v1/me` is where someone acts on their own account, and an administrator who can
    quietly grant themselves a capability produces a trail nobody can rely on.
 2. **The last administrator is protected.** Revoking, suspending or erasing the final *active*
    holder of `users.permissions` is refused; it would leave no way to grant anything again,
@@ -443,7 +442,7 @@ All three refusals are audited, not just the successes.
 
 ---
 
-## 4. Feature flags — the control plane
+## 4. Feature flags: the control plane
 
 Every product capability is switchable at runtime from the console. Flags are a **different
 mechanism from the toggles in §2** and the distinction matters:
@@ -459,9 +458,9 @@ check is **declarative**. `route_features()` in `services/api/src/lib.rs` is a t
 next to the route registration, mapping route-pattern prefixes to features; one middleware
 (`tankovault_service::flags::enforce`) reads it. Handlers contain no flag logic. Background
 loops, which have no route to declare against, check their own flag at the top of each
-iteration — there the loop *is* the feature.
+iteration: there the loop *is* the feature.
 
-- **Registry:** `tankovault_domain::Feature` — 45 features in 8 groups, each with a compiled
+- **Registry:** `tankovault_domain::Feature`: 45 features in 8 groups, each with a compiled
   default and an operator-facing description of what switching it off does.
 - **Storage:** `feature_flag_overrides` holds *only* deviations from the shipped defaults. An
   empty table is a fully working deployment; a feature added in code appears in the console at
@@ -479,11 +478,11 @@ curl -X PUT $API/v1/admin/feature-flags/notifications.email \
 **Propagation.** The replica serving the write refreshes before responding, so the operator's
 next request already behaves the new way. Other replicas converge within
 `features.refresh_secs` (default 15). A refresh that cannot reach the database keeps the
-previous snapshot rather than falling back to defaults — a database blip must not silently
+previous snapshot instead of falling back to defaults: a database blip must not silently
 re-enable something an operator switched off.
 
 **Response when a feature is off:** `404` with an RFC 9457 body naming the feature, so the
-answer to "why is this 404ing" is in the response rather than only on the flag page.
+answer to "why is this 404ing" is in the response, not only on the flag page.
 
 ```json
 {"type":"about:blank#feature_disabled","title":"feature_disabled","status":404,
@@ -501,14 +500,14 @@ runtime ignores a stored override for them, so a hand-edited database cannot do 
 send data to third parties from configuration the installer has not necessarily reviewed;
 `catalogue.adult_content`, whose default-on failure mode is showing adult material to an
 audience nobody decided to show it to; and the two *requirements*, `accounts.mfa_required` and
-`accounts.required`, which narrow who may use the deployment rather than what it offers — see
+`accounts.required`, which narrow who may use the deployment, not what it offers: see
 below. Everything else ships on: flags exist so an operator can narrow a working deployment, not
 so a fresh install arrives inert.
 
 ### Making the deployment private
 
 `accounts.required` is the one flag whose refusal is **`401`, not `404`**, because it is a
-requirement placed on the caller rather than a route withdrawn from the API. With it on, every
+requirement placed on the caller, not a route withdrawn from the API. With it on, every
 route refuses a request that carries no valid access token:
 
 ```json
@@ -517,13 +516,13 @@ route refuses a request that carries no valid access token:
 ```
 
 Its own problem type, not the generic `unauthorized`, so a client can tell "this deployment is
-private" from "your session ended" — the web app reads exactly that to send a signed-out visitor
+private" from "your session ended": the web app reads exactly that to send a signed-out visitor
 to the sign-in screen instead of showing a page of failed panels.
 
 What stays open is the surface a visitor needs in order to *get* an account: everything under
 `/v1/auth` (sign-in, registration, password reset, email confirmation, both legs of a passkey or
 second-factor sign-in) and `/v1/legal` (registering is the act of accepting the Terms). Nothing
-else — including the public catalogue and `/v1/me/capabilities`. The refusals are counted by
+else is open, including the public catalogue and `/v1/me/capabilities`. The refusals are counted by
 `http_account_required_total`, which stays at zero on a public deployment.
 
 Turning it on does not create accounts. Pair it with `accounts.registration` **off** for a
@@ -550,19 +549,19 @@ The self-service endpoints answer the two rights people actually exercise. They 
 the rest of Chapter III, so a tracked queue sits alongside them (`gdpr_requests`, feature
 `privacy.requests`):
 
-- **Art. 16/18/21** — rectification, restriction and objection have no self-service shape.
+- **Art. 16/18/21**: rectification, restriction and objection have no self-service shape.
   They are decisions someone has to make.
-- **Art. 12(3)** — a one-month deadline needs a tracked object with a due date. An HTTP call
+- **Art. 12(3)**: a one-month deadline needs a tracked object with a due date. An HTTP call
   that either happened or did not cannot be overdue.
-- **Art. 5(2)** — the controller must be able to *demonstrate* it responded.
-- When `privacy.self_erasure` is off, the right is not removed — it becomes mediated through
+- **Art. 5(2)**: the controller must be able to *demonstrate* it responded.
+- When `privacy.self_erasure` is off, the right is not removed: it becomes mediated through
   this queue.
 
 | Endpoint | Permission | Purpose |
 |---|---|---|
 | `POST/GET /v1/me/privacy/requests`, `DELETE …/{id}` | *(own account)* | File, list, withdraw |
 | `GET /v1/admin/privacy/requests` | `privacy.read` | The queue, most-urgent-first, overdue flagged |
-| `POST …/{id}/claim` | `privacy.write` | Take ownership; a second claim `409`s rather than silently stealing it |
+| `POST …/{id}/claim` | `privacy.write` | Take ownership; a second claim `409`s, not silently stealing it |
 | `POST …/{id}/resolve` | `privacy.write` | Complete or reject. A rejection **must** state reasons (Art. 12(4)) |
 | `POST …/{id}/extend` | `privacy.write` | Art. 12(3) extension; only ever moves the deadline later |
 | `GET …/{id}/export` | `privacy.export` | Disclose the subject's record to fulfil an access request |
@@ -575,7 +574,7 @@ the trail distinguishes *we said we did it* from *we did it*. `privacy.export` i
 **No subject snapshot.** The queue stores no copy of the subject's email or username;
 `user_id` is `ON DELETE SET NULL`. While a request is open its subject exists and is reachable
 by join, and the moment an erasure completes the row degrades by itself into "an erasure
-request was filed on D1 and completed on D2 by operator O" — an accountability record that is
+request was filed on D1 and completed on D2 by operator O": an accountability record that is
 no longer personal data. Copying the email in for the operator's convenience would have
 re-created, in the compliance log, the identifier the erasure destroyed.
 
@@ -588,7 +587,7 @@ service.
 
 **Erasure and the audit trail.** Every user-owned table declares `ON DELETE CASCADE`, so one
 statement removes the profile, sessions, watchlist, progress, notifications, linked accounts
-and sync state. `audit_log.actor_id` is `ON DELETE SET NULL` instead — deliberately. Records
+and sync state. `audit_log.actor_id` is `ON DELETE SET NULL` instead: deliberately. Records
 of *what privileged actions occurred* survive in pseudonymised form while the identity
 linking them to a person is destroyed. Retaining an unlinkable record of an administrative
 action rests on legitimate interest (Art. 6(1)(f)), and once the actor reference is gone the
@@ -597,24 +596,24 @@ record is no longer personal data.
 **Retention** (Art. 5(1)(e), storage limitation) is the `audit.retention_days` sweep. It
 deletes in bounded batches so a first sweep over a long-neglected table cannot hold locks
 long enough to stall the writers appending to it, and it is idempotent, so replicas need no
-leader election — concurrent sweeps simply share the work.
+leader election: concurrent sweeps simply share the work.
 
 ---
 
 ## 6. Shutdown
 
-`install_shutdown()` listens for `SIGINT` and (on Unix) `SIGTERM` — what a container runtime
-sends first — and cancels one `CancellationToken` shared by the HTTP server and every
+`install_shutdown()` listens for `SIGINT` and (on Unix) `SIGTERM` (what a container runtime
+sends first) and cancels one `CancellationToken` shared by the HTTP server and every
 background loop. A second signal reaches the default handler and terminates immediately,
 which is the conventional escape hatch when a drain hangs.
 
-Loops stop *between* units of work rather than mid-write. This matters concretely: the
+Loops stop *between* units of work, not mid-write. This matters concretely: the
 notifier acks a message only after fan-out, so being killed between the two would drop a
 notification; a worker task severed mid-scan stays claimed until its visibility timeout
 expires, stalling the run.
 
-Use `shutdown::every(interval, token, name, task)` for any new periodic loop rather than
-hand-rolling `tokio::time::interval` — it skips its first tick, so a rolling restart does not
+Use `shutdown::every(interval, token, name, task)` for any new periodic loop
+instead of hand-rolling `tokio::time::interval`: it skips its first tick, so a rolling restart does not
 stampede every replica's sweep at once.
 
 ---
@@ -626,12 +625,12 @@ oldest held task is in (`fetching chapters`, `writing to the catalogue`, …), w
 working against, and how long it has been in it. The case worth knowing is the one that has no
 stage: a run in `running` with **nothing claimed** is not working, it is waiting for a worker
 slot, and the panel says so with how long it has waited. A worker runs one task per provider, so
-a provider's second run legitimately queues behind its first — through `scan_runs.state` alone
-that is indistinguishable from a run that has hung, which is the reading it used to get.
+a provider's second run legitimately queues behind its first: through `scan_runs.state` alone
+that is indistinguishable from a run that has hung.
 
 **"Why so long?"** on a run card opens its breakdown: where the time went by stage, the tasks that
 cost the most, and one sentence naming the cause. The reading that comes first is the one that is
-easy to misdiagnose — a run whose time went on *waiting for permission to send* is being crawled
+easy to misdiagnose: a run whose time went on *waiting for permission to send* is being crawled
 exactly as politely as that provider is configured for, and no change to the code will speed it
 up. Raise `politeness.rps` or lower `crawl_delay_ms` for that provider, or accept the duration.
 The same figures are in Prometheus; see "Why a scan is slow" in
@@ -645,8 +644,8 @@ Both need `scans.run` and a confirmed identity, and both are audited.
 Two things to expect. Cancelling **cannot unpublish the broker's queued messages**, so it takes
 effect at the next task boundary: a task already in flight runs to its end, and a worker handed a
 message afterwards finds the claim refused and drops it. And the abandoned tasks are recorded as
-`skipped` without counting as done — a cancelled run keeps the progress it had rather than
-rendering as a completed one.
+`skipped` without counting as done: a cancelled run keeps the progress it had
+instead of rendering as a completed one.
 
 Cancellation stays reachable when `scanning.manual` is off. That is deliberate: switching
 triggering off is usually a response to a queue that is already the problem, and taking the stop
@@ -657,33 +656,31 @@ button away at that moment would be the worst possible time to lose it.
 ## 7. Scan-queue priority and fairness
 
 Scan tasks are dispatched on a NATS work-queue stream, one subject per provider **and scan
-mode** (`scan.tasks.<slug>.<mode>`). Workers bind one durable consumer per subject — a
-*lane*, `tankovault-workers-<mode>-<slug>` — and pick between lanes on two rules:
+mode** (`scan.tasks.<slug>.<mode>`). Workers bind one durable consumer per subject (a
+*lane*, `tankovault-workers-<mode>-<slug>`) and pick between lanes on two rules:
 
 1. **Fast scans before full scans.** Every fast lane is offered a turn before any full lane
-   is looked at.
+   is looked at, except that after eight consecutive fast tasks the full tier is offered first
+   once, so a busy fast tier cannot starve full scans.
 2. **Round-robin between providers**, within a mode, taking a single task from a lane before
    moving to the next.
 
 The reason for both is head-of-line blocking. A full catalogue scan fans out into one
-`series` task per catalogue entry — six figures for a large provider — and publishes them
+`series` task per catalogue entry (six figures for a large provider) and publishes them
 back to back. A single consumer on a wildcard serves the stream in publish order, so
 everything else waits for that entire backlog to drain: hours or days in which neither
 another provider's scan nor a fast scan that would surface a new chapter runs at all. The
 two rules make the same backlog cost another provider *one task* of delay, and cost a fast
 scan nothing beyond the task currently in flight.
 
-Priority is **near**-strict, and the qualifier is load-bearing. It used to be strict, on the
-grounds that the fast tier was bounded by construction: a fast run enqueued exactly one
-`latest_feed` task per provider and walked the feed inside it, so the fast lanes held at most one
-task per provider and could not starve the full tier.
-
-A fast run now fans out a `series` task per feed entry — which is what makes its progress
-readable in the console instead of `0/1` for the whole run — and that argument went with it. A
+Priority is **near**-strict, and the qualifier is load-bearing. Strict priority would be safe
+only if the fast tier were bounded by construction, and it is not: a fast run fans out a
+`series` task per feed entry (which is what makes its progress readable in the console instead
+of `0/1` for the whole run). A
 provider with a large latest feed would hold a non-empty fast lane for the entire run, and under
 strict priority *every other provider's* full scan would wait behind it. So the queue carries a
 debt counter: after `FULL_TIER_EVERY` (8) consecutive fast tasks, the full tier is offered a turn
-first. One turn in nine — the fast tier still wins nearly every time, which is the point of
+first. One turn in nine: the fast tier still wins nearly every time, which is the point of
 having tiers, but "nearly always" is a bound and "always" was not. `tier_order` in
 `services/worker/src/queue.rs` is where the policy lives.
 
@@ -694,14 +691,14 @@ failed to open (`could not open provider task lane` in the worker log). A `scan=
 counter that stays flat while fast runs are being planned points at the lane, not the
 scheduler.
 
-Both of those diagnostics now exist as alerts — `TankoVaultFastScanLanesStarved` and
+Both of those diagnostics exist as alerts: `TankoVaultFastScanLanesStarved` and
 `TankoVaultScanLaneUnfair` in [`OBSERVABILITY.md`](./OBSERVABILITY.md). One caveat that matters
 when reading the counter either way: it counts tasks **handed out**, and a JetStream redelivery
 increments it again (`MAX_TASK_DELIVERIES` is 3), so a lane that is failing and retrying looks
-busy rather than broken. Nothing currently distinguishes the two.
+busy, not broken. Nothing currently distinguishes the two.
 
-**Adding a provider.** Its lanes open on the next refresh — `worker.provider_refresh_secs`,
-default 60 — not instantly. Until then its tasks sit queued, which is why a freshly created
+**Adding a provider.** Its lanes open on the next refresh (`worker.provider_refresh_secs`,
+default 60), not instantly. Until then its tasks sit queued, which is why a freshly created
 provider can take up to a minute to start scanning. Provider slugs are restricted to
 letters, digits, `-` and `_` because the slug *is* a subject token and part of the consumer
 name; the create endpoint rejects anything else with `400`.
@@ -711,21 +708,21 @@ consumers are not deleted with the provider row. That is deliberate: tasks alrea
 under the old slug can only be reached by a consumer with that exact filter, so the lane
 stays until it has drained them. An idle lane costs one round trip per poll cycle.
 
-**Upgrading.** Two things happen on the first worker start after this change, both
+**Upgrading from the single-consumer queue.** Two things happen on the first worker start, both
 automatic:
 
 - The legacy `tankovault-workers` wildcard consumer is deleted. A work-queue stream refuses
-  two consumers whose filters overlap, and `scan.tasks.*` overlaps every lane, so the lanes
-  cannot be created beside it. No work is lost: work-queue retention drops a message when it
+  two consumers whose filters overlap, and `scan.tasks.*` overlaps the untiered subject every full-scan
+  lane binds, so those lanes cannot be created beside it. No work is lost: work-queue retention drops a message when it
   is *acked*, not when a consumer is deleted.
 - The tasks stream's subject binding widens from `scan.tasks.*` to `scan.tasks.>`, so the
-  two-token tiered subjects are captured. This uses `create_or_update_stream` —
+  two-token tiered subjects are captured. This uses `create_or_update_stream`:
   `get_or_create_stream` returns an existing stream untouched, which would silently leave
   every tiered task published to a subject no stream holds.
 
 Tasks published before the upgrade sit on the untiered `scan.tasks.<slug>` subject; each
-full-scan lane binds that subject alongside its own, so they are executed as backfill rather
-than stranded. During a rolling deploy, an old replica that has not yet restarted loses its
+full-scan lane binds that subject alongside its own, so they are executed as backfill,
+not stranded. During a rolling deploy, an old replica that has not yet restarted loses its
 consumer and stops consuming; it recovers when it is replaced.
 
 ---
@@ -733,7 +730,7 @@ consumer and stops consuming; it recovers when it is replaced.
 ## 7b. When the queue and the database disagree
 
 JetStream is the truth for **dispatch**; `scan_tasks` is the truth for **progress**. Nothing
-transactional spans the two — a task row is committed and then its message is published — so
+transactional spans the two (a task row is committed and then its message is published), so
 they can come apart with no failure visible on either side:
 
 - a publish that never landed, or landed on a stream that was later purged or recreated;
@@ -741,17 +738,18 @@ they can come apart with no failure visible on either side:
 - any period in which the pool stopped consuming, leaving messages to exhaust their deliveries.
 
 The symptom is always the same and always looks like a hung scan: the run reads `RUNNING` with
-an unmoving counter and nothing claimed, the console says *"waiting for a worker"*, and — until
-`scheduler.run_stale_after_secs` (default an hour) — the planner refuses to start another run for
+an unmoving counter and nothing claimed, the console says *"waiting for a worker"*, and (until
+`scheduler.run_stale_after_secs` (default an hour)) the planner refuses to start another run for
 that provider and mode. Nothing retries it, because from the database's side there is no failure
 to see.
 
 **The reconciler repairs this automatically**, on the scheduler leader, every
 `scheduler.reconcile_interval_secs` (default 300; `0` disables). One pass does three things:
 
-1. For each provider lane with open tasks, it asks the broker how many messages that lane's
-   consumer actually holds (pending plus claimed-and-unacked) and republishes the difference,
-   oldest first. Republishing a task whose message did still exist is harmless — the second
+1. For each provider lane with open tasks older than five minutes, it asks the broker how many
+   messages that lane's consumer actually holds (pending and claimed-and-unacked) and
+   republishes the difference, oldest first and at most 500 per lane per pass; a larger deficit
+   is worked off over the following passes. Republishing a task whose message did still exist is harmless: the second
    delivery finds the task claimed or settled and is declined without touching the run counters.
 2. It finalises runs whose tasks have all settled but whose terminal progress event was lost,
    and emits that event so the console and the aggregator see the same ending.
@@ -759,14 +757,14 @@ to see.
    provider.
 
 Two properties are deliberate and worth knowing before changing the interval. The comparison is
-**evidence-based, not timed** — only the deficit against a real broker count is republished,
+**evidence-based, not timed**: only the deficit against a real broker count is republished,
 because age alone would re-dispatch the tens of thousands of tasks a catalogue scan legitimately
-leaves queued behind one provider's slot. And a lane with **no consumer at all** is skipped
-rather than treated as empty, so a deployment whose workers have never started is not read as a
+leaves queued behind one provider's slot. And a lane with **no consumer at all** is skipped,
+not treated as empty, so a deployment whose workers have never started is not read as a
 deployment that has lost every message.
 
 **What to watch.** `scan_dispatch_repairs_total{provider,scan}` counts republished tasks. A
-healthy deployment repairs nothing, so any sustained rate is dispatch losing work — the cause,
+healthy deployment repairs nothing, so any sustained rate is dispatch losing work: the cause,
 not the symptom the console shows. The pass logs at `WARN` whenever it changes anything, naming
 the lane, its open-task count and the broker's backlog.
 
@@ -776,12 +774,12 @@ the runs already in flight most need to be able to finish. A repair creates no n
 
 ### A provider that keeps failing is asked less often
 
-The sweep is otherwise unconditional — every active provider, every tick — which is right while
+The sweep is otherwise unconditional (every active provider, every tick), which is right while
 providers work and wrong the moment one stops, because nothing else in the pipeline slows down. A
 platform whose nine installs went down together was still being asked for its feed 288 times a
 day each, at origins answering an infrastructure error page to every request. Those requests
 cannot succeed; they bury the rest of the failure feed under one repeated row; and where the host
-is *refusing* rather than broken, they are the reason it keeps refusing.
+is *refusing*, not broken, they are the reason it keeps refusing.
 
 So the sweep now consults the provider's own recent history first, per scan mode:
 
@@ -791,11 +789,11 @@ So the sweep now consults the provider's own recent history first, per scan mode
 - Past that, each further consecutive failure doubles the wait, starting from that mode's sweep
   interval and stopping at `scheduler.failure_backoff_max_secs` (default six hours; `0` disables
   the policy entirely). At the defaults a provider that is simply down settles at four attempts a
-  day rather than 288.
+  day, not 288.
 - The wait is measured **from the last failure**, so serving it out is what releases the
   provider. One successful run ends the streak outright.
 
-The streak is derived from `scan_runs` — the runs are the record, and a second copy of it would
+The streak is derived from `scan_runs`: the runs are the record, and a second copy of it would
 be one more thing to keep true. Runs still in flight do not count, or a queued run would clear
 the backoff on every sweep.
 
@@ -805,7 +803,7 @@ unconditionally, and its success ends the streak like any other.
 
 **What to watch.** `scan_runs_planned_total{provider,scan,result="cooling_down"}` counts the
 skips. A provider producing a steady stream of them is not being scanned at all, and the reason
-is its own failure streak — the triage feed says what the failures were. The skip itself logs at
+is its own failure streak: the triage feed says what the failures were. The skip itself logs at
 `DEBUG`, deliberately: once a provider is down it happens every tick, and the failure is already
 recorded elsewhere.
 
@@ -817,14 +815,14 @@ Terms of Service, Data Policy, Imprint and anything else this deployment is obli
 are **operator content**, configured under `[legal]` (docs/CONFIGURATION.md §4) and served
 unauthenticated at `GET /v1/legal` and `GET /v1/legal/{slug}`. The SPA's footer builds its Legal
 column from that index, so configuring a document publishes its link and removing one retracts
-it — there is no second place to edit.
+it: there is no second place to edit.
 
 ### Where the files live
 
 Anywhere the API can read them, mounted read-only and named one per locale with a `_FILE`
 variable (`TANKOVAULT_LEGAL__DOCUMENTS__TERMS__BODY__EN_FILE=/etc/tankovault/legal/terms.en.md`).
 The reference stack mounts `deploy/legal/` at `/etc/tankovault/legal`. Those checked-in files are
-**samples that say so in their first line** — they are not legal advice and not fit for a
+**samples that say so in their first line**: they are not legal advice and not fit for a
 deployment. Replace them before anyone else uses the instance.
 
 A deployment still on the earlier shape (`TANKOVAULT_LEGAL__DIR` and `…__SOURCES__<LOCALE>`) is
@@ -837,8 +835,8 @@ A document's text is configuration, so the API watches its file like any other c
 file. An edit re-reads the configuration and rebuilds the API's runtime (docs/CONFIGURATION.md
 §7.3); in-flight requests drain first. Readers see the new text once their five-minute
 `Cache-Control` window passes, and a client that revalidates with its `ETag` gets a `304` until
-then. Changing the `[legal]` section itself — which documents exist, their slugs, locales or
-`updated` line — reloads the same way.
+then. Changing the `[legal]` section itself (which documents exist, their slugs, locales or
+`updated` line) reloads the same way.
 
 ### Failure modes
 
@@ -847,7 +845,7 @@ then. Changing the `[legal]` section itself — which documents exist, their slu
 | A document has neither `body` nor `url`, or both | The API **refuses the configuration**, naming every bad key at once. At boot it does not start; on a reload the previous runtime keeps serving. Better than a footer link that permanently 404s. |
 | A named file is missing, unreadable, blank or over 1 MiB | The same refusal, naming the variable. The cap exists so a `_FILE` pointed at a log file cannot become a response body. |
 | An external `url` uses plain `http` | Served, with one warning line at every (re)load. |
-| No `[legal]` section at all | An empty index; the footer publishes no Legal column, and the register form omits its "you accept …" line rather than linking nowhere. |
+| No `[legal]` section at all | An empty index; the footer publishes no Legal column, and the register form omits its "you accept …" line instead of linking nowhere. |
 
 ---
 
@@ -859,12 +857,12 @@ Migration is a **discrete deploy step, not something a service does at startup.*
 `main.rs` calls `migrate()`; the reference stack runs a one-shot `bootstrap migrate` container
 with `restart: "no"`, and every service gates on it with
 `condition: service_completed_successfully`. In a cluster that step is the same image as a
-`Job` or `initContainer` — `deploy/README.md` §Installing into a cluster. `xtask migrate` is
+`Job` or `initContainer`: `deploy/README.md` §Installing into a cluster. `xtask migrate` is
 the same code path from a checkout, for a developer's own database.
 
 Keep it that way. A startup migration in a service with `replicas: 2` is a race, and the
 usual "helpful" refactor is to add one. (`sqlx::migrate::Migrator::run` does take a Postgres
-advisory lock, so concurrent invocations serialise safely — but serialising a race is not the
+advisory lock, so concurrent invocations serialise safely, but serialising a race is not the
 same as not having one: every replica then blocks on the winner's DDL before it can bind.)
 
 ```bash
@@ -880,8 +878,8 @@ nobody can reach is busywork that would still not be a rollback path.
 
 **From `0021` onward every migration ships as a reversible `.up.sql` / `.down.sql` pair.**
 `0021_username_not_an_email` is the pattern: `sqlx migrate add -r <name>` generates both, and
-the down script must be genuinely safe to run — if reversing it would destroy data, the change
-belongs in an expand/contract sequence (below) rather than behind a down script that lies.
+the down script must be genuinely safe to run: if reversing it would destroy data, the change
+belongs in an expand/contract sequence (below), not behind a down script that lies.
 
 ```bash
 sqlx migrate revert --source migrations   # reverts exactly one migration
@@ -894,7 +892,7 @@ point-in-time restore.** Before any deploy that carries a new `migrations/*.sql`
    unverified backup is not a backup.
 2. Record the high-water mark: `SELECT max(version) FROM _sqlx_migrations;`
 3. Deploy.
-4. On failure, restore the dump. **Do not hand-edit `_sqlx_migrations`** — the ledger stores a
+4. On failure, restore the dump. **Do not hand-edit `_sqlx_migrations`**: the ledger stores a
    checksum per migration, and a row removed by hand makes sqlx re-run DDL against a schema
    that already has it.
 
@@ -909,15 +907,15 @@ above there is nothing to roll back to. `0018` and `0019` are exactly this shape
 reason the rule is written down.
 
 **2. Everything is `IF NOT EXISTS`.** `CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT
-EXISTS`, and — because Postgres has no `ADD CONSTRAINT IF NOT EXISTS` and no `CREATE TYPE IF
-NOT EXISTS` — a `DO $$ ... $$` guard for those two. sqlx's ledger means a migration never runs
+EXISTS`, and (because Postgres has no `ADD CONSTRAINT IF NOT EXISTS` and no `CREATE TYPE IF
+NOT EXISTS`) a `DO $$ ... $$` guard for those two. sqlx's ledger means a migration never runs
 twice on its own, so this only matters for a manual replay or a damaged ledger; it costs one
 line and turns a confusing failure into a no-op.
 
 **3. `CONCURRENTLY` is not available in this migrator, at all.** This is not a style
 preference. sqlx's `-- no-transaction` directive suppresses the *explicit* transaction, but
 sqlx sends the whole file as one simple-query string and Postgres wraps any multi-statement
-simple query in an **implicit** transaction — so `CREATE INDEX CONCURRENTLY` still fails with
+simple query in an **implicit** transaction, so `CREATE INDEX CONCURRENTLY` still fails with
 *"cannot run inside a transaction block"*. The only workaround is one statement per migration
 file. The full reasoning, and the decision not to do that, is recorded at the top of
 [`migrations/0020_performance_indexes.sql`](../migrations/0020_performance_indexes.sql).

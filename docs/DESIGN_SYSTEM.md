@@ -11,10 +11,10 @@ the shipped UI and this document disagree, the code is right and this document i
 
 ## 1. Design language
 
-A calm, high-contrast, **dark-first** reading environment — closer to print manga and sumi-e
+A calm, high-contrast, **dark-first** reading environment: closer to print manga and sumi-e
 ink than the usual neon-on-black tracker. Contrast comes from tonal ramps, not saturation.
-Vermilion is the single bold accent (a hanko-seal red), used as a **line and a glow** —
-active-nav stroke, unread badges, primary CTAs, progress fills — never as a flood. A second
+Vermilion is the single bold accent (a hanko-seal red), used as a **line and a glow**
+(active-nav stroke, unread badges, primary CTAs, progress fills) never as a flood. A second
 jade/teal role carries "healthy / synced / up-to-date". This is a direct evolution of the
 project's existing **"Inkstone"** direction (`docs/ARCHITECTURE.md` §17.1): same palette, same
 philosophy, richer surface.
@@ -22,7 +22,7 @@ philosophy, richer surface.
 **Signature devices** (use sparingly, keep everything else quiet):
 - Active-nav **3px vermilion bar** on the left edge, animated `scaleX` from the left.
 - Cover cards with a **hue-derived gradient** placeholder and a bottom scrim carrying
-  source-count + rating.
+  source-count and rating.
 - **Mono numerics** everywhere counts/dates/IDs appear (fast numeric scanning).
 - A pulsing **live dot** for real-time surfaces (console, SSE).
 
@@ -62,7 +62,7 @@ philosophy, richer surface.
 | `--faint-2` | `#4d5763` | Nav group headers |
 | `--icon-off` | `#7c8794` | Inactive nav icon |
 
-### 2.4 Accent (vermilion — default)
+### 2.4 Accent (vermilion: default)
 
 | Token | Hex | Role |
 | --- | --- | --- |
@@ -134,7 +134,7 @@ Line-height: `1.05` on hero titles, `1.3` on card titles, `1.55–1.7` on body/s
 - **Grid density knob** drives the discover grid: cozy `card:198px / gap:22px` · standard
   `158/18` · compact `124/12`. Grid = `repeat(auto-fill, minmax(var(--card), 1fr))`.
 - **Elevation:** covers `box-shadow: 0 8px 22px rgba(0,0,0,.35)`; hero cover
-  `0 20px 50px rgba(0,0,0,.55)`. On this dark ground, elevation = edge + ambient shadow.
+  `0 20px 50px rgba(0,0,0,.55)`. On this dark ground, elevation = edge and ambient shadow.
 - **Sidebar** `250px` fixed · **filter panel** `298px` · **series sidebar** `340px` ·
   **settings sub-nav** `236px` · **header** `64px` sticky with `backdrop-filter: blur(14px)`.
 
@@ -148,7 +148,7 @@ Line-height: `1.05` on hero titles, `1.3` on card titles, `1.55–1.7` on body/s
 | `ikbar` | `scaleX(0)→(1)` from left, `.25s` | Active-nav bar |
 | `ikpulse` | opacity `.5↔1`, `1.4–1.6s` loop | Live dots (console, active run) |
 | `ikflow` | background-position shift, `2s` linear loop | Active scan progress bar (barber-pole) |
-| `ikspin` | `rotate(360deg)` | (declared; spinners — avoid on content) |
+| `ikspin` | `rotate(360deg)` | (declared; spinners: avoid on content) |
 
 All decorative motion must degrade under `prefers-reduced-motion: reduce` (quality floor §7).
 
@@ -159,34 +159,34 @@ All decorative motion must degrade under `prefers-reduced-motion: reduce` (quali
 Grouped by where they appear. Each maps to a Dioxus component in the plan.
 
 ### 6.1 App shell
-- **Sidebar** (`250px`): brand lockup (gradient tile + `menu_book` glyph + `Tankō`**`Vault`** +
+- **Sidebar** (`250px`): brand lockup (gradient tile, `menu_book` glyph and `Tankō`**`Vault`**,
   mono tagline `SOURCE · TRACK · SYNC`); grouped **nav** (`MAIN` / `LIBRARY` / `OPERATOR`
-  kicker headers, items with icon + label + optional count badge + active bar); **user footer**
-  (circular avatar initial, username, status dot + `admin · synced`, settings gear → Account).
+  kicker headers, items with icon, label, optional count badge and active bar); **user footer**
+  (circular avatar initial, username, status dot and `admin · synced`, settings gear → Account).
 - **Header** (`64px`, sticky, blurred): search input (`max 520px`, leading `search` icon,
   trailing `⌘K` kbd chip, placeholder `Search 8,420 series, tags, authors…`); flex spacer;
-  **notifications bell** with count badge. (The header's "AniList synced" pill was removed —
+  **notifications bell** with count badge. (The header's "AniList synced" pill was removed:
   link status belongs to Account → Sync, which is the surface that can act on it.)
 
 ### 6.2 Cards & rows
 - **Cover card** (discover/search): 2:3, type pill (TL), unread badge (TR), bottom scrim with
-  `layers` source-count + `star` rating; title (2-line clamp) + status dot + chapter count.
+  `layers` source-count, `star` rating; title (2-line clamp), status dot and chapter count.
 - **Continue-reading card**: 64×90 cover, title, `ch N · via Provider`, progress bar, `% read`,
   `Next: N →`.
 - **Feed row**: 38×52 cover, title, detail line, `+N ch` accent tag, relative time.
 - **Rec cover card** (horizontal rail): 148×210, type pill, source-count, title, match line.
-- **Watchlist card**: 40×56 cover, 2-line title, `ch N`, notify bell + unread count.
-- **Notification row**: kind icon tile, cover thumb, `Title — text`, sub, relative time, unread
-  left-bar + darker ground.
-- **Source card** ("Read on"): 36×36 provider tile, name + `PRIMARY` badge, chapter count,
+- **Watchlist card**: 40×56 cover, 2-line title, `ch N`, notify bell and unread count.
+- **Notification row**: kind icon tile, cover thumb, `Title: text`, sub, relative time, unread
+  left-bar and darker ground.
+- **Source card** ("Read on"): 36×36 provider tile, name and `PRIMARY` badge, chapter count,
   `open_in_new`.
-- **Related card** ("Readers also follow"): 2:3 cover + title, 2-up grid.
-- **KPI tile**: label + icon, big mono value (role-colored), sub-line.
-- **Provider health tile**: name + state pill, `series / solve%`, solve bar, last-scan age,
+- **Related card** ("Readers also follow"): 2:3 cover and title, 2-up grid.
+- **KPI tile**: label and icon, big mono value (role-colored), sub-line.
+- **Provider health tile**: name and state pill, `series / solve%`, solve bar, last-scan age,
   left accent border in state color.
-- **Run row**: state pill, provider + mode, run id + started, mini progress + `done/total`.
+- **Run row**: state pill, provider, mode, run id, started, mini progress and `done/total`.
 - **Failed-task card**: `provider · kind`, target path, red error line, left accent border.
-- **Merge card**: `match %` + reason, A vs B compare (cover + meta + "Keep this"), `sync_alt`
+- **Merge card**: `match %`, reason, A vs B compare (cover, meta and "Keep this"), `sync_alt`
   divider, "Not a duplicate".
 - **User row / audit row / session row / pref row**: table/list rows (see screens §7.7–7.9).
 
@@ -194,25 +194,25 @@ Grouped by where they appear. Each maps to a Dioxus component in the plan.
 - **Filter chip** (type/status): tinted when active (`acc 16%` fill, `--acc3` text).
 - **Tag chip (3-state cycle)**: neutral → include (`+`, acc) → exclude (`−`, `#a94436`,
   line-through) → neutral. Click cycles.
-- **Provider checkbox**: 16px box (checked = acc fill + white `check`), label, count.
+- **Provider checkbox**: 16px box (checked = acc fill and white `check`), label, count.
 - **Range slider** (year min/max, min-chapters): native `input[type=range]`, `accent-color:
   var(--acc)`.
 - **Sort select**: native `<select>`, 6 options (updated / title / chapters / sources / rating /
   year).
 - **Tab strips**: notifications (all/unread/chapters/sync), console (8 tabs), settings sub-nav
-  (5). Active = tinted bg + acc border + acc text.
+  (5). Active = tinted bg, acc border and acc text.
 - **Toggle switch**: `40×22` track (acc when on), sliding knob.
-- **Buttons**: primary (acc fill, white), secondary (surface + ctl border), icon (square 32–44),
+- **Buttons**: primary (acc fill, white), secondary (surface and ctl border), icon (square 32–44),
   block. Chips/pills as above.
 - **Text input / textarea**: surface bg, ctl border, `10px` radius; adapter config is a mono
   `340px` textarea.
 - **Active-filter chip**: removable (`× close`), acc-tinted rounded.
-- **Pagination**: Prev/Next + numeric page dots (active tinted) + mono `cursor:` hint.
+- **Pagination**: Prev/Next, numeric page dots (active tinted) and mono `cursor:` hint.
 
 ### 6.4 States
 - **Empty**: centered `search_off` glyph, headline, hint, "Reset filters" CTA.
 - **Skeleton**: shimmer placeholders (never spinners on content).
-- **Live pill**: dot (pulse when on) + `Live · 4s` / `Paused`.
+- **Live pill**: dot (pulse when on) and `Live · 4s` / `Paused`.
 
 ---
 
@@ -222,36 +222,36 @@ The mockup exposes **9 screens** via a single `view` state. Nav order:
 `MAIN → Home · Discover · Search` / `LIBRARY → Watchlist · Notifications` /
 `OPERATOR → Console · Account`.
 
-### 7.1 Home (dashboard) — *new screen*
+### 7.1 Home (dashboard): *new screen*
 Landing for signed-in readers.
-1. **Header block**: mono greeting (time-of-day) + `Welcome back, {name}`; right-aligned **3
-   stat tiles** — new chapters (acc), reading (count), chapters read (jade).
-2. **Continue reading**: `play_circle` heading + grid of continue-reading cards
+1. **Header block**: mono greeting (time-of-day) and `Welcome back, {name}`; right-aligned **3
+   stat tiles**: new chapters (acc), reading (count), chapters read (jade).
+2. **Continue reading**: `play_circle` heading and grid of continue-reading cards
    (`auto-fill minmax(300px,1fr)`).
-3. **New in your watchlist**: `bolt` heading + "See all" → Notifications; card containing
+3. **New in your watchlist**: `bolt` heading and "See all" → Notifications; card containing
    **day-grouped feed rows** (`TODAY` / `YESTERDAY` headers).
 4. **"Because you read X" rows**: one or more horizontal scroll rails of rec cover cards, each
-   with an `auto_awesome` jade heading + "recommended for you".
+   with an `auto_awesome` jade heading and "recommended for you".
 
 ### 7.2 Discover
-Two-pane: collapsible **filter panel** (`298px`) + **results**.
-- **Filter panel**: `tune` "Filters" + "Reset"; active-filter count line; **CONTENT TYPE**
+Two-pane: collapsible **filter panel** (`298px`) and **results**.
+- **Filter panel**: `tune` "Filters" and "Reset"; active-filter count line; **CONTENT TYPE**
   chips; **STATUS** chips; **GENRES / TAGS** with `match: any/all` toggle + 3-state tag chips
   (include/exclude legend); **PROVIDER** checkboxes with counts; **RELEASE YEAR** dual range
   (`min–max`); **MIN. CHAPTERS** range; **SAVED PRESETS** list.
 - **Results**: panel-toggle icon button, "Discover" title, **Sort** select; active-filter
   removable chips; `{N} series · page {p} of {n}` count; cover-card grid; **pagination** (Prev
-  / page dots / Next + `cursor:` hint). **No-results** empty state with reset.
+  / page dots / Next and `cursor:` hint). **No-results** empty state with reset.
 - Filtering logic in the mock is client-side over generated data; **production requires
   server-side filter/sort/pagination** (see plan §7.2 + §9).
 
 ### 7.3 Series detail
-- **Hero**: blurred cover backdrop (`opacity .20; blur 30px`) + bottom fade; Back button;
-  `186×270` cover; type pill + status dot + year; `38px` title; `by {author} · {alt}`; tag
-  chips; **stat row** (rating★ / chapters / sources-layers); **actions** — `Continue ch N`
+- **Hero**: blurred cover backdrop (`opacity .20; blur 30px`) and bottom fade; Back button;
+  `186×270` cover; type pill, status dot and year; `38px` title; `by {author} · {alt}`; tag
+  chips; **stat row** (rating★ / chapters / sources-layers); **actions**: `Continue ch N`
   (primary), `In watchlist` (bookmark), notify bell icon.
 - **Body grid** (`1fr 340px`):
-  - Left: **Synopsis**; **Chapters** header with read-progress bar + `%`; chapter list rows
+  - Left: **Synopsis**; **Chapters** header with read-progress bar and `%`; chapter list rows
     (`Ch N` mono, optional title, provider, date, unread dot / read check).
   - Right sidebar: **Read on** source cards (PRIMARY badge, chapter count, `open_in_new`);
     **Tracking** card (Status, Notify toggle, AniList synced); **Readers also follow** 2-up
@@ -261,29 +261,29 @@ Two-pane: collapsible **filter panel** (`298px`) + **results**.
   (plan §9).
 
 ### 7.4 Watchlist
-- Header: title + subtitle ("Drag a title between columns…"), `Sync AniList` + `New collection`
+- Header: title, subtitle ("Drag a title between columns…"), `Sync AniList` and `New collection`
   buttons.
-- **Kanban**: horizontally-scrolling columns — Reading (acc / `local_fire_department`), Planned
+- **Kanban**: horizontally-scrolling columns: Reading (acc / `local_fire_department`), Planned
   (`#6FA8DC` / `schedule`), Completed (jade / `task_alt`), Paused (`#CBA43C` / `pause_circle`),
-  Dropped (`#8A94A0` / `cancel`). Each: icon + label + count; draggable cards; column
+  Dropped (`#8A94A0` / `cancel`). Each: icon, label and count; draggable cards; column
   highlights on drag-over; drop moves status.
 - **HTML5 drag/drop** (`draggable`, `onDragStart/Over/Leave/Drop`). Keep the `<select>` mover as
   the accessible fallback.
 
 ### 7.5 Notifications
-- Header: title + `{N} unread · live push via SSE`; "Mark all read".
+- Header: title and `{N} unread · live push via SSE`; "Mark all read".
 - **Filter tabs**: All / Unread / Chapters / Sync.
 - **Rows**: kind icon tile (new_chapter `auto_stories` acc, source_added `add_link` `#6FA8DC`,
-  completed `task_alt` jade, sync `sync` jade), cover thumb, `Title — text` + sub, relative
+  completed `task_alt` jade, sync `sync` jade), cover thumb, `Title: text` and sub, relative
   time, unread left-bar.
 
 ### 7.6 Search
 Big `56px` search field, `{N} results · trigram fuzzy match`, cover-card grid (reuses discover
 card at a smaller size). Instant, keyboard-navigable.
 
-### 7.7 Account & settings — *new screen*
-Sub-nav (`236px`) + panel:
-- **Profile**: avatar + identity, editable fields (display name, username, email, default
+### 7.7 Account & settings: *new screen*
+Sub-nav (`236px`) and panel:
+- **Profile**: avatar and identity, editable fields (display name, username, email, default
   language), 3 lifetime stat tiles.
 - **Security & sessions**: password/2FA card; **active sessions** list (device, location, age,
   "this device" badge, Revoke / Revoke all).
@@ -291,29 +291,29 @@ Sub-nav (`236px`) + panel:
   Local / Remote / **Newest** wins); cross-device sync status.
 - **Notification prefs**: toggle rows (new chapter, new source, sync events, email digest,
   Discord webhook).
-- **Appearance**: theme picker (Inkstone Dark / Warm Paper) — maps to the real light/dark
+- **Appearance**: theme picker (Inkstone Dark / Warm Paper): maps to the real light/dark
   toggle; optionally accent/density/cover-style knobs (§8).
-- **Backend gaps**: profile update, sessions, AniList, 2FA, prefs have **no endpoints today** —
+- **Backend gaps**: profile update, sessions, AniList, 2FA, prefs have **no endpoints today**:
   build the shell, stub actions with clear TODO markers (plan §9).
 
 ### 7.8 Operator Console
-`space_dashboard` header (role: admin), **live** pill + pause/refresh, **Trigger scan**. Design
-uses a **tab bar** (the current code stacks all panels — plan §7.8 introduces tabs):
-1. **Overview**: 9 KPI tiles + provider-health tiles.
+`space_dashboard` header (role: admin), **live** pill and pause/refresh, **Trigger scan**. Design
+uses a **tab bar** (the current code stacks all panels: plan §7.8 introduces tabs):
+1. **Overview**: 9 KPI tiles and provider-health tiles.
 2. **Live scans**: active-run banner (barber-pole progress, done/total/failed/ETA), recent runs
    list, failed-task triage.
 3. **Providers**: table with inline-editable `base_url` (domain migration), adapter kind, state
    pill, scan/edit/disable actions, "Add provider".
 4. **Challenge & solver**: active back-end card (TRAWL), 7d solve-success, per-provider
-   solve bars + "Re-solve".
-5. **Adapter test**: `providers.config` JSON textarea + "Test adapter (dry-run)" → parsed-sample
+   solve bars and "Re-solve".
+5. **Adapter test**: `providers.config` JSON textarea and "Test adapter (dry-run)" → parsed-sample
    panel side-by-side.
 6. **Merge queue**: side-by-side A/B compare, Keep / Not-a-duplicate.
-7. **Users**: table (user, email, role, tracked, state) — **no list endpoint today**, stub.
+7. **Users**: table (user, email, role, tracked, state): **no list endpoint today**, stub.
 8. **Audit**: action / object / who · role / age list.
 
 ### 7.9 Auth
-Centered `400px` card: wordmark, "Sign in to sync your library", email/username + password,
+Centered `400px` card: wordmark, "Sign in to sync your library", email/username and password,
 "Sign in", "Create an account" link.
 
 ---
@@ -334,12 +334,12 @@ as CSS-variable swaps if/when Appearance ships.
 
 ## 9. Accessibility & quality floor (must hold)
 
-Carried from `docs/ARCHITECTURE.md` §17.3 — the redesign must not regress:
+Carried from `docs/ARCHITECTURE.md` §17.3: the redesign must not regress:
 - Responsive to mobile; cover grid reflows to 2-up; sidebar collapses.
 - Visible **keyboard focus rings** (`:focus-visible` 2px accent, offset 2px); full keyboard nav
   of lists, chips, and the command bar.
 - `prefers-reduced-motion` respected (brush/live/flow animations degrade to static).
-- Loading = **skeletons**, never spinners on content; errors **name what failed + how to
+- Loading = **skeletons**, never spinners on content; errors **name what failed and how to
   retry**; empty states are invitations.
 - **Optimistic** watchlist/progress/notify toggles with rollback on failure.
 - **WCAG AA** contrast for all text/bg pairs; vermilion body-size text uses `--acc3` on tint,
@@ -350,7 +350,7 @@ Carried from `docs/ARCHITECTURE.md` §17.3 — the redesign must not regress:
 
 ## 10. Source-of-truth notes for implementers
 
-- Every hex/px above was read from the original mockup rather than guessed, and the shipped
-  values live in `web/frontend/input.css` — check there before trusting a number here.
+- Every hex/px above was read from the original mockup, not guessed, and the shipped
+  values live in `web/frontend/input.css`: check there before trusting a number here.
 - The mockup's data (series, providers, runs, users, sessions) was generated client-side for
   preview only: it defines *shape and states to support*, not real content.

@@ -110,14 +110,14 @@ cliff that hit the console **does not occur on these statements**; its only effe
 ## 3. Root causes
 
 1. **Every count reads the whole `series` heap.** The unfiltered count is a seq scan of 7 659 pages
-   (60 MB) — `series` rows average ~1.1 KB on the heap because of `description` and the stored
+   (60 MB): `series` rows average ~1.1 KB on the heap because of `description` and the stored
    `search_vec`. Filters are `Filter`s on that scan, never index conditions: under `OR` guards the
    sublinks cannot be pulled up into joins, so even a 706-row provider filter reads all 7 659 pages.
    Cold that is 40–60 ms locally; on production storage inside a 1 GB container competing with the
    crawler, this is the part that scales to seconds.
 2. **Include-tags is a correlated set operation per row.** `NOT EXISTS (unnest($7) EXCEPT SELECT
    slug …)` cannot become a hashed subplan: `SubPlan 1` runs 52 530 times, each an index probe on
-   `series_tags_pkey` plus one `tags_pkey` probe per tag — **755 368 buffer touches**, 250–276 ms
+   `series_tags_pkey` plus one `tags_pkey` probe per tag: **755 368 buffer touches**, 250–276 ms
    warm regardless of how many rows match (200 or 19 604). Pure CPU; slower CPUs and concurrency
    scale it linearly.
 3. **Min-chapters is a correlated aggregate per row.** `(SELECT max(chapter_count) … WHERE
@@ -151,7 +151,7 @@ byte, plus the count. **P1: 46/46 identical. P2: 46/46. P3: 46/46.**
 
 Measured: no effect. `auto` already stays on custom plans for all 62 pairs (§2). Forcing it adds
 planning (0.1–1 ms) to every hot-path statement. **Not recommended** for browse. It would matter only
-if a rewrite makes generic and custom estimates close — which P3 does for search pages, where the
+if a rewrite makes generic and custom estimates close, which P3 does for search pages, where the
 two measured the same (101 vs 105 ms).
 
 ### O2 (P1). Rewrite the two correlated predicates, no schema change
@@ -170,8 +170,8 @@ include-tags → `s.id IN (SELECT series_id … WHERE slug = ANY($7) GROUP BY se
 
 Still reads the full `series` heap per count (cause 1), leaves causes 4 and 5, and regresses some
 pages (tag page 0.6 → 11.5 ms, tags_two page 2.0 → 45.6 ms). Worse: its **generic** plans for the
-search pages are pathological — `q_common_love` page 94 → **13 110 ms**, `q_love_chapters` 54 →
-**13 825 ms** — kept away only by `auto`'s cost comparison. **Rejected**: a plan-cache heuristic
+search pages are pathological (`q_common_love` page 94 → **13 110 ms**, `q_love_chapters` 54 →
+**13 825 ms**) kept away only by `auto`'s cost comparison. **Rejected**: a plan-cache heuristic
 between the service and a 13 s page is not a fix.
 
 ### O3 (P2/P3). Maintained narrow projection `series_browse`
@@ -307,8 +307,8 @@ both console typeaheads count on every request and discard it.
   displaying the page length as the total. Hence an opt-out parameter (e.g. `with_total=false`,
   default `true`): additive, old clients unchanged, `openapi.json` gains one optional parameter.
 - **API cache of totals keyed by the normalised filter with a short TTL** (process-local, like
-  `cache.rs`). No contract change, but the total can lag by the TTL — visibly for `tracking` right
-  after a watchlist change — and the cursor must move to `limit + 1` anyway. With O3 every count is
+  `cache.rs`). No contract change, but the total can lag by the TTL (visibly for `tracking` right
+  after a watchlist change) and the cursor must move to `limit + 1` anyway. With O3 every count is
   1–10 ms warm and ≤ 20 ms cold, so this buys little. **Not recommended now.**
 - **A cursor carrying the total** (opaque token): contract change to `X-Next-Cursor`'s type
   (currently `i64`), deep links use `at=` item indexes and would still need a first count. **Not
@@ -359,7 +359,7 @@ capped/estimated counts (O6).
 Each with a doc comment naming the bug, per the repo's rule 8.
 
 - `crates/db/tests/repo_browse.rs`
-  - `the_browse_projection_follows_every_writer` — after each writer (source insert/delete, scan with
+  - `the_browse_projection_follows_every_writer`: after each writer (source insert/delete, scan with
     a changed `chapter_count`, merge moving sources, disentangle/undo moving them back, tag
     insert/delete incl. undo's `jsonb_populate_recordset` re-insert, `merge_metadata`, `adult_inferred`,
     `normalized/canonical_title` rewrite, series delete) the projection equals a recomputation from
@@ -373,7 +373,7 @@ Each with a doc comment naming the bug, per the repo's rule 8.
   - `every_page_and_count_statement_selects_the_same_rows` stays as the differential; add the
     window-count search statement and the `limit + 1` cursor to its matrix.
 - `crates/db/tests/repo_query_plans.rs`
-  - `the_browse_statements_read_the_projection` — no `series_tags`, `series_sources` or `tags` node
+  - `the_browse_statements_read_the_projection`: no `series_tags`, `series_sources` or `tags` node
     under a per-row `SubPlan` in any browse count or page plan, and the count plans do not scan
     `series`. Bug pinned: correlated `EXCEPT` / `max()` per series row (755 k buffers for one count).
     Shape rule, not a timing, as the audit already does for the reading surfaces.

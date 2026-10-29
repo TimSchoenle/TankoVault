@@ -7,26 +7,26 @@ Status: **phases 0, 1, 2 and 2.5 implemented; 3 partly.**
 
 | Phase | State |
 |---|---|
-| 0 — pgvector, widened signal columns, `series_merges`, the merge guard | **built** |
-| 1 — the item model: features, projection, embeddings, HNSW, `/v1/series/{id}/similar` | **built** |
-| 2 — the reader model: affinity, taste profile, retrieval, ranking, `/v1/me/recommendations` | **built** |
-| 2.5 — the `Tunable` registry and the console | **built** |
-| 3 — collaboration and feedback | partly built (feedback yes, co-occurrence no) |
+| 0: pgvector, widened signal columns, `series_merges`, the merge guard | **built** |
+| 1: the item model: features, projection, embeddings, HNSW, `/v1/series/{id}/similar` | **built** |
+| 2: the reader model: affinity, taste profile, retrieval, ranking, `/v1/me/recommendations` | **built** |
+| 2.5: the `Tunable` registry and the console | **built** |
+| 3: collaboration and feedback | partly built (feedback yes, co-occurrence no) |
 
 Every published surface now has a client. The SPA renders the shelf with its explanation and both
 refusals (Home), similarity beside a series (`views/series/similar.rs`), the reader's own profile
 (Account → Taste), and model health, the two rebuilds and the whole tuning registry (Console →
 Recommendations, gated on `recsys.read`/`recsys.write` and `admin.recommendations`).
 
-**The stub is gone.** `tracking::dashboard::recommendations` — the query that scored the whole
-catalogue against the reader's tags on every request — is deleted, along with its 700 000 plan
+**The stub is gone.** `tracking::dashboard::recommendations` (the query that scored the whole
+catalogue against the reader's tags on every request) is deleted, along with its 700 000 plan
 budget. `/v1/me/recommendations` is now a real shelf.
 
 Where the built code diverges from what is written below, this document has been corrected to
 match the code. Four places where reality won an argument:
 
 - **The builder runs in `services/control-plane`, not `services/worker`** (§3.2).
-- **Priors page ids and aggregate separately** (§6.7) — doing both in one statement measured at
+- **Priors page ids and aggregate separately** (§6.7): doing both in one statement measured at
   1.8x the plan-cost ceiling.
 - **Profile staleness is a database trigger, not a call at each write site.** The profile derives
   from `watchlist_entries` and `read_progress`, which are written from a dozen places; a
@@ -35,29 +35,29 @@ match the code. Four places where reality won an argument:
 - **The profile's dense vector is an unweighted mean of the seeds' embeddings**, not the
   affinity-weighted one §4.2 describes. pgvector has no scalar multiply, so weighting would mean
   parsing every vector back out of text in the request path to refine a value the seed selection
-  has largely already decided. Noted rather than hidden.
+  has largely already decided. Noted, not hidden.
 
 - **The widened `AniList` signals are now written** (§2.2). The media selection carries `tags`,
   `averageScore`, `popularity`, `isAdult` and `source`; the enrichment sweep persists them, so
   `tags.kind`, `series_tags.weight`/`source`, `series.is_adult`, `external_score`,
   `external_popularity` and `external_source` are populated by the path that already existed.
   Two decisions the code makes and this document did not: spoiler- and adult-flagged tags are
-  **dropped at parse and never stored**, and a rank of zero is floored to `0.01` rather than
-  dropped. Both are argued in §2.2.
+  **dropped at parse and never stored**, and a rank of zero is floored to `0.01`,
+  not dropped. Both are argued in §2.2.
 
 Not built, and named so it is not mistaken for done:
 
 - **`relations`** (§7.4's "next in the series" rail). Still unselected, so a direct sequel of a
-  tracked series can still reach the discovery shelf — and nothing in the SPA can name one. The
-  series sidebar's rail is `/v1/series/{id}/similar`, content similarity, and is worded as that
-  rather than as "what comes next".
+  tracked series can still reach the discovery shelf, and nothing in the SPA can name one. The
+  series sidebar's rail is `/v1/series/{id}/similar`, content similarity, and is worded as that,
+  not as "what comes next".
 - **Co-occurrence (retrieval path R4).** The table exists and the merge path handles it; nothing
   populates it, so cross-reader signal contributes nothing yet. Correct on a small deployment
   either way (§12.2).
 
 What this replaced was a stub: `tracking::dashboard::recommendations` selected every series
 sharing one tag with anything on the watchlist and ordered by the shared-tag count, computed
-twice — once in the `WHERE EXISTS`, once in the `ORDER BY` — before the `LIMIT`. It carried a
+twice (once in the `WHERE EXISTS`, once in the `ORDER BY`) before the `LIMIT`. It carried a
 700 000 cost budget in `crates/db/tests/repo_query_plans.rs`. At a catalogue of ~1M series that
 query read the catalogue, per request, per user.
 
@@ -69,7 +69,7 @@ The target this document designs for:
 | Shelf latency | p50 < 15 ms, p99 < 50 ms, **independent of catalogue size** |
 | Similar-series latency | p99 < 10 ms |
 | Item model rebuild (full) | < 45 min, resumable, dominated by the HNSW build (§6.4) |
-| Item model rebuild (incremental, 10k changed) | < 2 min — re-embed changed digests, insert into the live index |
+| Item model rebuild (incremental, 10k changed) | < 2 min: re-embed changed digests, insert into the live index |
 | Builder peak heap | single-digit MB, **independent of catalogue size** (§3.2, §6.4) |
 | Item model storage | ~256 MB embeddings + HNSW graph at 1M series |
 | Merge → shelf correctness | immediate; no window where a merged series can be recommended |
@@ -87,13 +87,13 @@ handful of them does this reader care about). The item side does not change per 
 
 - Offline, a builder turns each series into a sparse feature vector, projects those into a dense
   space, and indexes them (HNSW over pgvector).
-- Online, a request runs a small, fixed number of **sublinear ANN searches** — one from the
-  reader's taste profile, one per seed — plus a few index lookups, scores ≤ 1 000 candidates in
+- Online, a request runs a small, fixed number of **sublinear ANN searches** (one from the
+  reader's taste profile, one per seed) and a few index lookups, scores ≤ 1 000 candidates in
   Rust, and returns 12.
 
 Neither half's cost grows linearly with the catalogue. That is the whole property being bought.
 
-The current query does the opposite — it puts an item-side join on the request — which is why it
+The current query does the opposite (it puts an item-side join on the request), which is why it
 costs what it costs. Every alternative that keeps a set-similarity join in SQL (`ORDER BY
 count(shared tags)`, `ORDER BY embedding <-> embedding` **without** an ANN index, a lateral over
 `series_tags`) inherits the same defect at a different constant factor. Note the middle one:
@@ -112,22 +112,22 @@ exactly like the fixed version until the row count grows.
 | Reading depth | `read_progress.last_read_whole_number` | Strong. Absolute chapters read is the best proxy for "this held me". |
 | Recency | `watchlist_entries.updated_at`, `read_progress.updated_at` | Good. Enables taste drift. |
 | Tags | `series_tags` → `tags` | **Thin.** See §2.2. |
-| Authors | `series_authors` → `authors` | Good, but sparse — populated only where AniList returned staff. |
+| Authors | `series_authors` → `authors` | Good, but sparse: populated only where AniList returned staff. |
 | Content type | `series.content_type` (`manga`/`manhwa`/`manhua`/`webtoon`) | Good, coarse but highly predictive of taste. |
 | Status, release year | `series.status`, `series.release_year` | Weak alone, useful as filters and mild features. |
 | Length / cadence | `chapters` per source, `discovered_at` | Derivable. Length preference is real and cheap to model. |
-| Source breadth | `count(series_sources)` | A popularity proxy — a series carried by six providers is a series people read. |
+| Source breadth | `count(series_sources)` | A popularity proxy: a series carried by six providers is a series people read. |
 | Description | `series.description`, `series.search_vec` | Weak signal, high noise. Low priority (§13). |
-| External lists | `sync_remote_entries` (AniList) | Second interaction source, **including entries with no local match** — which is a cold-start signal for series we do not carry. |
+| External lists | `sync_remote_entries` (AniList) | Second interaction source, **including entries with no local match**, which is a cold-start signal for series we do not carry. |
 
-### 2.2 The widened vocabulary — **built**
+### 2.2 The widened vocabulary: **built**
 
-The single biggest quality lever is not the algorithm — it is the feature vocabulary. Before this,
+The single biggest quality lever is not the algorithm: it is the feature vocabulary. Before this,
 `series_tags` held **AniList genres only**, roughly 20 terms of which "Action" and "Fantasy"
 describe a third of the catalogue each; a recommender built on them cannot say anything specific,
 and its neighbour lists are dominated by whatever is popular.
 
-Both media selections in `services/sync/src/providers/anilist/graphql.rs` now carry — all free,
+Both media selections in `services/sync/src/providers/anilist/graphql.rs` now carry: all free,
 same query, no extra requests:
 
 ```graphql
@@ -140,12 +140,12 @@ source                                      # ORIGINAL | LIGHT_NOVEL | WEB_NOVEL
 
 `tags` with `rank` turns a 20-term vocabulary into a ~600-term weighted one. That is the
 difference between "shares Action" and "shares Regression, Dungeon, Male Protagonist, Weak to
-Strong" — which is both a better neighbour and a usable explanation. Genres stay a separate list
+Strong", which is both a better neighbour and a usable explanation. Genres stay a separate list
 all the way through: only they feed the matcher, because a locally-scraped candidate carries four
 genres and could never carry twenty-five themes, and the overlap score would read that absence as
 disagreement.
 
-Backfill is the existing metadata sweep. There is no new sweep and no new write path — the tag
+Backfill is the existing metadata sweep. There is no new sweep and no new write path: the tag
 link table gained `weight`/`kind`/`source` and `add_series_tags` carries them.
 
 **`relations` is still not selected.** It is what §7.4's "next in the series" rail needs, and
@@ -154,20 +154,20 @@ until it lands a direct sequel of a tracked series can reach the discovery shelf
 Three decisions the implementation makes, stated because each one costs something:
 
 - **Spoiler- and adult-flagged tags are dropped at parse and never stored.** `series_tags` has no
-  visibility column, so every reader of it — the series page's chips, the browse filters, the
-  matcher, and the recommender's own explanation (§7.5) — renders whatever it finds. Keeping the
+  visibility column, so every reader of it (the series page's chips, the browse filters, the
+  matcher, and the recommender's own explanation (§7.5)) renders whatever it finds. Keeping the
   tags "for scoring only" means remembering the exclusion in five places, and the one that forgets
   spoils the work for a reader who never asked for it. This loses real recall on adult titles in
-  particular. Restoring them is a visibility column plus a predicate on every one of those reads.
+  particular. Restoring them is a visibility column and a predicate on every one of those reads.
 - **A rank of zero is floored to `0.01`, not dropped.** `series_tags_weight_check` rejects
-  `weight <= 0`, and an unvoted tag is still the weakest kind of evidence rather than none. A
+  `weight <= 0`, and an unvoted tag is still the weakest kind of evidence, not none. A
   literal zero would abort the transaction carrying the whole enrichment batch.
 - **A scraping adapter cannot overwrite an `AniList` link.** An adapter knows a tag's name and
   nothing else, so it writes weight 1.0; without a precedence rule the two writers alternate on
   every sweep and the feature digest churns, re-embedding the series for no new information.
 
 **Not present anywhere and not proposed:** an explicit rating. The product has no rating column
-and this design does not add one — implicit feedback (§4) is sufficient and does not require
+and this design does not add one: implicit feedback (§4) is sufficient and does not require
 asking users to do work. AniList's per-entry `score`, when a reader has linked an account, is the
 one explicit signal available and is folded in at §4.3.
 
@@ -182,7 +182,7 @@ one explicit signal available and is folded in at §4.3.
                      └───────────────┬───────────────────────────┘
                                      │ NATS
                      ┌───────────────▼───────────────────────────┐
-                     │  worker — the builder (§6)                │
+                     │  worker: the builder (§6)                 │
                      │  A features → B idf → C neighbours        │
                      │  D co-occurrence → E priors               │
                      └───────────────┬───────────────────────────┘
@@ -194,7 +194,7 @@ one explicit signal available and is folded in at §4.3.
    └─────────────────────────────────┬──────────────────────────────────┘
                                      │ bounded, index-only reads
                      ┌───────────────▼───────────────────────────┐
-                     │  api — retrieve → score → diversify (§7)  │
+                     │  api: retrieve → score → diversify (§7)   │
                      └───────────────────────────────────────────┘
 ```
 
@@ -205,21 +205,21 @@ one explicit signal available and is folded in at §4.3.
 | Feature extraction, weighting, similarity, top-K join, ranking, MMR | **new `crates/recsys`** | Pure functions over plain data. No `sqlx`, no `axum`. Proptest-able and benchable in isolation; the top-K join is the one piece that needs a criterion bench, and it cannot have one if it is welded to a repository. |
 | Reads and writes for every table in §5 | `crates/db/src/repo/recsys/{items,users,build}.rs` | Matches the existing `repo/` module split. |
 | The builder, and its scheduling | `services/control-plane` (`src/recsys.rs`, behind a `[lib]` target so it is testable) | Already leader-elected, and already home to the one other standing catalogue-wide job. |
-| Serving | `services/api/src/me/recommendations.rs`, `services/api/src/series.rs` | — |
+| Serving | `services/api/src/me/recommendations.rs`, `services/api/src/series.rs` | none |
 | DTOs | `crates/contracts/src/me.rs`, `catalogue.rs` | Mandatory: repository row structs must not carry `ToSchema` (see that module's header). |
 
 ### 3.2 Why the builder is in the control plane
 
 Nothing in the pipeline is resident in proportion to the catalogue. Stage A streams batches;
 stages B, D and E execute entirely in the database; stage C holds a ~360 KB projection basis and
-one batch, and hands the expensive part — the HNSW build — to Postgres. Every write is a streamed
+one batch, and hands the expensive part (the HNSW build) to Postgres. Every write is a streamed
 `COPY`. **Steady-state builder heap is single-digit megabytes.**
 
 That removes the objection that would otherwise have decided this. A separate `services/recsys`
 would be the tidier boundary, but it costs every self-hoster another container for a job that runs
 nightly, and the isolation it buys is isolation from a memory profile the builder does not have.
 
-**As built, it runs in `services/control-plane`** — not the worker, as an earlier draft said. A
+**As built, it runs in `services/control-plane`**: not the worker, as an earlier draft said. A
 build is a singleton over the whole catalogue, and control-plane is already the service that holds
 the leader lock and already runs exactly one other standing catalogue-wide job, the duplicate
 sweep. Putting the second one behind the same lock reuses that mutual exclusion instead of
@@ -229,7 +229,7 @@ exclusion; leadership just stops the wasted attempt.
 That claim is a **lease**, not a flag (`0036_recsys_build_lease`). A running build stamps
 `heartbeat_at` every 30 seconds and a claim whose heartbeat is more than five minutes old is
 breakable, because a build that dies without releasing its claim would otherwise hold it forever
-and every scheduled run afterwards would decline to start — which is what happened when the
+and every scheduled run afterwards would decline to start, which is what happened when the
 on-demand rebuild was awaited inside its request handler and the request timeout dropped it
 mid-run. Every write that advances or releases the claim carries the `claim_id` it was granted,
 so a build whose lease was broken while it was still running cannot touch the state of the run
@@ -242,11 +242,11 @@ The real resource question moved with the work: **the memory that matters is now
 builder's. Size the database, not the worker. §6.4 gives figures.
 
 It still runs on `spawn_blocking` with a bounded pool so a CPU-bound stage cannot starve the task
-consumer, and `recommendations.build.batch_size` bounds residency explicitly rather than by
+consumer, and `recommendations.build.batch_size` bounds residency explicitly, not by
 assumption.
 
 **Escape hatch:** if the profile collides in practice, the builder moves to `services/recsys`
-unchanged — it is a driver over `crates/recsys` and owns no state. Keep that boundary clean so
+unchanged: it is a driver over `crates/recsys` and owns no state. Keep that boundary clean so
 the move stays mechanical.
 
 ---
@@ -261,18 +261,18 @@ One number per `(user, series)` in `[-1, 1]`, materialised into `user_series_aff
 affinity = base(status) · engagement_scale · recency_decay  +  external_score_offset
 ```
 
-**`base(status)`** — the product's own vocabulary, read literally:
+**`base(status)`**: the product's own vocabulary, read literally:
 
 | Status | Base | Reasoning |
 |---|---|---|
 | `completed` | `+1.00` | Finished it. The strongest available statement. |
 | `reading` | `+0.80` | Currently held. |
 | `paused` | `+0.35` | Ambivalent, not rejected. |
-| `planned` | `+0.25` | Intent, not taste. A plan-to-read list is aspirational and full of things people never touch — it must not outweigh a series someone actually read 200 chapters of. |
+| `planned` | `+0.25` | Intent, not taste. A plan-to-read list is aspirational and full of things people never touch: it must not outweigh a series someone actually read 200 chapters of. |
 | `dropped` | `-0.60 … -0.10` | See below. |
 
 **`dropped` is not one signal.** Dropped at chapter 3 means "wrong for me". Dropped at chapter 150
-means "I liked this for a long time and then it declined" — a *positive* taste signal about
+means "I liked this for a long time and then it declined": a *positive* taste signal about
 everything except the ending. So:
 
 ```text
@@ -282,7 +282,7 @@ dropped_base = -0.60 + 0.50 · engagement          # → -0.60 early, -0.10 deep
 The naive `dropped = -1` is the classic mistake here and it actively poisons the profile of
 anyone who reads long series.
 
-**`engagement`** — absolute depth, log-scaled, not a fraction of total:
+**`engagement`**: absolute depth, log-scaled, not a fraction of total:
 
 ```text
 engagement = min(1, ln(1 + chapters_read) / ln(1 + 60))
@@ -292,17 +292,17 @@ A fraction punishes the reader of a 900-chapter ongoing series for being at chap
 the opposite of what the data means. 60 is the knee: a reader who has cleared 60 chapters has
 committed, and more chapters add nothing to the *classification*.
 
-**`recency_decay`** — exponential with a floor:
+**`recency_decay`**: exponential with a floor:
 
 ```text
 recency_decay = max(0.30, 0.5 ^ (age_days / 180))
 ```
 
 Taste drifts; a shelf built entirely on what someone read in 2019 is wrong. The `0.30` floor
-exists because an all-time favourite is still evidence — an unfloored decay makes a dormant user's
+exists because an all-time favourite is still evidence: an unfloored decay makes a dormant user's
 profile collapse to noise.
 
-**`external_score_offset`** — where an AniList account is linked and a score exists:
+**`external_score_offset`**: where an AniList account is linked and a score exists:
 
 ```text
 offset = 0.25 · clamp((score - user_mean_score) / 25, -1, 1)
@@ -322,7 +322,7 @@ The negative vector is what makes "I dropped every isekai I ever opened" mean so
 it, a dropped series contributes nothing but a filter, and the system keeps recommending the genre
 the reader has rejected four times.
 
-The profile also carries `seeds uuid[]` — the top ~25 series by `|affinity|`, cached so the request
+The profile also carries `seeds uuid[]`: the top ~25 series by `|affinity|`, cached so the request
 path does not re-rank the whole watchlist.
 
 Derived preferences fall out of `p(u)` for free because they are features (§6.1): content type,
@@ -330,7 +330,7 @@ length bucket, series status (some readers only start completed series), decade.
 
 ### 4.3 Refresh
 
-Affinity is a pure function of `watchlist_entries` + `read_progress` + `sync_remote_entries`,
+Affinity is a pure function of `watchlist_entries`, `read_progress` and `sync_remote_entries`,
 so it is recomputed for one user in a single query. Trigger:
 
 - On write to watchlist or progress → mark `user_taste_profile.built_at` stale (no recompute
@@ -347,7 +347,7 @@ cheap enough that precomputation buys nothing.
 
 Three migrations, in this order. They follow the `.up.sql`/`.down.sql` pair convention of 0021+.
 
-### 5.1 `0027_recsys_signals` — widen the vocabulary
+### 5.1 `0027_recsys_signals`: widen the vocabulary
 
 ```sql
 -- pgvector becomes a hard dependency of the deployment, not an optional accelerator.
@@ -358,7 +358,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 `deploy/docker-compose.yml` ships `postgres:18-alpine`, which does not carry the extension; it
 must become `pgvector/pgvector:pg18` (same upstream Postgres, extension preinstalled), and any
 operator running their own Postgres has to install it before migrating. The migration fails
-loudly rather than degrading, which is correct — a recommender that silently returns nothing is
+loudly instead of degrading, which is correct: a recommender that silently returns nothing is
 worse than one that refuses to start.
 
 Two consequences worth stating before this is committed to:
@@ -463,7 +463,7 @@ in thousands of other rows' arrays, with no reverse index to find them, which in
 repair queue and an alias-resolution pass on the read path. Querying HNSW at request time deletes
 that table and every consequence of it. §9 is much shorter than it was.
 
-`series_features` keeps its own sparse vector as `int[]` + `real[]` — feature ids, not series ids,
+`series_features` keeps its own sparse vector as `int[]` and `real[]`: feature ids, not series ids,
 so nothing dangles. It is read only by primary key, for scoring and explanations.
 
 ### 5.3 `0029_recsys_user_model`
@@ -511,12 +511,12 @@ CREATE TABLE user_recommendations (
 ### 5.4 Defined elsewhere, in the sections that argue for them
 
 Three further tables belong to this design but are specified where their reasoning lives, because
-each exists to solve a problem stated there rather than a storage problem:
+each exists to solve a problem stated there, not a storage problem:
 
 | Table | Migration | Defined in |
 |---|---|---|
 | `tunable_overrides` | `0029_recsys_tunables` | §8.5 |
-| `series_merges` | `0027_recsys_signals` — **lands in phase 0** | §9.2 |
+| `series_merges` | `0027_recsys_signals`: **lands in phase 0** | §9.2 |
 | `rec_repair_queue` | `0028_recsys_item_model` | §9.3 |
 
 ---
@@ -524,53 +524,53 @@ each exists to solve a problem stated there rather than a storage problem:
 ## 6. The offline builder
 
 Five stages. Each is resumable from `rec_build_state.cursor_id`, each is idempotent, and each
-writes under the current `generation` so a crash mid-build leaves a coherent older model rather
-than a half-new one.
+writes under the current `generation` so a crash mid-build leaves a coherent older model,
+not a half-new one.
 
-### 6.1 Stage A — feature extraction
+### 6.1 Stage A: feature extraction
 
 Per series, emit a weighted sparse vector:
 
 | Kind | Weight | Notes |
 |---|---|---|
 | `tag:<slug>` | `series_tags.weight × idf(tag)` | The bulk of the signal. AniList rank/100 for rich tags, 1.0 for a genre. |
-| `author:<slug>` | `1.0 × idf(author)` | High idf by construction — an author is a near-unique feature and a strong recommender on its own. |
+| `author:<slug>` | `1.0 × idf(author)` | High idf by construction: an author is a near-unique feature and a strong recommender on its own. |
 | `content_type:<t>` | `0.6` | Fixed, low idf. A hint, not a discriminator. |
 | `country:<cc>` | `0.4` | Correlates with content type; kept because it separates manhwa-from-Korea from Korean-published manga. |
 | `status:<s>` | `0.25` | Serves "only reads completed series". |
 | `decade:<d>` | `0.25` | From `release_year`. |
 | `length:<bucket>` | `0.35` | `oneshot` (<10) / `short` (<50) / `medium` (<200) / `long` (<600) / `epic`. Length preference is real and nothing else models it. |
-| `source:<s>` | `0.4` | AniList `source` — light-novel adaptations cluster hard. |
+| `source:<s>` | `0.4` | AniList `source`: light-novel adaptations cluster hard. |
 
 Weights are TF-IDF-ish: the tabled value is the term weight, multiplied by `idf = ln(N / df)` from
 stage B, then the vector is L2-normalised so a series with 40 tags does not outscore one with 8
 purely by mass.
 
-`digest` is a hash over the inputs (tag ids + weights, author ids, the scalar columns). An
-unchanged digest short-circuits stages A and C for that series — this is what makes the
+`digest` is a hash over the inputs (tag ids and weights, author ids, the scalar columns). An
+unchanged digest short-circuits stages A and C for that series: this is what makes the
 incremental build cheap, since the enrichment sweep touches `series.updated_at` far more often
 than it changes anything a feature depends on.
 
 **Fully streaming.** Extraction is a pure per-series function, so the stage is a keyset walk in
 `series.id` order: read a batch by `COPY TO STDOUT`, extract, `COPY` the sparse vectors back,
-drop the batch. Peak residency is one batch plus the feature-interning
-map — and that map is the one genuinely resident structure in stage A, dominated by authors
+drop the batch. Peak residency is one batch and the feature-interning
+map, and that map is the one genuinely resident structure in stage A, dominated by authors
 (~200k distinct, ~20 MB). Everything else is bounded by `build.batch_size`.
 
-### 6.2 Stage B — vocabulary statistics
+### 6.2 Stage B: vocabulary statistics
 
-One aggregate pass writing `rec_features.doc_count` and `idf`, plus `tags.series_count`. A
-`GROUP BY` over `series_features` executed **entirely in the database** — no rows cross the
+One aggregate pass writing `rec_features.doc_count` and `idf`, and `tags.series_count`. A
+`GROUP BY` over `series_features` executed **entirely in the database**: no rows cross the
 wire, so the stage has no client-side memory cost at any catalogue size. It must run *before* C,
-and a full rebuild must recompute it: idf drift is what makes a stale model quietly worse rather
-than loudly broken.
+and a full rebuild must recompute it: idf drift is what makes a stale model quietly worse,
+not loudly broken.
 
-### 6.3 Stage C — the embedding
+### 6.3 Stage C: the embedding
 
 pgvector is available, so this stage is a projection and an index build, not a similarity join.
-The hand-rolled streaming top-K join that occupied this section in the previous draft — the dense
+The hand-rolled streaming top-K join that occupied this section in the previous draft (the dense
 ordinal space, the memory-mapped vector file, the L2-resident accumulator, the df-pruned inverted
-index, MaxScore — **is all deleted.** So are `rec_feature_postings` (20M rows) and
+index, MaxScore) **is all deleted.** So are `rec_feature_postings` (20M rows) and
 `series_neighbours` (700 MB, and the source of every merge problem in §9).
 
 That deletion is the single largest simplification available to this design, and it is worth more
@@ -582,10 +582,10 @@ than the performance argument that motivated the machinery.
    (default 128), computed with a randomized algorithm (two or three passes over the non-zeros).
 
    **Authors are excluded from the SVD input.** With ~200k distinct authors at df ≈ 2–5, they
-   would blow the input dimension out by two orders of magnitude and then be annihilated anyway —
+   would blow the input dimension out by two orders of magnitude and then be annihilated anyway:
    a rank-128 approximation cannot represent a feature that appears three times. They are
    retrieved exactly instead, by R3 (§7.1). Excluding them leaves an input of ~700 dimensions:
-   the ~600-term tag vocabulary plus the scalar features.
+   the ~600-term tag vocabulary and the scalar features.
 
    This is why SVD earns its keep over a random projection, which would be nearly free: SVD
    *generalises*. It learns that `Regression` and `Reincarnation` co-occur and places them near
@@ -594,7 +594,7 @@ than the performance argument that motivated the machinery.
 
 2. **Write `series_embedding`** by streaming `COPY` in batches. The projection is a per-series
    matrix–vector product once the 700×128 basis exists, so this stage never holds more than one
-   batch plus a 700 × 128 basis matrix (~360 KB).
+   batch and a 700 × 128 basis matrix (~360 KB).
 
 3. **Build the HNSW index.** `m = 16`, `ef_construction = 64`.
 
@@ -605,7 +605,7 @@ vectors are still what generate the explanation (§7.5), so what the reader is *
 even where retrieval is approximate.
 
 **If measurement disagrees, the fallback is known.** Should §11.2 show dense retrieval losing to
-sparse-exact on `recall@12`, reinstate precomputed neighbours — but as a **normalised
+sparse-exact on `recall@12`, reinstate precomputed neighbours, but as a **normalised
 `series_neighbours(series_id, neighbour_id, rank, score)` table with real foreign keys**, never
 the `uuid[]` arrays of the previous draft. The array layout was chosen for storage and page-fetch
 count, and it is what created the dangling-id problem, the repair queue and the read-path alias
@@ -619,23 +619,23 @@ do not repeat it.
 
 | Stage | Cost | Bound by |
 |---|---|---|
-| A — extraction | streaming, one batch resident | `build.batch_size` |
-| B — idf | pure SQL `GROUP BY` | nothing crosses the wire |
-| C — SVD | 2–3 passes over ~14M non-zeros (authors excluded); ~360 KB basis resident | streamable in batches |
-| C — embedding write | ~256 MB via `COPY` | one batch |
-| C — HNSW build | **the dominant cost**: tens of minutes at 1M rows, and it wants `maintenance_work_mem` | see below |
-| D — co-occurrence | aggregated in Postgres, one user's list resident | `cooccurrence.max_list_entries` |
-| E — priors | pure SQL | — |
+| A: extraction | streaming, one batch resident | `build.batch_size` |
+| B: idf | pure SQL `GROUP BY` | nothing crosses the wire |
+| C: SVD | 2–3 passes over ~14M non-zeros (authors excluded); ~360 KB basis resident | streamable in batches |
+| C: embedding write | ~256 MB via `COPY` | one batch |
+| C: HNSW build | **the dominant cost**: tens of minutes at 1M rows, and it wants `maintenance_work_mem` | see below |
+| D: co-occurrence | aggregated in Postgres, one user's list resident | `cooccurrence.max_list_entries` |
+| E: priors | pure SQL | none |
 
-**The HNSW build is now the bottleneck, and it moved into the database.** That is mostly good —
-Postgres parallelises it, it is restartable, and it is not our code — but it has two properties
+**The HNSW build is now the bottleneck, and it moved into the database.** That is mostly good
+(Postgres parallelises it, it is restartable, and it is not our code), but it has two properties
 worth planning for:
 
 - It wants `maintenance_work_mem` large enough to hold the graph, or it spills and slows sharply.
   With `halfvec(128)` the table is ~256 MB and the graph roughly the same again, so ~1 GB is a
   reasonable setting for a full 1M build. Document it in `deploy/README.md`; do not set it
   globally.
-- `CREATE INDEX CONCURRENTLY` cannot run inside the migrator's implicit transaction — migration
+- `CREATE INDEX CONCURRENTLY` cannot run inside the migrator's implicit transaction: migration
   0020 already documents this trap at length for the plain indexes, and the same constraint
   applies here. The index is created by the **builder**, not by a migration, which sidesteps it
   entirely and is also where a regeneration belongs.
@@ -643,7 +643,7 @@ worth planning for:
 **Steady-state builder heap is now single-digit megabytes.** Nothing in the pipeline is resident
 in proportion to the catalogue: A and C stream in batches, B, D and E execute in the database.
 This is a better answer to "reduce memory and CPU as much as possible" than the streaming join
-was, because the work is not merely streamed — most of it no longer exists.
+was, because the work is not merely streamed: most of it no longer exists.
 
 **Revised target: < 45 min for a full 1M rebuild**, dominated by the HNSW build, with the
 embedding write second. Incremental builds re-embed only changed digests and insert into the
@@ -651,7 +651,7 @@ existing index, which is cheap and needs no rebuild.
 
 Still estimates. The measurement deliverable in phase 1 is unchanged in spirit but different in
 content: wall clock and peak RSS per stage, the HNSW build time and index size at 100k / 500k /
-1M, and **measured ANN recall@k against exact cosine on a sample** — that last one is what says
+1M, and **measured ANN recall@k against exact cosine on a sample**: that last one is what says
 whether `ef_search` is set correctly, and there is no way to guess it.
 
 **Levers, in order:** `retrieval.ef_search` (recall vs latency, online, no rebuild),
@@ -659,7 +659,7 @@ whether `ef_search` is set correctly, and there is no way to guess it.
 `ef_construction` (build time vs recall), and `retrieval.seeds` (tail latency, §7.1).
 
 
-### 6.5 Stage D — co-occurrence, aggregated in the database
+### 6.5 Stage D: co-occurrence, aggregated in the database
 
 Item-item over `user_series_affinity`, restricted to positive affinity:
 
@@ -668,12 +668,12 @@ score(i, j) = Σ_u  a(u,i)·a(u,j) / (log(1 + |list(u)|) · sqrt(pop(i)·pop(j))
 ```
 
 The `log(1 + |list|)` denominator stops one user with a 3 000-entry imported AniList list from
-dictating the matrix. The `sqrt(pop·pop)` denominator is the standard popularity normalisation —
+dictating the matrix. The `sqrt(pop·pop)` denominator is the standard popularity normalisation:
 without it everything co-occurs with *One Piece* and the model learns a popularity ranking with
 extra steps.
 
 **Stream it; do not materialise the pair set in the builder.** The naive version holds
-`Σ_u |list(u)|²/2` pairs in a client-side map — 20M at 1 000 users × 200 entries, and one 3 000-entry
+`Σ_u |list(u)|²/2` pairs in a client-side map: 20M at 1 000 users × 200 entries, and one 3 000-entry
 imported list alone contributes 4.5M. Instead:
 
 1. Walk users in batches, one user's list resident at a time.
@@ -682,7 +682,7 @@ imported list alone contributes 4.5M. Instead:
 3. Aggregate in SQL: `GROUP BY i, j HAVING count(DISTINCT user_id) >= cooccurrence.min_support`.
 
 Postgres spills that sort to disk if it must; the builder's residency is one user's list. The
-aggregation is also where the privacy threshold is enforced, which is the right place for it —
+aggregation is also where the privacy threshold is enforced, which is the right place for it:
 one `HAVING` clause, not a filter someone can forget downstream.
 
 **Cap each user's contribution at `cooccurrence.max_list_entries`** (default 300, taken by
@@ -690,10 +690,10 @@ descending affinity). Quadratic growth from a single imported list is both a mem
 quality problem, and one cap fixes both.
 
 **Minimum support of 5 distinct users** before a pair may influence anything. That is a privacy
-control, not a quality one — see §12.2 and §8.3 — and it is why co-occurrence degrades to nothing
-on a small deployment rather than being load-bearing.
+control, not a quality one (see §12.2 and §8.3) and it is why co-occurrence degrades to nothing
+on a small deployment instead of being load-bearing.
 
-### 6.6 Stage E — priors
+### 6.6 Stage E: priors
 
 ```text
 prior = w_watchers·c·norm(watchers)
@@ -704,7 +704,7 @@ prior = w_watchers·c·norm(watchers)
 where `c = total_users / (total_users + 50)`.
 
 The confidence factor is not decoration. `watchers` is pure noise below ~50 users, and it feeds
-R4 — the retrieval path a brand-new deployment leans on hardest. Without `c`, the first weeks of
+R4: the retrieval path a brand-new deployment leans on hardest. Without `c`, the first weeks of
 every deployment rank the catalogue by a handful of arbitrary early watchlists. The weight
 redistributes to the three catalogue-side signals, which need no users at all, and slides back as
 the population grows. Same shrinkage principle as `confidence(support)` in §7.2, same reason.
@@ -712,7 +712,8 @@ the population grows. Same shrinkage principle as `confidence(support)` in §7.2
 All four weights are tunables (§8), so the shape is an operator's decision, not a constant.
 
 `recommendable = false` for: no active `series_sources`, zero chapters, fewer than
-`build.min_features` features, `is_adult` (gated separately at read time, see §7.4). A series
+`build.min_features` features. Adult content is not on this list: it is gated at read time only
+(§7.4, §12.3). A series
 nothing links to and nothing describes cannot be recommended usefully and should not consume a
 neighbour slot.
 
@@ -724,7 +725,7 @@ neighbour slot.
 | Full (all stages, all series, new generation, index rebuild) | control-plane scheduler | weekly, configurable, 0 disables |
 | Co-occurrence (D) | control-plane scheduler | daily |
 
-The re-embed queue (§9.3) no longer needs its own schedule — it is drained at the head of the
+The re-embed queue (§9.3) no longer needs its own schedule: it is drained at the head of the
 incremental pass, and the incremental pass is frequent because re-embedding a handful of changed
 series is an insert into a live HNSW index, not a rebuild.
 
@@ -741,26 +742,26 @@ tunable that costs more than a rebuild, and the console should say so.
 
 ## 7. The request path
 
-Every number in this section — seed counts, posting caps, weights, `λ`, the TTL, the decay — is a
+Every number in this section (seed counts, posting caps, weights, `λ`, the TTL, the decay) is a
 tunable (§8.6), not a constant. They are written inline as their shipped defaults, because a
 design document that says "configurable" everywhere says nothing about what the system actually
 does.
 
-### 7.1 Retrieval — five bounded paths, unioned
+### 7.1 Retrieval: five bounded paths, unioned
 
 | Path | Source | Yield | Purpose |
 |---|---|---|---|
 | **R1** seed ANN | HNSW over `series_embedding`, one search per seed, top ~8 seeds | ≤ 400 | Precision. "More like the thing you loved," and the source of the explanation. |
-| **R2** profile ANN | **One** HNSW search from the reader's profile vector | ≤ 200 | Recall. Catches items no single seed is near — the reader's centre of gravity, not any one book. |
+| **R2** profile ANN | **One** HNSW search from the reader's profile vector | ≤ 200 | Recall. Catches items no single seed is near: the reader's centre of gravity, not any one book. |
 | **R3** exact author/rare-tag | `series_authors` / `series_tags` index lookups on the seeds' rarest features | ≤ 200 | Precision on exactly what the embedding destroys (§6.3). Same author is a near-certain recommendation and SVD cannot see it. |
 | **R4** collaborative | `series_cooccurrence` for the top ~15 seeds | ≤ 300 | The signal content features cannot see (tone, quality, "readers of X also read Y"). |
 | **R5** prior backfill | `series_prior` ordered by `prior DESC` | ≤ 100 | Cold start, and shelf-filling when the others come up short. |
 
-R1 and R2 are HNSW searches — sublinear, not scans. R3–R5 are index range scans with a `LIMIT`.
+R1 and R2 are HNSW searches: sublinear, not scans. R3–R5 are index range scans with a `LIMIT`.
 Nothing here touches a row count that grows linearly with the catalogue.
 
 **The latency budget, spelled out**, because R1/R2 are the one place this design does real work
-per request rather than reading precomputed rows:
+per request instead of reading precomputed rows:
 
 ```text
 1 profile search + 8 seed searches ≈ 9 × ~1.5 ms  ≈  13 ms
@@ -768,18 +769,18 @@ per request rather than reading precomputed rows:
 ```
 
 That fits p99 < 50 ms with room, but it is genuinely tighter than a precomputed-neighbour table
-would be, and it puts the cost on the database rather than in a nightly job. `retrieval.seeds` is
-capped at 8 by default for exactly this reason — it is the knob that trades tail latency for
+would be, and it puts the cost on the database, not in a nightly job. `retrieval.seeds` is
+capped at 8 by default for exactly this reason: it is the knob that trades tail latency for
 recall, and it is the first one to look at if the p99 target is missed.
 
-Deduplicate to a candidate set of at most ~1 000 ids, then fetch `series_features` +
-`series_prior` + `series` for exactly those ids in one `= ANY($1)` query. `series_features` is
+Deduplicate to a candidate set of at most ~1 000 ids, then fetch `series_features`,
+`series_prior` and `series` for exactly those ids in one `= ANY($1)` query. `series_features` is
 still what produces the explanation (§7.5): the embedding says *that* two series are close, and
 only the sparse vectors can say *why*.
 
 ### 7.2 Scoring
 
-Each path's contribution is **rank-normalised within its own path before blending** — the four
+Each path's contribution is **rank-normalised within its own path before blending**: the four
 scales are not comparable (a cosine, a co-occurrence score, a prior), and blending raw values
 means whichever has the largest natural range silently wins.
 
@@ -791,7 +792,7 @@ score(c) =  w_knn  · Σ_seeds a(u,s) · sim(s,c) · decay(s)
           − w_neg  · cos(n(u), f(c))
 ```
 
-`confidence(support) = support / (support + 10)` — shrinkage toward zero when the co-occurrence
+`confidence(support) = support / (support + 10)`: shrinkage toward zero when the co-occurrence
 evidence is thin, which on a small deployment is always. This is what makes the same code correct
 for a 3-user instance and a 30 000-user one without a config switch.
 
@@ -817,8 +818,8 @@ Applied before scoring where they are indexed, after where they are not:
 - already in `watchlist_entries` for this user;
 - in `recommendation_feedback` (`not_interested` decays after 90 days; `hide_forever` does not);
 - `series_prior.recommendable = false`;
-- `series.adult_gated` unless the reader has opted in *and* the deployment allows it — a per-user
-  preference defaulting off, plus a deployment-wide flag that also ships off (§12.3);
+- `series.adult_gated` unless the reader has opted in *and* the deployment allows it: a per-user
+  preference defaulting off, and a deployment-wide flag that also ships off (§12.3);
 - no active `series_sources` (recommending something unreadable is worse than recommending
   nothing);
 - direct sequels/prequels of tracked series → **excluded from the discovery shelf and routed to a
@@ -836,7 +837,7 @@ Every item returns why:
 ```
 
 `shared` is the top-3 features by contribution to the pair's cosine, spoiler tags excluded. This
-is nearly free — the extractor already has both vectors — and it is the difference between a shelf
+is nearly free (the extractor already has both vectors) and it is the difference between a shelf
 users trust and a shelf they ignore.
 
 ### 7.6 Caching
@@ -845,20 +846,20 @@ users trust and a shelf they ignore.
 `profile_at == user_taste_profile.built_at` and it is younger than the TTL (default 6 h);
 otherwise recompute inline and write it back.
 
-**Compute inline, cache opportunistically — do not build a per-user precompute sweep.** The inline
+**Compute inline, cache opportunistically: do not build a per-user precompute sweep.** The inline
 path is ~25 primary-key fetches, one `= ANY` fetch of ~2 000 rows, and a few million float
 operations. That is comfortably inside the p99 target, and a precompute sweep does work for users
 who never sign in. If measurement contradicts this, the escape hatch is to precompute for users
-active in the last 7 days — but do not build it before the numbers demand it.
+active in the last 7 days, but do not build it before the numbers demand it.
 
 ### 7.7 Endpoints
 
 | Route | Feature flag | Notes |
 |---|---|---|
 | `GET /v1/me/recommendations` | `catalogue.recommendations` (exists) | Replaces the stub. Gains `limit`, `exclude_tracked`, cursor. |
-| `GET /v1/series/{id}/similar` | `catalogue.recommendations` | One HNSW search, no user context, publicly cacheable. Cheap and high value — it also gives the system a surface that works for signed-out visitors, and it is the cheapest way to sanity-check the embedding in production. |
+| `GET /v1/series/{id}/similar` | `catalogue.recommendations` | One HNSW search, no user context, publicly cacheable. Cheap and high value: it also gives the system a surface that works for signed-out visitors, and it is the cheapest way to sanity-check the embedding in production. |
 | `POST /v1/me/recommendations/{series_id}/feedback` | `catalogue.recommendations` | `{"verdict":"not_interested"}`. Writes `recommendation_feedback`; doubles as the offline evaluation signal. |
-| `GET /v1/me/taste` | `catalogue.recommendations` | The reader's own profile, rendered — top tags, authors, length and type preference. Users like seeing it, and it is the fastest way to debug a bad shelf in production without reading anyone's watchlist. |
+| `GET /v1/me/taste` | `catalogue.recommendations` | The reader's own profile, rendered: top tags, authors, length and type preference. Users like seeing it, and it is the fastest way to debug a bad shelf in production without reading anyone's watchlist. |
 
 ---
 
@@ -867,8 +868,8 @@ active in the last 7 days — but do not build it before the numbers demand it.
 Not one weight, base or threshold in this document is a constant in the source. They are a
 registry, stored as overrides, edited in the console, audited, and refreshed into every replica.
 
-**The design is a deliberate copy of `Feature`** (`crates/domain/src/features.rs` +
-`crates/service/src/flags.rs` + `crates/db/src/repo/flags.rs` + `services/api/src/admin/flags.rs`
+**The design is a deliberate copy of `Feature`** (`crates/domain/src/features.rs`,
+`crates/service/src/flags.rs`, `crates/db/src/repo/flags.rs` and `services/api/src/admin/flags.rs`
 + `web/frontend/src/views/console/flags.rs`). That vertical already solves compiled-default
 resolution, override storage, timed refresh, permission gating, audit and the console panel. A
 second mechanism for the same problem would be a second thing to get wrong.
@@ -910,7 +911,7 @@ pub struct TunableSpec {
 
 Values are stored and transported as `f64` regardless of kind, so there is one table and one API
 shape; the registry supplies the typing and the accessors clamp on the way out
-(`tunables.neighbour_k() -> usize`). The alternative — a typed column per kind, or a JSON blob —
+(`tunables.neighbour_k() -> usize`). The alternative (a typed column per kind, or a JSON blob)
 buys nothing and costs a schema change per new knob.
 
 ### 8.3 Ranges are enforced, and one of them is a privacy floor
@@ -925,8 +926,8 @@ its reasoning: refused at the door *and* clamped by the reader, because the stor
 not exist is a different failure from the request that should not succeed.
 
 One cross-field rule: a write that would set every `score.weight.*` to zero is refused. The five
-weights need not sum to anything — sub-scores are rank-normalised per retrieval path before
-blending (§7.2), so their scale is free — but all-zero produces an arbitrary shelf with no error
+weights need not sum to anything (sub-scores are rank-normalised per retrieval path before
+blending (§7.2), so their scale is free), but all-zero produces an arbitrary shelf with no error
 anywhere.
 
 ### 8.4 When a change takes effect
@@ -937,10 +938,10 @@ Each spec carries `Applies`, and **the console shows it on every row**:
 |---|---|---|
 | `Immediately` | next request, once the snapshot refreshes | every score weight, diversity, affinity, retrieval caps, serving |
 | `NextBuild` | next incremental build | `build.max_candidates`, `build.min_features`, co-occurrence knobs |
-| `NextFullBuild` | next full rebuild — the stored model was computed under the old value | `build.neighbour_k`, `build.df_prune_fraction` |
+| `NextFullBuild` | next full rebuild: the stored model was computed under the old value | `build.neighbour_k`, `build.df_prune_fraction` |
 
 This is the most likely way the panel fails a user. Someone raises `neighbour_k`, sees no change,
-raises it again, and concludes the page is broken — when the truth is that 32 neighbours per
+raises it again, and concludes the page is broken: when the truth is that 32 neighbours per
 series are what is physically stored. The badge, and a "rebuild to apply" affordance next to it,
 are not polish.
 
@@ -958,11 +959,11 @@ CREATE TABLE tunable_overrides (
 
 Same shape and same properties as `feature_flag_overrides`: only deviations are stored, so an
 empty table is a fully working deployment, and a key from a retired build stays visible on the
-one page that can delete it rather than vanishing.
+one page that can delete it instead of vanishing.
 
 `TunableSet` lives in `crates/service/src/tunables.rs` beside `FeatureGate`, refreshes on the same
 timer, and **keeps its previous snapshot on a failed refresh**. Reverting to compiled defaults
-because one query failed would silently discard an operator's tuning — the identical hazard
+because one query failed would silently discard an operator's tuning: the identical hazard
 `flags.rs` already documents for overrides, and the reason its comment says callers must not
 collapse `Err` into an empty list.
 
@@ -970,7 +971,7 @@ collapse `Err` into an empty list.
 
 Thirty-five values, all editable. Ranges are enforced per §8.3.
 
-**Affinity** (§4.1) — all `Immediately`
+**Affinity** (§4.1): all `Immediately`
 
 | Key | Default | Range |
 |---|---|---|
@@ -985,7 +986,7 @@ Thirty-five values, all editable. Ranges are enforced per §8.3.
 | `recsys.affinity.recency_floor` | 0.30 | 0 … 1 |
 | `recsys.affinity.external_score_weight` | 0.25 | 0 … 1 |
 
-**Retrieval** (§7.1) — all `Immediately`
+**Retrieval** (§7.1): all `Immediately`
 
 | Key | Default | Range |
 |---|---|---|
@@ -998,10 +999,10 @@ Thirty-five values, all editable. Ranges are enforced per §8.3.
 | `recsys.retrieval.candidate_cap` | 1000 | 100 … 20000 |
 
 `seeds` and `ef_search` are the two that move p99 (§7.1). `ef_search` is the one knob that trades
-ANN recall against latency **without a rebuild** — it is the first thing to reach for in either
+ANN recall against latency **without a rebuild**: it is the first thing to reach for in either
 direction, and the only way to set it honestly is against the measured recall in §6.4.
 
-**Scoring** (§7.2) — all `Immediately`
+**Scoring** (§7.2): all `Immediately`
 
 | Key | Default | Range |
 |---|---|---|
@@ -1013,7 +1014,7 @@ direction, and the only way to set it honestly is against the measured recall in
 | `recsys.score.cross_type_multiplier` | 0.70 | 0 … 1 |
 | `recsys.score.cf_shrinkage_k` | 10 | 1 … 1000 |
 
-**Diversity** (§7.3) — all `Immediately`
+**Diversity** (§7.3): all `Immediately`
 
 | Key | Default | Range |
 |---|---|---|
@@ -1021,7 +1022,7 @@ direction, and the only way to set it honestly is against the measured recall in
 | `recsys.diversity.max_per_author` | 2 | 1 … 12 |
 | `recsys.diversity.max_per_tag` | 3 | 1 … 12 |
 
-**Prior** (§6.6) — all `NextBuild`
+**Prior** (§6.6): all `NextBuild`
 
 | Key | Default | Range |
 |---|---|---|
@@ -1040,20 +1041,20 @@ direction, and the only way to set it honestly is against the measured recall in
 | `recsys.build.hnsw_ef_construction` | 64 | 16 … 512 | `NextFullBuild` |
 | `recsys.build.min_features` | 3 | 1 … 20 | `NextBuild` |
 
-All three `NextFullBuild` values are baked into stored data — the embedding and the graph — so
+All three `NextFullBuild` values are baked into stored data (the embedding and the graph) so
 changing one and expecting the next request to differ is the §8.4 failure mode in its purest
 form. `embedding_dims` in particular multiplies both table size and index memory: at 512 the
 table alone is ~1 GB. Put that number in the spec's `description`, where the operator reads it
 before typing.
 
-**Co-occurrence** (§6.5) — all `NextBuild`
+**Co-occurrence** (§6.5): all `NextBuild`
 
 | Key | Default | Range |
 |---|---|---|
 | `recsys.cooccurrence.min_support` | 5 | **5** … 1000 (floor is a privacy clamp, §8.3) |
 | `recsys.cooccurrence.max_list_entries` | 300 | 10 … 5000 |
 
-**Serving** (§7.6) — all `Immediately`
+**Serving** (§7.6): all `Immediately`
 
 | Key | Default | Range |
 |---|---|---|
@@ -1065,7 +1066,7 @@ before typing.
 
 ## 9. Merges
 
-Merges are frequent here — `merge_candidates.outcome` admits `auto_merged`, and the standing
+Merges are frequent here: `merge_candidates.outcome` admits `auto_merged`, and the standing
 duplicate sweep performs destructive merges without an operator. A recommender that assumes
 series ids are stable is a recommender that is wrong most of the time.
 
@@ -1077,7 +1078,7 @@ Reading `merge_series` in `crates/db/src/repo/matching.rs`: it is one long trans
 
 **One is a correctness bug, not staleness.** `recommendation_feedback` is keyed
 `(user_id, series_id)` with a cascading foreign key. Left alone, a merge silently deletes the
-loser's row — so a user who said "never show me this" has that decision quietly undone by a
+loser's row, so a user who said "never show me this" has that decision quietly undone by a
 catalogue merge they never saw. This is precisely the hazard the existing code already calls out
 for `series_sync_overrides`: *a user's decision is theirs, not the catalogue's, and must survive
 the catalogue deciding two rows were one.* Same rule, same conservative reading, and it must be
@@ -1085,7 +1086,7 @@ folded **before** the delete.
 
 **One was structural, and pgvector deleted it.** The earlier `uuid[]` neighbour arrays could not
 carry a foreign key, so a merged id survived in the arrays of thousands of other series with no
-reverse index to find them — which is what the repair queue and the read-path alias dance existed
+reverse index to find them, which is what the repair queue and the read-path alias dance existed
 to work around. Retrieval is now a live HNSW search over a table with a cascading foreign key: the
 absorbed row's embedding disappears in the same transaction that deletes the series, and no query
 can return it afterwards. **There is no window in which a merged series can be recommended.**
@@ -1094,7 +1095,7 @@ can return it afterwards. **There is no window in which a merged series can be r
 on top of each other in the embedding space. A merge barely perturbs ranking. The damage is lost
 user decisions, not worse recommendations.
 
-### 9.2 `series_merges` — the alias table the product already needed
+### 9.2 `series_merges`: the alias table the product already needed
 
 Today the absorbed row is deleted with no forwarding record. That is a gap wider than this
 feature: with automatic merges running continuously, every merged id is a hard 404 for bookmarks,
@@ -1121,7 +1122,7 @@ That is what `series_merges_survivor_idx` is for. The map stays one hop deep for
 resolution is a single lookup instead of a recursive CTE that is both slower and able to spin on a
 cycle. Cycles cannot form: the survivor always exists and the merged id is always deleted.
 
-The table is tiny — one row per merge in the deployment's history — and read-mostly, so the API
+The table is tiny (one row per merge in the deployment's history) and read-mostly, so the API
 holds it as an **in-memory map refreshed on the same timer as the feature snapshot**. Resolution
 then costs the request nothing.
 
@@ -1140,14 +1141,14 @@ CREATE TABLE rec_repair_queue (
 ```
 
 Much smaller than it was. With neighbour arrays gone there are no inbound references to repair,
-so the queue holds **only the survivor** — whose tags and authors changed when it absorbed the
+so the queue holds **only the survivor**: whose tags and authors changed when it absorbed the
 loser, so its digest changed and its embedding is stale. One row per merge, not ~2 000.
 
 The primary key on `series_id` is free deduplication, which is what makes it survive frequent
 merges: a popular series enqueued forty times in an hour is one row. The incremental build drains
 the queue before it looks at digests.
 
-A stale embedding is a *quality* issue with a bounded window (minutes), not a correctness one —
+A stale embedding is a *quality* issue with a bounded window (minutes), not a correctness one:
 the survivor is still retrievable and still roughly in the right place, because it absorbed a
 near-duplicate. That is a materially weaker requirement than the previous draft's, and it is why
 this queue no longer needs its own drain schedule separate from the incremental build.
@@ -1161,24 +1162,24 @@ it" look identical in a diff.
 | Table | Cascades? | Action |
 |---|---|---|
 | `series_features` | yes | Nothing. The survivor absorbed the loser's tags and authors, so its digest changes and stage A re-extracts it. Enqueue it for re-embedding (§9.3). |
-| `series_embedding` | yes | Nothing. The cascade removes it in the same transaction, so no HNSW search can return the absorbed series afterwards. This is the row that used to be a `uuid[]` problem. |
+| `series_embedding` | yes | Nothing. The cascade removes it in the same transaction, so no HNSW search can return the absorbed series afterwards. This is the row a `uuid[]` would leave dangling. |
 | `series_prior` | yes | Nothing; stage E recomputes the survivor's `watchers`. |
 | `series_cooccurrence` | yes, both columns | Let both cascade; stage D recomputes. **Do not re-point.** `UPDATE … SET series_id = keep` violates the `series_id <> other_id` CHECK for a `(loser, survivor)` pair, and double-counts support for every pair both series shared. Someone will try it; say why not, in the code. |
-| `user_series_affinity` | yes | Nothing directly — it is derived from watchlist and progress, which `merge_series` already folds correctly. Mark the affected profiles stale and let it be recomputed from the folded truth. Merging derived rows by hand is how the two diverge. |
+| `user_series_affinity` | yes | Nothing directly: it is derived from watchlist and progress, which `merge_series` already folds correctly. Mark the affected profiles stale and let it be recomputed from the folded truth. Merging derived rows by hand is how the two diverge. |
 | `user_taste_profile` | no (user-keyed) | `UPDATE … SET stale = true` for users who tracked either series. Bounded by the watcher count. |
-| `recommendation_feedback` | yes — **and that is the bug** | Fold **before** the delete: `INSERT … SELECT … ON CONFLICT (user_id, series_id) DO UPDATE` keeping the stronger verdict (`hide_forever` > `not_interested`). §9.1. |
+| `recommendation_feedback` | yes: **and that is the bug** | Fold **before** the delete: `INSERT … SELECT … ON CONFLICT (user_id, series_id) DO UPDATE` keeping the stronger verdict (`hide_forever` > `not_interested`). §9.1. |
 | `user_recommendations` | no (user-keyed) | Nothing. The cached shelf holds the dead id, and the `profile_at` staleness check regenerates it as soon as the profile above is marked stale. |
 
 ### 9.5 Read-path resolution
 
-Retrieval no longer produces dangling ids, so the alias map is not load-bearing for correctness
+Retrieval does not produce dangling ids, so the alias map is not load-bearing for correctness
 here. It still has two jobs on the request path:
 
 1. **Seeds.** A reader's watchlist, taste-profile `seeds[]` and cached `user_recommendations`
    JSON can all hold ids merged since they were written. Resolve them through `series_merges`
-   before use — **resolve, do not drop**: the survivor is the thing the reader wanted.
+   before use: **resolve, do not drop**: the survivor is the thing the reader wanted.
 2. **Deduplicate, then drop self-references.** After resolution two seeds can be the same series,
-   and a seed can resolve onto a candidate — a series recommending itself is the most visible
+   and a seed can resolve onto a candidate: a series recommending itself is the most visible
    possible bug, and it becomes reachable precisely when a merge happens.
 
 The join back to `series` for the `recommendable` and moderation filters stays as the backstop.
@@ -1188,7 +1189,7 @@ The join back to `series` for the `recommendable` and moderation filters stays a
 `merge_series` is a hand-maintained list of every table with a `series_id`. It grows by ten tables
 in this design, and the failure mode when someone adds an eleventh and forgets is silent.
 
-Add a differential test — the same instinct as the unread-predicate test in `repo_tracking` and
+Add a differential test: the same instinct as the unread-predicate test in `repo_tracking` and
 the adapter-picker test in the console: **enumerate every table with a `series_id` column from
 `information_schema`, and assert each is either folded by `merge_series` or named in an explicit
 `cascade_is_correct()` list carrying its reason.** A new table fails the test until someone decides
@@ -1214,7 +1215,7 @@ A new `Entity::Recommendations` in `web/frontend/src/views/console/mod.rs`, in t
 | `icon` | `Icon::Sparkle` (add to `icons.rs`) |
 | `slug` | `recommendations` |
 | `requires()` | `(Permission::RecsysRead, Feature::AdminRecommendations)` |
-| `is_master_detail()` | `false` — one wide pane |
+| `is_master_detail()` | `false`: one wide pane |
 | `auto_refreshes()` | **`false`** |
 
 `auto_refreshes()` is `false` for the same reason `Providers`, `Users` and `Flags` are: this is a
@@ -1222,15 +1223,15 @@ mid-edit work surface, and a background refetch landing on a half-filled tuning 
 The module doc already states that rule. The consequence is that the model-health card needs its
 own local reload and a manual refresh control, since the shared tick will not drive it.
 
-`RailCount` shows the repair-queue depth with `CountTone::Attention` when non-zero — the same
+`RailCount` shows the repair-queue depth with `CountTone::Attention` when non-zero: the same
 treatment `pending_merges` gets, and for the same reason. Needs a field on `SystemStats`.
 
 New permissions `recsys.read` / `recsys.write` in `crates/domain/src/permissions.rs`
-(`PermissionGroup::Catalogue`), plus a migration seeding them into both lists the 0018 pattern
+(`PermissionGroup::Catalogue`), and a migration seeding them into both lists the 0018 pattern
 maintains. New `Feature::AdminRecommendations`, in the operations group beside `AdminSync` and
 `AdminFeatureFlags`.
 
-### 10.2 Panel — model health
+### 10.2 Panel: model health
 
 What an operator needs before touching anything:
 
@@ -1238,20 +1239,20 @@ What an operator needs before touching anything:
 - last full and last incremental build: when, how long, how many series, and **peak RSS** (the
   number §6.4 promises to measure is worth showing, not just benchmarking);
 - coverage: series with features, series with neighbours, series marked `recommendable`, and the
-  gap between them — a large gap means `build.min_features` is doing more than intended;
+  gap between them: a large gap means `build.min_features` is doing more than intended;
 - co-occurrence: total pairs and **how many clear `min_support`**, which is the honest answer to
   "is collaborative filtering doing anything on this deployment?";
 - repair-queue depth;
 - a staleness banner when `model_age > 2 × full_interval`, matching the metric alert in §12.5.
 
 Actions, both `Permission::RecsysWrite`, both audited, both routed through the existing
-`.expensive(…)` rate-limit class — there is a precedent at
+`.expensive(…)` rate-limit class: there is a precedent at
 `.expensive("/v1/admin/matching/rebuild-keys")`:
 
 - `POST /v1/admin/recommendations/rebuild` `{"mode":"incremental"|"full"}`
-- `POST /v1/admin/recommendations/repair` — drain the queue now.
+- `POST /v1/admin/recommendations/repair`: drain the queue now.
 
-### 10.3 Panel — tuning
+### 10.3 Panel: tuning
 
 Modelled directly on `FeatureFlagsPanel`, which already solves this layout. Grouped by
 `TunableGroup`; each row carries title, description, an input bounded by the registry's
@@ -1261,25 +1262,25 @@ the `Applies` badge from §8.4.
 Read-only for a reader holding `recsys.read` without `recsys.write`, exactly as the flags panel
 degrades.
 
-`GET /v1/admin/recommendations/tunables` returns the compiled registry joined to stored overrides
-— the same construction as `FlagView`, and for the same reason: the page can then never show a
+`GET /v1/admin/recommendations/tunables` returns the compiled registry joined to stored overrides:
+the same construction as `FlagView`, and for the same reason: the page can then never show a
 value the server does not honour, or omit one it does.
 
 **A "what would change?" affordance is worth building here and nowhere else.** Editing a weight is
 a blind action otherwise. Pair the tuning panel with §10.4 so an operator can change a weight and
 immediately re-run the explain view against their own account.
 
-### 10.4 Panel — explain
+### 10.4 Panel: explain
 
 The panel that makes this debuggable in production. For a chosen series, or for the operator's own
 account, show: the seeds and their affinities, what each retrieval path contributed, the candidate
 count at each stage, the final ranked list, and a per-item score breakdown across the five terms.
 
-**It operates on the operator's own account and on arbitrary series — never on another user's
+**It operates on the operator's own account and on arbitrary series: never on another user's
 account.** A cross-user version would be more useful and would also be an operator-facing window
 onto individual reading histories, which is exactly the profiling exposure §12.1 requires
-disclosing. Restricting it to self plus catalogue keeps essentially all the debugging value and
-removes the problem rather than auditing around it. If cross-user inspection is ever genuinely
+disclosing. Restricting it to self and catalogue keeps essentially all the debugging value and
+removes the problem instead of auditing around it. If cross-user inspection is ever genuinely
 needed, it needs a distinct permission, its own audit action, and a line in the privacy policy.
 
 ### 10.5 Frontend mechanics and gates
@@ -1289,7 +1290,7 @@ The order is fixed:
 
 1. API handlers land;
 2. `cargo run -p xtask -- openapi`;
-3. `crates/api-client` regenerates (never hand-edited — rule 6);
+3. `crates/api-client` regenerates (never hand-edited: rule 6);
 4. the frontend compiles against the new `crate::wire::types`.
 
 Also required:
@@ -1298,8 +1299,8 @@ Also required:
   the failure ships silently.
 - **A membership test for the tuning panel**, mirroring `the_picker_offers_every_adapter_kind`:
   read the published `Tunable` vocabulary out of `openapi.json` and assert the panel renders every
-  one. This is the identical bug class — a hand-maintained frontend vocabulary against a generated
-  backend one — and this repo already learned it once, when a wrong token registered every new
+  one. This is the identical bug class (a hand-maintained frontend vocabulary against a generated
+  backend one) and this repo already learned it once, when a wrong token registered every new
   provider as `Custom`.
 - **A wording test**, mirroring `every_offered_adapter_kind_is_worded`: every tunable group and
   every `Applies` variant has an `i18n::has_key` label.
@@ -1320,7 +1321,7 @@ A recommender with no measurement is a random number generator with a good story
 - **Temporal leave-one-out**: hide each user's most recently added positive watchlist entry,
   rebuild the profile from the rest, ask for 50, measure whether the held-out item is in there.
 - Metrics: `recall@12`, `recall@50`, `MRR`, **catalogue coverage** (fraction of the catalogue that
-  appears in anyone's top-50 — the number that catches a system recommending the same 200 series
+  appears in anyone's top-50: the number that catches a system recommending the same 200 series
   to everyone), **novelty** (mean `−log popularity` of returned items), **intra-list diversity**
   (mean pairwise feature distance).
 
@@ -1331,7 +1332,7 @@ The new system must beat **both** baselines on `recall@12` on the fixture:
 1. popularity-only (`ORDER BY prior DESC`), and
 2. the current tag-overlap query.
 
-Beating (1) is not automatic — popularity baselines are famously hard to beat on recall, and a
+Beating (1) is not automatic: popularity baselines are famously hard to beat on recall, and a
 content model that loses to it is a content model that is not working. Beating (2) is the point of
 the exercise.
 
@@ -1363,14 +1364,14 @@ rollout is visible.
 Three new tables hold personal data and **must** be wired into the existing paths, or the export
 is incomplete and the erasure is a data-retention bug:
 
-- `crates/db/src/repo/privacy.rs` — the export JSON builder gains `user_series_affinity`,
+- `crates/db/src/repo/privacy.rs`: the export JSON builder gains `user_series_affinity`,
   `user_taste_profile`, `recommendation_feedback`, `user_recommendations`.
-- Erasure is covered by `ON DELETE CASCADE` on `users(id)` — verify, do not assume.
+- Erasure is covered by `ON DELETE CASCADE` on `users(id)`: verify, do not assume.
 
 **Automated profiling must be disclosed.** `deploy/legal/privacy.en.md` is operator-published and
 currently describes no profiling. Building a taste profile from reading behaviour is exactly what
 GDPR Art. 13(2)(f) requires disclosing. This is an operator action with a template, not something
-code can close — flag it in the PR and add the template text.
+code can close: flag it in the PR and add the template text.
 
 ### 12.2 Co-occurrence leaks membership
 
@@ -1378,14 +1379,14 @@ On a small deployment, "readers of X also read Y" is a statement about *identifi
 three users, a co-occurrence edge is a disclosure of one person's watchlist to another.
 
 Mitigation: a pair needs **≥ 5 distinct contributing users** before it is written to
-`series_cooccurrence` at all (not merely down-weighted — not written). Below that, the pair does
+`series_cooccurrence` at all (not merely down-weighted, but not written). Below that, the pair does
 not exist and the system falls back to content similarity. The threshold is configurable upward,
 never downward; put the reason in the config doc comment, because the next person to see it will
 read it as a tuning knob.
 
 ### 12.3 Adult content
 
-The gate is `series.adult_gated` — a stored generated column, `is_adult OR adult_inferred` — and
+The gate is `series.adult_gated` (a stored generated column, `is_adult OR adult_inferred`) and
 it defaults to excluded. Two conditions must both hold before a series passes it: the deployment
 has `catalogue.adult_content` switched on (a feature flag that ships **off**, the only one whose
 default-on failure mode is showing adult material to an audience nobody chose), and the reader has
@@ -1394,14 +1395,14 @@ gated series, on any surface.
 
 Two writers, deliberately in separate columns:
 
-- `is_adult` — AniList's `isAdult`, via the enrichment sweep. Authoritative, may say either yes or
+- `is_adult`: AniList's `isAdult`, via the enrichment sweep. Authoritative, may say either yes or
   no.
-- `adult_inferred` — the ingest classifier over the provider's own genre chips
+- `adult_inferred`: the ingest classifier over the provider's own genre chips
   (`tankovault_domain::AdultTagSet`). May only ever say **yes**, and nothing clears it.
 
 **This revises the previous rule that the flag is "never inferred from tags."** That rule was
-correct about *stored* tags — AniList's adult-flagged tags are dropped at parse time and never
-reach `series_tags`, so nothing downstream can infer from them — but it left the real hole
+correct about *stored* tags (AniList's adult-flagged tags are dropped at parse time and never
+reach `series_tags`, so nothing downstream can infer from them), but it left the real hole
 unaddressed: `is_adult` had exactly one writer, so every series the AniList sweep had not matched
 kept the column's `false` default and read as safe. On a freshly scanned catalogue that is most of
 it, and permanently so for anything AniList does not carry. The inference runs at ingest against
@@ -1410,8 +1411,8 @@ high-precision: it carries only terms that mean explicit sexual content, and exp
 `ecchi`, `yaoi`, `yuri`, `mature`, `seinen` and `doujinshi`. See the doc comment on
 `DEFAULT_ADULT_TAGS` for why each exclusion is not an oversight.
 
-The gate is applied at **read** time only. It used to also set `series_prior.recommendable = false`
-during the model build, which made the reader's opt-in unreachable: every retrieval path joins
+The gate is applied at **read** time only. Setting `series_prior.recommendable = false` during
+the model build would make the reader's opt-in unreachable: every retrieval path joins
 `recommendable`, so a series the build refused could not be recovered by any read-time filter,
 however permissive. The build's flag is about usefulness; content is the reader's filter.
 
@@ -1423,12 +1424,12 @@ Not optional, and each one has bitten this repo before:
 |---|---|
 | New endpoints | `cargo run -p xtask -- openapi`, **plus** a row in `me_gates()` / `public_gates()` in `services/api/tests/me_access_matrix.rs`. Regenerating `openapi.json` alone leaves the matrix red. |
 | New `query!`/`query_as!` | `cargo run -p xtask -- sqlx-prepare` against a migrated database |
-| New queries | `crates/db/tests/repo_query_plans.rs` — every new query must pass the 100 000 cost ceiling **with no budget entry**. If one needs a budget, the design is wrong; go back to §7.1. |
-| Old query removed | **Delete the `tracking::dashboard recommendations` budget entry.** A budget that matches nothing fails the audit — deliberately. |
+| New queries | `crates/db/tests/repo_query_plans.rs`: every new query must pass the 100 000 cost ceiling **with no budget entry**. If one needs a budget, the design is wrong; go back to §7.1. |
+| Old query removed | **Delete the `tracking::dashboard recommendations` budget entry.** A budget that matches nothing fails the audit: deliberately. |
 | New metrics | A row in `tankovault_service::metrics::CATALOGUE` and a `names::*` constant, or `repo-lint` fails. Then the reading guide in `docs/OBSERVABILITY.md`. |
 | New config section | `docs/CONFIGURATION.md` (`cargo run -p xtask -- config-docs` prints the surface) |
 | New feature flags | `crates/domain/src/features.rs`, its control-plane grouping, and the OpenAPI regeneration that follows |
-| New DTOs | `crates/contracts` — never a repository row struct with `ToSchema` |
+| New DTOs | `crates/contracts`: never a repository row struct with `ToSchema` |
 | `Cargo.lock` moved (new crate, the SVD dependency, criterion) | `cargo run -p xtask -- notices` |
 | New permissions (`recsys.read`/`recsys.write`) | `crates/domain/src/permissions.rs` + a migration seeding **both** lists the 0018 pattern maintains, or the permission exists in code and can never be granted |
 | New tables with a `series_id` | Folded in `merge_series` or named in `cascade_is_correct()`, enforced by the §9.6 differential test |
@@ -1442,21 +1443,21 @@ Not optional, and each one has bitten this repo before:
 | `recsys_build_duration_seconds` | histogram (`WORK_BUCKETS`) | `stage` |
 | `recsys_build_series_total` | counter | `stage`, `result` (`built`/`skipped`/`failed`) |
 | `recsys_model_series` | gauge | `table` |
-| `recsys_model_age_seconds` | gauge | — (staleness alert: model older than 2× the full interval) |
+| `recsys_model_age_seconds` | gauge | none (staleness alert: model older than 2× the full interval) |
 | `recsys_serve_duration_seconds` | histogram | `path` (`cached`/`computed`) |
-| `recsys_shelf_size` | histogram | — (an empty-shelf rate is the earliest symptom of a broken model) |
+| `recsys_shelf_size` | histogram | none (an empty-shelf rate is the earliest symptom of a broken model) |
 | `recsys_candidates` | histogram | `retrieval` (`knn`/`profile`/`cf`/`prior`) |
-| `recsys_build_peak_rss_bytes` | gauge | — (the §6.4 promise, kept in production and not only in a bench) |
-| `recsys_ann_recall` | gauge | — (measured ANN recall against exact cosine on a sample; the only way to know `ef_search` is set right, §6.4) |
-| `recsys_repair_queue_depth` | gauge | — (a queue that only grows means the drain is not keeping up with the merge rate) |
+| `recsys_build_peak_rss_bytes` | gauge | none (the §6.4 promise, kept in production and not only in a bench) |
+| `recsys_ann_recall` | gauge | none (measured ANN recall against exact cosine on a sample; the only way to know `ef_search` is set right, §6.4) |
+| `recsys_repair_queue_depth` | gauge | none (a queue that only grows means the drain is not keeping up with the merge rate) |
 | `recsys_merge_repairs_total` | counter | `reason` (`merged`/`inbound_merge`/`features_changed`) |
-| `recsys_tunable_overrides` | gauge | — (how far this deployment has drifted from the shipped defaults; the first question to ask about a bad shelf) |
+| `recsys_tunable_overrides` | gauge | none (how far this deployment has drifted from the shipped defaults; the first question to ask about a bad shelf) |
 
 ---
 
 ## 13. Rejected and deferred
 
-**~~pgvector~~ — adopted, and it is now required (§5.1).** An earlier draft deferred it because
+**~~pgvector~~: adopted, and it is now required (§5.1).** An earlier draft deferred it because
 it forces a Postgres image change on every self-hoster and costs ~1 GB of resident index. Both
 costs are real and unchanged; the operator confirmed the extension is available, and taking it
 turned out to buy far more than the ANN search itself.
@@ -1468,21 +1469,21 @@ MaxScore optimisation, the `memmap2` dependency, `rec_feature_postings` (20M row
 resolution that existed only to paper over `uuid[]` columns that could not carry a foreign key.
 
 That last one is the lesson worth keeping: **the merge problems in §9 were not inherent to
-recommendation — they were created by the array storage layout**, chosen for page-fetch count.
+recommendation: they were created by the array storage layout**, chosen for page-fetch count.
 Removing the layout removed the problem class.
 
-What it **costs**, stated so it is not forgotten: retrieval is now approximate rather than exact,
+What it **costs**, stated so it is not forgotten: retrieval is now approximate, not exact,
 the rare high-precision features SVD annihilates need their own exact path (R3), and per-request
 work moved onto the database. §11.2 is what decides whether that trade was right.
 
-**What it newly enables**, not yet designed: "more like *this arbitrary vector*" — a free-text or
+**What it newly enables**, not yet designed: "more like *this arbitrary vector*": a free-text or
 mood search, or a shelf built from three series a reader picks without any stored profile. That
-is a different feature, and it is now one query away rather than one architecture away.
+is a different feature, and it is now one query away, not one architecture away.
 
 **Text embeddings of descriptions.** Descriptions are provider-scraped, inconsistently present,
 frequently machine-translated, and often marketing copy. An embedding of that is an embedding of
 noise, and it would be the most expensive part of the pipeline. If descriptions are used at all,
-use them as extra sparse features (rare noun phrases) — not as a dense space.
+use them as extra sparse features (rare noun phrases), not as a dense space.
 
 **Matrix factorisation / implicit ALS.** Correct and standard *given interaction density*.
 A self-hosted tracker with a few hundred users has a matrix that is ~99.99% empty, where MF
@@ -1490,8 +1491,8 @@ overfits to popularity and produces exactly the shelf a popularity baseline give
 of the effort. The co-occurrence stage (§6.5) captures the recoverable part of that signal.
 Revisit above ~10 000 active readers.
 
-**Recomputing similarity in SQL.** Every formulation — `count(shared tags)`, a lateral over
-`series_tags`, an array-overlap operator, `ts_rank` over `search_vec` — is the current stub with a
+**Recomputing similarity in SQL.** Every formulation (`count(shared tags)`, a lateral over
+`series_tags`, an array-overlap operator, `ts_rank` over `search_vec`) is the current stub with a
 different constant factor. The catalogue is on the wrong side of the join.
 
 **A nightly per-user precompute sweep.** Deferred, not rejected. See §7.6.
@@ -1502,37 +1503,37 @@ different constant factor. The catalogue is on the wrong side of the join.
 
 Each phase is independently shippable and independently valuable.
 
-**Phase 0 — the extension, the signal, and merges.** Migration 0026. **Move the Postgres image to
-`pgvector/pgvector:pg18` and `CREATE EXTENSION vector` first** (§5.1) — it is the one breaking
+**Phase 0: the extension, the signal, and merges.** Migration 0026. **Move the Postgres image to
+`pgvector/pgvector:pg18` and `CREATE EXTENSION vector` first** (§5.1): it is the one breaking
 change for existing operators, and everything below assumes it. Extend the AniList selection
 (rich tags with rank, `averageScore`, `popularity`, `isAdult`, `source`); backfill through the
 existing enrichment sweep. **Land `series_merges` (§9.2) and the §9.6 differential test here, not
 later.** The alias table pays for itself immediately as a `301` for merged series, the test starts
-guarding `merge_series` before ten tables are added to it rather than after, and every phase below
+guarding `merge_series` before ten tables are added to it, not after, and every phase below
 would otherwise have to retrofit merge handling. Nothing else user-visible ships.
 
-**Phase 1 — the item model.** `crates/recsys` with stages A/B/C/E, the SVD projection, the
+**Phase 1: the item model.** `crates/recsys` with stages A/B/C/E, the SVD projection, the
 embedding write, the HNSW build, the builder in the worker, the control-plane trigger, migration
 0027, and `GET /v1/series/{id}/similar`. Ships a real, signed-out-visible feature. **The wall
-clock, the HNSW build time and index size, and — above all — the measured ANN recall against exact
+clock, the HNSW build time and index size, and (above all) the measured ANN recall against exact
 cosine are all validated here** (§6.4). Everything later inherits whatever they turn out to be,
 and the recall number is what decides whether the §6.3 fallback is needed.
 
-**Phase 2 — the reader model.** Migration 0028, affinity, taste profile, retrieval R1/R2/R4,
+**Phase 2: the reader model.** Migration 0028, affinity, taste profile, retrieval R1/R2/R4,
 scoring, MMR, explanations, and the replacement of `/v1/me/recommendations`. **Delete the stub
 query and its plan budget in this phase.** Ships the actual product.
 
-**Phase 2.5 — tuning and the console.** The `Tunable` registry (§8), `tunable_overrides`, the
+**Phase 2.5: tuning and the console.** The `Tunable` registry (§8), `tunable_overrides`, the
 snapshot in `crates/service`, the admin endpoints, and the console entity (§10). Deliberately
 *after* phase 2, not before: shipping thirty-five knobs against an unvalidated ranker means tuning
 noise. The compiled defaults are the ones this document argues for, and they should have to work
 first.
 
-**Phase 3 — collaboration and feedback.** Stage D with database-side aggregation, retrieval R3
-with shrinkage and the support threshold, `recommendation_feedback` (and its merge fold — §9.4),
+**Phase 3: collaboration and feedback.** Stage D with database-side aggregation, retrieval R3
+with shrinkage and the support threshold, `recommendation_feedback` and its merge fold (§9.4),
 `GET /v1/me/taste`, the "next in the series" rail (needs AniList relations).
 
-**Phase 4 — only if measured.** Impression logging and a learned ranker; free-text / mood search
+**Phase 4: only if measured.** Impression logging and a learned ranker; free-text / mood search
 over the embedding (§13); a second embedding space if the SVD proves too lossy. Each needs a
 number from phase 1–3 justifying it.
 
@@ -1543,22 +1544,22 @@ number from phase 1–3 justifying it.
 Each has a default that works, so none of these blocks a start.
 
 1. **Builder placement.** Default: in `services/worker`, triggered by control-plane. Alternative:
-   a dedicated `services/recsys` — one more container for every self-hoster, in exchange for
+   a dedicated `services/recsys`: one more container for every self-hoster, in exchange for
    isolation from a memory profile the streaming design largely removed (§3.2). The code boundary
    is the same either way; only the `main.rs` moves.
-2. **Embedding width.** Default `halfvec(128)` — ~256 MB of table plus a similar graph at 1M
+2. **Embedding width.** Default `halfvec(128)`: ~256 MB of table and a similar graph at 1M
    series. 64 dims halves both and costs generalisation; 256 doubles them. This is the value that
    sets how much RAM the database needs to keep the index hot, so decide it against the cluster
    you have. It is a tunable, but a `NextFullBuild` one (§8.4).
 3. **Full-rebuild cadence.** Default weekly. A catalogue growing by tens of thousands of series a
    week wants it more often; a static one wants it monthly. The incremental build covers changed
-   series either way — the full rebuild exists for idf drift and for neighbours that changed
+   series either way: the full rebuild exists for idf drift and for neighbours that changed
    because *something else* changed.
 4. **`series_merges` scope.** It is proposed as a product-wide alias table (§9.2), which means a
    `301` on `GET /v1/series/{merged_id}` and a change to how the catalogue answers for ids it no
-   longer holds. If you would rather keep it private to the recommender, it works unchanged — but
+   longer holds. If you would rather keep it private to the recommender, it works unchanged, but
    the redirect is worth more than the recommender is, and the table already exists either way.
-5. **Explain panel scope.** Default: the operator's own account plus arbitrary series (§10.4).
+5. **Explain panel scope.** Default: the operator's own account and arbitrary series (§10.4).
    Cross-user inspection is more useful for support and is an operator-facing window onto
    individual reading histories; if you want it, it needs its own permission, its own audit
    action, and a line in the privacy policy.

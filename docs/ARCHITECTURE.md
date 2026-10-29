@@ -39,7 +39,7 @@ re-deciding architecture at every step.
 14. Notification service
 15. External sync service (AniList)
 16. Authentication, authorisation & security
-17. Frontend: Dioxus + Tailwind (design system + screens)
+17. Frontend: Dioxus and Tailwind (design system and screens)
 18. Observability & operations
 19. Deployment
 20. Phased delivery roadmap
@@ -68,7 +68,7 @@ re-deciding architecture at every step.
 
 ### Goals (crawl resilience)
 - **Detect bot-management challenges fast** (a cheap classifier on status codes, headers, and body
-  markers) so a challenged fetch is recognised in milliseconds rather than after a timeout.
+  markers), so a challenged fetch is recognised in milliseconds, not after a timeout.
 - **Bypass challenges through a dedicated solver microservice** (TRAWL by default) exposed
   behind a `ChallengeSolver` trait, so the mechanism is modular and new solver back-ends can be added
   without changing the crawl pipeline or the adapters.
@@ -83,10 +83,10 @@ re-deciding architecture at every step.
 
 ## 2. System topology (the microservices)
 
-Eight deployable services plus shared libraries. Each is a separate binary in one Cargo workspace.
+Eight deployable services and shared libraries. Each is a separate binary in one Cargo workspace.
 The **challenge-solver** service is the new bot-management bypass tier: workers call it over HTTP when
 the fetch stack detects a challenge, and it fronts a pluggable solver back-end (TRAWL by
-default) plus an optional headless-render fallback.
+default) and an optional headless-render fallback.
 
 ```text
                          ┌──────────────────────────┐
@@ -176,7 +176,7 @@ tankovault/
 
 **Workspace lints (enforce in CI):** `#![deny(warnings)]` in CI profile, `clippy::pedantic` selectively,
 `unsafe_code = "forbid"` in every crate except where a justified `#[allow]` with comment exists,
-`cargo deny` (licenses + advisories), `cargo audit`, `rustfmt` check.
+`cargo deny` (licenses and advisories), `cargo audit`, `rustfmt` check.
 
 ---
 
@@ -188,7 +188,7 @@ tankovault/
 | HTTP server | **Axum** + tower/tower-http | Composable middleware, first-class extractors, ecosystem fit. |
 | DB access | **SQLx** (Postgres, `runtime-tokio`, `tls-rustls`) | Compile-time-checked SQL, no heavy ORM, full control over queries and indexes. |
 | Migrations | **sqlx-cli** migrations (SQL files) | Deterministic, reviewable, no macro magic. |
-| DB | **PostgreSQL 17** | Rich indexing (GIN, trigram, FTS), `ON CONFLICT` upserts, `SKIP LOCKED`. Was `19beta2` until OPS-4.2: the 187-entry `.sqlx` cache and every migration are validated against whatever runs, so a beta catalog meant type-checking against a moving target. |
+| DB | **PostgreSQL 18** with pgvector (`pgvector/pgvector:pg18`) | Rich indexing (GIN, trigram, FTS), `ON CONFLICT` upserts, `SKIP LOCKED`. A released major, never a beta: the `.sqlx` cache and every migration are validated against whatever runs, so a beta catalog would mean type-checking against a moving target. |
 | Cache / locks / rate state | **Redis 7** (`fred` client) | Hot read cache, distributed rate-limit counters, advisory locks. |
 | Message bus | **NATS JetStream** (`async-nats`) | Durable streams, consumer groups, backpressure. |
 | HTTP client (crawl) | **wreq** (BoringSSL, browser TLS/HTTP2 emulation) + `governor` (rate limit) | Providers are WAF-fronted; a rustls handshake is fingerprintable regardless of headers. `wreq-util` supplies the matching profiles. Internal service-to-service HTTP stays on **reqwest** (rustls). |
@@ -212,20 +212,20 @@ tankovault/
 
 Core aggregate boundaries:
 
-- **Provider** — a source site (e.g. `kunmanga`, `demonicscans`, `manhuaus`). Owns a `base_url`, an
+- **Provider**: a source site (e.g. `kunmanga`, `demonicscans`, `manhuaus`). Owns a `base_url`, an
   adapter kind, and an adapter config. The single place a domain is defined.
-- **Series** — the canonical work. Provider-independent. Carries merged metadata and a search vector.
-- **SeriesSource** — the join between a `Series` and a `Provider`: "this canonical series exists at
+- **Series**: the canonical work. Provider-independent. Carries merged metadata and a search vector.
+- **SeriesSource**: the join between a `Series` and a `Provider`: "this canonical series exists at
   this provider under this path." Holds the provider-specific `source_path` and a `content_hash` used
   for cheap change detection.
-- **Chapter** — belongs to a `SeriesSource`. Holds `number`, optional `title`, and a **`path`** — the
+- **Chapter**: belongs to a `SeriesSource`. Holds `number`, optional `title`, and a **`path`**: the
   relative link to the chapter page. Never image data.
 
 **The migration-safe link rule.** Every persisted location is stored as a **relative path** on the
 provider (`/manga/solo-leveling/chapter-1/`), *not* an absolute URL. The absolute URL is computed at
 read time: `resolve(provider.base_url, path)`. Consequences:
 
-- Domain migration = `UPDATE providers SET base_url = $new WHERE id = $id;` — one row, zero data
+- Domain migration = `UPDATE providers SET base_url = $new WHERE id = $id;`: one row, zero data
   rewrite, every link now resolves correctly.
 - The DB never stores stale absolute URLs.
 - The frontend and API always ask the domain layer to resolve a link; there is exactly one resolver
@@ -240,7 +240,7 @@ the absence of any image-download capability in the `fetch` crate's public API.
 ## 6. PostgreSQL schema (optimised)
 
 Design principles: UUIDv7 PKs (sortable, good for B-tree locality), `timestamptz` everywhere,
-generated `tsvector` for search, GIN indexes for search + trigram fuzzy + tag arrays, idempotent
+generated `tsvector` for search, GIN indexes for search, trigram fuzzy and tag arrays, idempotent
 upserts keyed on natural uniqueness, `content_hash` to short-circuit unchanged work.
 
 ```sql
@@ -369,7 +369,7 @@ CREATE TABLE watchlist_entries (
 CREATE INDEX watchlist_series_notify ON watchlist_entries (series_id) WHERE notify;
 
 -- Superseded by a two-scalar split (last_read_whole_number / last_read_part_number, still
--- scalar, no ledger) — see docs/READING_PROGRESS_AND_SYNC.md Part A. Kept here as the
+-- scalar, no ledger); see docs/READING_PROGRESS_AND_SYNC.md Part A. Kept here as the
 -- as-built v1 shape (single last_read_number column).
 CREATE TABLE read_progress (
   user_id           uuid NOT NULL REFERENCES users(id)  ON DELETE CASCADE,
@@ -451,9 +451,9 @@ CREATE INDEX scan_tasks_queue ON scan_tasks (state) WHERE state = 'queued';
 ```
 
 Notes:
-- `citext` for case-insensitive email/username uniqueness; enable `citext`, `pg_trgm`, and a `uuidv7()`
-  function (Postgres 17 has no built-in `uuidv7()`: provide via the `pg_uuidv7` extension, or
-  generate in-app and pass explicitly — which is what the repositories do).
+- `citext` for case-insensitive email/username uniqueness; enable `citext` and `pg_trgm`. The
+  repositories generate UUIDv7 ids in-app and pass them explicitly. The `DEFAULT uuidv7()` in the
+  sketch above is illustrative; the migrations fall back to `gen_random_uuid()` for manual inserts.
 - Partitioning `chapters` is **not** needed at MVP. Scale path: range-partition `chapters` and
   `notifications` by month if row counts exceed ~10^8; documented, not built.
 - All writes from workers are idempotent `INSERT ... ON CONFLICT DO UPDATE`, so re-running a task is
@@ -469,8 +469,8 @@ layout. The abstraction must make the common case config-only and the rare case 
 
 Two layers:
 
-1. **`SourceAdapter` trait** — the behavioural contract every provider satisfies.
-2. **Config-driven adapters** — a `GenericConfigAdapter` / `MadaraAdapter` that reads CSS selectors and
+1. **`SourceAdapter` trait**: the behavioural contract every provider satisfies.
+2. **Config-driven adapters**: a `GenericConfigAdapter` / `MadaraAdapter` that reads CSS selectors and
    pagination rules from `providers.config` (JSONB). Adding a Madara-like site = insert one row, no
    deploy. A custom site = a small Rust struct implementing the trait, registered by `adapter` enum.
 
@@ -483,7 +483,7 @@ pub trait SourceAdapter: Send + Sync {
     /// Enumerate the provider catalogue one page at a time (full scan).
     async fn list_catalog(&self, ctx: &Ctx, page: u32) -> Result<CatalogPage>;
 
-    /// The provider's "latest updates" feed (fast scan) — recently updated series + newest chapter.
+    /// The provider's "latest updates" feed (fast scan): recently updated series + newest chapter.
     async fn list_latest(&self, ctx: &Ctx) -> Result<Vec<LatestUpdate>>;
 
     /// Full metadata for one series, given its RELATIVE path.
@@ -510,12 +510,12 @@ pub struct ChapterMeta { pub number: f64, pub title: Option<String>, pub path: S
 ```
 
 `Ctx` bundles the `provider` row (base_url, politeness) and a `&dyn Fetcher`, so adapters never own
-their transport — the transport is injected (testable, swappable).
+their transport: the transport is injected (testable, swappable).
 
 **Config schema (`providers.config`) for the generic adapter:**
 
 Every field is a CSS selector (`sel@attr` reads an attribute) with one exception: `series.alt`
-also accepts a **labelled row** — `{row, label, match, value}` — because Madara's summary block
+also accepts a **labelled row** (`{row, label, match, value}`) because Madara's summary block
 renders Alternative/Author(s)/Artist(s)/Genre(s) as identical rows distinguishable only by
 their heading text, and CSS cannot select on text. The value cell is split on `,`/`;`.
 
@@ -542,7 +542,7 @@ parses `"Chapter 10.5"` → `10.5`. **All adapter parsing is fuzz-tested against
 data loss. Fixtures are checked into `crates/adapters/fixtures/<provider>/`.
 
 **Registering a custom adapter** (demonicscans example): implement `SourceAdapter`, add a variant, and
-a factory maps `providers.adapter = 'custom'` + `providers.slug` → the struct. Keep custom code minimal
+a factory maps `providers.adapter = 'custom'` and `providers.slug` → the struct. Keep custom code minimal
 by reusing the generic HTML helpers.
 
 ---
@@ -558,7 +558,7 @@ Plan:
 2. It walks the catalogue (via `list_catalog`) enough to know page count, or streams pages, emitting a
    `catalog_page` task per page.
 3. Each `catalog_page` task (worker) yields series paths → emits a `series` task per series.
-4. Each `series` task (worker): `fetch_series` + `fetch_chapters`, compute `content_hash`, upsert
+4. Each `series` task (worker): `fetch_series` and `fetch_chapters`, compute `content_hash`, upsert
    series/source/chapters idempotently, mark task done, increment `scan_runs.done_tasks`.
 5. Run completes when `done + failed == total` (with a settle window).
 
@@ -567,20 +567,20 @@ Purpose: cheap detection of *new* chapters only.
 Plan:
 1. Control plane creates `scan_run(mode='fast', provider)` and emits **one** `latest_feed` task per
    provider, coalescing against a run of the same mode already in flight for that provider.
-2. Worker calls `list_latest` and fans out a `series` task per entry — it does **not** walk the
+2. Worker calls `list_latest` and fans out a `series` task per entry: it does **not** walk the
    feed inline. Walking it inline left the run at `0/1` for as long as it ran, because its single
    counter could not move until every series had been fetched; a child per series makes the same
    work report as `17/94` and gives each series its own retry budget and failure row.
 3. Each `series` task upserts idempotently → emits `chapter.discovered` for genuinely new chapters,
    consumed by the notifier.
 4. Each task reports its **stage** (`scan_tasks.stage`) as it runs and records where its wall clock
-   went (`scan_tasks.telemetry`) when it settles, so a run that is slow can say why — see §"Why a
-   scan is slow" in `docs/OBSERVABILITY.md`.
+   went (`scan_tasks.telemetry`) when it settles, so a slow run can say why; see the "Why a scan is slow" section of
+   `docs/OBSERVABILITY.md`.
 
 ### Change detection & politeness
 - `content_hash` on `series_sources` lets the worker skip an unchanged series without writing.
 - Per-provider **concurrency and rate limits** from `providers.politeness`, enforced by `governor`
-  keyed on provider, plus a Redis token bucket shared across worker replicas so the *aggregate* rate
+  keyed on provider, and a Redis token bucket shared across worker replicas so the *aggregate* rate
   across the whole pool respects the limit.
 - **Challenge handling**: when the fetch stack detects a bot-management challenge the provider moves to
   `challenged`, the fetch is routed through the `challenge-solver` service (`solving`), and on a valid
@@ -600,7 +600,7 @@ guarantees a single active run of a given `(provider, mode)`.
 ## 9. The fetch layer & crawl posture
 
 The `fetch` crate is the only place network egress to providers happens. It is a composition of
-decorators over **`wreq`** — a BoringSSL-backed client that reproduces a real browser's TLS
+decorators over **`wreq`**: a BoringSSL-backed client that reproduces a real browser's TLS
 `ClientHello` and HTTP/2 SETTINGS fingerprint. A generic rustls client is identifiable to
 Cloudflare/DDoS-Guard no matter which headers it sends, and a browser `User-Agent` over a
 non-browser handshake is a *stronger* bot signal than no disguise at all, so the handshake and the
@@ -634,11 +634,11 @@ pub trait ChallengeSolver: Send + Sync {
 
 /// Cheap, allocation-light classifier run on every response by SolvingFetcher.
 pub fn detect_challenge(resp: &FetchResponse) -> Option<ChallengeKind> {
-    // Fast checks, cheapest first — status, then headers, then a bounded body scan:
+    // Fast checks, cheapest first: status, then headers, then a bounded body scan:
     //   * HTTP 403/429/503 with `server: cloudflare` + `cf-mitigated: challenge`
     //   * `Set-Cookie: cf_clearance` / `__cf_bm` absence + interstitial markers
     //   * body markers: "Just a moment...", `cf_chl_opt`, Turnstile widget, and the
-    //     `/cdn-cgi/challenge-platform` *orchestration* script — never the path prefix alone,
+    //     `/cdn-cgi/challenge-platform` *orchestration* script, never the path prefix alone,
     //     which the JS Detections beacon on ordinary content pages shares
     //   * generic JS-interstitial heuristics for non-Cloudflare WAFs
     // Returns None on a normal page so the hot path stays a single branch.
@@ -663,7 +663,7 @@ pub enum ChallengeKind { CloudflareJs, CloudflareManaged, Turnstile, GenericJsIn
 
 **Crawl posture (explicit and enforced by the code's shape):**
 - **Rate-limited and backed off** by default; conservative defaults, operator-tunable *downward* in
-  politeness but bounded by hard ceilings in config. This — not a `robots.txt` gate — is what bounds
+  politeness but bounded by hard ceilings in config. This (not a `robots.txt` gate) is what bounds
   the load a provider actually sees, and it is the part the code enforces.
 - **Conditional requests** (ETag/Last-Modified) to minimise load and bandwidth.
 - **Presents a browser identity by default** (`Politeness::emulation`, Chrome unless changed): the
@@ -671,10 +671,10 @@ pub enum ChallengeKind { CloudflareJs, CloudflareManaged, Turnstile, GenericJsIn
   other. Setting `emulation` to `null` reverts a provider to the identifiable `TankoVaultBot`
   user-agent with no fingerprint spoofing. When a provider is behind a challenge, the solver-issued
   session User-Agent overrides the profile's, because the `cf_clearance` cookie is bound to it.
-- **No `robots.txt` enforcement.** It was removed with the move to emulation rather than left as
-  dead code: a gate keyed on a user-agent the crawler no longer sends can only ever match the `*`
-  group, which would misrepresent what the provider agreed to. Politeness is the budget above.
-- **No image/content fetching path exists** in the public API — the `FetchResponse` body is treated as
+- **No `robots.txt` enforcement.** The crawler emulates a browser, so a gate keyed on a crawler
+  user-agent it does not send could only ever match the `*` group, which would misrepresent what
+  the provider agreed to. Politeness is the budget above.
+- **No image/content fetching path exists** in the public API: the `FetchResponse` body is treated as
   HTML/JSON for parsing only.
 
 **On JS-rendered pages:** some providers render listings client-side. The optional `render` service
@@ -688,17 +688,17 @@ runtime is isolated from the workers and scaled independently:
   html?, ttl }`) consumed by `SolvingFetcher`.
 - The default back-end is **TRAWL** (run as a sidecar/companion container); the service selects
   a back-end via config, and the `ChallengeSolver` trait makes adding a new one (headless render, a
-  commercial solver, a self-hosted alternative) a matter of implementing one method and registering it
-  — **modular and extensible by construction**.
+  commercial solver, a self-hosted alternative) a matter of implementing one method and registering it:
+  **modular and extensible by construction**.
 - It is stateless per request but writes solved sessions to Redis so every worker replica benefits
   from one solve.
 - It enforces its own per-provider concurrency/rate limits and timeouts, and emits metrics
   (`solve_attempts`, `solve_success_ratio`, `solve_latency`) for the console.
 
 **Posture:** the system prefers an official API where one exists, crawls politely by default, detects a
-bot-management challenge quickly, and **bypasses it through the pluggable solver** rather than giving
-up. `blocked` is now the *last resort* — reached only when the solver cannot obtain a valid session
-after its retry budget — and is still surfaced as a legible provider health state in the console.
+bot-management challenge quickly, and **bypasses it through the pluggable solver** instead of giving
+up. `blocked` is now the *last resort* (reached only when the solver cannot obtain a valid session
+after its retry budget) and is still surfaced as a legible provider health state in the console.
 Operators remain responsible for the legality of crawling any given source under its terms.
 
 > Implementer note: keep all challenge logic behind the `ChallengeSolver` trait and inside the
@@ -716,14 +716,14 @@ Pipeline (in `crates/matcher`), run when a worker upserts a `series_source`:
    noise ("manga", "webtoon", scanlation suffixes).
 2. **Candidate lookup**: trigram similarity (`pg_trgm`, `%` operator) against `series.normalized_title`
    and `series_titles.normalized`, above a threshold.
-3. **Score** candidates on normalised-title similarity + alt-title overlap + release year proximity +
+3. **Score** candidates on normalised-title similarity, alt-title overlap and release year proximity,
    content-type agreement.
 4. **Decision:**
    - High confidence (≥ threshold): attach the new source to the existing series.
    - Low/no confidence: create a new canonical series.
    - **Ambiguous band**: create the source but flag a `merge_candidate` for **operator review** in the
      console (a "Possible duplicates" queue with a one-click merge/split).
-5. **Merge operation** (operator-driven) is a transactional re-parent of `series_sources` + title/tag
+5. **Merge operation** (operator-driven) is a transactional re-parent of `series_sources` and title/tag
    union, with an audit record. Splits are the inverse.
 
 This keeps automation aggressive where it's safe and human-in-the-loop where it isn't, which is the
@@ -733,7 +733,7 @@ correct trade-off for messy real-world titles.
 
 ## 11. API service (contract)
 
-Axum. REST + JSON. SSE for live scan progress. Tower middleware: tracing, CORS, compression, request
+Axum. REST and JSON. SSE for live scan progress. Tower middleware: tracing, CORS, compression, request
 timeout, rate limit, auth.
 
 **Public / user:**
@@ -808,7 +808,7 @@ POST   /v1/admin/series/merge             { keep, merge }
 
 ## 13. Worker service
 
-- Subscribes with **one durable consumer per provider per scan mode** — a *lane*,
+- Subscribes with **one durable consumer per provider per scan mode**: a *lane*,
   `tankovault-workers-<mode>-<slug>` filtered on `scan.tasks.<slug>.<mode>`. Horizontal scaling is
   unchanged (replicas share every lane); what changes is which task a worker takes next. A single
   wildcard consumer served the stream in publish order, so a full catalogue scan (one `series` task
@@ -819,24 +819,24 @@ POST   /v1/admin/series/merge             { keep, merge }
      while the fast tier was bounded by construction (one `latest_feed` task per provider, feed
      walked inline); a fast run now fans out a `series` task per feed entry, so one provider's
      large feed would otherwise starve every other provider's full scan. After `FULL_TIER_EVERY`
-     (8) consecutive fast tasks the full tier is offered a turn first — `tier_order` in
+     (8) consecutive fast tasks the full tier is offered a turn first: `tier_order` in
      `services/worker/src/queue.rs`.
   2. **Round-robin between providers**, within a mode, one task per lane per turn. A provider's share
      is set by how many providers have work, not by how many tasks it enqueued.
   - The lane set is refreshed from the provider table on an interval (`worker.provider_refresh_secs`),
     unioned with the consumers already on the stream so a renamed or deleted provider's queued tasks
-    are still drained rather than stranded.
+    are still drained, not stranded.
   - Lanes are polled with `no_wait` pulls; a round in which every lane is empty backs off (200 ms →
     5 s) so an idle pool does not busy-poll the broker.
   - `scan_tasks_served_total{provider,scan}` counts tasks handed out per lane, which is how fairness
-    and priority are observed rather than assumed.
+    and priority are observed, not assumed.
   - Upgrade notes. The pre-fairness `tankovault-workers` wildcard consumer is deleted on worker start:
     a work-queue stream refuses overlapping consumer filters, so the lanes cannot exist beside it.
-    Nothing is lost — work-queue retention drops a message on *ack*, not on consumer deletion. The
+    Nothing is lost: work-queue retention drops a message on *ack*, not on consumer deletion. The
     tasks stream's subject binding widens from `scan.tasks.*` to `scan.tasks.>` (applied via
     `create_or_update_stream`, since `get_or_create_stream` leaves an existing stream untouched), and
     each full-scan lane also binds the untiered `scan.tasks.<slug>` subject so tasks published before
-    the split are executed rather than stranded.
+    the split are executed, not stranded.
 - For each task: claim (`scan_tasks` → `claimed`), run the adapter via the injected fetch stack, upsert
   results idempotently, emit `chapter.discovered` events, mark done/failed, publish progress.
 - **Robust environment handling** = resilience, not evasion: timeouts, retries with backoff, circuit
@@ -844,7 +844,7 @@ POST   /v1/admin/series/merge             { keep, merge }
   parsers fail a single series, never the whole run), and clean surfacing of blocks as health state.
 - Optional call-out to the `render` service for JS-rendered pages.
 - Memory-bounded: streams catalogue pages; never loads a full provider into memory.
-- Graceful shutdown: finish in-flight task or requeue it (at-least-once + idempotent upserts make this
+- Graceful shutdown: finish in-flight task or requeue it (at-least-once and idempotent upserts make this
   safe).
 
 ---
@@ -863,7 +863,7 @@ POST   /v1/admin/series/merge             { keep, merge }
 ## 15. External sync service (AniList)
 
 - OAuth2 with AniList; tokens stored **encrypted at rest** (§16).
-- AniList GraphQL client (`reqwest` + typed queries).
+- AniList GraphQL client (`reqwest` and typed queries).
 - **Pull**: import a user's AniList list → map to canonical series via title matching (reuse
   `matcher`), create watchlist entries.
 - **Push**: reflect local watch status/progress to AniList (`SaveMediaListEntry`).
@@ -871,7 +871,7 @@ POST   /v1/admin/series/merge             { keep, merge }
 - Conflict policy is explicit and user-selectable (local-wins / remote-wins / newest-wins).
 
 > **Superseded by `docs/READING_PROGRESS_AND_SYNC.md` Part B**: persisted (not env-config)
-> per-account `auto_sync_enabled` + `conflict_policy`, a three-way merge (not two-way) with an
+> per-account `auto_sync_enabled` and `conflict_policy`, a three-way merge (not two-way) with an
 > `ask_me` policy and a conflict-review queue, a scheduled reconciliation loop in addition to
 > the reactive targeted push, and a per-series (opt-out) sync-exclusion flag. The v1 this
 > section describes (env-only policy, two-way `reconcile_progress`, reactive push only) is
@@ -881,25 +881,25 @@ POST   /v1/admin/series/merge             { keep, merge }
 
 ## 16. Authentication, authorisation & security
 
-**AuthN.** Argon2id password hashing (tuned params) with a **server-side pepper** — a secret mixed
-into every hash as its keyed input, held in configuration rather than the database so a database
+**AuthN.** Argon2id password hashing (tuned params) with a **server-side pepper**: a secret mixed
+into every hash as its keyed input, held in configuration, not the database so a database
 leak alone cannot be brute-forced offline. Short-lived JWT access tokens carry **identity only,
 never privileges**; rotating refresh tokens are stored **as hashes** in `refresh_tokens` and
 delivered as `httpOnly`, `Secure`, `SameSite=Strict` cookies scoped to `/v1/auth`. Refresh rotation
 with reuse-detection: a reused (already-rotated) refresh token revokes the whole family and emits an
 audited `token_reuse_detected` event.
 
-**AuthZ — per-capability, resolved per request.** The earlier ordered role tier
-(`user < operator < admin`) has been **removed**. Authorization is now a set of fine-grained,
+**AuthZ: per-capability, resolved per request.** The earlier ordered role tier
+(`user < operator < admin`) has been **removed**. Authorisation is now a set of fine-grained,
 **non-implying** capabilities (`tankovault_domain::Permission`, e.g. `providers.delete`,
 `users.permissions`, `audit.read`): holding one capability never implies another, so a grant cannot
 silently widen. Each privileged handler asks for the exact capability it exercises
 (`user.require(Permission::X)` / `require_all(&[…])`), and the caller's capability set is **read
-fresh from `user_permissions` on every request** rather than embedded in the access token — so a
+fresh from `user_permissions` on every request**, not embedded in the access token, so a
 revocation takes effect immediately instead of outliving the token's lifetime. A refusal is recorded
 as an `authz.denied` audit event naming *every* missing capability. The extractor rejects a
 **suspended** account outright, before any capability is consulted (suspension ≠ "no permissions").
-Ownership is enforced on all `/me/*` resources — the id alone is never authority over another user's
+Ownership is enforced on all `/me/*` resources: the id alone is never authority over another user's
 data. The "Reader / Operator / Administrator" presets are a UI convenience expanded at grant time and
 never persisted; they are starting points, not stored roles.
 
@@ -908,22 +908,22 @@ never persisted; they are starting points, not stored roles.
 > `services/api/src/state.rs` (the `AuthUser` extractor), `crates/domain/src/permissions.rs`
 > (the capability set) and `crates/db/src/repo/permissions.rs` (per-request resolution).
 
-**SSRF — critical for this system.** Workers and the "test adapter" endpoint fetch operator-supplied
-URLs. The policy lives in `tankovault_domain::ssrf` — address table, pre-flight check, and the
-`dns`-gated `validate_and_resolve` a handler calls before *storing* a URL — so `render`,
+**SSRF: critical for this system.** Workers and the "test adapter" endpoint fetch operator-supplied
+URLs. The policy lives in `tankovault_domain::ssrf` (address table, pre-flight check, and the
+`dns`-gated `validate_and_resolve` a handler calls before *storing* a URL), so `render`,
 `challenge-solver` and `services/api` apply it without linking the crawl stack. `crates/fetch`
 re-exports all of it and adds the one piece that is genuinely its own, a `wreq::dns::Resolve` that
 re-checks at connect time and on every redirect hop. Guard rails:
 - Allow only `http`/`https` schemes.
 - Resolve host and **reject private, loopback, link-local, and metadata IP ranges** (block
-  `169.254.169.254`, RFC1918, `::1`, etc.) — re-checked after DNS resolution and on redirects
+  `169.254.169.254`, RFC1918, `::1`, etc.): re-checked after DNS resolution and on redirects
   (prevent DNS-rebinding / redirect-to-internal).
 - Cap redirects; validate each hop.
 - Never place secrets or user data in query strings.
 
 **Startup fail-fast.** Under a production profile (`TANKOVAULT_PROFILE=production`) the API refuses to
-boot when `jwt_secret` is missing or shorter than 32 bytes — a broken trust root must never serve a
-single request — and warns when the pepper is empty. Development, tests and the integration harness
+boot when `jwt_secret` is missing or shorter than 32 bytes (a broken trust root must never serve a
+single request) and warns when the pepper is empty. Development, tests and the integration harness
 are unaffected, so short/generated secrets keep working locally.
 
 **Secret & pepper rotation.**
@@ -938,11 +938,11 @@ are unaffected, so short/generated secrets keep working locally.
 - AniList / provider tokens: encrypted at rest (envelope encryption, `aes-gcm`); rotate the KMS/data
   key per the secret manager's policy.
 
-**Other.** Strict input validation at the edge (`validator` + newtypes). Rate limiting on the auth
-endpoints. CSRF defence for the cookie refresh flow is `SameSite=Strict` plus a cookie path scoped to
-`/v1/auth`. `cargo audit` + `cargo deny` in CI. Secrets from env/secret store, never in the repo.
+**Other.** Strict input validation at the edge (`validator` and newtypes). Rate limiting on the auth
+endpoints. CSRF defence for the cookie refresh flow is `SameSite=Strict` and a cookie path scoped to
+`/v1/auth`. `cargo audit` and `cargo deny` in CI. Secrets from env/secret store, never in the repo.
 Baseline hardening headers on the web edge (the axum `frontend` server; see
-`services/frontend/`) — `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+`services/frontend/`): `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
 `Referrer-Policy: no-referrer` on the app shell; the JSON API additionally sets `X-Content-Type-Options: nosniff`,
 `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Cross-Origin-Resource-Policy: same-origin`
 and HSTS. Structured audit log for privileged actions (provider edits, merges, scan triggers, grant
@@ -950,18 +950,18 @@ changes, suspensions).
 
 ---
 
-## 17. Frontend: Dioxus + Tailwind (design system + screens)
+## 17. Frontend: Dioxus and Tailwind (design system and screens)
 
 The reader-facing experience is the product. It must feel purpose-built for manga readers, not like a
-generic dashboard. Dioxus (WASM SPA) + `dioxus-router` + signals for state; Tailwind for styling built
+generic dashboard. Dioxus (WASM SPA), `dioxus-router` and signals for state; Tailwind for styling built
 via the Tailwind CLI against a tokenised config.
 
-### 17.1 Design direction — "Inkstone"
+### 17.1 Design direction: "Inkstone"
 
-A calm, high-contrast reading environment that borrows from print manga and the sumi-e ink tradition
-rather than the usual neon-on-black tracker look. Dark-first (readers browse at night), with a warm
+A calm, high-contrast reading environment that borrows from print manga and the sumi-e ink tradition,
+not the usual neon-on-black tracker look. Dark-first (readers browse at night), with a warm
 paper light mode. The signature is an **ink-brush motif**: section dividers and the active-nav
-indicator are a single expressive brush stroke, and cover cards use a subtle paper grain — restrained,
+indicator are a single expressive brush stroke, and cover cards use a subtle paper grain: restrained,
 one memorable device, everything else quiet.
 
 **Color tokens** (Tailwind theme extension; dark-first):
@@ -971,52 +971,52 @@ one memorable device, everything else quiet.
 --ink-700  #232A33   borders / hairlines
 --paper    #EDE6D6   light-mode background (warm paper)
 --sumi     #F2EFE9   primary text on dark
---vermilion #E4572E  the single accent (hanko-seal red) — used sparingly: unread, CTAs, active nav
+--vermilion #E4572E  the single accent (hanko-seal red), used sparingly: unread, CTAs, active nav
 --jade     #2E8B78   success / "up to date" states
 --muted    #8A94A0   secondary text
 ```
 Deliberately **not** the default AI palette (no cream+terracotta, no acid-green-on-black). Vermilion is
-the one bold move — used only for unread counts, the primary CTA, and the active-nav brush stroke.
+the one bold move: used only for unread counts, the primary CTA, and the active-nav brush stroke.
 
-**Typography (2 roles + data):**
+**Typography (2 roles and data):**
 - Display: **Bricolage Grotesque** (variable, 400–800) for the wordmark and screen titles, used
   with restraint (`docs/DESIGN_SYSTEM.md` §3).
 - Body/UI: a clean humanist sans (*IBM Plex Sans*).
-- Data/labels: a mono (*IBM Plex Mono*) for chapter numbers and counts — makes numeric scanning fast.
+- Data/labels: a mono (*IBM Plex Mono*) for chapter numbers and counts: makes numeric scanning fast.
 - Type scale: 12 / 14 / 16 / 20 / 28 / 40, generous line-height on descriptions.
 
-**Layout:** persistent left rail (Discover, Reading, Watchlist, Notifications, + Console for
+**Layout:** persistent left rail (Discover, Reading, Watchlist, Notifications, and Console for
 operators), a top command bar with instant search, content area on a 12-col grid. Cover grid is a
 responsive masonry of 2:3 cards.
 
 ### 17.2 Key screens
 
-1. **Discover** — masonry cover grid with filter chips (tags, status, content type, provider) and a
+1. **Discover**: masonry cover grid with filter chips (tags, status, content type, provider) and a
    sort control (recently updated / A–Z / most sources). Virtualised grid, lazy-loaded covers with
-   blur-up placeholders. Empty state is an invitation, not an apology ("Nothing here yet — add a
+   blur-up placeholders. Empty state is an invitation, not an apology ("Nothing here yet: add a
    provider in the console to start indexing.").
-2. **Series detail** — hero with cover + title + alt titles + tags; a **Sources** tab strip ("Read on:
+2. **Series detail**: hero with cover, title, alt titles and tags; a **Sources** tab strip ("Read on:
    Provider A · B · C") where each opens the resolved link in a new tab; a chapter list (mono numbers,
-   published dates, unread markers) with "mark read to here"; watchlist toggle + notify toggle;
+   published dates, unread markers) with "mark read to here"; watchlist toggle and notify toggle;
    progress bar.
-3. **Reading dashboard** — the reader's home. "Continue reading" row (last-read + next-unread jump),
+3. **Reading dashboard**: the reader's home. "Continue reading" row (last-read and next-unread jump),
    "New chapters" feed of unread across the watchlist with vermilion unread badges, grouped by day.
-4. **Watchlist** — status columns (Reading / Planned / Completed / Paused / Dropped) with drag between
+4. **Watchlist**: status columns (Reading / Planned / Completed / Paused / Dropped) with drag between
    columns; per-title notify toggle; AniList sync status pill.
-5. **Notifications** — chronological, unread emphasised, one-click mark-all-read, deep-links to the
+5. **Notifications**: chronological, unread emphasised, one-click mark-all-read, deep-links to the
    series.
-6. **Search** — instant, fuzzy (trigram-backed), grouped results (Series / Tags), keyboard-navigable.
+6. **Search**: instant, fuzzy (trigram-backed), grouped results (Series / Tags), keyboard-navigable.
 7. **Operator Console** (RBAC):
    - **Scan dashboard**: live per-run progress bars (SSE), throughput, ETA, failed-task drill-down,
-     provider health tiles (active/degraded/challenged/solving/blocked with reason) plus per-provider
+     provider health tiles (active/degraded/challenged/solving/blocked with reason) and per-provider
      solve success-ratio and last-solve age.
    - **Challenge & solver panel**: which providers are currently challenged, the active solver back-end
      (TRAWL/render/custom), solve latency/success charts, and a **"Re-solve now"** action that
      forces a fresh session for a provider.
-   - **Providers**: table with `base_url` inline-editable (the **domain-migration** action — a single
+   - **Providers**: table with `base_url` inline-editable (the **domain-migration** action: a single
      field, with a confirm dialog explaining every link will re-resolve).
    - **Adapter editor**: JSON/selector editor for `providers.config` with a **"Test adapter"** button
-     that dry-runs against the live site or a saved fixture and shows the parsed sample side-by-side —
+     that dry-runs against the live site or a saved fixture and shows the parsed sample side-by-side,
      so operators can fix selectors without a deploy.
    - **Merge queue**: the canonicalisation review list with side-by-side compare and merge/split.
 
@@ -1040,7 +1040,7 @@ responsive masonry of 2:3 cards.
   and renews it shortly before expiry, so an active tab never lapses. A failed refresh is **not** an
   automatic sign-out: only a genuine `401` (refresh session expired past its window, rotated away, or
   reuse-revoked) clears the session, while transient failures (offline, timeout, 5xx, server restart,
-  waking from sleep) keep the session and retry with exponential backoff — the app stays logged in
+  waking from sleep) keep the session and retry with exponential backoff: the app stays logged in
   across reloads and brief outages like a normal site.
 - Live updates: subscribe to the notification WS/SSE for real-time unread badges and (for operators)
   the scan progress stream.
@@ -1064,63 +1064,56 @@ responsive masonry of 2:3 cards.
 
 ## 19. Deployment
 
-- Each service is a small (`scratch`) container — a musl binary plus its loader on an empty
+- Each service is a small (`scratch`) container: a musl binary and its loader on an empty
   base (multi-stage build; `cargo chef` for cached dependency layers). The `render` tier is the
-  exception (Debian + Chromium). The frontend builds to static WASM+assets served by a CDN or the API.
-- **Kubernetes** — *not implemented*, and this section previously claimed otherwise. It described
-  a Helm chart at `deploy/helm/tankovault` with HPAs, probe wiring and a linked README; that
-  directory has never contained a file. The claim is removed rather than aspirational, because
-  `deploy/README.md` linked to it as the production deployment path and an operator following it
-  reached a dead end. `docker compose` on a single host is the only supported shape today. When
-  a chart is built, the shape below is still the intent, and most of its prerequisites exist:
-   - `api` and `worker` `HorizontalPodAutoscaler`-scaled (worker on queue depth, api on CPU/RPS).
-   - `challenge-solver` as its own Deployment with a **TRAWL** companion container; scaled
-     on solve queue depth/latency, with a modest CPU/memory floor (a headless browser is heavy).
-   - `control-plane` scheduler under leader election — **already implemented**, through Redis, so
-     `replicas > 1` is safe there today.
-   - A migrations `Job` running `sqlx migrate run` gated before app rollout — **already the shape
-     compose uses**: migration is a discrete one-shot step, and no service migrates at startup.
-   - Probes against `/health` and `/ready`, and a `PodMonitor` against the isolated `9090` scrape
-     — **already exposed by every service**, the frontend included.
-   - Config via env + mounted secrets (see `docs/CONFIGURATION.md`); Postgres/Redis/NATS as
-     managed or in-cluster statefulsets; solver back-end (endpoint, timeouts, max concurrency) is
-     config-driven so it can be swapped.
-- **Environments**: local (docker-compose with Postgres/Redis/NATS + TRAWL + seed data) is
+  exception (Debian and Chromium). The frontend builds to static WASM+assets served by a CDN or the API.
+- **Kubernetes**: the Helm chart in `TimSchoenle/helm-charts` (`charts/tankovault`); this
+  repository deploys nothing. Every release that publishes an image proposes the chart bump that pins each published service to
+  its signed manifest-list digest (`helm-release`, see `docs/RELEASING.md`); the chart's values,
+  templates and tests are gated in that repository. What it builds on from here:
+   - `control-plane` scheduler under leader election, through Redis, so `replicas > 1` is safe.
+   - Migration as a discrete one-shot step (`bootstrap migrate`, a `Job` before rollout); no
+     service migrates at startup.
+   - Probes against `/health` and `/ready`, and a scrape against the isolated `9090`, exposed by
+     every service, the frontend included.
+   - Config via env and mounted secrets (see `docs/CONFIGURATION.md`); the solver back-end
+     (endpoint, timeouts, max concurrency) is config-driven so it can be swapped.
+- **Environments**: local (docker-compose with Postgres/Redis/NATS, TRAWL and seed data) is
   the only one that exists. Staging and prod are intent, not deployments.
-- **CI**: fmt + clippy + `cargo deny` + `cargo audit` + unit/integration tests (including adapter
-  fixture tests and a Postgres-backed repo test via `sqlx`'s test harness) + build all images.
+- **CI**: fmt, clippy, `cargo deny`, `cargo audit` and unit/integration tests (including adapter
+  fixture tests and a Postgres-backed repo test via `sqlx`'s test harness) and build all images.
 
 ---
 
 ## 20. Phased delivery roadmap
 
-**Phase 0 — Foundations (workspace, DB, one provider end-to-end).**
-Workspace + crates skeleton; migrations; `domain` + `db`; the `fetch` stack with emulation + rate limit +
-SSRF guard; the `SourceAdapter` trait + generic/Madara adapter + fixtures for one Madara provider;
-`resolve_link` + tests. Deliverable: a `worker` binary that full-scans one provider into Postgres,
+**Phase 0: Foundations (workspace, DB, one provider end-to-end).**
+Workspace, crates skeleton; migrations; `domain`, `db`; the `fetch` stack with emulation and rate limit,
+SSRF guard; the `SourceAdapter` trait, generic/Madara adapter and fixtures for one Madara provider;
+`resolve_link` and tests. Deliverable: a `worker` binary that full-scans one provider into Postgres,
 links-only, idempotently.
 
-**Phase 1 — Orchestration & API.**
+**Phase 1: Orchestration & API.**
 Control plane (scheduler, planner, JetStream), `scan_runs`/`scan_tasks`, progress aggregation; API with
-auth (register/login/refresh), series browse/detail/chapters with resolved links, admin provider CRUD +
-`base_url` migration + trigger-scan + SSE progress.
+auth (register/login/refresh), series browse/detail/chapters with resolved links, admin provider CRUD,
+`base_url` migration, trigger-scan and SSE progress.
 
-**Phase 2 — Frontend MVP.**
-Dioxus app: Discover, Series detail, auth, and the operator scan dashboard + provider editor with
+**Phase 2: Frontend MVP.**
+Dioxus app: Discover, Series detail, auth, and the operator scan dashboard and provider editor with
 "Test adapter". Tailwind design system ("Inkstone" tokens).
 
-**Phase 3 — Users & tracking + challenge bypass.**
-Watchlist, read progress, reading dashboard, notifications service + in-app notifications, fast-scan
-mode wired to notifications. Ship the `challenge-solver` service: `detect_challenge` + `SolvingFetcher`
+**Phase 3: Users & tracking and challenge bypass.**
+Watchlist, read progress, reading dashboard, notifications service and in-app notifications, fast-scan
+mode wired to notifications. Ship the `challenge-solver` service: `detect_challenge` and `SolvingFetcher`
 in the `fetch` stack, the `ChallengeSolver` trait with the TRAWL back-end, Redis session
 caching, and the console challenge/solver panel.
 
-**Phase 4 — Canonicalisation & multi-provider.**
-`matcher`, merge-candidate queue + operator merge/split UI; onboard demonicscans (custom adapter) and a
+**Phase 4: Canonicalisation & multi-provider.**
+`matcher`, merge-candidate queue and operator merge/split UI; onboard demonicscans (custom adapter) and a
 second Madara provider; cross-provider "read on A/B/C".
 
-**Phase 5 — External sync & hardening.**
-AniList OAuth + push/pull; observability dashboards; autoscaling; load and resilience testing;
+**Phase 5: External sync & hardening.**
+AniList OAuth and push/pull; observability dashboards; autoscaling; load and resilience testing;
 security review (SSRF, authz, secret handling).
 
 Each phase ships a demoable increment; no phase depends on a later one.
@@ -1157,7 +1150,7 @@ Each phase ships a demoable increment; no phase depends on a later one.
 
 ---
 
-### Appendix A — key invariants for the implementer
+### Appendix A: key invariants for the implementer
 1. Store relative paths, resolve at read time. One resolver, tested.
 2. Links and metadata only. No content, no images, no mirroring.
 3. Polite crawl by default; detect challenges fast and bypass them via the pluggable `ChallengeSolver`

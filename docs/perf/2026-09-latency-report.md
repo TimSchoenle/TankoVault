@@ -11,7 +11,7 @@ catalogue clone described in [`2026-09-local-measurements.md`](2026-09-local-mea
 scan tasks and a 100 378-row merge journal. "Cold" means a Postgres restart plus a dropped VM page
 cache.
 
-## Phase 1 — infrastructure and hygiene
+## Phase 1: infrastructure and hygiene
 
 ### 1.1 Postgres observability (done); sizing kept as is
 
@@ -52,10 +52,10 @@ that.
 - Not clearly wrong, so unchanged. Options, in order of preference:
   - keep a small warm floor (`min_connections` 2 on the API pools);
   - retry an acquire once on a name-resolution error;
-  - check the Docker host's DNS if lookups fail under load, which points at the host rather than
-    the pool.
+  - check the Docker host's DNS if lookups fail under load, which points at the host,
+    not the pool.
 
-## Phase 2 — duplicate Home work
+## Phase 2: duplicate Home work
 
 ### 2.1 Token refresh refetching every screen (done)
 
@@ -63,8 +63,8 @@ Confirmed. Every `use_resource` read the raw token signal through `api.client()`
 refresh (every ~14 minutes) restarted every resource on screen. On Home that was feed, continue
 reading, stats, watchlist summary and the provider list in one burst per reader.
 
-The session now derives an identity memo from the token's `sub`, and requests subscribe to it
-rather than to the token. A renewal refetches nothing; sign-in, sign-out and a change of account
+The session now derives an identity memo from the token's `sub`, and requests subscribe to it,
+not to the token. A renewal refetches nothing; sign-in, sign-out and a change of account
 still refetch. Capabilities and the unread badge keep the renewal cadence on purpose. The pinning
 test fails against the old subscription.
 
@@ -74,7 +74,7 @@ Recommended against in [`UNREAD_DENORMALISATION.md`](UNREAD_DENORMALISATION.md) 
 invalidation matrix is Phase 3's writer inventory maintained by hand, and it would still pay the
 full computation on every miss.
 
-## Phase 3 — stored unread state (done)
+## Phase 3: stored unread state (done)
 
 Design, deviations and full numbers: [`UNREAD_DENORMALISATION.md`](UNREAD_DENORMALISATION.md).
 Migration 0058 adds `watchlist_unread`, one row per (reader, watched series), kept true by twelve
@@ -107,14 +107,14 @@ because stored counts do not help it.
 
 The proposal's two-phase feed rewrite turned out not to be exact and was not built (§8).
 
-## Phase 4 — admin and catalogue aggregates
+## Phase 4: admin and catalogue aggregates
 
 | statement | change | before (warm / cold) | after (warm / cold) | est. cost before → after |
 |---|---|---|---|---|
 | `providers::list_public` | index `series_sources (provider_id, series_id)`, migration 0057 | 37.1 ms / 343 ms | 6.2 ms / 14 ms | Bitmap Heap Scan → Index Only, 0 heap fetches |
 | `scans::provider_scan_health` | two grouped passes instead of a lateral per provider (identical rows and order) | 70 ms / 423 ms (174 ms JIT with `jit=on`) | 35 ms / 54 ms (no JIT) | 1 530 000 → 17 800 |
-| `matching::list_merge_decisions`, flagged only | admin pool plans with actual parameters (`force_custom_plan`) | 48.4 ms / 506 ms | 0.03 ms / 0.08 ms | — (generic → custom) |
-| `matching::list_merge_decisions`, one series | same | 50.3 ms warm | 0.66 ms warm | — |
+| `matching::list_merge_decisions`, flagged only | admin pool plans with actual parameters (`force_custom_plan`) | 48.4 ms / 506 ms | 0.03 ms / 0.08 ms | not measured (generic → custom) |
+| `matching::list_merge_decisions`, one series | same | 50.3 ms warm | 0.66 ms warm | not measured |
 | `scans::scan_summary` | rewrite tried and **rejected** | 32 ms unfiltered, 0.07 ms per provider | 16 ms unfiltered, but 123 ms per provider | 17 600 → 5 970 / 1 135 → 1 354 600 |
 
 Custom plans apply to every console statement, so the other `$n IS NULL OR …` filters benefit
@@ -189,7 +189,7 @@ Building the projection exposed a race, also present in 0058's unread refresh: a
 computes before waiting for its row lock can store a stale value. Both are fixed by locking first
 (0060, and 0061 for `watchlist_unread`), each pinned by a test that fails without the fix.
 
-## Phase 5 — guardrails
+## Phase 5: guardrails
 
 - `repo_query_plans` has a third rule, `whole-scan-of-growing-table`. It flags a sequential scan
   of `chapters` or `scan_tasks`, or an index scan of either with no index condition. The fixture

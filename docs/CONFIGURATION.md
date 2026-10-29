@@ -19,16 +19,16 @@ rest of [`crates/config`](../crates/config/src/lib.rs).
 1. The `#[serde(default)]` value compiled into each field.
 2. TOML at `$TANKOVAULT_CONFIG` (default: `./config.toml`, silently skipped if absent). If it
    names a **directory**, every `*.toml` directly inside it is merged in file-name order, later
-   winning — a `ConfigMap` mounted as a set of fragments.
+   winning. That is the shape of a `ConfigMap` mounted as a set of fragments.
 3. Environment variables prefixed `TANKOVAULT_`.
 4. Files in `$TANKOVAULT_SECRETS_DIR`, one per key ([§7](#7-secrets)).
 5. `TANKOVAULT_<KEY>_FILE=/path`, which reads `<KEY>` from that path ([§7](#7-secrets)).
 
 **Layers 3, 4 and 5 are mutually exclusive per key.** A key supplied by two of them fails the
-boot, naming the key and both sources — it is not resolved by precedence. The failure that
+boot, naming the key and both sources: it is not resolved by precedence. The failure that
 prevents is a half-migrated deployment where a stale environment variable shadows a mounted
 secret that has since been rotated: the service keeps working, on the old credential, and the
-discrepancy surfaces during an incident rather than during a deploy.
+discrepancy surfaces during an incident, not during a deploy.
 
 **Nesting is `__` (two underscores).** A single underscore is part of a field name, not a
 separator, which is the single most common way to get this wrong:
@@ -42,7 +42,7 @@ separator, which is the single most common way to get this wrong:
 
 A file name in the secrets directory uses the same spelling minus the prefix, in any case:
 `auth__jwt_secret` is `auth.jwt_secret`. A `.` in a file name is **refused**, not treated as a
-separator — Kubernetes allows it in a `Secret` key, and `auth.jwt_secret` would otherwise look
+separator: Kubernetes allows it in a `Secret` key, and `auth.jwt_secret` would otherwise look
 like it worked while nesting somewhere else.
 
 Lists and structured values are **JSON**, quoted as a single shell word:
@@ -52,13 +52,13 @@ TANKOVAULT_SECURITY__CORS__ALLOWED_ORIGINS='["https://app.example.com"]'
 TANKOVAULT_CHANNELS__EMAIL_TO='["ops@example.com"]'
 ```
 
-An **unknown** `TANKOVAULT_*` key is ignored, not rejected. A typo therefore fails silently —
-so does a key that has been removed (see [§8](#8-removed-keys)).
+An **unknown** `TANKOVAULT_*` key is ignored, not rejected. A typo therefore fails silently,
+and so does a key that has been removed (see [§8](#8-removed-keys)).
 
 **Three objects are exceptions and refuse an undeclared key at boot**: one entry of
 `internal.peers`, the `legal` section, and one entry of `legal.documents`. The two entries are
-values inside an operator-keyed map, so the *names* stay open — a caller, or a document slug this
-build has never heard of, is still the operator's to choose — while the fixed keys inside one
+values inside an operator-keyed map, so the *names* stay open (a caller, or a document slug this
+build has never heard of, is still the operator's to choose) while the fixed keys inside one
 entry are this build's, and each of them decides whether a credential is verified or a published
 link resolves. The `legal` section is closed so that a key from its earlier shape
 (`legal.dir`, `…sources…`) fails the boot instead of publishing nothing. The generated contracts
@@ -66,7 +66,7 @@ say so too (`additionalProperties: false` on those objects), so a validator read
 and the loader agree about which keys exist.
 
 **Every service reports its layers at boot.** The log line lists each layer in precedence order
-and, for every key that was supplied, which layer it came from — and it *warns* for a key more
+and, for every key that was supplied, which layer it came from, and it *warns* for a key more
 than one layer supplies. Layers 3, 4 and 5 refuse that combination outright, so what the warning
 catches is the pair no rule can refuse: a mounted secret with a stale `TANKOVAULT_*` variable, or
 a checked-in `config.toml`, sitting on top of it. Nothing in the report is a configuration value,
@@ -75,8 +75,8 @@ only key paths, file names and layer names; the full listing is at `DEBUG`, the 
 
 > **This document is gated.** `cargo run -p xtask -- config-docs --check` derives every
 > `TANKOVAULT_*` key from the config structs and from the `std::env::var` call sites, and fails
-> if this document does not match — in either direction. It reads keys from the **leftmost cell
-> of a table row** and nowhere else, so a key named in a Notes cell is explanation rather than a
+> if this document does not match: in either direction. It reads keys from the **leftmost cell
+> of a table row** and nowhere else, so a key named in a Notes cell is explanation, not a
 > claim that it exists. A cell may continue with a suffix (`` `…__GLOBAL__PER_MINUTE` /
 > `__BURST` ``), which replaces the last segment of the key before it. Keys under
 > [§8](#8-removed-keys) are the inverse claim and are asserted **absent** from the code.
@@ -86,8 +86,7 @@ only key paths, file names and layer names; the full listing is at `DEBUG`, the 
 
 ## 2. Required values
 
-These have no working default. Where a service refuses to start, it does so at boot rather
-than at first use, deliberately: a misconfiguration that surfaces during an incident is worse
+These have no working default. Where a service refuses to start, it does so at boot, not at first use, deliberately: a misconfiguration that surfaces during an incident is worse
 than one that surfaces during a deploy.
 
 | Key | Services | Failure mode if unset |
@@ -96,10 +95,10 @@ than one that surfaces during a deploy.
 | `TANKOVAULT_TELEMETRY__SERVICE_NAME` | all | Boot fails. The compose file sets it per service. |
 | `TANKOVAULT_NATS__URL` | control-plane, worker, notifier | Boot fails. **Optional for `api`**, where its absence only degrades `/v1/me/stream`. |
 | `TANKOVAULT_AUTH__JWT_SECRET` | api | Boot fails. Minimum 32 characters; a known placeholder is refused **in every profile**, not just production, because the previous default is published in this repository and every session signed with it is forgeable. |
-| `TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY` | sync | Boot fails. Base64 (standard alphabet) of exactly 32 bytes — `openssl rand -base64 32`. This key seals every user's AniList access and refresh tokens at rest; the previous fallback was 32 zero bytes. |
+| `TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY` | sync | Boot fails. Base64 (standard alphabet) of exactly 32 bytes: `openssl rand -base64 32`. This key seals every user's AniList access and refresh tokens at rest, and there is no fallback key. |
 | `TANKOVAULT_ANILIST__CLIENT_ID` / `__CLIENT_SECRET` / `__REDIRECT_URI` | sync | Boot fails. |
-| `TANKOVAULT_SEED_ADMIN_PASSWORD` | bootstrap (`seed-admin`), `xtask seed` | The step fails. **`bootstrap` has no default**; `xtask seed` falls back to `changeme12345`, which is a known placeholder the api refuses — a local convenience that cannot survive into a deployment. |
-| `TANKOVAULT_INTERNAL__IDENTITY` | api, control-plane, worker, sync, render, challenge-solver, notifier | **Under `TANKOVAULT_PROFILE=production` only**, boot fails when it is `off`. Elsewhere an explicit `off` leaves the internal tier unidentified for local development; the default is `token`. See [§3 `internal`](#internal--service-to-service-identity-and-authorisation). |
+| `TANKOVAULT_SEED_ADMIN_PASSWORD` | bootstrap (`seed-admin`), `xtask seed` | The step fails. **`bootstrap` has no default**; `xtask seed` falls back to `changeme12345`, which is a known placeholder the api refuses: a local convenience that cannot survive into a deployment. |
+| `TANKOVAULT_INTERNAL__IDENTITY` | api, control-plane, worker, sync, render, challenge-solver, notifier | **Under `TANKOVAULT_PROFILE=production` only**, boot fails when it is `off`. Elsewhere an explicit `off` leaves the internal tier unidentified for local development; the default is `token`. See [§3 `internal`](#internal-service-to-service-identity-and-authorisation). |
 | `TANKOVAULT_INTERNAL__CALLER__TOKEN` | api, worker | Boot fails under `identity=token` when the service names a caller without one, or when it is shorter than 32 characters. `openssl rand -hex 32`. |
 | `TANKOVAULT_INTERNAL__PEERS` | control-plane, worker, sync, render, challenge-solver | Boot fails under `identity=token`/`mtls` if a listed peer lacks the credential that mode verifies. An **empty** map is allowed and means "nothing may call me". |
 | `TANKOVAULT_INTERNAL__TLS__CERT` / `__KEY` / `__CA` | all, under `identity=mtls` | Boot fails if any of the three is unset or unreadable. |
@@ -109,16 +108,16 @@ than one that surfaces during a deploy.
 
 ## 3. Process-level keys
 
-Read directly from the environment rather than through the layered config, so they cannot be
+Read directly from the environment, not through the layered config, so they cannot be
 set in a TOML file.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `TANKOVAULT_PROFILE` | *(unset)* | `production` or `prod` (case-insensitive) turns on the production safety posture in every service: `internal.identity=off` becomes a boot failure, the API refuses an empty or short `auth.jwt_secret`, and `/scalar` + the OpenAPI document default to **off**. Unset, `development` or `dev` is development. **Any other value fails the boot** — `staging` used to mean development silently. |
-| `TANKOVAULT_CONFIG` | `config.toml` | Path to the optional TOML layer — a file, or a directory whose `*.toml` entries are merged in name order. A missing file is not an error; a *misspelled path* is therefore also not an error. A named directory that cannot be read **is**. |
-| `TANKOVAULT_SECRETS_DIR` | *(unset)* | Directory of key-named files, one value per file — the shape a Kubernetes `Secret` mounted as a volume has. Unset disables the layer; set-but-unreadable fails the boot, because an operator who named it meant it and booting on defaults instead is the outcome worth avoiding. Entries starting with `.` and anything that is not a regular file are skipped, which is what makes a projected volume's `..data` layout work. |
-| `RUST_LOG` | *(unset)* | Standard `EnvFilter` syntax. When set it **replaces** `TANKOVAULT_TELEMETRY__LOG_FILTER` entirely rather than merging with it. |
-| `DATABASE_URL` | — | Required by `xtask` (`migrate`, `reset`, `seed`, `sqlx-prepare`) only. The services **and the `bootstrap` image** use `TANKOVAULT_DATABASE__URL`; these two are not interchangeable. |
+| `TANKOVAULT_PROFILE` | *(unset)* | `production` or `prod` (case-insensitive) turns on the production safety posture in every service: `internal.identity=off` becomes a boot failure, the API refuses an empty or short `auth.jwt_secret`, and `/scalar` and the OpenAPI document default to **off**. Unset, `development` or `dev` is development. **Any other value fails the boot**, so a value such as `staging` cannot silently mean development. |
+| `TANKOVAULT_CONFIG` | `config.toml` | Path to the optional TOML layer: a file, or a directory whose `*.toml` entries are merged in name order. A missing file is not an error; a *misspelled path* is therefore also not an error. A named directory that cannot be read **is**. |
+| `TANKOVAULT_SECRETS_DIR` | *(unset)* | Directory of key-named files, one value per file: the shape a Kubernetes `Secret` mounted as a volume has. Unset disables the layer; set-but-unreadable fails the boot, because an operator who named it meant it and booting on defaults instead is the outcome worth avoiding. Entries starting with `.` and anything that is not a regular file are skipped, which is what makes a projected volume's `..data` layout work. |
+| `RUST_LOG` | *(unset)* | Standard `EnvFilter` syntax. When set it **replaces** `TANKOVAULT_TELEMETRY__LOG_FILTER` entirely instead of merging with it. |
+| `DATABASE_URL` | none | Required by `xtask` (`migrate`, `reset`, `seed`, `sqlx-prepare`) only. The services **and the `bootstrap` image** use `TANKOVAULT_DATABASE__URL`; these two are not interchangeable. |
 | `TANKOVAULT_CONFIRM_RESET` | *(unset)* | Must be exactly `1` for `xtask reset`, which **drops and recreates the `public` schema**. Local development only. |
 | `TANKOVAULT_PROBE_SOLVER` | `http://127.0.0.1:8191` | The TRAWL endpoint `cargo run -p tankovault-adapters --example probe` sends challenged fetches to. A developer tool for deriving and verifying provider presets against the live sites (`docs/PROVIDERS.md`); no service reads it, and the compose stack's own solver reaches TRAWL over the internal network instead. |
 | `SQLX_OFFLINE` | *(unset)* | Build-time, not runtime: resolves sqlx's compile-time-checked queries from the committed `.sqlx/` cache instead of a live database. |
@@ -128,9 +127,9 @@ set in a TOML file.
 ## 4. Shared blocks
 
 Defined in `crates/config` and composed into each service's config struct. A block appears in
-a service only if that service names it — the *Services* column is the authoritative list.
+a service only if that service names it: the *Services* column is the authoritative list.
 
-### `database` — Postgres
+### `database`: Postgres
 
 | Key | Default | Services | Notes |
 |---|---|---|---|
@@ -138,20 +137,20 @@ a service only if that service names it — the *Services* column is the authori
 | `TANKOVAULT_DATABASE__MAX_CONNECTIONS` | `16` | as above | Per **replica**. Two workers at 16 is 32 connections against Postgres's default 100. |
 | `TANKOVAULT_DATABASE__ACQUIRE_TIMEOUT_SECS` | `10` | as above | How long a request waits for a pooled connection before failing. |
 
-### `redis` — cache, cross-replica rate-limit counters, leader election
+### `redis`: cache, cross-replica rate-limit counters, leader election
 
 | Key | Default | Services | Notes |
 |---|---|---|---|
 | `TANKOVAULT_REDIS__URL` | *(optional)* | api, control-plane | Absent on `api` → two fallbacks, both per-process: the rate limiter falls back to in-memory counters, so the effective limit is multiplied by the replica count, **and** the SSE stream tickets (`POST /v1/me/stream-ticket` → `GET /v1/me/stream`) become process-local, so with more than one `api` replica a ticket minted on one is unredeemable on the others and the live-notification stream fails to open. Absent on `control-plane` → this replica assumes it is the sole scheduler leader. All fail-open by design; all wrong for a multi-replica deployment. |
 
-### `nats` — JetStream
+### `nats`: JetStream
 
 | Key | Default | Services | Notes |
 |---|---|---|---|
 | `TANKOVAULT_NATS__URL` | *(required, except on `api`)* | api (optional), control-plane, worker, notifier | The stream names (`TANKOVAULT_TASKS`, `TANKOVAULT_EVENTS`) are compiled-in constants, **not** environment variables. |
-| `TANKOVAULT_NATS__EVENTS_MAX_AGE_SECS` | `604800` (7 days) | control-plane, worker, notifier | Longest `TANKOVAULT_EVENTS` keeps an event no consumer has acked. The stream uses `Interest` retention, so an event is normally dropped as soon as every consumer bound to its subject acks it; this bounds the rest — events for a consumer that is down, or retired but never deleted. A notifier down for longer than this loses those chapter notifications. `0` is refused at boot, because JetStream reads it as unlimited. Each of the three services rewrites the stream config on start, so give them all the same value or the last to start wins. `TANKOVAULT_TASKS` has no age limit on purpose: the reconciler reads its backlog as the truth for what is queued. |
+| `TANKOVAULT_NATS__EVENTS_MAX_AGE_SECS` | `604800` (7 days) | control-plane, worker, notifier | Longest `TANKOVAULT_EVENTS` keeps an event no consumer has acked. The stream uses `Interest` retention, so an event is normally dropped as soon as every consumer bound to its subject acks it; this bounds the rest: events for a consumer that is down, or retired but never deleted. A notifier down for longer than this loses those chapter notifications. `0` is refused at boot, because JetStream reads it as unlimited. Each of the three services rewrites the stream config on start, so give them all the same value or the last to start wins. `TANKOVAULT_TASKS` has no age limit on purpose: the reconciler reads its backlog as the truth for what is queued. |
 
-### `telemetry` — logging
+### `telemetry`: logging
 
 | Key | Default | Services | Notes |
 |---|---|---|---|
@@ -159,32 +158,32 @@ a service only if that service names it — the *Services* column is the authori
 | `TANKOVAULT_TELEMETRY__LOG_FILTER` | `info` | all | `RUST_LOG` syntax, e.g. `info,tankovault=debug`. Overridden wholesale by `RUST_LOG`. |
 | `TANKOVAULT_TELEMETRY__JSON_LOGS` | `false` | all | Structured JSON with span context. Set it in any deployment whose logs are shipped anywhere. |
 
-### `telemetry.sentry` — error reporting and distributed tracing
+### `telemetry.sentry`: error reporting and distributed tracing
 
 Off unless you turn it on, and nothing here is read while `ENABLED` is `false`. Turning it on
 **without** a DSN fails the boot: a reporter that reports nowhere is the failure
-`TANKOVAULT_TELEMETRY__OTLP_ENDPOINT` was removed for ([§8](#8-removed-keys)), so it is refused
-rather than logged.
+[§8](#8-removed-keys) describes for `TANKOVAULT_TELEMETRY__OTLP_ENDPOINT`, so it is refused,
+not logged.
 
 What it covers when enabled: every `tracing` record at or above `CAPTURE_LEVEL` becomes an
 issue and everything down to `BREADCRUMB_LEVEL` becomes the trail attached to it; a panic in
 any handler becomes an issue (the `CatchPanicLayer` still turns the same panic into a `500`,
 so the replica keeps serving); every routed endpoint of every HTTP service gets a per-request
-hub and one transaction named by the matched route; and every unit of background work — a scan
+hub and one transaction named by the matched route; and every unit of background work (a scan
 task, a scheduler sweep, a duplicate sweep, a model build, a reconciliation, an enrichment
-pass, each broker delivery — gets one of its own.
+pass, each broker delivery) gets one of its own.
 
 **The trace spans the whole tier**, over HTTP *and* over the broker. `frontend` → `api` →
 `control-plane`/`sync`/`worker` and `worker` → `challenge-solver`/`render` carry
 `sentry-trace` as a request header; every `JetStream` and core-NATS publish carries it as a
 message header, and every consumer continues it. So a scheduled sweep, the scan tasks it
 queues, the workers that run them, the progress events that come back and the notifications
-they fan out are one trace — see [`OPERATIONS.md` §2](./OPERATIONS.md#telemetrysentry) for the
+they fan out are one trace: see [`OPERATIONS.md` §2](./OPERATIONS.md#telemetrysentry) for the
 diagram of which hop carries what.
 
 Three things are deliberately outside it. `/health`, `/ready` and the scrape endpoint are
 merged outside the middleware stack, so probe traffic is not traced. `bootstrap` has no
-`telemetry` block at all ([§5](#5-per-service-blocks)), so a migration job reports nothing — it
+`telemetry` block at all ([§5](#5-per-service-blocks)), so a migration job reports nothing: it
 is a one-shot `Job` whose failure already stops the rollout with a non-zero exit code, which is
 a louder signal than an issue, and it is in no request's trace to join.
 And the `render`/`challenge-solver` call **out** to TRAWL is not propagated: it is a third
@@ -193,7 +192,7 @@ party, and a trace id is not something to hand one.
 | Key | Default | Services | Notes |
 |---|---|---|---|
 | `TANKOVAULT_TELEMETRY__SENTRY__ENABLED` | `false` | all but `bootstrap` | A real off switch: no client, no panic hook, no layer, no egress. |
-| `TANKOVAULT_TELEMETRY__SENTRY__DSN` | *(required when enabled)* | as above | `https://<key>@<host>/<project>`. A **credential** — mount it as a secret, not a `ConfigMap` value. Malformed fails the boot without echoing the value. |
+| `TANKOVAULT_TELEMETRY__SENTRY__DSN` | *(required when enabled)* | as above | `https://<key>@<host>/<project>`. A **credential**: mount it as a secret, not a `ConfigMap` value. Malformed fails the boot without echoing the value. |
 | `TANKOVAULT_TELEMETRY__SENTRY__ENVIRONMENT` | `production` under `TANKOVAULT_PROFILE=production`, else `development` | as above | |
 | `TANKOVAULT_TELEMETRY__SENTRY__RELEASE` | `tankovault@<workspace version>` | as above | One release for the whole tier, because the nine images are cut from one version and deployed together. |
 | `TANKOVAULT_TELEMETRY__SENTRY__SERVER_NAME` | *(unset)* | as above | Unset reports no hostname. |
@@ -203,13 +202,13 @@ party, and a trace id is not something to hand one.
 | `TANKOVAULT_TELEMETRY__SENTRY__BREADCRUMB_LEVEL` | `info` | as above | Same vocabulary. Bounded above by `TANKOVAULT_TELEMETRY__LOG_FILTER`: a record the log filter drops never reaches Sentry either, so a filter of `warn` silently removes every `info` breadcrumb. |
 | `TANKOVAULT_TELEMETRY__SENTRY__MAX_BREADCRUMBS` | `100` | as above | |
 | `TANKOVAULT_TELEMETRY__SENTRY__ATTACH_STACKTRACES` | `true` | as above | For events that carry none of their own. |
-| `TANKOVAULT_TELEMETRY__SENTRY__SEND_DEFAULT_PII` | `false` | as above | **Security setting.** On, events carry the client IP, the resolved user and the *unredacted* request headers — `Authorization` and `Cookie` included — to a third party. Off is what keeps `sentry-tower` redacting sensitive headers. |
+| `TANKOVAULT_TELEMETRY__SENTRY__SEND_DEFAULT_PII` | `false` | as above | **Security setting.** On, events carry the client IP, the resolved user and the *unredacted* request headers (`Authorization` and `Cookie` included) to a third party. Off is what keeps `sentry-tower` redacting sensitive headers. |
 | `TANKOVAULT_TELEMETRY__SENTRY__HTTP_TRANSACTIONS` | `true` | as above | One transaction per request, named by the matched route so `/v1/series/{id}` stays one name. Whether a started transaction is *kept* is `TRACES_SAMPLE_RATE`'s decision; this is the switch for a service that should stay out of traces entirely. |
 | `TANKOVAULT_TELEMETRY__SENTRY__SPAN_ATTRIBUTES` | `false` | as above | Copy `tracing` span fields onto the span. Off because those fields routinely carry ids and user-supplied titles, and a transaction is retained longer than a log line. |
 | `TANKOVAULT_TELEMETRY__SENTRY__SHUTDOWN_TIMEOUT_SECS` | `2` | as above | How long exit waits for queued events to drain. |
 | `TANKOVAULT_TELEMETRY__SENTRY__DEBUG` | `false` | as above | SDK diagnostics on stderr. For proving a DSN works, not for running. |
 
-### `metrics` — Prometheus
+### `metrics`: Prometheus
 
 | Key | Default | Services | Notes |
 |---|---|---|---|
@@ -218,7 +217,7 @@ party, and a trace id is not something to hand one.
 | `TANKOVAULT_METRICS__LISTEN` | `0.0.0.0:9090` | all | The scrape gets its **own listener**, so it never shares the request-facing port. Set to `null` (JSON) to merge it back onto the main port instead. |
 | `TANKOVAULT_METRICS__HTTP_REQUESTS` | `true` | all | Per-request counter and latency histogram. Separate from `ENABLED` because this is the expensive part: a service can keep cheap domain counters while dropping per-route cardinality. |
 
-### `security` — edge hardening
+### `security`: edge hardening
 
 Read by every service **except `frontend`**; see [§5](#5-per-service-blocks) for why not.
 
@@ -229,53 +228,53 @@ Read by every service **except `frontend`**; see [§5](#5-per-service-blocks) fo
 | `TANKOVAULT_SECURITY__SECURITY_HEADERS` | `true` | `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Cross-Origin-Resource-Policy`, and a JSON-API CSP. |
 | `TANKOVAULT_SECURITY__HSTS` | `false` | Only meaningful where the edge terminates TLS. Over plain HTTP browsers ignore it and it is merely misleading. |
 | `TANKOVAULT_SECURITY__HSTS_MAX_AGE_SECS` | `63072000` (2 years) | The preload minimum. |
-| `TANKOVAULT_SECURITY__TRUST_REQUEST_ID` | `false` | Echo an inbound `X-Request-Id` instead of minting one. **Requires a trusted proxy** — a client-supplied id can otherwise collide with or poison log correlation. |
-| `TANKOVAULT_SECURITY__EXPOSE_API_DOCS` | `true`, or `false` under `TANKOVAULT_PROFILE=production` | Serves `/scalar` and the OpenAPI document. Unauthenticated, it hands out the complete admin surface — every `/v1/admin/*` path and exact request body — with no failed probe. |
+| `TANKOVAULT_SECURITY__TRUST_REQUEST_ID` | `false` | Echo an inbound `X-Request-Id` instead of minting one. **Requires a trusted proxy**: a client-supplied id can otherwise collide with or poison log correlation. |
+| `TANKOVAULT_SECURITY__EXPOSE_API_DOCS` | `true`, or `false` under `TANKOVAULT_PROFILE=production` | Serves `/scalar` and the OpenAPI document. Unauthenticated, it hands out the complete admin surface (every `/v1/admin/*` path and exact request body) with no failed probe. |
 | `TANKOVAULT_SECURITY__CORS__ALLOWED_ORIGINS` | `[]` | JSON array of exact origins. **Empty disables CORS entirely** (same-origin only), which is correct for the reference deployment because the frontend proxies `/v1/*` from its own origin. |
 | `TANKOVAULT_SECURITY__CORS__ALLOW_CREDENTIALS` | `false` | Meaningless without a non-empty allowlist. |
 | `TANKOVAULT_SECURITY__CORS__MAX_AGE_SECS` | `3600` | |
 
-### `rate_limit` — inbound request limiting
+### `rate_limit`: inbound request limiting
 
 Read by `api`, `control-plane`, `sync`, `render` and `challenge-solver`. `worker` and
 `notifier` expose only an ops listener, and `frontend` deliberately mounts no limiter (one
-page load fetches the shell plus every hashed asset, so any bucket tight enough to matter
+page load fetches the shell and every hashed asset, so any bucket tight enough to matter
 would throttle a legitimate cold load; the API behind it applies the limits that protect
 state, and sees the real client because the proxy appends `X-Forwarded-For`).
 
 | Key | Default | Notes |
 |---|---|---|
-| `TANKOVAULT_RATE_LIMIT__ENABLED` | `true` | `false` leaves the layer unmounted — no per-request cost, and no `X-RateLimit-*` headers. |
+| `TANKOVAULT_RATE_LIMIT__ENABLED` | `true` | `false` leaves the layer unmounted: no per-request cost, and no `X-RateLimit-*` headers. |
 | `TANKOVAULT_RATE_LIMIT__BACKEND` | `memory` | Or `redis`. `memory` is per-replica: with `N` replicas the effective limit is `N` times the configured one. `redis` requires `TANKOVAULT_REDIS__URL` and degrades to per-replica limits while Redis is unreachable. |
 | `TANKOVAULT_RATE_LIMIT__TRUST_FORWARDED_FOR` | `false` | **Security setting.** Enable *only* behind a proxy that overwrites `X-Forwarded-For`. With it on and no such proxy, any client forges a fresh bucket per request and bypasses the limiter completely. |
 | `TANKOVAULT_RATE_LIMIT__GLOBAL__PER_MINUTE` / `__BURST` | `300` / `60` | Anything without a stricter class. |
-| `TANKOVAULT_RATE_LIMIT__AUTH__PER_MINUTE` / `__BURST` | `10` / `5` | Login, register, reset, refresh — the online-guessing control. |
+| `TANKOVAULT_RATE_LIMIT__AUTH__PER_MINUTE` / `__BURST` | `10` / `5` | Login, register, reset, refresh: the online-guessing control. |
 | `TANKOVAULT_RATE_LIMIT__EXPENSIVE__PER_MINUTE` / `__BURST` | `30` / `10` | Data export, scan triggers, sync push/pull. |
 
 `per_minute` is the bucket's refill rate; `burst` is its depth. A burst below the sustained
 rate is the normal case, not a misconfiguration.
 
-### `audit` — the privileged-action trail
+### `audit`: the privileged-action trail
 
-Read by `api` only — it is the sole service that performs privileged user-facing actions.
+Read by `api` only: it is the sole service that performs privileged user-facing actions.
 
 | Key | Default | Notes |
 |---|---|---|
-| `TANKOVAULT_AUDIT__ENABLED` | `true` | `false` installs a no-op sink. Deliberately silent — logging each dropped event would recreate the trail in the log stream. |
+| `TANKOVAULT_AUDIT__ENABLED` | `true` | `false` installs a no-op sink. Deliberately silent: logging each dropped event would recreate the trail in the log stream. |
 | `TANKOVAULT_AUDIT__RECORD_IP` | `false` | An IP is personal data (GDPR Art. 4(1)), so retention is an explicit opt-in. |
 | `TANKOVAULT_AUDIT__RECORD_USER_AGENT` | `false` | As above. |
-| `TANKOVAULT_AUDIT__RETENTION_DAYS` | `365` | `0` disables the sweep and keeps records forever — rarely what a GDPR-scoped deployment wants (Art. 5(1)(e)). |
+| `TANKOVAULT_AUDIT__RETENTION_DAYS` | `365` | `0` disables the sweep and keeps records forever: rarely what a GDPR-scoped deployment wants (Art. 5(1)(e)). |
 | `TANKOVAULT_AUDIT__SWEEP_INTERVAL_HOURS` | `24` | Ignored when retention is `0`. |
 
-### `legal` — operator-published legal documents
+### `legal`: operator-published legal documents
 
 Read by `api` only, which serves them unauthenticated at `GET /v1/legal` and
 `GET /v1/legal/{slug}`; the SPA's footer builds its Legal column from that index.
 
 Every deployment is a different operator under different law, the text changes without a release,
-and an Imprint is a statutory requirement in some jurisdictions and meaningless in others — so
+and an Imprint is a statutory requirement in some jurisdictions and meaningless in others, so
 none of it is in the bundle. The whole block is optional: with no `[legal]` section the API
-returns an empty index and the footer publishes **no Legal column**, rather than links that 404.
+returns an empty index and the footer publishes **no Legal column**, not links that 404.
 
 Each document's text is a configuration value, validated once per configuration generation by
 [`terrace-legal`](https://github.com/TimSchoenle/terrace-legal). Mount the files and name each one
@@ -288,22 +287,22 @@ keeps serving.
 | Key | Default | Notes |
 |---|---|---|
 | `TANKOVAULT_LEGAL__DEFAULT_LOCALE` | *(unset)* | Locale served when neither `?lang=` nor `Accept-Language` matches a published one, e.g. `en`. Unset, the first published locale in alphabetical order is served. |
-| `TANKOVAULT_LEGAL__DOCUMENTS` | `{}` | The published documents, **keyed by URL slug** — so an operator can publish a document this build has never heard of (`dmca`, `acceptable_use`) with no code change. A slug is lowercase letters, digits, `_` and `-`, at most 64 characters. Each value is `{ body: { <locale>: <markdown> }, url, updated, title: { <locale>: <text> }, order }`; a key inside one document that is **not** one of those five is refused at boot rather than ignored, so a misspelt `updated` or `title` fails the deploy instead of vanishing. `body` and `url` are mutually exclusive and one is required; a `url` is absolute `http(s)` with no credentials in it. Every problem is reported at once, keyed as written (`legal.documents.terms.body.en`). Address one leaf at a time: `TANKOVAULT_LEGAL__DOCUMENTS__TERMS__BODY__EN_FILE=/etc/tankovault/legal/terms.en.md`. A locale key normalises, so `DE_AT` in a variable name is `de-AT`. `updated` is free text shown verbatim — a file mtime is the wrong answer, since touching a file is not amending a policy. `order` sorts the index, lowest first, then by slug. A title is shown only over a body in the same locale. |
+| `TANKOVAULT_LEGAL__DOCUMENTS` | `{}` | The published documents, **keyed by URL slug**, so an operator can publish a document this build has never heard of (`dmca`, `acceptable_use`) with no code change. A slug is lowercase letters, digits, `_` and `-`, at most 64 characters. Each value is `{ body: { <locale>: <markdown> }, url, updated, title: { <locale>: <text> }, order }`; a key inside one document that is **not** one of those five is refused at boot, not ignored, so a misspelt `updated` or `title` fails the deploy instead of vanishing. `body` and `url` are mutually exclusive and one is required; a `url` is absolute `http(s)` with no credentials in it. Every problem is reported at once, keyed as written (`legal.documents.terms.body.en`). Address one leaf at a time: `TANKOVAULT_LEGAL__DOCUMENTS__TERMS__BODY__EN_FILE=/etc/tankovault/legal/terms.en.md`. A locale key normalises, so `DE_AT` in a variable name is `de-AT`. `updated` is free text shown verbatim: a file mtime is the wrong answer, since touching a file is not amending a policy. `order` sorts the index, lowest first, then by slug. A title is shown only over a body in the same locale. |
 
 `deploy/legal/` holds working samples that say so in their first line, mounted read-only by the
 reference compose file. They are not legal advice and not fit for a deployment; replace them.
 
-### `branding` — what this deployment calls itself
+### `branding`: what this deployment calls itself
 
 Read by `api`, `frontend` and `worker`. Everything a running deployment shows a reader about
-*itself* — the name, the wordmark, the tagline, the copyright line, the licence label and the two
-project links — comes from here rather than from a literal in the binary, so rebranding a fork is
+*itself* (the name, the wordmark, the tagline, the copyright line, the licence label and the two
+project links) comes from here, not from a literal in the binary, so rebranding a fork is
 a configuration change and not a rebuild of the WASM bundle and the desktop installers.
 
 The whole block is optional, and an absent `[branding]` section reproduces the shipped identity
 exactly. Where each field lands:
 
-- **`api`** publishes the reader-facing subset unauthenticated at `GET /v1/branding` — the SPA's
+- **`api`** publishes the reader-facing subset unauthenticated at `GET /v1/branding`: the SPA's
   rail, footer and document title read it, and every catalogue message that names the product
   carries a `{brand}` placeholder the client fills in from it. The same name is stamped into
   transactional email (subject and both bodies), into the WebAuthn prompt when
@@ -320,30 +319,30 @@ the whole public face of a private deployment, and it draws the wordmark.
 | `TANKOVAULT_BRANDING__NAME` | `TankoVault` | The product name in prose. Substituted for `{brand}` in every message that names it. |
 | `TANKOVAULT_BRANDING__WORDMARK__LEAD` | *(see below)* | The lockup's body-coloured half. |
 | `TANKOVAULT_BRANDING__WORDMARK__ACCENT` | *(see below)* | The lockup's accent half. Unset draws the lockup as one word. |
-| `TANKOVAULT_BRANDING__TAGLINE` | *(unset)* | One line under the wordmark. Unset keeps the shipped, **translated** tagline; setting it replaces that with this string in every language — the right trade for a deployment the catalogue's sentence does not describe. |
+| `TANKOVAULT_BRANDING__TAGLINE` | *(unset)* | One line under the wordmark. Unset keeps the shipped, **translated** tagline; setting it replaces that with this string in every language: the right trade for a deployment the catalogue's sentence does not describe. |
 | `TANKOVAULT_BRANDING__COPYRIGHT__HOLDER` | `Tim Schönle` | Who holds it. |
 | `TANKOVAULT_BRANDING__COPYRIGHT__YEAR` | *(current year)* | A year or a range (`2024–2026`). Unset resolves per response, so a deployment nobody has touched since December is not still claiming last year. |
 | `TANKOVAULT_BRANDING__COPYRIGHT__NOTICE` | *(unset)* | The whole notice verbatim, for when `© {year} {holder}` does not fit. Wins over both fields above **and** over the catalogue's translation of the line. |
 | `TANKOVAULT_BRANDING__LICENCE__NAME` | `PolyForm Noncommercial 1.0.0` | What the footer prints. |
-| `TANKOVAULT_BRANDING__LICENCE__URL` | *(unset)* | Where the label links. Unset renders it as plain text — a self-hosted deployment usually has nowhere to point, and a link into nothing is worse than a label that does not pretend to be one. |
+| `TANKOVAULT_BRANDING__LICENCE__URL` | *(unset)* | Where the label links. Unset renders it as plain text: a self-hosted deployment usually has nowhere to point, and a link into nothing is worse than a label that does not pretend to be one. |
 | `TANKOVAULT_BRANDING__PROJECT_URL` | `https://github.com/TimSchoenle/TankoVault` | The footer's source link and the desktop About tab. |
 | `TANKOVAULT_BRANDING__RELEASES_URL` | `…/releases/latest` | Where a reader downloads the native client. Advertised by the web build only. |
-| `TANKOVAULT_BRANDING__BOT_USER_AGENT` | *(unset)* | The identifiable crawler user-agent, applied to any provider still carrying the built-in default. A provider whose politeness names its own user-agent keeps it — that is a decision about how *that* site is approached, and it outranks the deployment's generic identity. Never published to clients. |
+| `TANKOVAULT_BRANDING__BOT_USER_AGENT` | *(unset)* | The identifiable crawler user-agent, applied to any provider still carrying the built-in default. A provider whose politeness names its own user-agent keeps it: that is a decision about how *that* site is approached, and it outranks the deployment's generic identity. Never published to clients. |
 
 **The wordmark defaults deliberately do not follow `NAME`.** Left unset with the shipped name,
 the lockup is `Tankō`+`Vault`; left unset with *any other* name, it is that name as one word.
 There is no rule that would split an arbitrary name the way this one is split, and a lockup
-pairing an operator's name with this project's accent half is worse than a plain one — so set
+pairing an operator's name with this project's accent half is worse than a plain one, so set
 `WORDMARK__LEAD` and `WORDMARK__ACCENT` if you want a two-tone lockup of your own.
 
-**What is not here.** The operating-system identifiers the desktop build registers — the keyring
+**What is not here.** The operating-system identifiers the desktop build registers (the keyring
 service name, the Windows `AppUserModelID`, the autostart registry value, the installer's product
-name — stay at build time. They must agree with what the installer wrote, and a value that changed
-under a running install would strand saved credentials and silence toasts rather than rebrand
+name) stay at build time. They must agree with what the installer wrote, and a value that changed
+under a running install would strand saved credentials and silence toasts instead of rebranding
 anything. So do the repository's own metadata (`Cargo.toml`, `LICENSE`, `THIRD-PARTY-NOTICES`),
 which no runtime configuration can reach.
 
-### `client` — the native client's update channel
+### `client`: the native client's update channel
 
 Read by `api` only, which publishes it unauthenticated at `GET /v1/client`. Two decisions an
 installed desktop client cannot make for itself: **which repository** its releases come from, and
@@ -352,7 +351,7 @@ installed desktop client cannot make for itself: **which repository** its releas
 The version range is the reason the endpoint exists. Client and server speak one API and are cut
 from one repository at one version, so a client that updates past its server ends up talking to a
 deployment that has never heard of half of what it sends. The client honours the range as a
-ceiling and simply does not offer a release above it — and says so, rather than reporting itself
+ceiling and simply does not offer a release above it, and says so instead of reporting itself
 up to date, so a reader can tell a held-back release from a broken updater.
 
 `GET /v1/client` stays open on a deployment with `accounts.required` on, for the same reason
@@ -361,7 +360,7 @@ fall back to having no ceiling at all.
 
 | Key | Default | Notes |
 |---|---|---|
-| `TANKOVAULT_CLIENT__RELEASE_REPO` | `TimSchoenle/TankoVault` | The GitHub repository the native client reads its releases from, as `owner/name`. Blank publishes none, and the client then stays on whichever repository it was built with. Anything that is not `owner/name` **fails the boot**: the client interpolates it into an `api.github.com` path, checks the same shape on arrival, and discards a value that does not match — so a typo would otherwise be a channel nobody's client accepts. |
+| `TANKOVAULT_CLIENT__RELEASE_REPO` | `TimSchoenle/TankoVault` | The GitHub repository the native client reads its releases from, as `owner/name`. Blank publishes none, and the client then stays on whichever repository it was built with. Anything that is not `owner/name` **fails the boot**: the client interpolates it into an `api.github.com` path, checks the same shape on arrival, and discards a value that does not match, so a typo would otherwise be a channel nobody's client accepts. |
 | `TANKOVAULT_CLIENT__MIN_VERSION` | *(unset)* | The oldest client version this deployment supports. Unset means no floor. |
 | `TANKOVAULT_CLIENT__MAX_VERSION` | *(this build's version)* | The newest client version this deployment supports. Unset resolves to the running service's own version, which is the right answer for a deployment tracking releases. |
 
@@ -375,20 +374,20 @@ server can name is a repository whose releases the client will then reject. A fo
 own installers therefore changes *both*: this setting, and the trusted keys its client is built
 with (`docs/RELEASING.md`).
 
-### `features` — runtime feature-flag plumbing
+### `features`: runtime feature-flag plumbing
 
 | Key | Default | Services | Notes |
 |---|---|---|---|
-| `TANKOVAULT_FEATURES__REFRESH_SECS` | `15` | api, control-plane, notifier, sync | How long a flag change takes to reach *other* replicas. **Which flags are on is not configured here** — that is a runtime decision stored in the database and made from the console, which is the whole point of flags existing alongside these boot-time toggles. |
+| `TANKOVAULT_FEATURES__REFRESH_SECS` | `15` | api, control-plane, notifier, sync | How long a flag change takes to reach *other* replicas. **Which flags are on is not configured here**: that is a runtime decision stored in the database and made from the console, which is the whole point of flags existing alongside these boot-time toggles. |
 
-### `matching` — "is this the same series?"
+### `matching`: "is this the same series?"
 
 The confidence policy behind series canonicalisation. Read by **both** the worker's ingest path
-and external sync's remote-entry resolution, deliberately: they used to take their thresholds from
-different places, so the worker could attach a source that sync would refuse to map with no single
-place to reason about it.
+and external sync's remote-entry resolution, deliberately: thresholds taken from different
+places would let the worker attach a source that sync refuses to map, with no single place to
+reason about it.
 
-Scores are in `[0, 1]` and come from `tankovault_matcher::score` — the strongest of three views of
+Scores are in `[0, 1]` and come from `tankovault_matcher::score`: the strongest of three views of
 the two titles (the database's trigram similarity, a token-set ratio, and a whitespace-insensitive
 "compact" comparison), discounted when the match is against an alternative title, and lowered
 when the two titles carry different numbers. Different numbers also veto an attach or a merge
@@ -397,17 +396,17 @@ letter) on one title and not the other, which does not move the score. Content t
 credits are recorded on every decision but never move a score: across providers they are wrong
 too often to weigh.
 
-A score alone never attaches or merges. Attaching needs a **primary identity** — the incoming
+A score alone never attaches or merges. Attaching needs a **primary identity** (the incoming
 title is the series' canonical title or one of its provider listing titles, identical or
-identical modulo whitespace — and merging needs one
+identical modulo whitespace) and merging needs one
 too, or an alternative-title match corroborated by something that is not a title. See
 `tankovault_matcher::decide` and `tankovault_matcher::adjudicate`.
 
 | Key | Default | Services | Notes |
 |---|---|---|---|
 | `TANKOVAULT_MATCHING__HIGH` | `0.85` | worker, sync | At or above this, and only with a primary identity, the worker attaches to the existing series outright; sync maps a remote entry at or above it. **Raising it makes the matcher conservative**: fewer wrong merges, more duplicate series for an operator to reconcile. Lowering it does the reverse, and a wrong merge is the harder one to undo. |
-| `TANKOVAULT_MATCHING__LOW` | `0.6` | worker, sync | At or above this, and not attached, the worker creates the series *and* files a merge candidate for review. Sync ignores this band — it declines to map rather than guessing. |
-| `TANKOVAULT_MATCHING__AUTO_MERGE` | `0.97` | control-plane | At or above this — **and** only when a primary identity rule fired (identical titles, or identical modulo whitespace) — the duplicate sweep merges two *already-existing* series without asking. A separate knob from `HIGH` because it governs a different act: `HIGH` files an incoming source, this one deletes a series row and the id it carries. A score alone never suffices; see `tankovault_matcher::adjudicate`. |
+| `TANKOVAULT_MATCHING__LOW` | `0.6` | worker, sync | At or above this, and not attached, the worker creates the series *and* files a merge candidate for review. Sync ignores this band: it declines to map instead of guessing. |
+| `TANKOVAULT_MATCHING__AUTO_MERGE` | `0.97` | control-plane | At or above this, **and** only when a primary identity rule fired (identical titles, or identical modulo whitespace), the duplicate sweep merges two *already-existing* series without asking. A separate knob from `HIGH` because it governs a different act: `HIGH` files an incoming source, this one deletes a series row and the id it carries. A score alone never suffices; see `tankovault_matcher::adjudicate`. |
 | `TANKOVAULT_MATCHING__CANDIDATE_LIMIT` | `10` | worker, sync | Trigram candidates scored per query title. More costs a wider index scan and buys nothing once the true match is in the set. |
 
 #### These five are a baseline, not the last word
@@ -416,15 +415,15 @@ too, or an alternative-title match corroborated by something that is not a title
 console overrides them per key at *Console → Merge → Automatic-merge policy*
 (`GET`/`PUT`/`DELETE /v1/admin/matching/policy`, `merge.read` / `merge.write`). What the console
 stores wins; a key nobody has touched there follows the value configured here. Resetting a knob
-in the console withdraws its override, which returns it to this deployment's configured value —
+in the console withdraws its override, which returns it to this deployment's configured value,
 not to the shipped default, and the page shows which number that is.
 
 The rest of the `matching` block is configuration only. `HIGH`, `LOW` and `CANDIDATE_LIMIT` are
 read by the worker and by external sync, and neither watches the override table, so a console
 knob for them would move a number those services never see.
 
-An override takes effect on the next sweep — including one started from the console's own
-sweep button — and revisits nothing already merged.
+An override takes effect on the next sweep (including one started from the console's own
+sweep button) and revisits nothing already merged.
 
 #### The automatic-merge guards
 
@@ -435,26 +434,26 @@ row. Every guard is on by default: a guard only ever moves a pair towards an ope
 cost of a wrong one is a queue row and the cost of a missing one is a deleted series.
 
 Switching a guard **off** does not switch the signal off. It still fires and is still recorded on
-the decision journal — it simply stops blocking the merge. Which guard held a
+the decision journal: it simply stops blocking the merge. Which guard held a
 pair back is on the row in `GET /v1/admin/merge-decisions` (`blocked_by`), so the way to size
 these is to run with them on and read the near misses.
 
 | Key | Default | Services | Notes |
 |---|---|---|---|
-| `TANKOVAULT_MATCHING__BLOCK_AUTO_MERGE_ON_NUMERIC_CONFLICT` | `true` | control-plane | Titles carrying different numbers (`Overlord` against `Overlord 2`) are reported as **distinct** rather than queued. The one guard whose verdict is not "review": queueing a sequel asks an operator to re-derive the one fact the scorer is already certain about. Turning this off makes a sequel merge-eligible on title similarity alone, and nothing else in the scorer distinguishes a sequel from its predecessor. |
-| `TANKOVAULT_MATCHING__BLOCK_AUTO_MERGE_ON_AUTHOR_CONFLICT` | `true` | control-plane | Both series name authors and share none — a remake, a spin-off, or an unrelated work with the same title. Costs nothing on a catalogue whose providers rarely publish credits, because the signal cannot fire without credits on both sides. |
+| `TANKOVAULT_MATCHING__BLOCK_AUTO_MERGE_ON_NUMERIC_CONFLICT` | `true` | control-plane | Titles carrying different numbers (`Overlord` against `Overlord 2`) are reported as **distinct**, not queued. The one guard whose verdict is not "review": queueing a sequel asks an operator to re-derive the one fact the scorer is already certain about. Turning this off makes a sequel merge-eligible on title similarity alone, and nothing else in the scorer distinguishes a sequel from its predecessor. |
+| `TANKOVAULT_MATCHING__BLOCK_AUTO_MERGE_ON_AUTHOR_CONFLICT` | `true` | control-plane | Both series name authors and share none: a remake, a spin-off, or an unrelated work with the same title. Costs nothing on a catalogue whose providers rarely publish credits, because the signal cannot fire without credits on both sides. |
 | `TANKOVAULT_MATCHING__BLOCK_AUTO_MERGE_ON_YEAR_CONFLICT` | `true` | control-plane | Release years three or more years apart. Catches re-serialisations and remakes sharing an exact title. The year never moves a score, so this guard is the only way it can hold a pair back. |
-| `TANKOVAULT_MATCHING__BLOCK_AUTO_MERGE_ON_TYPE_CONFLICT` | `true` | control-plane | Both series declare a medium and they disagree (manga against manhwa). Worth switching off on a deployment whose providers infer the medium from the site they scraped it from rather than from the work. |
+| `TANKOVAULT_MATCHING__BLOCK_AUTO_MERGE_ON_TYPE_CONFLICT` | `true` | control-plane | Both series declare a medium and they disagree (manga against manhwa). Worth switching off on a deployment whose providers infer the medium from the site they scraped it from, not from the work. |
 
-### `metadata.priority` — which source owns each field
+### `metadata.priority`: which source owns each field
 
 Two writers put metadata on a `series` row: the worker's catalogue scan and external sync's
-enrichment pass. Both read this section, deliberately — the scan runs far more often, so a
+enrichment pass. Both read this section, deliberately: the scan runs far more often, so a
 priority only sync consulted was no priority at all: every enriched description was overwritten
 by the next scrape, and `content_type`/`status` reverted to the `unknown` the adapters hardcode.
 
 Each list is highest-priority first, and the first source supplying a real value wins. A blank
-string, and an `unknown` content type or status, are absences rather than answers, so a source
+string, and an `unknown` content type or status, are absences, not answers, so a source
 with no opinion never displaces one with an opinion. A source left out of a list is
 de-prioritised, not discarded: it still wins a field nothing else supplies.
 
@@ -468,101 +467,99 @@ lets a later write honour the order at all. Values written before that migration
 | `TANKOVAULT_METADATA__PRIORITY__TITLE` | `["anilist","adapter"]` | worker, sync | The canonical/display title. The loser is kept as an alternative title, so changing this never costs the catalogue a matching key. |
 | `TANKOVAULT_METADATA__PRIORITY__COVER` | `["anilist","adapter"]` | worker, sync | The cover image URL. |
 | `TANKOVAULT_METADATA__PRIORITY__CONTENT_TYPE` | `["anilist","adapter"]` | worker, sync | `manga`/`manhwa`/`manhua`/`webtoon`. No adapter has a usable selector for this today, so in practice only AniList ever supplies one. |
-| `TANKOVAULT_METADATA__PRIORITY__STATUS` | `["anilist","adapter"]` | worker, sync | Publication status of the work — not any reader's list status. |
+| `TANKOVAULT_METADATA__PRIORITY__STATUS` | `["anilist","adapter"]` | worker, sync | Publication status of the work, not any reader's list status. |
 | `TANKOVAULT_METADATA__PRIORITY__RELEASE_YEAR` | `["anilist","adapter"]` | worker, sync | Year of first publication. |
 | `TANKOVAULT_METADATA__PRIORITY__DEFAULT` | `["anilist","adapter"]` | worker, sync | The fallback order for any field whose own list is explicitly empty. |
 
-Only `anilist` and `adapter` are accepted; anything else is a startup error rather than a
+Only `anilist` and `adapter` are accepted; anything else is a startup error, not a
 silently ignored entry, so a typo cannot read as deliberate de-prioritisation.
 
-### `metadata.tags` — which scraped terms are refused
+### `metadata.tags`: which scraped terms are refused
 
 Aggregator templates put a work's genre chips next to its status, its type, its credits and the
-labels of the summary block itself, and an adapter that scrapes the block scrapes all of it. What
-reached the catalogue was a tag called `Updating`, one called `Status`, one called `Manga` — and,
-from the row directly below, an *author* called `Updating`. They are not merely useless: each
+labels of the summary block itself, and an adapter that scrapes the block scrapes all of it: a
+tag called `Updating`, one called `Status`, one called `Manga` and, from the row directly below,
+an *author* called `Updating`. They are not merely useless: each
 becomes a facet chip in Discover, a credit on a series page, a term in the recommender's
-vocabulary, and — because a term shared by half the catalogue looks like strong evidence to a
-similarity model — a feature that makes unrelated series look alike. This is the same defect
-migration `0025` repaired for `series_titles`, where the same labels had leaked in as alternative
-titles.
+vocabulary, and (because a term shared by half the catalogue looks like strong evidence to a
+similarity model) a feature that makes unrelated series look alike. Migration `0025` repairs the
+same defect for `series_titles`, where the same labels leak in as alternative titles.
 
 The guard covers both shared vocabularies, tags and author/artist credits, and both writers apply
 it: the worker's catalogue scan and external sync's enrichment pass intern into the same tables,
 so a guard only one of them consulted would not be one. It is applied at the statement that
-creates the row, so a refused term never reaches either table. Credits were guarded from
-migration `0053` onwards, which also prunes what the unguarded writer had already stored — until
-then a placeholder credit was the recommender's *strongest* feature, since author is its heaviest
-axis and its one exact-match retrieval path.
+creates the row, so a refused term never reaches either table. Migration `0053` prunes the
+placeholder credits stored before the guard covered credits: unpruned, a placeholder credit is the
+recommender's *strongest* feature, since author is its heaviest axis and its one exact-match
+retrieval path.
 
-Terms are matched on their **slug**, so `N/A`, `n/a` and `n-a` are one entry. The two lists add
-rather than replace: `BLOCKLIST` is what *this* deployment's providers turn out to emit on top of
+Terms are matched on their **slug**, so `N/A`, `n/a` and `n-a` are one entry. The two lists add to the shipped set,
+not replace it: `BLOCKLIST` is what *this* deployment's providers turn out to emit on top of
 the shipped set, so adding one term does not silently drop the rest. The shipped defaults are
-three kinds and nothing arguable — placeholders (`updating`, `unknown`, `n-a`), scrape-template
+three kinds and nothing arguable: placeholders (`updating`, `unknown`, `n-a`), scrape-template
 field labels (`status`, `genres`, `alternative`, `author`) and medium words that describe the
-format rather than the work (`manga`, `webtoon`); see `tankovault_domain::DEFAULT_BLOCKED_TERMS`
+format, not the work (`manga`, `webtoon`); see `tankovault_domain::DEFAULT_BLOCKED_TERMS`
 for the list. Publication status (`completed`, `ongoing`) is deliberately **not** refused: it is
-a column rather than a tag, but some catalogues do publish it as a browsable facet.
+a column, not a tag, but some catalogues do publish it as a browsable facet.
 
-The guard runs at intake only. Tags and credits already linked stay linked — nothing in the
-normal path retracts either — so switching a term on refuses it from the next scan onwards rather
-than cleaning up after the last one. Migration `0053` is the one exception, and only for the
+The guard runs at intake only. Tags and credits already linked stay linked (nothing in the
+normal path retracts either) so switching a term on refuses it from the next scan onwards instead of cleaning up after the last one. Migration `0053` is the one exception, and only for the
 shipped defaults.
 
 | Key | Default | Services | Notes |
 |---|---|---|---|
 | `TANKOVAULT_METADATA__TAGS__USE_DEFAULTS` | `true` | worker, sync | Whether the shipped list applies. An escape hatch for a deployment whose catalogue genuinely uses one of those words as a genre. |
 | `TANKOVAULT_METADATA__TAGS__BLOCKLIST` | `[]` | worker, sync | Additional refused terms, added to the shipped list unless `USE_DEFAULTS` is off. Matched on the slug. |
-| `TANKOVAULT_METADATA__TAGS__ADULT_TAGS` | `[]` | worker, api | Additional genre chips that classify a series as adult. Matched on the slug. **Additions only** — there is no `USE_DEFAULTS` counterpart, because an emptied classifier stops classifying silently, where both supported ways to make adult content visible leave a record of somebody deciding. The API reads the same list to decide which genres `GET /v1/tags` withholds from a caller the gate closes on, so a term added for the worker also disappears from the reader's filter panel. |
+| `TANKOVAULT_METADATA__TAGS__ADULT_TAGS` | `[]` | worker, api | Additional genre chips that classify a series as adult. Matched on the slug. **Additions only**: there is no `USE_DEFAULTS` counterpart, because an emptied classifier stops classifying silently, where both supported ways to make adult content visible leave a record of somebody deciding. The API reads the same list to decide which genres `GET /v1/tags` withholds from a caller the gate closes on, so a term added for the worker also disappears from the reader's filter panel. |
 
 #### The adult classifier
 
 The same scraped genre chips also decide whether a series is adult-gated. That verdict is written
 to `series.adult_inferred`, separately from AniList's `series.is_adult`, and it runs against the
-**raw** scrape before the blocklist above — a term an operator adds to `BLOCKLIST` must not be
+**raw** scrape before the blocklist above: a term an operator adds to `BLOCKLIST` must not be
 able to hide an adult signal from the gate as a side effect.
 
 It is a fallback, not the primary classifier: AniList's `isAdult` is authoritative where the
 enrichment sweep has a match, and this covers everything it does not, which on a freshly scanned
-catalogue is most of the rows. It may only ever answer *yes* — nothing in the normal path clears
+catalogue is most of the rows. It may only ever answer *yes*: nothing in the normal path clears
 `adult_inferred`, because a provider dropping a chip from one page and an adapter selector
 breaking are indistinguishable from the scan's side, and one of them silently reopens a gate.
 
 The shipped terms are short and mean explicit sexual content and nothing else. `ecchi`, `yaoi`,
 `yuri`, `bl`, `mature`, `seinen`, `josei` and `doujinshi` are deliberately **not** among them; see
 `tankovault_domain::DEFAULT_ADULT_TAGS`, whose doc comment gives the reason for each. Whether
-anything is actually hidden is a separate decision — see the `catalogue.adult_content` feature
+anything is actually hidden is a separate decision: see the `catalogue.adult_content` feature
 flag and the per-reader opt-in at `PUT /v1/me/content-prefs`; both must be on.
 
-### `chapter_outliers` — refusing implausible chapter numbers
+### `chapter_outliers`: refusing implausible chapter numbers
 
 Aggregator sites publish listing entries that are not releases: a slug carrying a date
 (`chapter-180302`), a year (`chapter-2025`), or a number lifted out of the series title
-(`Demon-Lord-2099` → `chapter-2099`). The adapter parses them correctly — the source really does
-say that — so a scan judges the listing as a whole and skips the entries that cannot be releases.
+(`Demon-Lord-2099` → `chapter-2099`). The adapter parses them correctly (the source really does
+say that) so a scan judges the listing as a whole and skips the entries that cannot be releases.
 Left in, one of them becomes the series' latest chapter and every reader's progress against it
 reads as hundreds of chapters behind.
 
-Every threshold is relative to the listing's own spacing rather than an absolute chapter number,
+Every threshold is relative to the listing's own spacing, not an absolute chapter number,
 so one setting covers a 20-chapter series and a 4,000-chapter one. Rejections are logged at
 `warn` with the numbers, and counted by `chapters_rejected_total{provider}`.
 
-This guard runs at ingest only. Chapters indexed before it existed stay indexed — nothing in the
-normal path deletes a chapter — so clearing those is a separate, opt-in sweep:
+This guard runs at ingest only. Chapters indexed before it ran stay indexed (nothing in the
+normal path deletes a chapter) so clearing those is a separate, opt-in sweep:
 `cargo run -p xtask -- prune-chapters` reports what the same rule would remove, and
 `-- prune-chapters --apply` deletes it.
 
 | Key | Default | Services | Notes |
 |---|---|---|---|
-| `TANKOVAULT_CHAPTER_OUTLIERS__ENABLED` | `true` | worker | Whether a scan rejects anything at all. The escape hatch for a provider the rule is wrong about. Turning it off does not restore skipped chapters — but ingest is idempotent, so the next scan re-indexes them. |
-| `TANKOVAULT_CHAPTER_OUTLIERS__SPARSE_FACTOR` | `20` | worker | **The knob to reach for first.** A trailing run spread more thinly than this multiple of the listing's typical spacing is noise rather than a continuation. Raising it rejects less; lowering it toward `10` starts taking genuine renumbered arcs (a series resuming at 505 after 359) with the junk. |
+| `TANKOVAULT_CHAPTER_OUTLIERS__ENABLED` | `true` | worker | Whether a scan rejects anything at all. The escape hatch for a provider the rule is wrong about. Turning it off does not restore skipped chapters, but ingest is idempotent, so the next scan re-indexes them. |
+| `TANKOVAULT_CHAPTER_OUTLIERS__SPARSE_FACTOR` | `20` | worker | **The knob to reach for first.** A trailing run spread more thinly than this multiple of the listing's typical spacing is noise, not a continuation. Raising it rejects less; lowering it toward `10` starts taking genuine renumbered arcs (a series resuming at 505 after 359) with the junk. |
 | `TANKOVAULT_CHAPTER_OUTLIERS__GAP_FACTOR` | `20` | worker | Multiple of typical spacing past which a jump is suspicious enough to consider a cut at all. Only gates which positions are examined; `SPARSE_FACTOR` decides. |
-| `TANKOVAULT_CHAPTER_OUTLIERS__MIN_GAP` | `10` | worker | Absolute floor, in chapter numbers, under which a jump is never suspicious. Stops ordinary holes — a pulled chapter, a merged double release — from being examined. |
+| `TANKOVAULT_CHAPTER_OUTLIERS__MIN_GAP` | `10` | worker | Absolute floor, in chapter numbers, under which a jump is never suspicious. Stops ordinary holes (a pulled chapter, a merged double release) from being examined. |
 | `TANKOVAULT_CHAPTER_OUTLIERS__MIN_SAMPLE` | `6` | worker | Smallest listing worth judging. Below this there is no rhythm to compare against, so newly-added series are trusted whole until a later scan grows them. |
 | `TANKOVAULT_CHAPTER_OUTLIERS__MIN_BODY` | `5` | worker | Chapters that must survive. Stops a listing being judged down to nothing. |
-| `TANKOVAULT_CHAPTER_OUTLIERS__MAX_REJECTED_FRACTION` | `0.25` | worker | Ceiling on the fraction of one listing a single scan may reject. A source that trips this has had its numbering misread wholesale — an adapter to fix, not a catalogue to quietly empty. |
+| `TANKOVAULT_CHAPTER_OUTLIERS__MAX_REJECTED_FRACTION` | `0.25` | worker | Ceiling on the fraction of one listing a single scan may reject. A source that trips this has had its numbering misread wholesale: an adapter to fix, not a catalogue to quietly empty. |
 
-### `internal` — service-to-service identity and authorisation
+### `internal`: service-to-service identity and authorisation
 
 Every internal call answers two questions: **who is calling**, and **may that caller reach this
 route**. Only the first depends on the mode below; the route tables are compiled in and
@@ -573,7 +570,7 @@ of how it proves identity.
 |---|---|---|
 | `off` | nobody is identified; every route is open | local development and tests, set explicitly. **Refused under `TANKOVAULT_PROFILE=production`.** |
 | `token` | a per-caller secret in `X-Internal-Token` | compose, bare metal, anything without a certificate authority |
-| `mtls` | the SAN of a verified client certificate | Kubernetes (cert-manager + trust-manager), or anywhere the three files below can be written |
+| `mtls` | the SAN of a verified client certificate | Kubernetes (cert-manager and trust-manager), or anywhere the three files below can be written |
 
 `mtls` reads three file **paths** and knows nothing else about the platform. Under Kubernetes
 cert-manager writes the key pair into a Secret and trust-manager the CA bundle into a ConfigMap,
@@ -585,9 +582,9 @@ Who calls whom, and therefore who needs what:
 |---|---|---|
 | `api` | control-plane, sync, worker | *(nothing internal)* |
 | `worker` | challenge-solver, render | api |
-| `control-plane`, `sync` | — | api |
-| `challenge-solver`, `render` | — | worker |
-| `notifier` | — | — (broker only; reads `internal.tls` for it) |
+| `control-plane`, `sync` | none | api |
+| `challenge-solver`, `render` | none | worker |
+| `notifier` | none | none (broker only; reads `internal.tls` for it) |
 
 So a caller sets `internal.caller.*`, a callee sets `internal.peers.*`, and `worker` sets both.
 
@@ -596,28 +593,28 @@ So a caller sets `internal.caller.*`, a callee sets `internal.peers.*`, and `wor
 | `TANKOVAULT_INTERNAL__IDENTITY` | `token` | all | `off`, `token` or `mtls`. `off` must be named explicitly and is refused under `TANKOVAULT_PROFILE=production`. Under the `token` default a service with no `internal.peers` admits no caller. |
 | `TANKOVAULT_INTERNAL__CALLER__NAME` | *(unset)* | api, worker | The name this service is known by; must match the key its peers list it under. |
 | `TANKOVAULT_INTERNAL__CALLER__TOKEN` | *(unset)* | api, worker | Required under `identity=token`. Minimum 32 characters, checked in every profile. `openssl rand -hex 32`. Ignored under `mtls`, where the client certificate is the credential. |
-| `TANKOVAULT_INTERNAL__PEERS` | *(empty)* | control-plane, worker, sync, render, challenge-solver | A **map keyed by caller name**, so the environment spelling is `TANKOVAULT_INTERNAL__PEERS__<NAME>__TOKEN` (or `__SAN`) — e.g. `TANKOVAULT_INTERNAL__PEERS__API__TOKEN`. Under `token` each entry needs a `token`; under `mtls` each needs a `san`. A peer carrying the wrong one for the active mode is refused at boot, and so is a key inside an entry that is neither `token` nor `san`: an undeclared one is a credential written under a name nothing reads, which is an authorisation the deployment believes it configured and does not have. The caller names stay open. Because the keys are dynamic, `xtask config-docs` can only see this root — the per-peer keys are documented by this row, not derived. |
+| `TANKOVAULT_INTERNAL__PEERS` | *(empty)* | control-plane, worker, sync, render, challenge-solver | A **map keyed by caller name**, so the environment spelling is `TANKOVAULT_INTERNAL__PEERS__<NAME>__TOKEN` (or `__SAN`), for example `TANKOVAULT_INTERNAL__PEERS__API__TOKEN`. Under `token` each entry needs a `token`; under `mtls` each needs a `san`. A peer carrying the wrong one for the active mode is refused at boot, and so is a key inside an entry that is neither `token` nor `san`: an undeclared one is a credential written under a name nothing reads, which is an authorisation the deployment believes it configured and does not have. The caller names stay open. Because the keys are dynamic, `xtask config-docs` can only see this root: the per-peer keys are documented by this row, not derived. |
 | `TANKOVAULT_INTERNAL__TLS__CERT` | *(unset)* | all under `mtls` | PEM certificate chain this service serves and presents. |
-| `TANKOVAULT_INTERNAL__TLS__KEY` | *(unset)* | all under `mtls` | PEM private key for the above. PKCS#8, PKCS#1 and SEC1 are all accepted — cert-manager's default `privateKey.encoding` and `openssl genrsa` write PKCS#1, `openssl ecparam -genkey` writes SEC1 — and the key is re-encoded as PKCS#8 when it is read, because the outbound stacks do not agree on which forms they take. |
-| `TANKOVAULT_INTERNAL__TLS__CA` | *(unset)* | all under `mtls` | PEM bundle of the authorities a peer certificate must chain to. **Only these** — the public root store is switched off on internal clients, since a peer signed by a public CA is not a peer. |
-| `TANKOVAULT_INTERNAL__TLS__PROBE_LISTEN` | `0.0.0.0:9091` | all under `mtls` | The **plaintext** listener carrying `/health` and `/ready`, read under `mtls` only. A kubelet probe presents no client certificate, so on the mTLS port it gets a TLS alert (`malformed HTTP response "\x15\x03\x03…"`) and the replica is restarted as unhealthy — point the probes here instead. It carries `/health` and `/ready` and nothing else: the metrics scrape stays wherever `TANKOVAULT_METRICS__LISTEN` put it, so merging the scrape onto the mTLS port keeps it behind a certificate. Set to `null` (JSON) only where whatever does the probing can present one. |
-| `TANKOVAULT_INTERNAL__TOKEN` | *(retired)* | — | **Refused at boot.** One secret shared by every service meant any one of them could call all the others' privileged routes: `challenge-solver`'s credential could unlink a user's tracker account through `sync`. Replace it with the per-caller keys above. |
+| `TANKOVAULT_INTERNAL__TLS__KEY` | *(unset)* | all under `mtls` | PEM private key for the above. PKCS#8, PKCS#1 and SEC1 are all accepted (cert-manager's default `privateKey.encoding` and `openssl genrsa` write PKCS#1, `openssl ecparam -genkey` writes SEC1) and the key is re-encoded as PKCS#8 when it is read, because the outbound stacks do not agree on which forms they take. |
+| `TANKOVAULT_INTERNAL__TLS__CA` | *(unset)* | all under `mtls` | PEM bundle of the authorities a peer certificate must chain to. **Only these**: the public root store is switched off on internal clients, since a peer signed by a public CA is not a peer. |
+| `TANKOVAULT_INTERNAL__TLS__PROBE_LISTEN` | `0.0.0.0:9091` | all under `mtls` | The **plaintext** listener carrying `/health` and `/ready`, read under `mtls` only. A kubelet probe presents no client certificate, so on the mTLS port it gets a TLS alert (`malformed HTTP response "\x15\x03\x03…"`) and the replica is restarted as unhealthy: point the probes here instead. It carries `/health` and `/ready` and nothing else: the metrics scrape stays wherever `TANKOVAULT_METRICS__LISTEN` put it, so merging the scrape onto the mTLS port keeps it behind a certificate. Set to `null` (JSON) only where whatever does the probing can present one. |
+| `TANKOVAULT_INTERNAL__TOKEN` | *(retired)* | none | **Refused at boot.** One secret shared by every service meant any one of them could call all the others' privileged routes: `challenge-solver`'s credential could unlink a user's tracker account through `sync`. Replace it with the per-caller keys above. |
 
 `/health` and `/ready` are merged outside this stack on every service, so an orchestrator probe
 never needs a credential. Under `mtls` that is not enough on its own: the credential the probe
 lacks is the client certificate, and without one the connection never becomes HTTP at all. So
 the probes get a second, plaintext home on `internal.tls.probe_listen` (`0.0.0.0:9091`) carrying
-`/health` and `/ready` and nothing else, and **every probe definition has to point at it** —
+`/health` and `/ready` and nothing else, and **every probe definition has to point at it**:
 `8081`, `8083`, `8084` and the worker's ops port answer a plain `GET /health` with a TLS alert
 once `identity=mtls` is on.
 
-Two things are refused at boot rather than discovered later, because neither produces a symptom
+Two things are refused at boot, not discovered later, because neither produces a symptom
 on its own:
 
-- an upstream URL still spelled `http://` under `identity=mtls` — it connects, works, offers no
+- an upstream URL still spelled `http://` under `identity=mtls`: it connects, works, offers no
   client certificate and encrypts nothing, while the peer's configuration still says it requires
   both;
-- certificate material that cannot be read, checked when the configuration resolves rather than
+- certificate material that cannot be read, checked when the configuration resolves, not
   at the first connection, so a bad mount is a crash-looping replica instead of a running one
   that refuses every request.
 
@@ -626,14 +623,14 @@ rotation needs no restart. A rotation that produces unreadable files logs and ke
 the material already in memory.
 
 **NATS.** Under `mtls` the broker connection presents the same certificate and requires TLS.
-Per-service NATS *accounts* — what stops `notifier` from publishing scan tasks — are NATS server
-configuration plus the credentials embedded in each service's `TANKOVAULT_NATS__URL`; this
+Per-service NATS *accounts* (what stops `notifier` from publishing scan tasks) are NATS server
+configuration and the credentials embedded in each service's `TANKOVAULT_NATS__URL`; this
 codebase presents them but cannot assert them.
 
-### `email` — transactional mail
+### `email`: transactional mail
 
 Shared verbatim by `api` (welcome, password reset, address-change confirmations) and
-`notifier` (new-chapter alerts), so one deployment has one relay configuration rather than two
+`notifier` (new-chapter alerts), so one deployment has one relay configuration, not two
 that can disagree.
 
 | Key | Default | Notes |
@@ -641,11 +638,11 @@ that can disagree.
 | `TANKOVAULT_EMAIL__URL` | *(unset)* | A single lettre relay URL (`smtps://user:pass@host:465`). **Takes precedence** over the explicit fields below. |
 | `TANKOVAULT_EMAIL__HOST` | *(unset)* | |
 | `TANKOVAULT_EMAIL__PORT` | per `SECURITY`: `465` / `587` / `25` | |
-| `TANKOVAULT_EMAIL__SECURITY` | `starttls` | `tls`, `starttls` or `none`. Chosen explicitly rather than inferred from the port, so intent is never ambiguous. |
+| `TANKOVAULT_EMAIL__SECURITY` | `starttls` | `tls`, `starttls` or `none`. Chosen explicitly, not inferred from the port, so intent is never ambiguous. |
 | `TANKOVAULT_EMAIL__USERNAME` | *(unset)* | For OVH-hosted Exchange this is the full mailbox address. |
 | `TANKOVAULT_EMAIL__PASSWORD` | *(unset)* | |
 | `TANKOVAULT_EMAIL__FROM` | *(unset)* | e.g. `TankoVault <no-reply@example.com>`. **Required to send.** |
-| `TANKOVAULT_EMAIL__ENVELOPE_FROM` | falls back to `USERNAME` | The SMTP `MAIL FROM`. Relays that enforce "send as" — notably OVH Exchange — reject a message whose envelope sender is not the authenticated mailbox (`550 5.7.60`). Leave unset unless bounces must go elsewhere. |
+| `TANKOVAULT_EMAIL__ENVELOPE_FROM` | falls back to `USERNAME` | The SMTP `MAIL FROM`. Relays that enforce "send as" (notably OVH Exchange) reject a message whose envelope sender is not the authenticated mailbox (`550 5.7.60`). Leave unset unless bounces must go elsewhere. |
 | `TANKOVAULT_EMAIL__BASE_URL` | `http://localhost:8080` | Public web origin used to build absolute links inside emails (password reset, verification). **Wrong here means unusable links**, and nothing detects it. |
 | `TANKOVAULT_EMAIL__TIMEOUT_SECS` | `15` | |
 
@@ -665,23 +662,23 @@ that can disagree.
 | `TANKOVAULT_BIND_ADDR` | `0.0.0.0:8080` | |
 | `TANKOVAULT_CONTROL_PLANE_URL` | `http://control-plane:8081` | |
 | `TANKOVAULT_SYNC_URL` | `http://sync:8083` | |
-| `TANKOVAULT_STATEMENT_TIMEOUTS__INTERACTIVE_SECS` | `5` | Server-side `statement_timeout` for every route outside `/v1/admin`: the reader's Home and watchlist, the public catalogue, sign-in. `0` removes it. A statement past it fails with `504 upstream_timeout` and a `WARN` line rather than running on after its request has been abandoned — before this existed, a query cut off by `SECURITY__REQUEST_TIMEOUT_SECS` kept executing and kept its pooled connection busy. Keep it well under that request timeout. |
+| `TANKOVAULT_STATEMENT_TIMEOUTS__INTERACTIVE_SECS` | `5` | Server-side `statement_timeout` for every route outside `/v1/admin`: the reader's Home and watchlist, the public catalogue, sign-in. `0` removes it. A statement past it fails with `504 upstream_timeout` and a `WARN` line instead of running on after its request has been abandoned; without it, a query cut off by `SECURITY__REQUEST_TIMEOUT_SECS` keeps executing and keeps its pooled connection busy. Keep it well under that request timeout. |
 | `TANKOVAULT_STATEMENT_TIMEOUTS__ADMIN_SECS` | `15` | The same ceiling for `/v1/admin` routes and the API's background sweeps (audit retention, credential cleanup), which run on a pool of their own because the ceiling is fixed per connection. `0` removes it. |
 | `TANKOVAULT_STATEMENT_TIMEOUTS__ADMIN_MAX_CONNECTIONS` | `4` | Size of that admin pool, **on top of** `DATABASE__MAX_CONNECTIONS`. Count it when sizing Postgres's `max_connections`: an API replica holds up to both. A slow console aggregate queues behind other console requests here, never behind a reader's. |
-| `TANKOVAULT_WORKER_URL` | `http://worker:8085` | The worker's ops listener, which also serves the internally-authenticated adapter dry-run behind `POST /v1/admin/providers/{id}/test`. Replaces `TANKOVAULT_CHALLENGE_SOLVER_URL`, which the API no longer needs: the dry-run ran in-process and reached the solver directly, which meant the API binary linked the whole `wreq`/BoringSSL crawl stack (PERF-18). Only the **worker** talks to the challenge solver now. |
+| `TANKOVAULT_WORKER_URL` | `http://worker:8085` | The worker's ops listener, which also serves the internally-authenticated adapter dry-run behind `POST /v1/admin/providers/{id}/test`. The API does not reach the challenge solver: running the dry-run in-process would make the API binary link the whole `wreq`/BoringSSL crawl stack. Only the **worker** talks to the challenge solver. |
 | `TANKOVAULT_AUTH__JWT_SECRET` | *(required, ≥32 chars)* | |
 | `TANKOVAULT_AUTH__PASSWORD_PEPPER` | `""` | Optional server-side secret mixed into every argon2id hash, so a database leak alone cannot be brute-forced offline. **Once set it must never change** or every existing password stops verifying, and it must be given to both `api` and the `seed` step with the same value. |
 | `TANKOVAULT_AUTH__ACCESS_TTL_MINUTES` | `15` | |
 | `TANKOVAULT_AUTH__REFRESH_TTL_DAYS` | `30` | |
-| `TANKOVAULT_AUTH__COOKIE_SECURE` | `true` | Turn off **only** for local plain-HTTP development, where a `Secure` cookie is simply never sent. This is a 30-day credential. It also selects the cookie's **name and path**: `__Host-refresh_token` at `Path=/` when on, plain `refresh_token` at `/v1/auth` when off — a `__Host-` cookie without `Secure` is refused by the browser rather than downgraded, so the two configurations cannot share a spelling. Consequence: **flipping this setting signs everyone out once**, because already-issued cookies are stored under the other name. |
-| `TANKOVAULT_AUTH__WEBAUTHN_ORIGIN` | *(falls back to `TANKOVAULT_EMAIL__BASE_URL`)* | The public origin of the web app, e.g. `https://tanko.example.com`. Passkeys are bound to it by the browser, so it cannot be inferred from a request — a `Host` header is attacker-controlled, and trusting it would let anyone mint credentials under a domain of their choosing. Leave both this and `EMAIL__BASE_URL` unset and passkeys are simply unavailable (logged at boot); set it to something malformed and the API **refuses to start**, because the browser-side symptom is every ceremony failing with an opaque `SecurityError`. Changing it invalidates every registered passkey: a credential bound to the old origin cannot be presented at the new one, and users re-register. |
-| `TANKOVAULT_AUTH__WEBAUTHN_RP_ID` | *(the origin's host)* | The registrable domain credentials are bound to. Set it to a **parent** of the origin's host only if the app moves between subdomains and keys must survive the move — a passkey registered under a parent domain works on every child of it. It must cover the origin; if it does not, the API refuses to start. |
+| `TANKOVAULT_AUTH__COOKIE_SECURE` | `true` | Turn off **only** for local plain-HTTP development, where a `Secure` cookie is simply never sent. This is a 30-day credential. It also selects the cookie's **name and path**: `__Host-refresh_token` at `Path=/` when on, plain `refresh_token` at `/v1/auth` when off. A `__Host-` cookie without `Secure` is refused by the browser, not downgraded, so the two configurations cannot share a spelling. Consequence: **flipping this setting signs everyone out once**, because already-issued cookies are stored under the other name. |
+| `TANKOVAULT_AUTH__WEBAUTHN_ORIGIN` | *(falls back to `TANKOVAULT_EMAIL__BASE_URL`)* | The public origin of the web app, e.g. `https://tanko.example.com`. Passkeys are bound to it by the browser, so it cannot be inferred from a request: a `Host` header is attacker-controlled, and trusting it would let anyone mint credentials under a domain of their choosing. Leave both this and `EMAIL__BASE_URL` unset and passkeys are simply unavailable (logged at boot); set it to something malformed and the API **refuses to start**, because the browser-side symptom is every ceremony failing with an opaque `SecurityError`. Changing it invalidates every registered passkey: a credential bound to the old origin cannot be presented at the new one, and users re-register. |
+| `TANKOVAULT_AUTH__WEBAUTHN_RP_ID` | *(the origin's host)* | The registrable domain credentials are bound to. Set it to a **parent** of the origin's host only if the app moves between subdomains and keys must survive the move: a passkey registered under a parent domain works on every child of it. It must cover the origin; if it does not, the API refuses to start. |
 | `TANKOVAULT_AUTH__WEBAUTHN_RP_NAME` | `TankoVault` | The name the authenticator shows in its prompt ("Save a passkey for …"). Cosmetic, but it is what the user reads at the moment they decide to trust the site. |
-| `TANKOVAULT_AUTH__MFA_ENCRYPTION_KEY` | *(unset)* | Base64 (standard alphabet) 32-byte key sealing every TOTP secret at rest — `openssl rand -base64 32`. Unlike a password hash a TOTP secret is **symmetric**: whoever reads the column can mint that account's codes, so a database dump must not be enough on its own. Unset disables authenticator-app enrolment only (logged at boot, and the account page hides the option); security keys and recovery codes are unaffected. Set it to something that is not a 32-byte base64 value and the API **refuses to start** — a typo silently degrading to "TOTP disabled" is a feature vanishing without a symptom. Deliberately not derived from `JWT_SECRET`: rotating the signing key is routine, and deriving from it would invalidate every enrolled authenticator app. **Once set it must never change**, or every enrolled account is locked out of its second factor. |
+| `TANKOVAULT_AUTH__MFA_ENCRYPTION_KEY` | *(unset)* | Base64 (standard alphabet) 32-byte key sealing every TOTP secret at rest: `openssl rand -base64 32`. Unlike a password hash a TOTP secret is **symmetric**: whoever reads the column can mint that account's codes, so a database dump must not be enough on its own. Unset disables authenticator-app enrolment only (logged at boot, and the account page hides the option); security keys and recovery codes are unaffected. Set it to something that is not a 32-byte base64 value and the API **refuses to start**: a typo silently degrading to "TOTP disabled" is a feature vanishing without a symptom. Deliberately not derived from `JWT_SECRET`: rotating the signing key is routine, and deriving from it would invalidate every enrolled authenticator app. **Once set it must never change**, or every enrolled account is locked out of its second factor. |
 | `TANKOVAULT_AUTH__TOTP_ISSUER` | *(`WEBAUTHN_RP_NAME`, then `TankoVault`)* | The issuer an authenticator app files this deployment's entry under. Cosmetic, and shown next to the account name in the app's list. |
-| `TANKOVAULT_AUTH__STEP_UP_TTL_MINUTES` | `30` | How long a step-up elevation survives **without being used**. Every request that presents the grant slides the deadline forward by this much, so a shift spent in one operator-console panel is confirmed once rather than every few clicks — which is what an absolute five minutes produced. What bounds the sliding is `STEP_UP_MAX_TTL_MINUTES` below, not this. Elevations are revoked outright on a password change, a sign-out, and the removal of the factor that earned one, whatever either is set to. |
-| `TANKOVAULT_AUTH__STEP_UP_MAX_TTL_MINUTES` | `240` | The ceiling on that sliding: no elevation is honoured more than this long after it was earned, however continuously it is used. This is the setting that keeps "confirm it is you" from becoming a once-per-sign-in formality on a machine somebody walked away from — lower it on shared workstations. Set below `STEP_UP_TTL_MINUTES` it simply wins, and the idle window never gets to run out. |
-| `TANKOVAULT_AUTH__MFA_CHALLENGE_TTL_MINUTES` | `5` | How long a half-finished sign-in — password accepted, second factor still owed — may sit before it has to be restarted. Matches the `WebAuthn` ceremony timeout on purpose: a sign-in offering a security key must not expire its own challenge before the authenticator prompt does. |
+| `TANKOVAULT_AUTH__STEP_UP_TTL_MINUTES` | `30` | How long a step-up elevation survives **without being used**. Every request that presents the grant slides the deadline forward by this much, so a shift spent in one operator-console panel is confirmed once, not every few clicks as a short absolute window would demand. What bounds the sliding is `STEP_UP_MAX_TTL_MINUTES` below, not this. Elevations are revoked outright on a password change, a sign-out, and the removal of the factor that earned one, whatever either is set to. |
+| `TANKOVAULT_AUTH__STEP_UP_MAX_TTL_MINUTES` | `240` | The ceiling on that sliding: no elevation is honoured more than this long after it was earned, however continuously it is used. This is the setting that keeps "confirm it is you" from becoming a once-per-sign-in formality on a machine somebody walked away from: lower it on shared workstations. Set below `STEP_UP_TTL_MINUTES` it simply wins, and the idle window never gets to run out. |
+| `TANKOVAULT_AUTH__MFA_CHALLENGE_TTL_MINUTES` | `5` | How long a half-finished sign-in (password accepted, second factor still owed) may sit before it has to be restarted. Matches the `WebAuthn` ceremony timeout on purpose: a sign-in offering a security key must not expire its own challenge before the authenticator prompt does. |
 
 ### `control-plane`
 
@@ -690,24 +687,24 @@ that can disagree.
 | `TANKOVAULT_BIND_ADDR` | `0.0.0.0:8081` | |
 | `TANKOVAULT_SCHEDULER__FAST_INTERVAL_SECS` | `300` | Seconds between fast-scan sweeps of every active provider. `0` disables. |
 | `TANKOVAULT_SCHEDULER__FULL_INTERVAL_SECS` | `0` (disabled) | Full scans are normally on demand. |
-| `TANKOVAULT_SCHEDULER__RUN_STALE_AFTER_SECS` | `3600` | How long an unfinished run keeps the planner from starting another for the same provider and mode — including from `POST /internal/scans`, which answers with the in-flight run's id rather than queueing a second one. Coalescing is what stops a provider whose scan outlasts the sweep interval from accruing one identical queued run per tick; this value only bounds it, because a run that can never settle (a task persisted but never published) would otherwise suppress that provider's scans permanently. Raise it above the longest scan you expect a single provider to take — past it a *healthy* long run stops suppressing, and the duplicates come back. |
-| `TANKOVAULT_SCHEDULER__FAILURE_BACKOFF_MAX_SECS` | `21600` (6 h) | Ceiling on how long the sweeps skip a provider whose runs keep failing. `0` restores the unconditional sweep. The sweep asks every active provider on every tick, which is right while they work and wrong the moment one stops: a provider whose feed has been answering an infrastructure error page for a day was still asked for it 288 times a day, at a site serving none of them — and against a host that is *refusing* rather than broken, those requests are the reason it keeps refusing. The cooldown starts after **two** consecutive failed runs of that mode (one is noise) and doubles per further failure from the mode's own sweep interval up to this ceiling, measured from the last failure. Only the scheduled sweep consults it: "Scan now" always plans, and one successful run ends the streak. The cost of setting it too high is that a provider which recovered waits up to this long to be noticed, which is why the default is hours rather than days. Watch `scan_runs_planned_total{result="cooling_down"}`. |
-| `TANKOVAULT_SCHEDULER__RECONCILE_INTERVAL_SECS` | `300` | Seconds between passes that reconcile the broker's task queues against the `scan_tasks` table. `0` disables. This is a repair, not a schedule: JetStream is the truth for dispatch and the table is the truth for progress, and they can come apart with no failure visible on either side — a publish that never landed, a stream purged or recreated, a worker that acked and then died. Each pass compares a provider lane's open rows against the message count the broker actually holds for it and republishes only the difference, then closes runs whose tasks have all settled and fails runs that never planned one. Republishing is safe when it is unnecessary: the second delivery finds the task claimed or settled and is declined. Turning it off means a lost message costs the run, and the provider's next run of that mode until `RUN_STALE_AFTER_SECS`. |
-| `TANKOVAULT_SCHEDULER__SCAN_HISTORY_RETENTION_DAYS` | `30` | Days a settled scan run and its tasks are kept before the leader deletes them. `0` keeps history forever. The console's run list, failure feed and per-provider health aggregate these tables, so unbounded history is latency that grows with the deployment's age. Runs still queued or running are never touched, and the newest 32 finished runs of each provider and scan tier are kept however old they are: the failure backoff reads exactly those, and pruning them would reset a failing provider's cooldown. Deleting is batched (5 000 task rows per statement, at most 20 s of work per pass), so a first pass over weeks of history catches up across several hours rather than locking the tables. |
+| `TANKOVAULT_SCHEDULER__RUN_STALE_AFTER_SECS` | `3600` | How long an unfinished run keeps the planner from starting another for the same provider and mode, including from `POST /internal/scans`, which answers with the in-flight run's id instead of queueing a second one. Coalescing is what stops a provider whose scan outlasts the sweep interval from accruing one identical queued run per tick; this value only bounds it, because a run that can never settle (a task persisted but never published) would otherwise suppress that provider's scans permanently. Raise it above the longest scan you expect a single provider to take: past it a *healthy* long run stops suppressing, and the duplicates come back. |
+| `TANKOVAULT_SCHEDULER__FAILURE_BACKOFF_MAX_SECS` | `21600` (6 h) | Ceiling on how long the sweeps skip a provider whose runs keep failing. `0` restores the unconditional sweep. The sweep asks every active provider on every tick, which is right while they work and wrong the moment one stops: a provider whose feed has been answering an infrastructure error page for a day is still asked for it 288 times a day, at a site serving none of them, and against a host that is *refusing*, not broken, those requests are the reason it keeps refusing. The cooldown starts after **two** consecutive failed runs of that mode (one is noise) and doubles per further failure from the mode's own sweep interval up to this ceiling, measured from the last failure. Only the scheduled sweep consults it: "Scan now" always plans, and one successful run ends the streak. The cost of setting it too high is that a provider which recovered waits up to this long to be noticed, which is why the default is hours, not days. Watch `scan_runs_planned_total{result="cooling_down"}`. |
+| `TANKOVAULT_SCHEDULER__RECONCILE_INTERVAL_SECS` | `300` | Seconds between passes that reconcile the broker's task queues against the `scan_tasks` table. `0` disables. This is a repair, not a schedule: JetStream is the truth for dispatch and the table is the truth for progress, and they can come apart with no failure visible on either side: a publish that never landed, a stream purged or recreated, a worker that acked and then died. Each pass compares a provider lane's open rows against the message count the broker actually holds for it and republishes only the difference, then closes runs whose tasks have all settled and fails runs that never planned one. Republishing is safe when it is unnecessary: the second delivery finds the task claimed or settled and is declined. Turning it off means a lost message costs the run, and the provider's next run of that mode until `RUN_STALE_AFTER_SECS`. |
+| `TANKOVAULT_SCHEDULER__SCAN_HISTORY_RETENTION_DAYS` | `30` | Days a settled scan run and its tasks are kept before the leader deletes them. `0` keeps history forever. The console's run list, failure feed and per-provider health aggregate these tables, so unbounded history is latency that grows with the deployment's age. Runs still queued or running are never touched, and the newest 32 finished runs of each provider and scan tier are kept however old they are: the failure backoff reads exactly those, and pruning them would reset a failing provider's cooldown. Deleting is batched (5 000 task rows per statement, at most 20 s of work per pass), so a first pass over weeks of history catches up across several hours instead of locking the tables. |
 | `TANKOVAULT_SCHEDULER__UNREAD_UNLOCK_INTERVAL_SECS` | `60` | Seconds between passes that recompute a reader's stored unread figures once an early-access chapter's unlock time has passed. `0` disables. Database triggers keep those figures true on every write, but a paywall timer expiring writes nothing, so without this pass the chapter would not count until something unrelated touched the row. The interval is the longest a reader waits to see it; runs on the scheduler leader and is not stopped by switching the scanning scheduler off. |
 | `TANKOVAULT_SCHEDULER__UNREAD_RECONCILE_INTERVAL_SECS` | `900` | Seconds between passes that re-verify 500 stored unread rows against the live computation, repair any that disagree and create any that are missing. `0` disables. A healthy deployment finds nothing; `watchlist_unread_drift_total` rising means a write path the triggers do not cover, and the `WARN` line names the fields. |
 | `TANKOVAULT_SCHEDULER__WATCHLIST_IMPORT_RESOLVE_INTERVAL_SECS` | `900` | Seconds between passes that retry 500 imported watchlist entries still waiting for their series, attaching each one a scan has since brought into the catalogue. `0` disables. This is what lets a backup restored into a wiped or newly deployed database finish restoring as providers are crawled. Runs on the scheduler leader, only while `tracking.watchlist` is on, and is not stopped by switching the scanning scheduler off. |
 | `TANKOVAULT_SCHEDULER__CHAPTER_ROLLUP_VERIFY_INTERVAL_SECS` | `300` | Seconds between passes that re-count 2 000 sources' chapters and rebuild any whose stored counts disagree. The console's chapter totals and 1 h / 24 h / 7 d windows read those counts, and database triggers keep them exact on every write. `0` disables. A healthy deployment finds nothing; `chapter_rollup_drift_total` rising means a write bypassed the triggers (a restore, or a session with `session_replication_role = replica`). Runs on the scheduler leader. |
 | `TANKOVAULT_SCHEDULER__SERIES_BROWSE_VERIFY_INTERVAL_SECS` | `300` | Seconds between passes that recompute 5 000 series' browse keys and repair any whose stored projection disagrees. Discover filters, sorts and counts read that projection, and database triggers keep it current on every write. `0` disables. A healthy deployment finds nothing; `series_browse_drift_total` rising means a write the triggers do not cover. Runs on the scheduler leader. |
 | `TANKOVAULT_SCHEDULER__SCAN_HISTORY_PRUNE_INTERVAL_SECS` | `3600` | Seconds between those pruning passes. `0` disables pruning. Like reconciliation it runs on the scheduler leader and is not stopped by switching the scanning scheduler off. |
-| `TANKOVAULT_SCHEDULER__MERGE_SWEEP_INTERVAL_SECS` | `3600` | Seconds between **full** duplicate-reconciliation sweeps. `0` disables. This is the cadence of *discovery* — blocking the whole catalogue on the compact title key, which costs the same whether anything changed or not. Hourly rather than per-scan because what discovery is waiting for, enrichment giving a series its authors, year and alternative titles, happens on the order of hours. Also gated by the `scanning.auto_merge` feature flag. |
-| `TANKOVAULT_SCHEDULER__MERGE_SWEEP_ROTATION_INTERVAL_SECS` | `900` | Seconds between **rotation-only** sweeps — the requeue and recheck budgets below, with no discovery. `0` disables. Both are index scans bounded by their own budgets, so they are cheap enough to run between full sweeps, and re-scoring is the mechanism by which a pair that was genuinely ambiguous becomes an automatic merge once enrichment has filled both sides in. Tied to the discovery cadence, a queue of a few thousand rows took most of a day to turn over once. The automatic-merge ceiling below is scaled by `ROTATION_INTERVAL / INTERVAL` for these passes, so running them more often does not raise how many series the sweeps may delete per hour. |
-| `TANKOVAULT_SCHEDULER__MERGE_SWEEP_PAIRS` | `500` | Duplicate pairs shortlisted per sweep that the sweep has **never recorded a verdict for**. Pairs it has are excluded here and revisited under the two budgets below, which is what gives this ordered-and-limited query a progress guarantee — without the exclusion it re-offered the same prefix hourly and never advanced. |
+| `TANKOVAULT_SCHEDULER__MERGE_SWEEP_INTERVAL_SECS` | `3600` | Seconds between **full** duplicate-reconciliation sweeps. `0` disables. This is the cadence of *discovery*: blocking the whole catalogue on the compact title key, which costs the same whether anything changed or not. Hourly, not per-scan because what discovery is waiting for, enrichment giving a series its authors, year and alternative titles, happens on the order of hours. Also gated by the `scanning.auto_merge` feature flag. |
+| `TANKOVAULT_SCHEDULER__MERGE_SWEEP_ROTATION_INTERVAL_SECS` | `900` | Seconds between **rotation-only** sweeps: the requeue and recheck budgets below, with no discovery. `0` disables. Both are index scans bounded by their own budgets, so they are cheap enough to run between full sweeps, and re-scoring is the mechanism by which a pair that was genuinely ambiguous becomes an automatic merge once enrichment has filled both sides in. Tied to the discovery cadence, a queue of a few thousand rows would take most of a day to turn over once. The automatic-merge ceiling below is scaled by `ROTATION_INTERVAL / INTERVAL` for these passes, so running them more often does not raise how many series the sweeps may delete per hour. |
+| `TANKOVAULT_SCHEDULER__MERGE_SWEEP_PAIRS` | `500` | Duplicate pairs shortlisted per sweep that the sweep has **never recorded a verdict for**. Pairs it has are excluded here and revisited under the two budgets below, which is what gives this ordered-and-limited query a progress guarantee: without the exclusion it would re-offer the same prefix hourly and never advance. |
 | `TANKOVAULT_SCHEDULER__MERGE_SWEEP_REQUEUE` | `500` | Open review-queue rows re-scored per sweep, least-recently-scored first. A candidate filed at ingest was scored before the series had tags, authors or synonyms, so its score is a floor; this is how it gets revisited. |
 | `TANKOVAULT_SCHEDULER__MERGE_SWEEP_RECHECK` | `500` | Pairs the sweep previously judged **distinct**, reconsidered per sweep, least-recently-scored first. Same argument as the requeue budget and the opposite verdict: a pair scored apart before enrichment filled both sides in has to be able to come back. Re-scoring bumps `updated_at`, so this drains as a round-robin. An operator's dismissal is never in this rotation. |
-| `TANKOVAULT_SCHEDULER__MERGE_SWEEP_MAX_AUTO_MERGES` | `200` | **Ceiling on a destructive background action.** Nothing else bounds how many series one sweep may delete, so a mistaken threshold or normalization rule would otherwise collapse the catalogue between two ticks. Exceeding it defers the rest to the next sweep and reports the count. A `deferred` that is non-zero on *every* run means the ceiling is binding rather than protecting — raise it and the pairs budget together to drain the backlog, then put both back. It bounds a **run**, not a pass: a sweep that merges A into B skips the pairs naming A and immediately re-runs to collapse the chain, and every one of those passes spends from the same ceiling. Rotation passes get a share of it scaled by their cadence, so the bound is effectively per hour whatever the two intervals are set to. It bounds the sweeps that run on a **schedule**; the console's "Sweep the whole catalogue" button lifts it, because that run is an operator watching rather than a background action between two looks. |
-| `TANKOVAULT_SCHEDULER__RECSYS_INCREMENTAL_INTERVAL_SECS` | `900` | Seconds between incremental recommendation-model builds. `0` disables. Frequent by design: an incremental pass re-embeds only what changed and inserts into the live HNSW index, so its cost tracks catalogue churn rather than catalogue size. Also gated by the `catalogue.recommendations` feature flag, and skipped on replicas that do not hold scheduler leadership. |
-| `TANKOVAULT_SCHEDULER__RECSYS_FULL_INTERVAL_SECS` | `604800` | Seconds between full model rebuilds. `0` disables. A full build re-counts the vocabulary and re-solves the projection from the whole catalogue; the incremental pass covers changed series, so this exists for **idf and vocabulary drift**, not for freshness. **A deployment that has never completed one has no projection basis, and every incremental build will refuse to run** — that is deliberate, since projecting with a basis solved from a partial catalogue yields vectors that are not comparable with the stored ones. |
+| `TANKOVAULT_SCHEDULER__MERGE_SWEEP_MAX_AUTO_MERGES` | `200` | **Ceiling on a destructive background action.** Nothing else bounds how many series one sweep may delete, so a mistaken threshold or normalization rule would otherwise collapse the catalogue between two ticks. Exceeding it defers the rest to the next sweep and reports the count. A `deferred` that is non-zero on *every* run means the ceiling is binding instead of protecting: raise it and the pairs budget together to drain the backlog, then put both back. It bounds a **run**, not a pass: a sweep that merges A into B skips the pairs naming A and immediately re-runs to collapse the chain, and every one of those passes spends from the same ceiling. Rotation passes get a share of it scaled by their cadence, so the bound is effectively per hour whatever the two intervals are set to. It bounds the sweeps that run on a **schedule**; the console's "Sweep the whole catalogue" button lifts it, because that run is an operator watching, not a background action between two looks. |
+| `TANKOVAULT_SCHEDULER__RECSYS_INCREMENTAL_INTERVAL_SECS` | `900` | Seconds between incremental recommendation-model builds. `0` disables. Frequent by design: an incremental pass re-embeds only what changed and inserts into the live HNSW index, so its cost tracks catalogue churn, not catalogue size. Also gated by the `catalogue.recommendations` feature flag, and skipped on replicas that do not hold scheduler leadership. |
+| `TANKOVAULT_SCHEDULER__RECSYS_FULL_INTERVAL_SECS` | `604800` | Seconds between full model rebuilds. `0` disables. A full build re-counts the vocabulary and re-solves the projection from the whole catalogue; the incremental pass covers changed series, so this exists for **idf and vocabulary drift**, not for freshness. **A deployment that has never completed one has no projection basis, and every incremental build will refuse to run**: that is deliberate, since projecting with a basis solved from a partial catalogue yields vectors that are not comparable with the stored ones. |
 | `TANKOVAULT_SCHEDULER__RECSYS_BATCH` | `512` | Series per streamed batch during a model build. The only knob on the builder's peak memory in the streaming stages; the covariance matrix that dominates the rest scales with the *vocabulary*, not with this. |
 | `TANKOVAULT_SCHEDULER__RECSYS_INCREMENTAL_MAX` | `20000` | Ceiling on how many series one incremental build may touch, so a catalogue that grew by a million overnight does not turn the quarter-hourly pass into an all-day one. The remainder is picked up by the following passes. |
 
@@ -715,11 +712,11 @@ that can disagree.
 
 | Key | Default | Notes |
 |---|---|---|
-| `TANKOVAULT_BIND_ADDR` | `0.0.0.0:8085` | Liveness, readiness **and** one internal route: `POST /internal/providers/{id}/test`, the adapter dry-run the API proxies here so that binary need not link the crawl stack (PERF-18). The dry-run sits inside `HttpStack::with_internal_auth`, so it is reachable only by `api`; `/health` and `/ready` are merged outside it and stay reachable to a probe with no credential. This port is also what the container healthcheck connects to. |
+| `TANKOVAULT_BIND_ADDR` | `0.0.0.0:8085` | Liveness, readiness **and** one internal route: `POST /internal/providers/{id}/test`, the adapter dry-run the API proxies here so that binary need not link the crawl stack. The dry-run sits inside `HttpStack::with_internal_auth`, so it is reachable only by `api`; `/health` and `/ready` are merged outside it and stay reachable to a probe with no credential. This port is also what the container healthcheck connects to. |
 | `TANKOVAULT_WORKER__CHALLENGE_SOLVER_ENDPOINT` | `http://challenge-solver:8090` | |
 | `TANKOVAULT_WORKER__MAX_CATALOG_PAGES` | `20000` | A runaway-paginator backstop, not a budget: real termination is the adapter's `has_next` marker. Some catalogues legitimately paginate into the thousands, so a value near a real catalogue size **silently truncates it**. |
 | `TANKOVAULT_WORKER__PROVIDER_REFRESH_SECS` | `60` | How often the round-robin queue re-reads the provider list. A newly created provider does not start scanning until its lane opens on the next refresh. |
-| `TANKOVAULT_WORKER__MAX_CONCURRENT_PROVIDERS` | `4` | How many providers this worker scans at once. A worker runs **at most one task per provider**, so this is both the task concurrency and the count of distinct providers in flight. Crawl politeness is unaffected — `rps`/`concurrency` are enforced by a fetch stack cached per provider, which every task for that provider shares — but `DATABASE__MAX_CONNECTIONS` is not: size the pool for this many concurrent scans or tasks queue on `acquire` and surface as timeouts that read like a database fault. `0` is clamped to `1`, because it would otherwise deadlock the consumer loop rather than disable it; use `providers.active` to stop scanning. |
+| `TANKOVAULT_WORKER__MAX_CONCURRENT_PROVIDERS` | `4` | How many providers this worker scans at once. A worker runs **at most one task per provider**, so this is both the task concurrency and the count of distinct providers in flight. Crawl politeness is unaffected (`rps`/`concurrency` are enforced by a fetch stack cached per provider, which every task for that provider shares) but `DATABASE__MAX_CONNECTIONS` is not: size the pool for this many concurrent scans or tasks queue on `acquire` and surface as timeouts that read like a database fault. `0` is clamped to `1`, because it would otherwise deadlock the consumer loop, not disable it; use `providers.active` to stop scanning. |
 
 ### `notifier`
 
@@ -756,7 +753,7 @@ that can disagree.
 |---|---|---|
 | `TANKOVAULT_BIND_ADDR` | `0.0.0.0:8090` | |
 | `TANKOVAULT_SOLVER__BACKEND` | `trawl` | The only wired back-end today. |
-| `TANKOVAULT_SOLVER__TRAWL_ENDPOINT` | *(required)* | e.g. `http://trawl:8191`. The client posts TRAWL's native `POST /scrape`, not its FlareSolverr-compatible `/v1` — that endpoint answers with an empty `headers` object, which loses `Retry-After`. |
+| `TANKOVAULT_SOLVER__TRAWL_ENDPOINT` | *(required)* | e.g. `http://trawl:8191`. The client posts TRAWL's native `POST /scrape`, not its FlareSolverr-compatible `/v1`: that endpoint answers with an empty `headers` object, which loses `Retry-After`. |
 | `TANKOVAULT_SOLVER__MAX_TIMEOUT_MS` | `60000` | Sent as TRAWL's `maxTimeout`; the HTTP client's own timeout sits 15s above it so TRAWL's budget is the one that expires. |
 | `TANKOVAULT_SOLVER__SESSION_TTL_SECS` | `900` | How long *this* deployment replays a solved session for. Distinct from TRAWL's own `SESSION_TTL_SECONDS` (its internal per-domain cookie jar, default 3600). |
 
@@ -770,7 +767,7 @@ stack sets neither.
 | `TANKOVAULT_BIND_ADDR` | `0.0.0.0:8084` | |
 | `TANKOVAULT_RENDER__CHROME_PATH` | auto-detected (`/usr/bin/chromium` in the image) | |
 | `TANKOVAULT_RENDER__HEADLESS` | `true` | |
-| `TANKOVAULT_RENDER__NO_SANDBOX` | `true` (image sets it explicitly) | Required inside the container — no user namespaces. |
+| `TANKOVAULT_RENDER__NO_SANDBOX` | `true` (image sets it explicitly) | Required inside the container: no user namespaces. |
 | `TANKOVAULT_RENDER__NAV_TIMEOUT_MS` | `30000` | |
 | `TANKOVAULT_RENDER__DEFAULT_WAIT_MS` | `0` | Extra settle delay after every navigation. |
 | `TANKOVAULT_RENDER__USER_AGENT` | *(unset)* | When set it is applied to the page **and reported back**, so a solved `cf_clearance` cookie stays paired with a stable UA. |
@@ -784,11 +781,11 @@ stack sets neither.
 | `TANKOVAULT_BIND_ADDR` | `0.0.0.0:3000` | Unprivileged by necessity: the `scratch` image runs as UID 1001, which cannot bind port 80. |
 | `TANKOVAULT_FRONTEND__STATIC_DIR` | `/srv/www` | Baked into the image. |
 | `TANKOVAULT_FRONTEND__NOTICES_PATH` | `/THIRD-PARTY-NOTICES` | The generated third-party licence notices, published as `text/plain` at `/third-party-notices` and linked from the `/licenses` screen. Points at the image's own copy (beside `/LICENSE`), *outside* the static dir, so the ~500 KB document is not duplicated into the bundle. Point it at a checkout's `THIRD-PARTY-NOTICES` when running the SPA locally. |
-| `TANKOVAULT_FRONTEND__NOTICES_JSON_PATH` | `/THIRD-PARTY-NOTICES.json` | The same notices as the structured inventory the `/licenses` screen renders, published as `application/json` at `/third-party-notices.json`. Written into the image by `xtask notices --json` during the build rather than committed, so an image built before it existed serves nothing here and the screen says so rather than failing. Point it at the output of `cargo run -p xtask -- notices --json <path>` when running the SPA locally. |
+| `TANKOVAULT_FRONTEND__NOTICES_JSON_PATH` | `/THIRD-PARTY-NOTICES.json` | The same notices as the structured inventory the `/licenses` screen renders, published as `application/json` at `/third-party-notices.json`. Written into the image by `xtask notices --json` during the build, not committed, so an image built without it serves nothing here and the screen says so instead of failing. Point it at the output of `cargo run -p xtask -- notices --json <path>` when running the SPA locally. |
 | `TANKOVAULT_FRONTEND__API_UPSTREAM` | `http://api:8080` | Origin the `/v1/*` proxy targets, and the target of this service's readiness probe. No trailing slash. |
 | `TANKOVAULT_FRONTEND__MAX_BODY_BYTES` | `10485760` (10 MiB) | Largest request body accepted on this hop. Enforced both by the shared body-limit layer and by the proxy's own buffering guard. |
-| `TANKOVAULT_FRONTEND__CONNECT_TIMEOUT_SECS` | `10` | Connection establishment only, **not** a whole-request timeout — an SSE stream is one request that stays open indefinitely. |
-| `TANKOVAULT_FRONTEND__CLOUDFLARE__SCRIPT_NONCE` | `false` | Send a freshly minted `'nonce-…'` in `script-src` on every response. Set this when the zone runs Bot Fight Mode, JavaScript Detections or the challenge platform: those inject an inline `<script>` at the edge, after this service has hashed the shell, so `script-src` refuses it and the detection silently never runs. Cloudflare reads the nonce out of the response header and copies it onto what it injects, so nothing is stamped into the shell. Leave it off anywhere else — see the note below. |
+| `TANKOVAULT_FRONTEND__CONNECT_TIMEOUT_SECS` | `10` | Connection establishment only, **not** a whole-request timeout: an SSE stream is one request that stays open indefinitely. |
+| `TANKOVAULT_FRONTEND__CLOUDFLARE__SCRIPT_NONCE` | `false` | Send a freshly minted `'nonce-…'` in `script-src` on every response. Set this when the zone runs Bot Fight Mode, JavaScript Detections or the challenge platform: those inject an inline `<script>` at the edge, after this service has hashed the shell, so `script-src` refuses it and the detection silently never runs. Cloudflare reads the nonce out of the response header and copies it onto what it injects, so nothing is stamped into the shell. Leave it off anywhere else: see the note below. |
 | `TANKOVAULT_FRONTEND__CLOUDFLARE__TURNSTILE` | `false` | Admit `https://challenges.cloudflare.com` in `script-src` and `frame-src`, for a Turnstile widget embedded **in** a page this service serves. A managed-challenge interstitial needs nothing here: it is a Cloudflare-served document carrying its own policy. |
 
 #### Running behind Cloudflare
@@ -798,38 +795,37 @@ to the edge, and both default off because an unused concession is only a weaknes
 else Cloudflare's bot products need is already covered: `/cdn-cgi/challenge-platform/` scripts
 are same-origin (`script-src 'self'`) and so are their beacons (`connect-src 'self'`).
 
-`SCRIPT_NONCE` costs something, so decide it rather than setting it by default. An injected
+`SCRIPT_NONCE` costs something, so decide it instead of setting it by default. An injected
 script that can already run could read the header back off a same-origin fetch and admit further
 inline script; it cannot forge a nonce ahead of time (128 CSPRNG bits, minted per response), and
 it still cannot reach `'unsafe-eval'` or an off-origin host. That argument depends on the shell
-never being served from a stored copy — one held anywhere pins a single nonce across every reader
+never being served from a stored copy: one held anywhere pins a single nonce across every reader
 for the lifetime of the entry, which is `'unsafe-inline'` with extra steps. Do not put an edge
 cache in front of the shell, and do not let a Cache Rule mark it eligible for cache.
 
-The origin's half is `Cache-Control: no-store`, and it has to be `no-store` rather than
+The origin's half is `Cache-Control: no-store`, and it has to be `no-store`, not
 `no-cache`. `no-cache` permits a stored copy and only requires it to be revalidated, and a
-successful revalidation re-uses the stored body under the *new* response's headers — pairing one
-response's nonce, and one build's inline-script hashes, with another build's document. That is
-not theoretical: the shell was served off disk with `no-cache` until v3.6.x, and because image
+successful revalidation re-uses the stored body under the *new* response's headers: pairing one
+response's nonce, and one build's inline-script hashes, with another build's document. Image
 timestamps are clamped to `SOURCE_DATE_EPOCH` (a constant `0`, see
-[deploy/README.md](../deploy/README.md)), every build answered `Last-Modified: Thu, 01 Jan 1970`
-and every conditional request returned `304` forever. Browsers ran a retired shell under the
-current policy: every inline script refused, and the bundle file that shell named — content-hashed,
-so absent from the newer image — answered with HTML and failed the module MIME check. The shell is
-now served from memory with no validator at all, which is what makes the `304` impossible rather
-than merely unlikely.
+[deploy/README.md](../deploy/README.md)), so a shell served off disk with `no-cache` would answer
+`Last-Modified: Thu, 01 Jan 1970` from every build, and every conditional request would return
+`304` forever. Browsers would run a retired shell under the current policy: every inline script
+refused, and the bundle file that shell names (content-hashed, so absent from the newer image)
+answered with HTML, failing the module MIME check. The shell is served from memory with no
+validator at all, which is what makes the `304` impossible, not merely unlikely.
 
 **Turn Rocket Loader off for this hostname.** It is a Cloudflare *speed* feature, not a bot
 product, no flag here makes it work, and it breaks the app outright: it re-injects the SPA's
 `<script type="module">`, whose reload misses the bundle and resolves to the app shell, and the
-browser rejects `text/html` for a module script. Cloudflare's documented opt-out —
-`data-cfasync="false"` before the `src` attribute — cannot be applied here, because the tag is
+browser rejects `text/html` for a module script. Cloudflare's documented opt-out (
+`data-cfasync="false"` before the `src` attribute) cannot be applied here, because the tag is
 generated by `dx` at build time. Disable it zone-wide or with a Configuration Rule for this host.
 
 `TANKOVAULT_SECURITY__*` is deliberately **not read by this service**. Its hardening config is
 derived in code (`stack_security` in `services/frontend/src/main.rs`) because the shared
 security-header set is API-shaped: its `Content-Security-Policy: default-src 'none'` is correct
-for a JSON API and fatal for an HTML document — it blocks the WASM bundle, so the app does not
+for a JSON API and fatal for an HTML document: it blocks the WASM bundle, so the app does not
 boot. The SPA sends its own policy instead. Offering the keys anyway would only expose settings
 that silently do nothing.
 
@@ -837,19 +833,19 @@ that silently do nothing.
 
 Not a long-running service: a one-shot image (`bootstrap <migrate|seed-admin|seed-providers>`)
 that a deployment runs before a rollout and once at install. It reads `database` and nothing
-else from the shared blocks — no telemetry, no internal token, no JWT secret; a migration job
+else from the shared blocks: no telemetry, no internal token, no JWT secret; a migration job
 holding the credential that signs sessions would be privilege it never uses.
 
 | Key | Default | Notes |
 |---|---|---|
 | `TANKOVAULT_SEED_ADMIN_EMAIL` | `admin@tankovault.local` | Address of the account `seed-admin` creates. |
 | `TANKOVAULT_SEED_ADMIN_USERNAME` | `admin` | |
-| `TANKOVAULT_SEED_ADMIN_PASSWORD` | *(required)* | Section 2. Not echoed to stdout, unlike `xtask seed` — a `Job`'s logs outlive the shell that started it. |
+| `TANKOVAULT_SEED_ADMIN_PASSWORD` | *(required)* | Section 2. Not echoed to stdout, unlike `xtask seed`: a `Job`'s logs outlive the shell that started it. |
 | `TANKOVAULT_AUTH__PASSWORD_PEPPER` | *(empty)* | **Must be the value the api runs with.** The hash is peppered at rest, so seeding with one value and serving with another leaves an account whose correct password is rejected, with nothing in the logs naming the cause. Empty under `TANKOVAULT_PROFILE=production` is refused outright. |
 
-`seed-admin` is the one place in the system where privilege is minted rather than granted:
+`seed-admin` is the one place in the system where privilege is minted, not granted:
 registration never confers a permission, so without this account nobody could grant
-`users.permissions` to anyone. Both seed steps are create-only — re-running them leaves an
+`users.permissions` to anyone. Both seed steps are create-only: re-running them leaves an
 existing installation exactly as it is, so a revoked permission stays revoked.
 
 ---
@@ -930,10 +926,10 @@ secrets:
   jwt: { file: ./jwt.txt }
 ```
 
-The `_FILE` suffix works on any key in [§4](#4-shared-blocks) or [§5](#5-per-service-blocks) —
+The `_FILE` suffix works on any key in [§4](#4-shared-blocks) or [§5](#5-per-service-blocks):
 it is a spelling rule, not a fixed list, which is why no table here enumerates those names. It
 does **not** work on the process-level keys in [§3](#3-process-level-keys): they are read before
-the layered config exists, so a `_FILE` naming one is refused rather than ignored.
+the layered config exists, so a `_FILE` naming one is refused, not ignored.
 
 Two behaviours worth knowing:
 
@@ -958,7 +954,7 @@ listener and the background loops. In-flight requests drain before the replaceme
 - `telemetry.*` (including `telemetry.sentry.*`) and `metrics.*` are the exception: the
   `tracing` subscriber, the Sentry client and the metrics recorder are process-global and
   installed once, so those two blocks still need a restart. A rotated DSN is a restart.
-- Rotating `auth.jwt_secret` **signs every user out** — sessions signed with the old key stop
+- Rotating `auth.jwt_secret` **signs every user out**: sessions signed with the old key stop
   verifying. Rotating `auth.password_pepper` makes every stored password fail to verify, and
   rotating `anilist.token_encryption_key` does not re-seal tokens already at rest. Those three
   are rotations with a migration, not drop-in replacements; the reload applies them faithfully
@@ -973,8 +969,8 @@ they were removed for.
 
 | Key | Removed because |
 |---|---|
-| `TANKOVAULT_LEGAL__DIR` | Document text became configuration: each `body.<locale>` is a value, usually a `_FILE` naming the mounted file, so there is no directory to root paths in. **Refused at boot** rather than ignored, as is a document's former `sources` map, because a section that silently published nothing would take the Terms offline. Replace `…__SOURCES__<LOCALE>=terms.en.md` with `…__BODY__<LOCALE>_FILE=/etc/tankovault/legal/terms.en.md`. |
+| `TANKOVAULT_LEGAL__DIR` | Document text became configuration: each `body.<locale>` is a value, usually a `_FILE` naming the mounted file, so there is no directory to root paths in. **Refused at boot**, not ignored, as is a document's former `sources` map, because a section that silently published nothing would take the Terms offline. Replace `…__SOURCES__<LOCALE>=terms.en.md` with `…__BODY__<LOCALE>_FILE=/etc/tankovault/legal/terms.en.md`. |
 | `TANKOVAULT_TELEMETRY__OTLP_ENDPOINT` | It never exported anything. Four OpenTelemetry crates were declared in `[workspace.dependencies]`, used by zero members, while this knob logged `"collector export is pending"` and installed no layer. An operator who set it believed traces were being exported and would have found out during an incident. Re-add it only together with a real `OpenTelemetryLayer` in `crates/service/src/telemetry.rs`. |
 
-`TANKOVAULT_TASKS` and `TANKOVAULT_EVENTS` are **not** environment variables — they are the
+`TANKOVAULT_TASKS` and `TANKOVAULT_EVENTS` are **not** environment variables: they are the
 JetStream stream names, compiled in at `crates/contracts/src/subjects.rs`.

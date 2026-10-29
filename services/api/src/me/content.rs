@@ -123,6 +123,13 @@ pub async fn put_content_prefs(
     // having declared their age, the audit trail is the only thing that can answer, and it has
     // to carry when the declaration was made and from where. `first_attestation` marks the one
     // request that established it, since every later change echoes the same stored timestamp.
+    if prefs.adult_opt_in != before.adult_opt_in {
+        // The shelf cache is keyed on adult visibility, but an older API instance in a rolling
+        // deploy reads the pre-envelope format without that check. Deleting the row leaves it
+        // nothing to serve.
+        tankovault_db::repo::recsys::clear_shelf(&state.pool, user.user_id).await?;
+    }
+
     if prefs.adult_opt_in != before.adult_opt_in || prefs.age_attested_at != before.age_attested_at
     {
         state

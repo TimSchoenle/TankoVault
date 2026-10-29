@@ -409,6 +409,26 @@ pub async fn read_shelf<'e, E: PgExecutor<'e>>(
     Ok(items)
 }
 
+/// Drops a reader's cached shelf, forcing the next request to recompute it.
+///
+/// The read path already rejects a shelf built under a different adult visibility. This delete
+/// covers what that check cannot: a row in the pre-envelope format served by an older API
+/// instance during a rolling deploy.
+///
+/// Called by whatever changes the reader's adult gate. Idempotent.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only.
+pub async fn clear_shelf<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<()> {
+    sqlx::query!(
+        "DELETE FROM user_recommendations WHERE user_id = $1",
+        user_id.as_uuid(),
+    )
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
 /// Caches a freshly computed shelf.
 ///
 /// # Errors

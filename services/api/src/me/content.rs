@@ -123,14 +123,6 @@ pub async fn put_content_prefs(
     // having declared their age, the audit trail is the only thing that can answer, and it has
     // to carry when the declaration was made and from where. `first_attestation` marks the one
     // request that established it, since every later change echoes the same stored timestamp.
-    if prefs.adult_opt_in != before.adult_opt_in {
-        // The shelf is cached per reader and keyed on their taste profile, which a content
-        // decision does not move. Without this, opting out leaves the previous shelf (adult
-        // recommendations included) being served until the TTL expires, which is the one
-        // moment a reader is most likely to be watching for the change to take effect.
-        tankovault_db::repo::recsys::clear_shelf(&state.pool, user.user_id).await?;
-    }
-
     if prefs.adult_opt_in != before.adult_opt_in || prefs.age_attested_at != before.age_attested_at
     {
         state

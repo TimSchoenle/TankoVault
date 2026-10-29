@@ -385,7 +385,8 @@ pub async fn suppressed_series<'e, E: PgExecutor<'e>>(
 /// Returns the cached shelf, if it was built from the profile the caller holds.
 ///
 /// The freshness key is `profile_at`, not age: a shelf is only valid for the profile it was
-/// computed from, and a rebuild must invalidate it even if the clock has barely moved.
+/// computed from, and a rebuild must invalidate it even if the clock has barely moved. The
+/// payload is opaque here; the caller also checks the adult visibility recorded inside it.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -406,26 +407,6 @@ pub async fn read_shelf<'e, E: PgExecutor<'e>>(
     .fetch_optional(exec)
     .await?;
     Ok(items)
-}
-
-/// Drops a reader's cached shelf, forcing the next request to recompute it.
-///
-/// The cache is keyed on `(user_id, profile_at)` and expires on age, so it cannot notice a
-/// change to what the reader may see: without this, an opt-out keeps serving adult
-/// recommendations until the TTL runs down.
-///
-/// Called by whatever changes the reader's adult gate. Idempotent.
-///
-/// # Errors
-/// [`crate::DbError::Sqlx`] only.
-pub async fn clear_shelf<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<()> {
-    sqlx::query!(
-        "DELETE FROM user_recommendations WHERE user_id = $1",
-        user_id.as_uuid(),
-    )
-    .execute(exec)
-    .await?;
-    Ok(())
 }
 
 /// Caches a freshly computed shelf.

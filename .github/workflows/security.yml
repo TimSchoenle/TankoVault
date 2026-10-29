@@ -1,9 +1,9 @@
 name: Security
 
-# Static analysis of the workflows themselves — the one body of code with write access to the
+# Static analysis of the workflows themselves: the one body of code with write access to the
 # repository that nothing else reads. Catches unpinned actions, over-broad `permissions`,
 # credentials persisted into `.git/config`, and `${{ }}` interpolated into a `run:` block, which is
-# a shell injection rather than a template.
+# a shell injection, not a template.
 #
 # `pedantic` on purpose: the default persona reports only what is provably exploitable today,
 # pedantic reports the shape that becomes exploitable after one careless edit.

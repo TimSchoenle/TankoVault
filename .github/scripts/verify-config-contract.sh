@@ -4,8 +4,8 @@
 # usage: verify-config-contract.sh <image-ref> <expected.labels> <expected.json>
 #
 # The checkpoint the whole scheme rests on. `deploy/docker/Dockerfile` carries the three
-# `dev.terrace.config.*` values by hand — a `LABEL` key takes no interpolation, and `--build-arg`
-# cannot reach a file produced inside a builder stage — so the labels are only as good as
+# `dev.terrace.config.*` values by hand (a `LABEL` key takes no interpolation, and `--build-arg`
+# cannot reach a file produced inside a builder stage), so the labels are only as good as
 # something checking them.
 #
 # It checks the **image**, never the Dockerfile. A source diff cannot see a base image that
@@ -13,10 +13,10 @@
 # silently failed to interpolate. `xtask config-contract --check` is the source-side half and
 # catches a prefix change one step earlier; this is the half that is evidence.
 #
-# Two comparisons, and the second is the one the design gave up a hash label to get:
+# Two comparisons, and the second is the one the design gives up a hash label to get:
 #
 #   1. the image's labels against the `.labels` file the *same generator run* wrote, for presence
-#      and equality of the three, nothing more. Extra labels are ignored on purpose — every image
+#      and equality of the three, nothing more. Extra labels are ignored on purpose: every image
 #      carries `org.opencontainers.image.*` and whatever its base contributed, and none of that is
 #      this document's business. This mirrors `Contract::verify_labels` exactly.
 #   2. the copy embedded at `/config/contract.json` against the copy exported to the host. Those
@@ -51,7 +51,7 @@ status=0
 labels_json="$(mktemp)"
 trap 'rm -f "$labels_json"' EXIT
 
-# `.Config.Labels` — capital C, capital L. `crane config` reports the same object under
+# `.Config.Labels`: capital C, capital L. `crane config` reports the same object under
 # `.config.Labels` instead, and reading the wrong one yields `null`, which a careless comparison
 # treats as "nothing to compare" and passes.
 docker inspect --format '{{json .Config.Labels}}' "$image" > "$labels_json"
@@ -73,9 +73,9 @@ while IFS='=' read -r name expected; do
   fi
 done < "$expected_labels"
 
-# The embedded copy, read at the path the image's own label names rather than at a path this
+# The embedded copy, read at the path the image's own label names, not at a path this
 # script assumes: a build that moved the file and updated the label is correct, and one that moved
-# it without updating the label has already failed above.
+# it without updating the label fails here, when the copy below probes the old path.
 path="$(jq -r --arg n 'dev.terrace.config.contract.path' '.[$n] // ""' "$labels_json")"
 if [ -n "$path" ]; then
   probe="verify-config-contract-$$"

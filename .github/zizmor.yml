@@ -1,23 +1,23 @@
-# zizmor configuration — read by the `zizmor` job in `.github/workflows/security.yml`.
+# zizmor configuration, read by the `zizmor` job in `.github/workflows/security.yml`.
 #
 # No file-wide suppressions. Everything runs at the `pedantic` persona with no severity floor: a
 # finding not suppressed inline fails the job. The two that are accepted are suppressed on the
 # exact `uses:` lines they apply to, as `# zizmor: ignore[superfluous-actions,stale-action-refs]`
 # on each `dtolnay/rust-toolchain` step, so a new use of anything else in those files is still
-# judged. The reasoning for both lives here rather than on fifteen copies of the same line:
+# judged. The reasoning for both lives here, not on every copy of the same line:
 #
-# `superfluous-actions` — declined, not worked around. The toolchain version is a job input read
+# `superfluous-actions`: declined, not worked around. The toolchain version is a job input read
 # from `rust-toolchain.toml` by the `changes` job, so the number has one home; replacing the action
 # would re-derive `default`, `component add` and `target add` in shell across eight jobs. It also
 # sets `RUSTUP_TOOLCHAIN` and logs the resolved version, which is what makes "which compiler ran
-# this" answerable afterwards. In `auto-fix.yaml` the pinned toolchain is load-bearing rather than
+# this" answerable afterwards. In `auto-fix.yaml` the pinned toolchain is load-bearing, not
 # incidental: that job runs `clippy --fix` and formats the generated client, so the clippy and
 # rustfmt it uses must be the ones `fmt + clippy` will then judge the result with. In
 # `release-please.yaml` the `plan` job builds `xtask release-plan`, which decides which images the
 # release publishes. All three share one pin so there is one number to review.
 #
-# `stale-action-refs` — pinned to a `master` commit deliberately: the only release tag, `v1`, has
-# not moved since 2025-08 and predates the toolchains this workspace builds with. Still an
-# immutable pin, and `renovate.json` disables automatic updates so a bump is a decision.
+# `stale-action-refs`: pinned to a `master` commit deliberately. The only release tag, `v1`,
+# predates the toolchains this workspace builds with. Still an immutable pin, and
+# `renovate.json` disables automatic updates so a bump is a decision.
 
 rules: {}

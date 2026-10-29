@@ -4,23 +4,18 @@ description: >-
   when the runner image already ships it and bounding every apt call so a stalled mirror fails
   fast instead of eating the job's timeout.
 
-# Nine jobs across `ci.yml` and `auto-fix.yaml` need these three packages, and until 2026-08-05
-# each carried its own copy of a one-line `apt-get update && apt-get install`. The copies are what
-# made the incident below invisible: nothing owned the step, so nothing bounded it.
+# Nine jobs across `ci.yml` and `auto-fix.yaml` need these three packages. One owned step is
+# what bounds the install: a copy per job would leave each one to hang on a stalled apt mirror
+# until the job's 60-minute timeout, where the step normally costs 11–20s.
 #
-# On 2026-08-05 `auto-fix` sat on a stalled apt mirror for 20m47s — longer than every other step
-# in that run put together — and the job's 60-minute timeout was the only thing that would
-# eventually have stopped it. A mechanical fix took half an hour, and the log showed a step that
-# normally costs 11–20s simply not returning.
-#
-# Two things follow, and both belong here rather than at the call sites:
+# Two things follow, and both belong here, not at the call sites:
 #
 #   - `timeout` wraps `apt-get`, not the step. A composite action's steps cannot declare
 #     `timeout-minutes`, but bounding the command is the better shape anyway: it names the thing
-#     that hangs, and `sudo timeout` rather than `timeout sudo` so the signal reaches `apt-get`
-#     itself instead of dying at the privilege boundary.
-#   - A stall is transient, so it is retried rather than fatal. These jobs commit and gate; one
-#     that fails on a mirror hiccup costs a human a re-run for no defect.
+#     that hangs, and `sudo timeout`, not `timeout sudo`, so the signal reaches `apt-get` itself
+#     instead of dying at the privilege boundary.
+#   - A stall is transient, so it is retried, not fatal. These jobs commit and gate; one that
+#     fails on a mirror hiccup costs a human a re-run for no defect.
 
 runs:
   using: composite
@@ -47,11 +42,11 @@ runs:
         # A stall and a slow mirror need different limits. `Acquire::http::Timeout` fails a fetch
         # that receives nothing for 30s, and `Acquire::Retries` refetches it, so a stall is caught
         # per file within seconds. The wall-clock cap is only the backstop, and it is one deadline
-        # shared by every call and attempt rather than a cap per attempt: on 2026-10-26 the mirror
-        # served 50-150 KB/s, and a 360s cap per attempt killed three attempts in a row that were
-        # each still fetching the same 28.8 MB package. A slow download that is progressing now
-        # gets the whole budget; a fast failure is retried inside it. 18 minutes stays under the
-        # 20m47s that prompted the bound.
+        # shared by every call and attempt, not a cap per attempt: a mirror serving 50-150 KB/s
+        # would make a 360s cap per attempt kill attempt after attempt still fetching the same
+        # 28.8 MB package. A slow download that is progressing gets the whole budget; a fast
+        # failure is retried inside it. 18 minutes keeps a stalled install well under the job
+        # timeout.
         #
         # Only network work runs under the cap. Killing `apt-get install` mid-unpack leaves dpkg
         # interrupted and every later attempt fails at once ("dpkg was interrupted").

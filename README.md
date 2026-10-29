@@ -17,7 +17,7 @@ Multi-service Rust aggregator and tracker for manga, manhwa and manhua. Stores l
 [![CI](https://img.shields.io/github/actions/workflow/status/TimSchoenle/TankoVault/ci.yml?branch=main)](https://github.com/TimSchoenle/TankoVault/actions/workflows/ci.yml)
 [![Coverage](https://codecov.io/gh/TimSchoenle/TankoVault/graph/badge.svg)](https://codecov.io/gh/TimSchoenle/TankoVault)
 [![License](https://img.shields.io/static/v1?label=license&message=PolyForm-Noncommercial-1.0.0&color=blue)](LICENSE)
-[![Rust](https://img.shields.io/static/v1?label=rust&message=1.94%2B&color=orange)](https://www.rust-lang.org)
+[![Rust](https://img.shields.io/static/v1?label=rust&message=1.99%2B&color=orange)](https://www.rust-lang.org)
 
 ## What this is
 
@@ -246,7 +246,7 @@ confirmation variable, so nothing published carries a destructive command.
 
 | | Supported |
 | --- | --- |
-| Rust | 1.94 minimum, edition 2024; built with 1.99.1 |
+| Rust | 1.99 minimum, edition 2024; built with 1.99.1 |
 | PostgreSQL | 18, with `pgvector` |
 | Redis | 8 |
 | NATS | JetStream |

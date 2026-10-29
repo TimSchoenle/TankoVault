@@ -124,10 +124,9 @@ pub async fn put_content_prefs(
     // to carry when the declaration was made and from where. `first_attestation` marks the one
     // request that established it, since every later change echoes the same stored timestamp.
     if prefs.adult_opt_in != before.adult_opt_in {
-        // The shelf is cached per reader and keyed on their taste profile, which a content
-        // decision does not move. Without this, opting out leaves the previous shelf (adult
-        // recommendations included) being served until the TTL expires, which is the one
-        // moment a reader is most likely to be watching for the change to take effect.
+        // The shelf cache is keyed on adult visibility, but an older API instance in a rolling
+        // deploy reads the pre-envelope format without that check. Deleting the row leaves it
+        // nothing to serve.
         tankovault_db::repo::recsys::clear_shelf(&state.pool, user.user_id).await?;
     }
 

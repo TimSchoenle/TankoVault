@@ -500,7 +500,7 @@ CREATE TABLE recommendation_feedback (
 
 CREATE TABLE user_recommendations (
   user_id    uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-  items      jsonb NOT NULL,   -- [{series_id, score, because:{series_id, shared:[…]}}]
+  items      jsonb NOT NULL,   -- {include_adult, items:[{series_id, score, because:{…}}]}
   profile_at timestamptz NOT NULL,
   built_at   timestamptz NOT NULL DEFAULT now()
 );
@@ -843,8 +843,10 @@ users trust and a shelf they ignore.
 ### 7.6 Caching
 
 `user_recommendations` holds the last computed shelf. Serve it when
-`profile_at == user_taste_profile.built_at` and it is younger than the TTL (default 6 h);
-otherwise recompute inline and write it back.
+`profile_at == user_taste_profile.built_at`, it is younger than the TTL (default 6 h), and the
+adult visibility it was computed under matches the request's; otherwise recompute inline and
+write it back. Visibility is part of the key because it can change without moving the profile:
+the deployment flag in §12.3 is one such switch.
 
 **Compute inline, cache opportunistically: do not build a per-user precompute sweep.** The inline
 path is ~25 primary-key fetches, one `= ANY` fetch of ~2 000 rows, and a few million float

@@ -385,7 +385,8 @@ pub async fn suppressed_series<'e, E: PgExecutor<'e>>(
 /// Returns the cached shelf, if it was built from the profile the caller holds.
 ///
 /// The freshness key is `profile_at`, not age: a shelf is only valid for the profile it was
-/// computed from, and a rebuild must invalidate it even if the clock has barely moved.
+/// computed from, and a rebuild must invalidate it even if the clock has barely moved. The
+/// payload is opaque here; the caller also checks the adult visibility recorded inside it.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -410,9 +411,9 @@ pub async fn read_shelf<'e, E: PgExecutor<'e>>(
 
 /// Drops a reader's cached shelf, forcing the next request to recompute it.
 ///
-/// The cache is keyed on `(user_id, profile_at)` and expires on age, so it cannot notice a
-/// change to what the reader may see: without this, an opt-out keeps serving adult
-/// recommendations until the TTL runs down.
+/// The read path already rejects a shelf built under a different adult visibility. This delete
+/// covers what that check cannot: a row in the pre-envelope format served by an older API
+/// instance during a rolling deploy.
 ///
 /// Called by whatever changes the reader's adult gate. Idempotent.
 ///

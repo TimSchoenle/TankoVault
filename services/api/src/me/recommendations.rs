@@ -186,9 +186,11 @@ pub async fn recommendations(
         tuning.shelf_ttl_secs,
     )
     .await?
-        && let Ok(items) = serde_json::from_value::<Vec<Recommendation>>(cached)
+        && let Ok(shelf) = serde_json::from_value::<CachedShelf>(cached)
+        && shelf.include_adult == adult.include_adult()
     {
-        let items: Vec<Recommendation> = items
+        let items: Vec<Recommendation> = shelf
+            .items
             .into_iter()
             .take(usize::try_from(limit).unwrap_or(1))
             .collect();
@@ -196,12 +198,28 @@ pub async fn recommendations(
         return Ok(Json(items));
     }
 
-    let shelf = compute_shelf(&state, user.user_id, &profile, limit, &tuning, adult).await?;
-    if let Ok(items) = serde_json::to_value(&shelf) {
-        recsys::write_shelf(&state.pool, user.user_id, &items, profile.built_at).await?;
+    let items = compute_shelf(&state, user.user_id, &profile, limit, &tuning, adult).await?;
+    let shelf = CachedShelf {
+        include_adult: adult.include_adult(),
+        items,
+    };
+    if let Ok(value) = serde_json::to_value(&shelf) {
+        recsys::write_shelf(&state.pool, user.user_id, &value, profile.built_at).await?;
     }
-    record_serve(started, "computed", shelf.len());
-    Ok(Json(shelf))
+    record_serve(started, "computed", shelf.items.len());
+    Ok(Json(shelf.items))
+}
+
+/// A cached shelf together with the adult visibility it was computed under.
+///
+/// The visibility is part of the cache key. It can change without touching the profile or the
+/// reader's own preference (the deployment flag is one such switch), so a shelf built while
+/// adult content was visible must never be served once it is not. A row written before this
+/// envelope existed fails to deserialise and is recomputed.
+#[derive(Serialize, Deserialize)]
+struct CachedShelf {
+    include_adult: bool,
+    items: Vec<Recommendation>,
 }
 
 /// Records how a shelf was served.

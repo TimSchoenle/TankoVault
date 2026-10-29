@@ -18,8 +18,8 @@ use tankovault_control_plane::recsys::{BuildTuning, build};
 use tankovault_db::repo::catalog::{ChapterUpsert, ScannedSeries, SeriesUpsert, ingest_series};
 use tankovault_db::repo::tracking::watchlist_upsert;
 use tankovault_domain::{
-    AccountStatus, ContentType, MetadataPriority, ProviderId, SeriesId, SeriesStatus, Tunable,
-    UserId, WatchStatus, normalize_title,
+    AccountStatus, ContentType, Feature, MetadataPriority, ProviderId, SeriesId, SeriesStatus,
+    Tunable, UserId, WatchStatus, normalize_title,
 };
 use tankovault_test_support::seed;
 
@@ -489,5 +489,66 @@ async fn the_seed_count_bounds_the_profile() {
         body["seeds"].as_array().map(Vec::len),
         Some(2),
         "four completed series must yield exactly the two seeds the operator allowed"
+    );
+}
+
+/// A cached shelf is never served once the reader may no longer see adult content.
+///
+/// The bug this pins: the shelf cache was keyed on the taste profile alone, and only the
+/// reader's own opt-out cleared it. Turning the deployment flag off moves neither, so a shelf
+/// computed while adult content was visible kept serving gated series until its TTL ran out.
+/// The opt-out is stored through the repository here so that no endpoint gets to clear the
+/// cache, which is exactly the position the deployment flag leaves it in.
+#[tokio::test]
+async fn a_cached_shelf_never_outlives_the_readers_adult_visibility() {
+    let app = TestApp::spawn_with(
+        TestConfig::new()
+            .without_rate_limiting()
+            .with_features_enabled(&[Feature::CatalogueAdultContent]),
+    )
+    .await;
+    let provider = seed::provider(&app.db, "alpha").create().await;
+    let mut dungeon = Vec::new();
+    for fixture in DUNGEON {
+        dungeon.push(ingest(&app, provider, fixture).await);
+    }
+    let gated = ingest(
+        &app,
+        provider,
+        &Fixture {
+            title: "Gated Dungeon",
+            tags: &["action", "dungeon", "leveling", "hentai"],
+            authors: &["someone"],
+        },
+    )
+    .await;
+    build(&app.db.pool, budget(), true).await.expect("build");
+    let user = app.seed_user("reader", &[], AccountStatus::Active).await;
+    let token = app.bearer(user);
+    tankovault_db::repo::users::set_content_prefs(&app.db.pool, user, true, true)
+        .await
+        .expect("opt in");
+    track(&app, user, dungeon[0], WatchStatus::Completed).await;
+
+    let (status, body) = app
+        .call("GET", "/v1/me/recommendations", Some(&token), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        ids(&body).contains(&gated.to_string()),
+        "precondition: an opted-in reader's shelf must offer the gated series"
+    );
+
+    tankovault_db::repo::users::set_content_prefs(&app.db.pool, user, false, false)
+        .await
+        .expect("opt out");
+
+    let (status, body) = app
+        .call("GET", "/v1/me/recommendations", Some(&token), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        !ids(&body).contains(&gated.to_string()),
+        "a shelf cached while adult content was visible must not be served after it is not"
     );
 }

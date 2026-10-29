@@ -745,7 +745,7 @@ jobs:
       # now exists.
       - name: Commit the fixes
         if: steps.tree.outputs.current == 'true'
-        uses: TimSchoenle/actions/actions/common/commit-changes@8da2713994ba2b5f542e7e3334db287b1e22854a # tag=actions-common-commit-changes-v1.5.9
+        uses: TimSchoenle/actions/actions/common/commit-changes@495fd50fd4a5ae3d9fb1496c96eada74c6f2529a # tag=actions-common-commit-changes-v3.0.0
         with:
           commit_message: "style: apply the mechanical fixes (lockfiles, clippy --fix, fmt, regenerated artefacts)"
           token: ${{ steps.generate_token.outputs.token }}

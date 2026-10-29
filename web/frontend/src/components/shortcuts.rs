@@ -1,7 +1,7 @@
-//! The `?` reference: every keyboard binding the app has, one table per screen.
+//! Owns the `?` reference: every keyboard binding the app has, one table per screen.
 //!
-//! The rows are handed in by the screen that owns the bindings rather than written here, so this
-//! stays a renderer — a screen's keydown handler and the table describing it read the same list.
+//! The rows are handed in by the screen that owns the bindings, not written here, so this
+//! stays a renderer: a screen's keydown handler and the table describing it read the same list.
 
 use crate::i18n::use_i18n;
 use dioxus::prelude::*;
@@ -29,7 +29,7 @@ pub(crate) struct ShortcutGroup {
 pub(crate) fn ShortcutsOverlay(
     groups: Vec<ShortcutGroup>,
     /// Focused again on close, so `?` then `Escape` puts the keyboard back where it started.
-    /// A mounted-element handle rather than a DOM id, because the desktop build has no
+    /// A mounted-element handle instead of a DOM id, because the desktop build has no
     /// `web-sys` to look one up with (see [`crate::components::FocusTargets`]).
     #[props(default)]
     return_focus: Option<Signal<Option<Rc<MountedData>>>>,
@@ -52,7 +52,7 @@ pub(crate) fn ShortcutsOverlay(
             title: i18n.t("shortcuts.title"),
             size: ModalSize::Wide,
             intro: Some(i18n.t("shortcuts.intro")),
-            // It only presents, so a click on the scrim is a way out rather than a lost answer.
+            // It only presents, so a click on the scrim is a way out instead of a lost answer.
             dismiss_on_backdrop: true,
             on_close: move |()| close.call(()),
             footer: Some(rsx! {
@@ -91,7 +91,7 @@ pub(crate) fn ShortcutsOverlay(
 #[cfg(test)]
 mod tests {
     /// The overlay's own wording is the one part of it no screen supplies, so nothing else would
-    /// notice a missing key — it would render the key itself as a column heading.
+    /// notice a missing key: it would render the key itself as a column heading.
     #[test]
     fn the_overlays_own_wording_is_in_the_catalogue() {
         for key in [

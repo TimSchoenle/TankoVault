@@ -1,9 +1,9 @@
-//! Passkeys on the Security panel: register one, rename it, revoke it.
+//! Owns the passkeys on the Security panel: register one, rename it, revoke it.
 //!
 //! The browser half of the ceremony lives in [`crate::webauthn`]; this module is the screen
 //! around it. Its shape is dictated by one fact: registering a passkey is *three* steps that
-//! must all succeed — ask the API for a challenge, hand it to the authenticator, send the
-//! result back — and the middle one can fail because a human walked away. So the card holds no
+//! must all succeed (ask the API for a challenge, hand it to the authenticator, send the
+//! result back), and the middle one can fail because a human walked away. So the card holds no
 //! partial state between them, and a cancelled prompt leaves the list exactly as it was.
 
 use crate::api;
@@ -33,9 +33,8 @@ pub(crate) fn PasskeysCard() -> Element {
     let mut label = use_signal(String::new);
     let mut error = use_signal(|| Option::<String>::None);
     let mut info = use_signal(|| Option::<String>::None);
-    // Whether the "add a passkey" form is open. Collapsed by default, as it was when it asked
-    // for a password — the form is now just a name, but a collapsed card still keeps the list
-    // the reader came to read the thing they see first.
+    // Whether the "add a passkey" form is open. Collapsed by default: the form is just a name,
+    // but a collapsed card keeps the list the reader came to read the thing they see first.
     let mut adding = use_signal(|| false);
 
     let passkeys = use_resource(move || {
@@ -84,10 +83,10 @@ pub(crate) fn PasskeysCard() -> Element {
                 Err(e) => {
                     // `403` is the gate, not a failure: either no second factor is enrolled, or
                     // one is and has not been presented. Both are answered by the prompt, and
-                    // the *type* is what tells them apart — reporting the raw problem would show
+                    // the *type* is what tells them apart: reporting the raw problem would show
                     // "insufficient privileges" to someone perfectly entitled to be here.
                     if gate.refused(api::Refusal::of(&e)) {
-                        // The prompt now carries the question, so the card behind it says
+                        // The prompt carries the question, so the card behind it says
                         // nothing: the server's own sentence, printed under a modal that is
                         // already asking for the factor, reads as a second problem.
                         error.set(None);
@@ -139,7 +138,7 @@ pub(crate) fn PasskeysCard() -> Element {
         });
     });
 
-    // Hidden entirely where no ceremony can run — an "Add a passkey" button that can only ever
+    // Hidden entirely where no ceremony can run: an "Add a passkey" button that can only ever
     // report "not available here" is worse than no button. Plain-HTTP development lands here too
     // on the web build, since `navigator.credentials` needs a secure context; on desktop it is
     // Windows Hello's presence, and every non-Windows desktop build.
@@ -229,9 +228,9 @@ pub(crate) fn PasskeysCard() -> Element {
     }
 }
 
-/// Report a ceremony outcome and release the busy latch.
+/// Reports a ceremony outcome and releases the busy latch.
 ///
-/// [`CeremonyError::Cancelled`] clears the error line instead of writing to it — a ceremony the
+/// [`CeremonyError::Cancelled`] clears the error line instead of writing to it: a ceremony the
 /// reader chose to stop isn't a broken feature.
 fn finish_with(
     outcome: &CeremonyError,
@@ -269,7 +268,7 @@ fn PasskeyRow(
     );
 
     let revoke_id = id.clone();
-    // `use_callback` rather than a plain closure: both of these are called from two places (the
+    // `use_callback` instead of a plain closure: both of these are called from two places (the
     // button and the Enter key / the confirm dialog), and a bare closure is not `Copy`.
     let revoke = use_callback(move |()| {
         if !busy.claim() {

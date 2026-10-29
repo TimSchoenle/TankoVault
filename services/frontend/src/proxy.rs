@@ -90,7 +90,7 @@ pub(super) fn strip_hop_by_hop(headers: &mut HeaderMap) {
     }
 }
 
-/// Attach the forwarding headers the API relies on to identify the real client.
+/// Attaches the forwarding headers the API relies on to identify the real client.
 ///
 /// `X-Forwarded-For` is appended to any inbound value (mirroring nginx's
 /// `$proxy_add_x_forwarded_for`), so the right-most entry is the peer this proxy actually

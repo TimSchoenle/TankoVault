@@ -1,15 +1,15 @@
-//! Staging a verified installer, and handing it to the system.
+//! Owns staging a verified installer, and handing it to the system.
 //!
 //! **How this installation was installed decides whether it can be updated at all**, which is why
-//! [`Flavour`] exists rather than a single "download and run" path. A copy under `/usr/bin` came
+//! [`Flavour`] exists instead of a single "download and run" path. A copy under `/usr/bin` came
 //! from the `.deb` and is owned by the package manager; a copy run out of an extracted archive is
 //! owned by whoever extracted it. Writing to either would be this app deciding it knows better
 //! than the tool that put the files there, so both are announced and never touched.
 //!
 //! **The installer runs at the next start, not at exit.** [`apply_staged`] is called from `main`
 //! before there is a window, which means no coupling to the event loop and no elevation prompt
-//! appearing in the middle of a reading session. It also re-verifies everything from scratch —
-//! the manifest signature, the file's length and its digest — rather than trusting that what the
+//! appearing in the middle of a reading session. It also re-verifies everything from scratch
+//! (the manifest signature, the file's length and its digest) instead of trusting that what the
 //! previous run wrote is what it is about to execute. The staging directory is an ordinary
 //! directory in the reader's profile, writable by every process running as them, so "we checked
 //! this before we wrote it" is not a statement about what is there now.
@@ -52,7 +52,7 @@ pub(crate) enum Flavour {
     AppImage,
     /// Installed by a package manager (the `.deb`). Its files are not ours to replace.
     Package,
-    /// Run from an extracted archive. There is no install to upgrade.
+    /// Runs from an extracted archive. There is no install to upgrade.
     Portable,
 }
 
@@ -94,7 +94,7 @@ pub(crate) fn flavour() -> Flavour {
 /// How the copy at `exe` was installed.
 ///
 /// Separate from [`flavour`] for the relauncher, which is a copy of this binary running from the
-/// staging directory: asking about *itself* there answers `Portable` — correctly, and uselessly.
+/// staging directory: asking about *itself* there answers `Portable`, correctly and uselessly.
 /// The install it is updating is the one it was given.
 #[cfg(windows)]
 fn flavour_of(exe: &Path) -> Flavour {
@@ -110,7 +110,7 @@ fn flavour_of(exe: &Path) -> Flavour {
 #[cfg(unix)]
 pub(crate) fn flavour() -> Flavour {
     let appimage = std::env::var_os("APPIMAGE").map(PathBuf::from);
-    // Asked by opening for append rather than inferred from the mode bits: an `AppImage` on a
+    // Asked by opening for append, not inferred from the mode bits: an `AppImage` on a
     // read-only mount, or one owned by root under `/opt`, has to fall back to announcing the
     // release instead of downloading one it could never write.
     let writable = appimage
@@ -124,15 +124,15 @@ pub(crate) fn flavour() -> Flavour {
 ///
 /// The two installers land in different places and that is the whole signal: the `.msi` installs
 /// per machine under `%ProgramFiles%`, and the NSIS installer defaults to the current user, under
-/// `%LOCALAPPDATA%`. **Handing the wrong one to an existing install does not upgrade it — it adds
+/// `%LOCALAPPDATA%`. **Handing the wrong one to an existing install does not upgrade it: it adds
 /// a second install** with its own entry in Apps & Features, so anything not recognisably one or
 /// the other is left alone.
 ///
-/// It therefore depends on the NSIS install mode, which `Dioxus.toml` now states explicitly
-/// (`[bundle.windows.nsis] install_mode`) rather than leaving to the bundler's default — so this
+/// It therefore depends on the NSIS install mode, which `Dioxus.toml` states explicitly
+/// (`[bundle.windows.nsis] install_mode`) instead of leaving to the bundler's default, so this
 /// reads a decision, and changing it there is visibly a change to this rule.
 // Compiled on every host on purpose. This rule decides which installer is handed to a Windows
-// install, and handing over the wrong one produces a second install rather than an upgrade — so
+// install, and handing over the wrong one produces a second install instead of an upgrade, so
 // it is the per-OS rule that most needs the CI gate, which runs on Linux, to test it.
 #[cfg_attr(
     all(not(windows), not(test)),
@@ -155,15 +155,15 @@ fn classify_windows(
 /// Whether `path` sits inside `dir`, by Windows' rules for what counts as the same path.
 ///
 /// **Not `Path::starts_with`**, for two separate reasons, and each of them is a real
-/// misclassification rather than tidying:
+/// misclassification, not tidying:
 ///
 /// * `Path::starts_with` compares *components*, and what a component is depends on the host. A
 ///   backslash is not a separator off Windows, so the whole of `C:\Program Files\…` is one opaque
-///   component there — which made every Windows fixture classify as `Portable` on the Linux runner
+///   component there, which made every Windows fixture classify as `Portable` on the Linux runner
 ///   that gates this file.
 /// * Windows paths are case-insensitive, and `Path`'s component comparison is not. An executable
-///   reported as `C:\PROGRAM FILES\Tankovault\…` — which is what a short-name or an
-///   all-caps environment variable yields — is under `%ProgramFiles%`, and comparing it verbatim
+///   reported as `C:\PROGRAM FILES\Tankovault\…` (which is what a short-name or an
+///   all-caps environment variable yields) is under `%ProgramFiles%`, and comparing it verbatim
 ///   says it is not.
 ///
 /// Separators are folded too, because Windows accepts `/` in a path and `current_exe` is not the
@@ -216,7 +216,7 @@ fn classify_unix(appimage: Option<&Path>, writable: bool, exe: &Path) -> Flavour
     }
 }
 
-/// Where staged updates go, or `None` when the platform exposes no config directory — the same
+/// Where staged updates go, or `None` when the platform exposes no config directory: the same
 /// answer, and for the same reason, as a settings write that cannot land.
 fn staging_dir() -> Option<PathBuf> {
     Some(
@@ -226,7 +226,7 @@ fn staging_dir() -> Option<PathBuf> {
     )
 }
 
-/// Forget any staged update.
+/// Forgets any staged update.
 ///
 /// Called whenever a staged build turns out not to be usable, so a bad download is not retried
 /// from disk on every start. Failures are ignored: the next stage clears the directory again.
@@ -237,11 +237,11 @@ pub(crate) fn clear() {
     crate::platform::store_remove(super::STAGED_KEY);
 }
 
-/// Download `target` for `candidate`, check it against the manifest, and stage it for the next
+/// Downloads `target` for `candidate`, checks it against the manifest, and stages it for the next
 /// start. `progress` is called with a percentage as the bytes arrive.
 ///
 /// The manifest and its signature are written alongside, because [`apply_staged`] verifies them
-/// again rather than trusting this directory to be untouched between runs.
+/// again instead of trusting this directory to be untouched between runs.
 ///
 /// # Errors
 /// `…staging` for anything the filesystem refuses, `…network` for a failed download,
@@ -273,9 +273,9 @@ pub(crate) async fn stage(
     Ok(())
 }
 
-/// Stream `url` into `path`, returning the lower-case hex SHA-256 of what was written.
+/// Streams `url` into `path`, returning the lower-case hex SHA-256 of what was written.
 ///
-/// Hashed as it streams rather than by re-reading the file: the installer is on the order of a
+/// Hashed as it streams instead of by re-reading the file: the installer is on the order of a
 /// hundred megabytes, and the digest has to cover the bytes that reached the disk anyway.
 async fn download_to(
     client: &reqwest::Client,
@@ -301,7 +301,7 @@ async fn download_to(
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|_| "settings.update.error.network")?;
-        // A body longer than the manifest says is refused here rather than after a hundred
+        // A body longer than the manifest says is refused here instead of after a hundred
         // megabytes of it have been written: the length is signed, so exceeding it is already a
         // reason to stop.
         written = written.saturating_add(chunk.len() as u64);
@@ -335,7 +335,7 @@ fn percentage(written: u64, total: u64) -> u8 {
     u8::try_from(percent.min(100)).unwrap_or(100)
 }
 
-/// Write `bytes` to `path`, flushed to the device.
+/// Writes `bytes` to `path`, flushed to the device.
 fn write(path: &Path, bytes: &[u8]) -> Result<(), &'static str> {
     let mut file = fs::File::create(path).map_err(|_| "settings.update.error.staging")?;
     file.write_all(bytes)
@@ -348,13 +348,13 @@ struct Plan {
     flavour: Flavour,
     installer: PathBuf,
     /// What the signed manifest says this installer produces. Recorded before the hand-off so
-    /// the run that follows can confirm it — see [`super::adopt_applied`].
+    /// the run that follows can confirm it: see [`super::adopt_applied`].
     version: String,
 }
 
-/// Apply a staged update, if there is a usable one.
+/// Applies a staged update, if there is a usable one.
 ///
-/// Called from `main` before the window exists. On success it does not return — the process is
+/// Called from `main` before the window exists. On success it does not return: the process is
 /// replaced by, or exits in favour of, the installer. Anything unusable clears the staging
 /// directory and lets the app start normally: a staged build that cannot be applied must not be
 /// retried on every launch for ever.
@@ -380,7 +380,7 @@ pub(crate) fn apply_staged() {
         "applying a staged update; handing off to the installer"
     );
     // Written first: after the hand-off there is no process left here to write anything, and an
-    // install that fails is caught by the version check at the other end rather than by this one.
+    // install that fails is caught by the version check at the other end instead of by this one.
     crate::platform::store_set(super::APPLIED_KEY, &plan.version);
     crate::platform::notify_now(
         &crate::i18n::translate_offline("settings.update.notify.applyingTitle", &[]),
@@ -411,12 +411,12 @@ enum Invocation {
     ///
     /// A separate answer from [`Invocation::App`] deliberately: this process is a copy of the
     /// app sitting in the staging directory, and falling through to launch a window would put a
-    /// *second* copy on screen — running from a temporary directory, updating nothing, and
+    /// *second* copy on screen; running from a temporary directory, updating nothing, and
     /// looking to the reader exactly like the one they installed.
     RelaunchWithoutTarget,
 }
 
-/// Read the command line. Compiled everywhere so its test runs on the CI runner, for the reason
+/// Reads the command line. Compiled everywhere so its test runs on the CI runner, for the reason
 /// [`classify_windows`] is.
 #[cfg_attr(
     all(not(windows), not(test)),
@@ -432,7 +432,7 @@ fn invocation<I: Iterator<Item = std::ffi::OsString>>(mut args: I) -> Invocation
         })
 }
 
-/// Whether this process was started to see an update through rather than to be the app.
+/// Whether this process was started to see an update through, not to be the app.
 ///
 /// `true` means it has already done that job and `main` must return without launching anything.
 /// See [`launch`] for why a second process exists at all.
@@ -459,14 +459,14 @@ pub(crate) fn run_as_relauncher() -> bool {
     false
 }
 
-/// Run the staged installer, wait for it, and start the app again.
+/// Runs the staged installer, waits for it, and starts the app again.
 ///
 /// Runs as a copy of the app in the staging directory, so nothing it does holds the installed
 /// executable open. Everything is re-verified here as well as in the process that spawned this
 /// one, because this is the process that actually executes an installer and the directory it
 /// runs from is writable by anything running as the reader.
 ///
-/// `target` — the executable to start afterwards — comes from the command line, and is the one
+/// `target` (the executable to start afterwards) comes from the command line, and is the one
 /// thing here that does not. It is not a widening: passing an argument to this binary means
 /// being able to start a process as the reader, which is already enough to start any other.
 #[cfg(windows)]
@@ -478,7 +478,7 @@ fn relaunch_after_install(target: &Path) {
             }
         }
     }
-    // Before the app is started, so its own `apply_staged` finds nothing to retry — whatever the
+    // Before the app is started, so its own `apply_staged` finds nothing to retry: whatever the
     // installer made of it, this staged copy has had its one attempt. Removing the directory
     // cannot succeed while this process runs out of it; the next `stage` clears the remains.
     clear();
@@ -487,9 +487,9 @@ fn relaunch_after_install(target: &Path) {
     let _ = std::process::Command::new(target).spawn();
 }
 
-/// Re-verify everything about the staged update and decide what to run.
+/// Re-verifies everything about the staged update and decides what to run.
 ///
-/// `flavour` is passed rather than read, because the relauncher's own path says nothing about
+/// `flavour` is passed, not read, because the relauncher's own path says nothing about
 /// the install it is updating. See `flavour_of`.
 ///
 /// # Errors
@@ -502,8 +502,8 @@ fn plan(flavour: Flavour) -> Result<Plan, &'static str> {
     let signature = fs::read_to_string(dir.join(SIGNATURE_FILE))
         .map_err(|_| "settings.update.error.staging")?;
 
-    // The signature first, before a single field of the document is read. Everything below —
-    // which file to execute, how long it should be, what it should hash to — comes out of these
+    // The signature first, before a single field of the document is read. Everything below
+    // (which file to execute, how long it should be, what it should hash to) comes out of these
     // bytes, and this directory is writable by anything running as the reader.
     discover::verify_trusted(&manifest_bytes, &signature)?;
     let manifest: Manifest = discover::parse(&manifest_bytes)?;
@@ -511,7 +511,7 @@ fn plan(flavour: Flavour) -> Result<Plan, &'static str> {
     let staged =
         semver::Version::parse(&manifest.version).map_err(|_| "settings.update.error.manifest")?;
     let current = super::running_version().ok_or("settings.update.error.manifest")?;
-    // Already applied — the installer ran, this is the new build, and the directory is just
+    // Already applied: the installer ran, this is the new build, and the directory is just
     // leftovers.
     if staged <= current {
         return Err("settings.update.error.stale");
@@ -532,7 +532,7 @@ fn plan(flavour: Flavour) -> Result<Plan, &'static str> {
     })
 }
 
-/// Check a staged file against the length and digest the signed manifest gives for it.
+/// Checks a staged file against the length and digest the signed manifest gives for it.
 ///
 /// # Errors
 /// `…checksum` for a wrong length or digest, `…staging` if it cannot be read at all.
@@ -543,8 +543,8 @@ fn verify_file(path: &Path, target: &Target) -> Result<(), &'static str> {
     }
     let mut file = fs::File::open(path).map_err(|_| "settings.update.error.staging")?;
     let mut hasher = sha2::Sha256::new();
-    // Read by hand rather than `io::copy`: `digest` 0.11 dropped the `io::Write` impl on hashers.
-    // `Interrupted` is ignored for the same reason `io::copy` retries it — a signal arriving
+    // Read by hand instead of `io::copy`: `digest` 0.11 dropped the `io::Write` impl on hashers.
+    // `Interrupted` is ignored for the same reason `io::copy` retries it: a signal arriving
     // mid-read is not a failed verification. Heap-allocated because a buffer this size is over
     // the crate's stack-array ceiling, and it is read once per launch over a ~100 MB installer.
     let mut buffer = vec![0_u8; 64 * 1024];
@@ -586,15 +586,15 @@ fn installer_command(plan: &Plan) -> Option<std::process::Command> {
     }
 }
 
-/// Hand the staged installer to the system. Does not return on success.
+/// Hands the staged installer to the system. Does not return on success.
 ///
 /// **Neither installer can replace an executable that is running**, so this process has to be
-/// gone before either reaches its file-copy phase — which is exactly why it cannot also be the
+/// gone before either reaches its file-copy phase, which is exactly why it cannot also be the
 /// thing that starts the app again afterwards. A copy of this binary is placed outside the
 /// install directory and given that one job ([`relaunch_after_install`]): wait out the
 /// installer, then start what it produced.
 ///
-/// Without it an unattended update ends with the app simply not there — the reader double-clicks,
+/// Without it an unattended update ends with the app simply not there: the reader double-clicks,
 /// the window never appears, and something has silently installed itself. That is what the copy
 /// buys, and it is worth a hundred megabytes of temporary disk to buy it.
 ///
@@ -626,7 +626,7 @@ fn launch(plan: &Plan) -> Result<Infallible, &'static str> {
     std::process::exit(0);
 }
 
-/// Hand the staged installer to the system. Does not return on success.
+/// Hands the staged installer to the system. Does not return on success.
 ///
 /// # Errors
 /// `settings.update.error.handoff` when the image could not be replaced or re-executed.
@@ -642,7 +642,7 @@ fn launch(plan: &Plan) -> Result<Infallible, &'static str> {
         .map(PathBuf::from)
         .ok_or("settings.update.error.handoff")?;
 
-    // Written beside the target and renamed over it, rather than copied onto it: a rename is
+    // Written beside the target and renamed over it, not copied onto it: a rename is
     // atomic, so an interrupted update leaves the old image intact and runnable instead of a
     // half-written file that is neither version. Replacing a running `AppImage` this way is
     // safe: its filesystem is mounted from a descriptor that was already open, so the old image
@@ -659,7 +659,7 @@ fn launch(plan: &Plan) -> Result<Infallible, &'static str> {
         .map_err(|_| "settings.update.error.handoff")?;
     fs::rename(&next, &target).map_err(|_| "settings.update.error.handoff")?;
 
-    // `exec` rather than spawn-and-exit: the new image takes over this process, so there is no
+    // `exec`, not spawn-and-exit: the new image takes over this process, so there is no
     // window where both versions are running and no orphan if the parent is killed first.
     let error = std::process::Command::new(&target)
         .args(std::env::args_os().skip(1))
@@ -688,7 +688,7 @@ mod tests {
     }
 
     /// The two Windows installers are told apart by where they land, and handing the wrong one to
-    /// an existing install produces a **second** install rather than an upgrade — so anything not
+    /// an existing install produces a **second** install instead of an upgrade, so anything not
     /// recognisably one or the other has to be left alone.
     #[test]
     fn a_windows_install_is_classified_by_its_directory() {
@@ -709,8 +709,8 @@ mod tests {
 
     /// The rule holds on a Linux runner, which is the only place it is ever gated.
     ///
-    /// It was written with `Path::starts_with`, whose idea of a component is the *host's*: off
-    /// Windows a backslash is not a separator, so every path above was one opaque component and
+    /// The bug: it was written with `Path::starts_with`, whose idea of a component is the *host's*:
+    /// off Windows a backslash is not a separator, so every path above was one opaque component and
     /// every case classified as `Portable`. The rule passed on a Windows workstation and failed in
     /// CI, which is exactly the wrong way round for a rule about Windows.
     #[test]
@@ -738,9 +738,9 @@ mod tests {
         assert!(!is_under(Path::new(r"C:\anywhere\at\all"), Path::new("")));
     }
 
-    /// Windows paths are case-insensitive and `Path`'s comparison is not, so an executable
-    /// reported in a different case than the environment variable it sits under — an all-caps
-    /// `%ProgramFiles%`, a short name — was classified as portable and never updated.
+    /// The bug: Windows paths are case-insensitive and `Path`'s comparison is not, so an executable
+    /// reported in a different case than the environment variable it sits under (an all-caps
+    /// `%ProgramFiles%`, a short name) was classified as portable and never updated.
     #[test]
     fn a_windows_path_matches_regardless_of_case() {
         assert_eq!(
@@ -769,7 +769,7 @@ mod tests {
     }
 
     /// An `AppImage` this app cannot write to is announced, not downloaded: the swap would fail
-    /// after a hundred megabytes had already been fetched.
+    /// after a hundred megabytes had been fetched.
     #[test]
     fn an_unwritable_appimage_falls_back_to_announcing() {
         let image = Path::new("/home/reader/Apps/Tankovault.AppImage");
@@ -795,7 +795,7 @@ mod tests {
     /// from there.
     ///
     /// The trap this pins: reading the flag and then falling through when no path follows it.
-    /// That start is not the app — it is a second copy of it, running out of a temporary
+    /// That start is not the app: it is a second copy of it, running out of a temporary
     /// directory, updating nothing and indistinguishable on screen from the installed one.
     #[test]
     fn only_a_complete_relaunch_command_line_is_the_relauncher() {

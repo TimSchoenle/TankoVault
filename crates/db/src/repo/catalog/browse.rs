@@ -16,7 +16,7 @@ pub struct SeriesListItem {
     pub source_count: i64,
 }
 
-/// Query the browse list with keyset pagination on `(created_at, id)`.
+/// Queries the browse list with keyset pagination on `(created_at, id)`.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; no match is an empty `Vec`, not [`crate::DbError::NotFound`].

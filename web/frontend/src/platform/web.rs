@@ -1,6 +1,6 @@
-//! The browser implementation of [`crate::platform`], typed through `web-sys`.
+//! Owns the browser implementation of [`crate::platform`], typed through `web-sys`.
 //!
-//! Read the module contract in `mod.rs` before adding anything here — in particular, why none of
+//! Read the module contract in `mod.rs` before adding anything here: in particular, why none of
 //! this may be written as `document::eval`.
 
 use dioxus::history::History;
@@ -50,7 +50,7 @@ fn root() -> Option<web_sys::Element> {
     web_sys::window()?.document()?.document_element()
 }
 
-/// Set directly rather than through an `HtmlElement` downcast.
+/// Sets the document's `lang` attribute directly instead of through an `HtmlElement` downcast.
 pub(crate) fn set_document_language(tag: &str) {
     set_root_attribute("lang", tag);
 }
@@ -82,13 +82,13 @@ pub(crate) fn select_focused_text() {
 /// taken out.
 ///
 /// [`WebHistory`](dioxus::web::WebHistory) ends *every* navigation by scrolling the window back
-/// to the top — a replace exactly as much as a push. That is right for a push and wrong for a
+/// to the top: a replace exactly as much as a push. That is right for a push and wrong for a
 /// replace, because a replace is how a screen corrects its own address without navigating: the
-/// moment Discover's second page of covers came into view it recorded the position in `?at=`,
-/// the window jumped to the top, the first page reported itself as the topmost one again, and
-/// `at` was replaced straight back to nothing — the reader could not get past the first page.
-/// The debounced filter boxes on the watchlist and in the console replace per keystroke for the
-/// same reason and paid the same price. Only the browser build ever showed it: the desktop
+/// moment Discover's second page of covers comes into view it records the position in `?at=`,
+/// the window jumps to the top, the first page reports itself as the topmost one again, and `at`
+/// is replaced straight back to nothing, so the reader cannot get past the first page. The
+/// debounced filter boxes on the watchlist and in the console replace per keystroke for the same
+/// reason and would pay the same price. Only the browser build is affected: the desktop
 /// renderer routes through `MemoryHistory`, which has no scroll position to move.
 pub(crate) fn history_provider() -> std::rc::Rc<dyn History> {
     std::rc::Rc::new(InPlaceHistory {
@@ -214,7 +214,7 @@ pub(crate) fn origin() -> String {
 ///
 /// The object URL is revoked immediately after the click. The download has already been handed
 /// to the browser at that point, and leaving it alive pins the blob for the lifetime of the
-/// document — which, for a personal-data export, means keeping the reader's entire record in
+/// document, which, for a personal-data export, means keeping the reader's entire record in
 /// memory until they navigate away.
 #[expect(
     clippy::unused_async,
@@ -258,7 +258,7 @@ pub(crate) async fn save_text_file(
 /// caller's job and a subscription does not own it.
 pub(crate) struct EventStream {
     source: gloo_net::eventsource::futures::EventSource,
-    /// Merged rather than pumped in turn: the names arrive on their own cadences, and awaiting
+    /// Merged, not pumped in turn: the names arrive on their own cadences, and awaiting
     /// one at a time would stall the fast one behind the slow one's tick.
     events:
         futures_util::stream::SelectAll<gloo_net::eventsource::futures::EventSourceSubscription>,
@@ -267,7 +267,7 @@ pub(crate) struct EventStream {
 impl EventStream {
     /// The next message as `(event name, data)`, or `None` once the stream ends.
     ///
-    /// A transport error ends the stream rather than being reported: the ticket in the URL is
+    /// A transport error ends the stream instead of being reported: the ticket in the URL is
     /// spent, so `EventSource`'s own retry cannot succeed and the caller has to mint a new one.
     pub(crate) async fn next(&mut self) -> Option<(String, String)> {
         loop {
@@ -310,7 +310,7 @@ pub(crate) async fn subscribe(url: &str, events: &[&str]) -> Option<EventStream>
 mod tests {
     use super::full_path;
 
-    /// A replace builds its own URL here rather than going through `WebHistory`, and losing the
+    /// A replace builds its own URL here instead of going through `WebHistory`, and losing the
     /// deployment's base path is the way that goes wrong without anything failing: the address
     /// bar would read `/discover` under an app served from `/app`, and the reader would find out
     /// on the next reload.

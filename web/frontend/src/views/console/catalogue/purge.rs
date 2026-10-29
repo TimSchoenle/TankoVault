@@ -1,4 +1,4 @@
-//! The catalogue danger zone: drop every chapter, or empty the catalogue outright.
+//! Owns the catalogue danger zone: drop every chapter, or empty the catalogue outright.
 //!
 //! Both start a detached run on the server and then read its progress back. The panel neither
 //! drives the batches nor has to stay open: closing the tab leaves the purge running, and
@@ -60,7 +60,7 @@ pub(super) fn PurgePanel(totals: Option<CatalogueSummary>, reload: Reload) -> El
         }
     });
 
-    // `—` rather than `0` while the summary is in flight: a purge panel that claims the
+    // `—` instead of `0` while the summary is in flight: a purge panel that claims the
     // catalogue holds nothing is the one wrong thing it could say here.
     let count = |value: Option<i64>| value.map_or_else(|| "—".to_owned(), thousands);
     let series_total = count(totals.as_ref().map(|t| t.series_total));

@@ -1,5 +1,5 @@
-//! The data table's chrome: the horizontal-scroll wrapper, the header row, and the caption that
-//! names the table for a screen reader.
+//! Owns the data table's chrome: the horizontal-scroll wrapper, the header row, and the caption
+//! that names the table for a screen reader.
 
 use crate::skin::{use_skin, Flag, Part, Variant};
 use dioxus::prelude::*;
@@ -23,7 +23,7 @@ impl TableColumn {
         }
     }
 
-    /// Right-aligned and tabular — for counts, durations and sizes.
+    /// Right-aligned and tabular: for counts, durations and sizes.
     #[must_use]
     pub fn numeric(mut self) -> Self {
         self.numeric = true;
@@ -41,7 +41,7 @@ impl TableColumn {
 /// A table.
 ///
 /// `caption` is required and visually hidden by default: a table with no accessible name is
-/// announced as "table" and nothing else, and every table in the screens this replaced was one.
+/// announced as "table" and nothing else.
 #[component]
 pub fn Table(
     caption: String,
@@ -54,7 +54,7 @@ pub fn Table(
     show_caption: bool,
     /// Bound the table's height to `--ik-table-max-h` and scroll the rows under a header row
     /// that stays put. Without it the wrapper grows with the page and the sticky header, which
-    /// sticks to the wrapper rather than to the window, has nothing to stick against.
+    /// sticks to the wrapper, not to the window, has nothing to stick against.
     #[props(default = false)]
     scroll: bool,
     #[props(default)] class: String,
@@ -94,8 +94,8 @@ pub fn Table(
 
 #[cfg(test)]
 mod tests {
-    /// The console's tables page at fifty rows of dense mono and the header — 11px, uppercase,
-    /// tracked — was gone by row twelve. Both halves of the fix are here because either alone
+    /// The console's tables page at fifty rows of dense mono, and without this the header (11px,
+    /// uppercase, tracked) is gone by row twelve. Both halves are here because either alone
     /// is a rule that looks right and never fires: the sticky header sticks to `.ik-tablewrap`,
     /// which is a scroll container in both axes, so it does nothing until that wrapper's height
     /// is bounded; and an unfilled header lets fifty rows scroll straight through it.

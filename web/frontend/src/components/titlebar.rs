@@ -1,9 +1,9 @@
-//! The app-drawn window header, for the desktop build only.
+//! Owns the app-drawn window header, for the desktop build only.
 //!
 //! The OS caption is switched off in `main` (`with_decorations(false)`), so this is the whole
 //! title bar: it names the window, drags it, and carries the minimise/maximise/close controls.
-//! It sits above the router rather than inside it, so it is present on the first-run connection
-//! screen and the sign-in screen too — which is also why the settings button lives here. That is
+//! It sits above the router, not inside it, so it is present on the first-run connection
+//! screen and the sign-in screen too, which is also why the settings button lives here. That is
 //! the one control a reader needs when the *server* is the thing that is wrong, and everything
 //! behind the router needs a working server to render.
 //!
@@ -14,9 +14,9 @@
 //! works: `Win`+arrow, dragging to a screen edge, and the window menu.
 //!
 //! The window menu itself is reached by right-clicking the drag area or pressing `Alt`+`Space`,
-//! both of which the OS still handles because the window keeps its system menu — losing them is
+//! both of which the OS still handles because the window keeps its system menu: losing them is
 //! the accessibility trap in a custom title bar, and the reason this one is a strip of real
-//! buttons with labels rather than a picture of one.
+//! buttons with labels instead of a picture of one.
 
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
@@ -24,14 +24,14 @@ use dioxus::prelude::*;
 
 /// The window header: drag area, title, settings, and the window controls.
 ///
-/// `update_waiting` draws a dot on the settings button. A prop rather than a context read: this
+/// `update_waiting` draws a dot on the settings button. A prop instead of a context read: this
 /// bar renders above the router and outside the sign-in gate, and the one thing it must never do
-/// is take a dependency that is missing there — see the `use_route` note below.
+/// is take a dependency that is missing there; see the `use_route` note below.
 #[component]
 pub(crate) fn TitleBar(on_settings: EventHandler<()>, update_waiting: bool) -> Element {
     let i18n = use_i18n();
-    // Not `use_route`: this bar renders *above* the router, so there is no route context to ask
-    // — calling it here aborted the process on boot. `crate::title` publishes the screen's name
+    // Not `use_route`: this bar renders *above* the router, so there is no route context to ask;
+    // calling it here aborted the process on boot. `crate::title` publishes the screen's name
     // instead; before the first routed screen mounts (the connection screen) it is empty, and
     // the product name is the right thing to show.
     let title = crate::platform::WINDOW_HEADING.read().clone();
@@ -40,15 +40,15 @@ pub(crate) fn TitleBar(on_settings: EventHandler<()>, update_waiting: bool) -> E
     } else {
         title
     };
-    // Re-read on every render rather than cached: the window can be maximised by the OS — a
-    // double-click, `Win`+`Up`, a drag to the top edge — and a cached flag would leave this
+    // Re-read on every render, not cached: the window can be maximised by the OS (a
+    // double-click, `Win`+`Up`, a drag to the top edge), and a cached flag would leave this
     // showing the wrong glyph until something else happened to re-render.
     let maximised = crate::platform::window().is_some_and(|window| window.is_maximized());
 
     rsx! {
         header { class: "ik-titlebar",
             // The drag surface. `drag_window` hands the move to the OS, which is what keeps
-            // snapping, multi-monitor DPI and the drag-to-edge gestures working — a hand-rolled
+            // snapping, multi-monitor DPI and the drag-to-edge gestures working: a hand-rolled
             // move loop gets none of that.
             div {
                 class: "ik-titlebar-grab",
@@ -69,7 +69,7 @@ pub(crate) fn TitleBar(on_settings: EventHandler<()>, update_waiting: bool) -> E
                 // control that opens the sheet tells a screen-reader user nothing at all.
                 "aria-label": if update_waiting { i18n.t("settings.update.waiting") } else { i18n.t("settings.title") },
                 title: if update_waiting { i18n.t("settings.update.waiting") } else { i18n.t("settings.title") },
-                // Drives the dot in `input.css`; absent rather than `false` so the rule is a
+                // Drives the dot in `input.css`; absent instead of `false` so the rule is a
                 // presence selector and there is nothing to style away in the common case.
                 "data-update": if update_waiting { Some("waiting") } else { None },
                 onclick: move |_| on_settings.call(()),

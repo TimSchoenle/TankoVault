@@ -1,4 +1,4 @@
-//! Profile panel — display name and email (`PATCH /v1/me/profile`).
+//! Owns the profile panel: display name and email (`PATCH /v1/me/profile`).
 
 use crate::api;
 use crate::components::{use_step_up_gate, OutcomeLine, StepUpGuard};
@@ -46,7 +46,8 @@ pub(crate) fn ProfilePanel(name: String, tier: String) -> Element {
                 match client.patch_profile().body(update).send().await {
                     Ok(response) => {
                         let profile = response.into_inner();
-                        // Reflect the server's canonical value everywhere the name appears; no relog.
+                        // Reflect the server's canonical value everywhere the name appears; no
+                        // relog.
                         username.set(profile.username.clone());
                         session.set_display_name(profile.username);
                         email.set(String::new());
@@ -106,10 +107,10 @@ pub(crate) fn ProfilePanel(name: String, tier: String) -> Element {
                     oninput: move |e| email.set(e.value()),
                 }
             }
-            // The password field that used to sit here is gone: it defended against the
-            // wrong attacker. Whoever stole the session to get here is, more often than not,
-            // whoever phished the password to open it. The prompt below asks for the second
-            // factor instead, and only once the server has said it needs one.
+            // No password field here: it would defend against the wrong attacker. Whoever stole the
+            // session to get here is, more often than not, whoever phished the password to open it.
+            // The prompt below asks for the second factor instead, and only once the server has
+            // said it needs one.
             StepUpGuard { gate }
             OutcomeLine { outcome: outcome.read().clone() }
             Button {

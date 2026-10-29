@@ -1,4 +1,4 @@
-//! The axes every control in the kit varies on.
+//! Owns the axes every control in the kit varies on.
 //!
 //! These are *meanings*, not appearances: nothing here knows a class name or a colour. What a
 //! tone renders as is [`crate::skin`]'s business, which is what lets one component tree serve
@@ -31,14 +31,14 @@ pub enum Tone {
     ///
     /// **The guarantee stops here.** `every_variant_has_a_rule` proves the built-in tones
     /// against `styles/inkstone.css`, the only stylesheet this crate can read. A custom token's
-    /// rule lives in yours, so a typo is exactly the dead modifier this kit exists to prevent —
+    /// rule lives in yours, so a typo is exactly the dead modifier this kit exists to prevent:
     /// mirror that test over your own tokens.
     Custom(&'static str),
 }
 
 impl Tone {
     /// Every tone the kit defines itself, in no particular order. [`Tone::Custom`] is not one,
-    /// by construction — which is what makes this the exact set the kit's own stylesheet is
+    /// by construction, which is what makes this the exact set the kit's own stylesheet is
     /// answerable for. Public so a consumer can enumerate them, typically to render a gallery
     /// of a new skin against every tone it has to cover.
     pub const BUILT_IN: &'static [Self] = &[
@@ -81,7 +81,7 @@ pub enum Gap {
     Xs,
     /// Controls in a group.
     Sm,
-    /// The default — unrelated items on one line.
+    /// The default: unrelated items on one line.
     #[default]
     Md,
     /// Separate regions.
@@ -114,7 +114,7 @@ pub enum Justify {
     Center,
     /// Packed at the trailing edge.
     End,
-    /// First item left, last item right — the toolbar shape.
+    /// First item left, last item right: the toolbar shape.
     Between,
 }
 
@@ -127,8 +127,8 @@ mod tests {
     /// is listed below as a deliberate collapse onto the base class.
     ///
     /// The bug this pins: `ik-btn danger`, `ik-btn ghost`, `ik-btn vermilion` and `ik-pill
-    /// ghost` were all written at call sites with no rule behind any of them, so five buttons —
-    /// one of them a queue drain — drew as ordinary neutral controls.
+    /// ghost` were all written at call sites with no rule behind any of them, so five buttons
+    /// (one of them a queue drain) drew as ordinary neutral controls.
     ///
     /// An earlier version skipped every empty modifier, and so passed while `Tone::Positive` and
     /// `Tone::Caution` on a *button* resolved to `""`: a confirm read exactly like a cancel,

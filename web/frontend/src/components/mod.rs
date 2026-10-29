@@ -1,4 +1,4 @@
-//! Reusable Inkstone UI components (`docs/ARCHITECTURE.md` §17.3/§17.4).
+//! Owns the reusable Inkstone UI components (`docs/ARCHITECTURE.md` §17.3/§17.4).
 
 mod bottombar;
 mod confirm;
@@ -76,14 +76,12 @@ mod tests {
 
     /// No screen may spell a button's classes itself.
     ///
-    /// This is the rule the `inkstone_ui::Button` extraction exists to make enforceable, and it
-    /// is a test rather than a convention because the failure it prevents is invisible: `class:
-    /// "ik-btn danger"` compiles, renders, and silently drew an ordinary neutral button, because
-    /// no `.ik-btn.danger` rule was ever written. Four modifiers (`danger`, `ghost`,
-    /// `vermilion`, `active`) were dead this way across five call sites, one of them a queue
-    /// drain. `Tone` and `Size` can only name classes the stylesheet defines; a raw string
-    /// cannot, so raw strings are banned. Use `Button`, `ToggleButton`, `IconButton`, or
-    /// `inkstone_ui::button_class` where the element has to be an `<a>`.
+    /// This is the rule the `inkstone_ui::Button` extraction exists to make enforceable, and it is
+    /// a test instead of a convention because the failure it prevents is invisible: a raw class
+    /// string whose modifier has no rule in the stylesheet compiles, renders, and silently draws
+    /// an ordinary neutral button. The built-in `Tone` and `Size` variants are tested against the
+    /// stylesheet; a raw string is not, so raw strings are banned. Use `Button`, `ToggleButton`,
+    /// `IconButton`, or `inkstone_ui::button_class` where the element has to be an `<a>`.
     #[test]
     fn no_screen_writes_button_classes_by_hand() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");

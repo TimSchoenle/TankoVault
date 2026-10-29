@@ -1,4 +1,4 @@
-//! The inspector's editing tab bodies: the adapter config and the politeness budget.
+//! Owns the inspector's editing tab bodies: the adapter config and the politeness budget.
 
 use dioxus::prelude::*;
 use inkstone_ui::{Button, Size};

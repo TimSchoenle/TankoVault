@@ -144,7 +144,7 @@ fn upstream_health(state: &AppState) -> Health {
         .build()
 }
 
-/// Assemble the served application: the app router inside the shared middleware stack, plus
+/// Assembles the served application: the app router inside the shared middleware stack, plus
 /// the ops probes merged *outside* it, so a body cap or a timeout can never make a healthy
 /// replica look unhealthy to its orchestrator.
 fn build_app(

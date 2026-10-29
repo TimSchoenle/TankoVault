@@ -276,8 +276,8 @@ mod tests {
         );
     }
 
-    /// Providers stored before emulation existed deserialize into the new default rather
-    /// than into "no emulation", so an upgrade does not silently keep crawling as a bot.
+    /// Providers stored before emulation existed deserialize into the new default,
+    /// not into "no emulation", so an upgrade does not silently keep crawling as a bot.
     /// This is the half of the contract [`PolitenessInput`] deliberately inverts.
     #[test]
     fn missing_emulation_deserializes_to_default() {

@@ -104,7 +104,7 @@ pub(crate) async fn pass(state: &AppState) -> anyhow::Result<Repairs> {
     Ok(repairs)
 }
 
-/// Republish one lane's stranded tasks, and return how many.
+/// Republishes one lane's stranded tasks, and returns how many.
 ///
 /// The comparison is deliberately conservative in both directions. `open_tasks` counts every
 /// open row while the deficit is charged only against the *aged* ones, so a task published
@@ -170,7 +170,7 @@ fn deficit(lane: &OpenLane, backlog: u64) -> i64 {
     lane.aged_tasks.saturating_sub(backlog).max(0)
 }
 
-/// Rebuild one task's message and publish it. `false` when the row cannot be turned back into a
+/// Rebuilds one task's message and publishes it. `false` when the row cannot be turned back into a
 /// message, which is a corrupt row, not a drift and is not this reconciler's to fix.
 async fn republish(state: &AppState, lane: &OpenLane, task: &StrandedTask) -> anyhow::Result<bool> {
     let Some(kind) = TaskKind::from_token(&task.kind) else {
@@ -198,7 +198,7 @@ async fn republish(state: &AppState, lane: &OpenLane, task: &StrandedTask) -> an
     Ok(true)
 }
 
-/// Close runs whose tasks have all settled, emitting the terminal progress event the lost one
+/// Closes runs whose tasks have all settled, emitting the terminal progress event the lost one
 /// would have carried so the console and the aggregator see the same ending.
 async fn finalise_settled_runs(state: &AppState) -> anyhow::Result<u64> {
     let mut finalised = 0;
@@ -237,7 +237,7 @@ async fn finalise_settled_runs(state: &AppState) -> anyhow::Result<u64> {
     Ok(finalised)
 }
 
-/// Fail runs that never planned a task, so they stop suppressing the provider's next one.
+/// Fails runs that never planned a task, so they stop suppressing the provider's next one.
 async fn fail_abandoned_runs(state: &AppState) -> anyhow::Result<u64> {
     let failed =
         tankovault_db::repo::scans::fail_unplanned_runs(&state.pool, AGED_AFTER, MAX_RUNS_PER_PASS)

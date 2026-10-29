@@ -1,18 +1,18 @@
-//! The Tracking sidebar: conflict resolution, the progress editor, external trackers, the
+//! Owns the Tracking sidebar: conflict resolution, the progress editor, external trackers, the
 //! per-series alert switch and the sync history for this title.
 //!
 //! Every watchlist action lands here: the shelf, the source pin, progress, alerts and membership
 //! itself. The row menu on the watchlist page carries the same five, written the same optimistic
-//! way — a reader who reaches a title from search rather than from their list must not have to go
+//! way: a reader who reaches a title from search instead of from their list must not have to go
 //! find the list to change anything about it.
 //!
 //! Everything here is fetched, never assumed. Two blocks the design calls for have no endpoint
-//! and are therefore **absent rather than stubbed**:
+//! and are therefore **absent, not stubbed**:
 //!
 //! - *Your notes* (score, rereads, started/finished dates, free text) — no personal-fields API
 //!   exists, so four boxes that could only ever read `—` would be a dead control.
 //!   TODO(api): needs `GET`/`PUT /v1/me/series/:id/notes`.
-//! - *New source added* / *Series completed* alerts — the watchlist carries one `notify` flag,
+//! - *New source added* / *Series completed* alerts: the watchlist carries one `notify` flag,
 //!   not three, so only the switch that is real is rendered.
 //!   TODO(api): needs per-kind notification opt-ins on the watchlist entry.
 
@@ -221,7 +221,7 @@ pub(super) fn TrackingCard(
                         reload_progress,
                         || rsx! { SkeletonBlock { height: 76 } },
                         |value| rsx! {
-                            // Keyed on the fetched frontier — see `ProgressEditor`'s `draft`
+                            // Keyed on the fetched frontier: see `ProgressEditor`'s `draft`
                             // comment for why.
                             ProgressEditor {
                                 key: "{value.last_read_whole_number}",
@@ -326,7 +326,7 @@ pub(super) fn TrackingCard(
     }
 }
 
-/// Mark every chapter of this series read, with the unread count that says what it would move.
+/// Marks every chapter of this series read, with the unread count that says what it would move.
 ///
 /// The bulk endpoint with a single id, not a second "everything" path: the watchlist row menu
 /// already spells this action, and two definitions of *all* is how they drift.
@@ -577,7 +577,7 @@ fn ProgressEditor(
             match outcome {
                 Ok(_) => reload_progress.bump(),
                 Err(e) => {
-                    // Roll back to the server's value rather than leaving a number that was
+                    // Roll back to the server's value instead of leaving a number that was
                     // never persisted sitting in the editor.
                     draft.set(None);
                     error.set(Some(api::friendly_error(i18n, e)));
@@ -743,8 +743,8 @@ fn TrackerRow(tracker: Tracker, reload_sync: Reload, gate: StepUpGate) -> Elemen
 
 /// The per-title sync opt-out: whether this series is pushed to linked trackers at all.
 ///
-/// It rides with the tracker list rather than the alert switches because it governs *those*
-/// rows — excluding a title is a statement about sync, not about notifications.
+/// It rides with the tracker list instead of the alert switches because it governs *those*
+/// rows: excluding a title is a statement about sync, not about notifications.
 #[component]
 fn SyncOptOut(entry: WatchlistItem, reload_wl: Reload) -> Element {
     let api = api::use_api();
@@ -790,7 +790,7 @@ fn SyncOptOut(entry: WatchlistItem, reload_wl: Reload) -> Element {
     }
 }
 
-/// The per-series alert switches. Only the one the watchlist actually stores is offered — see
+/// The per-series alert switches. Only the one the watchlist actually stores is offered: see
 /// the module docs for the two the design draws that have no field behind them.
 #[component]
 fn AlertSwitches(entry: WatchlistItem, reload_wl: Reload) -> Element {

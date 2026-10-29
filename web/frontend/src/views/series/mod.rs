@@ -1,4 +1,4 @@
-//! Series detail — the chapter list leads, tracking rides the sidebar.
+//! Owns the series detail: the chapter list leads, tracking rides the sidebar.
 //!
 //! # The one thing this screen does differently
 //!
@@ -6,8 +6,8 @@
 //! list concurrently and merges them ([`model`]), so each chapter row knows which sources carry
 //! it and where each would open.
 //!
-//! Fields the API does not expose are omitted rather than fabricated (no rating). The sidebar's
-//! [`similar`] rail is content similarity from the recommendation model, not a relation graph —
+//! Fields the API does not expose are omitted, not fabricated (no rating). The sidebar's
+//! [`similar`] rail is content similarity from the recommendation model, not a relation graph:
 //! a direct sequel is still something this screen cannot name.
 
 mod chapters;
@@ -44,12 +44,12 @@ type SourceChapters = Vec<(SourceDto, Vec<ChapterDto>)>;
 
 /// The Series route.
 ///
-/// **Keyed, not called directly.** Following a link from one series to another — which is what
-/// the `More like this` rail is — keeps the router on the same route variant, so Dioxus reuses
-/// this scope and only swaps the prop. Every `use_resource` below captured the id it was first
-/// built with and reacts to signals, not to props, so the URL moved while the screen went on
-/// showing the series it was mounted with. A changed key remounts the subtree instead, which is
-/// also what resets the chapter list's paging and the source menus.
+/// **Keyed, not called directly.** Following a link from one series to another (which is what the
+/// `More like this` rail is) keeps the router on the same route variant, so Dioxus reuses this
+/// scope and only swaps the prop. Every `use_resource` below captured the id it was first built
+/// with and reacts to signals, not to props, so without a key the URL would move while the screen
+/// went on showing the series it was mounted with. A changed key remounts the subtree instead,
+/// which is also what resets the chapter list's paging and the source menus.
 #[component]
 pub(crate) fn Series(id: String) -> Element {
     rsx! {
@@ -74,11 +74,11 @@ fn SeriesPage(id: String) -> Element {
     let reload_detail = use_reload();
     let reload_wl = use_reload();
     // One signal for read state, shared by the chapter list's toggles and the sidebar's
-    // stepper — they move the same server state, so must invalidate the same fetches. Two
+    // stepper: they move the same server state, so must invalidate the same fetches. Two
     // separate `Reload`s here left the sidebar showing a stale frontier until a full reload.
     let reload_progress = use_reload();
-    // The pin now rides the watchlist entry, so it is seeded from that fetch rather than read
-    // synchronously — see the effect below the entry resource.
+    // The pin rides the watchlist entry, so it is seeded from that fetch, not read
+    // synchronously: see the effect below the entry resource.
     let pinned = use_signal(|| Option::<SeriesSourceId>::None);
     let pin_outcome = use_outcome();
 
@@ -96,7 +96,7 @@ fn SeriesPage(id: String) -> Element {
         }
     });
 
-    // The one screen whose tab name the route cannot spell — it is in the payload, not the URL.
+    // The one screen whose tab name the route cannot spell: it is in the payload, not the URL.
     let page_title = use_context::<crate::title::PageTitle>();
     use_effect(move || {
         if let Some(Ok(loaded)) = &*detail.read() {
@@ -110,9 +110,9 @@ fn SeriesPage(id: String) -> Element {
     // Every source's list in one request. Reading `detail` here subscribes this resource to it,
     // so the fetch starts once the series lands and re-runs on `reload_progress`.
     //
-    // Deliberately *not* a per-source fan-out any more: one request per source, re-issued in
-    // full on every read toggle, spent the caller's rate-limit burst on a well-carried title and
-    // the screen answered its own reads with `429`.
+    // Deliberately *not* a per-source fan-out: one request per source, re-issued in full on
+    // every read toggle, would spend the caller's rate-limit burst on a well-carried title and
+    // the screen would answer its own reads with `429`.
     let per_source = use_resource(move || {
         reload_progress.track();
         let sources: Vec<SourceDto> = match &*detail.read() {
@@ -135,7 +135,7 @@ fn SeriesPage(id: String) -> Element {
                 .into_iter()
                 .map(|list| (list.source_id, list.chapters))
                 .collect();
-            // Keyed off `detail`'s sources rather than the response order, so a source the
+            // Keyed off `detail`'s sources instead of the response order, so a source the
             // detail does not list cannot appear on the screen.
             Ok::<_, String>(
                 sources
@@ -146,14 +146,14 @@ fn SeriesPage(id: String) -> Element {
         }
     });
 
-    // One entry, not the whole watchlist — fetching everything and scanning for this series
+    // One entry, not the whole watchlist: fetching everything and scanning for this series
     // broke once the list started paginating: past the first page the entry isn't in the
     // response, and the page would falsely offer "Add to watchlist" for a tracked title.
     let watchlist = use_resource(move || {
         reload_wl.track();
-        // Marking a chapter read now tracks the series server-side, so a progress write is one
+        // Marking a chapter read tracks the series server-side, so a progress write is one
         // of the things that can create this entry. Without this second subscription the
-        // sidebar kept offering "Add to watchlist" for a series already on it.
+        // sidebar would keep offering "Add to watchlist" for a series already on it.
         reload_progress.track();
         let client = api.client();
         let authed = session.is_authenticated();
@@ -171,7 +171,7 @@ fn SeriesPage(id: String) -> Element {
         }
     });
 
-    // The entry is the pin's home, so every refetch of it re-seeds the signal — including the
+    // The entry is the pin's home, so every refetch of it re-seeds the signal, including the
     // one a successful pin write triggers, which is what reconciles the optimistic move.
     let mut pin_signal = pinned;
     use_effect(move || {
@@ -222,7 +222,7 @@ fn SeriesPage(id: String) -> Element {
     };
 
     // Rank and merge in the render, not in the fetch: changing the pin re-orders the same data
-    // rather than re-issuing every request.
+    // instead of re-issuing every request.
     let pin = *pinned.read();
     let fetched = match &*per_source.read() {
         Some(Ok(rows)) => rows.clone(),
@@ -260,8 +260,8 @@ fn SeriesPage(id: String) -> Element {
 
     let entry = current_entry(&watchlist);
     let total_chapters = merged.iter().filter(|c| !c.is_part()).count();
-    // Shadowed so every component below keeps forwarding one `pinned` prop; what changed is
-    // that moving it now writes to the server instead of to this device's storage.
+    // Shadowed so every component below keeps forwarding one `pinned` prop; moving it writes to
+    // the server, not to this device's storage.
     let pinned = pin::Pinned::new(
         pinned,
         id,
@@ -282,7 +282,7 @@ fn SeriesPage(id: String) -> Element {
             authed: session.is_authenticated(),
             reload_wl,
         }
-        // A refused pin is reported here rather than inside the source menu: the write closes
+        // A refused pin is reported here, not inside the source menu: the write closes
         // the menu, so a message rendered there would be dismissed by the very click that
         // caused it.
         crate::components::OutcomeLine { outcome: pin_outcome.read().clone() }
@@ -358,9 +358,9 @@ fn Hero(
     let backdrop = detail.cover_url.clone().unwrap_or_default();
     let whole_chapters = chapters.iter().filter(|c| !c.is_part()).count();
     let whole_chapters_i64 = i64::try_from(whole_chapters).unwrap_or(i64::MAX);
-    // Counted separately rather than folded into the total: a part release is a chapter a source
+    // Counted separately, not folded into the total: a part release is a chapter a source
     // shipped ahead of the compiled whole one, so counting them together would make a series
-    // look longer than it is — which is exactly why the chapter list collapses them.
+    // look longer than it is, which is exactly why the chapter list collapses them.
     let part_releases =
         i64::try_from(chapters.iter().filter(|c| c.is_part()).count()).unwrap_or(i64::MAX);
     // The merge orders newest-first, so the head is the newest number and the newest date.
@@ -383,7 +383,7 @@ fn Hero(
         parts.join(" · ")
     };
 
-    // The primary action: the next unread chapter when there is one, otherwise the newest —
+    // The primary action: the next unread chapter when there is one, otherwise the newest;
     // "continue" and "open" are different promises and must not share wording.
     let (target, label) = match next_unread(&chapters) {
         Some(chapter) => (Some(chapter.clone()), "series.continueOn"),
@@ -434,11 +434,11 @@ fn Hero(
                             }
                         }
                     }
-                    // The source count used to sit here beside the chapter total. It is an
-                    // operational fact about how many providers this deployment happens to
-                    // carry the title on, not a property of the work, and next to a length it
-                    // read as one. What replaces it is what a reader actually asks of a series
-                    // page before committing: how much there is, how far it goes, and whether
+                    // No source count beside the chapter total: it is an operational fact
+                    // about how many providers this deployment happens to carry the title on,
+                    // not a property of the work, and next to a length it would read as one.
+                    // This shows what a reader actually asks of a series page before
+                    // committing: how much there is, how far it goes, and whether
                     // it is still moving.
                     div { class: "ik-stat-inline",
                         div { class: "item",

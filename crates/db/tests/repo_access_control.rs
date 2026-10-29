@@ -408,8 +408,8 @@ async fn the_super_user_gains_a_stored_row_for_every_capability_added_after_thei
 }
 
 /// A deployment with no owner must not have the top-up write grants to somebody. The statement
-/// is driven by the super user row itself, so "no owner" has to mean "no rows written" rather
-/// than falling back to a first-account guess.
+/// is driven by the super user row itself, so "no owner" has to mean "no rows written"
+/// instead of falling back to a first-account guess.
 #[tokio::test]
 async fn the_top_up_writes_nothing_when_the_deployment_has_no_super_user() {
     let db = TestDb::spawn().await;

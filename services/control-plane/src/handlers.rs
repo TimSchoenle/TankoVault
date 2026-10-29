@@ -25,7 +25,7 @@ pub(super) struct TriggerRequest {
 // Uses `tankovault_contracts::admin::ScanTriggeredView`, not a private struct:
 // `services/api` republishes this body verbatim.
 
-/// Plan a run for one provider, or for every active provider when the request names none.
+/// Plans a run for one provider, or for every active provider when the request names none.
 ///
 /// Coalesced exactly as the scheduler's sweeps are ([`plan_run`]): a provider already scanning in
 /// this mode answers with that run's id instead of queueing a second identical run behind it, so

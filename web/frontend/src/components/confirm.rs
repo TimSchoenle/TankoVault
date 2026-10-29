@@ -1,5 +1,5 @@
-//! Two-tier confirmation for destructive actions: [`InlineConfirm`] for reversible ones, and
-//! [`TypeToConfirm`] for irreversible ones requiring an exact-match retype.
+//! Owns the two-tier confirmation for destructive actions: [`InlineConfirm`] for reversible ones,
+//! and [`TypeToConfirm`] for irreversible ones requiring an exact-match retype.
 
 use crate::i18n::use_i18n;
 use dioxus::prelude::*;
@@ -42,7 +42,7 @@ pub(crate) fn InlineConfirm(
 /// An irreversible destructive action, gated on typing the exact identifier.
 ///
 /// The button is genuinely `disabled` until the typed value matches, so it is unreachable by
-/// keyboard as well as unclickable — a dimmed-but-live control would be worse than none.
+/// keyboard as well as unclickable: a dimmed-but-live control would be worse than none.
 #[component]
 pub(crate) fn TypeToConfirm(
     title: String,

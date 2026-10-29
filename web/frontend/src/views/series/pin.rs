@@ -1,4 +1,4 @@
-//! The per-series source pin: what it is now, and the writes that persist it.
+//! Owns the per-series source pin: its current value, and the writes that persist it.
 
 use crate::api::{self, Api};
 use crate::hooks::{Outcome, Reload};
@@ -8,10 +8,10 @@ use dioxus::prelude::*;
 
 /// A reader's pinned source for one series, and the two writes that move it.
 ///
-/// A handle rather than a bare `Signal` because the pin is server state now: it rides the
-/// watchlist entry, so it follows the reader to their other devices — which the browser-local
-/// pin this replaced never did. `Copy`, so every component between the page and the source menu
-/// forwards it exactly as it forwarded the signal.
+/// A handle instead of a bare `Signal` because the pin is server state: it rides the
+/// watchlist entry, so it follows the reader to their other devices, which a browser-local
+/// pin cannot. `Copy`, so every component between the page and the source menu
+/// forwards it exactly as it would a signal.
 #[derive(Clone, Copy)]
 pub(super) struct Pinned {
     /// What the screen currently shows. Seeded from the loaded entry and moved optimistically,
@@ -24,14 +24,14 @@ pub(super) struct Pinned {
     reload: Reload,
     /// Whether the reader tracks this series. The pin is a column on the watchlist entry, so
     /// an untracked series has nowhere to keep one and the control is offered as unavailable
-    /// rather than failing on click.
+    /// instead of failing on click.
     tracked: bool,
 }
 
 /// Compared by what can actually differ between two renders of the same screen: which signal
 /// holds the pin, which series it belongs to, and whether pinning is offered. The API handle,
-/// translator, outcome slot and reload token are screen-scoped and never change identity — and
-/// none of them is `PartialEq` — so folding them in would be neither possible nor meaningful.
+/// translator, outcome slot and reload token are screen-scoped and never change identity (and
+/// none of them is `PartialEq`), so folding them in would be neither possible nor meaningful.
 /// Dioxus needs this to decide whether a child's props moved.
 impl PartialEq for Pinned {
     fn eq(&self, other: &Self) -> bool {
@@ -66,12 +66,12 @@ impl Pinned {
         *self.current.read()
     }
 
-    /// Whether pinning is offered at all — see [`Self::tracked`].
+    /// Whether pinning is offered at all: see [`Self::tracked`].
     pub(super) const fn is_available(self) -> bool {
         self.tracked
     }
 
-    /// Pin `source` for this series.
+    /// Pins `source` for this series.
     pub(super) fn set(self, source: SeriesSourceId) {
         let client = self.api.client();
         self.write(Some(source), async move {
@@ -87,7 +87,7 @@ impl Pinned {
         });
     }
 
-    /// Drop the pin, returning this series to the reader's global source order.
+    /// Drops the pin, returning this series to the reader's global source order.
     pub(super) fn clear(self) {
         let client = self.api.client();
         self.write(None, async move {
@@ -100,7 +100,7 @@ impl Pinned {
         });
     }
 
-    /// Move the signal now, send the write, and put the signal back if the write is refused.
+    /// Moves the signal now, sends the write, and puts the signal back if the write is refused.
     ///
     /// Reverting matters more here than on a toggle: the pin decides which link every `Open`
     /// button on the screen points at, so a failed write that left the optimistic value in
@@ -118,7 +118,7 @@ impl Pinned {
         spawn(async move {
             match request.await {
                 // The entry carries the pin, so the refetch is what makes the rest of the page
-                // agree with the write rather than with the optimistic guess.
+                // agree with the write instead of with the optimistic guess.
                 Ok(()) => reload.bump(),
                 Err(e) => {
                     current.set(previous);

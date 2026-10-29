@@ -1,9 +1,8 @@
-//! The desktop build's cookie jar, and the OS credential store behind it.
+//! Owns the desktop build's cookie jar, and the OS credential store behind it.
 //!
 //! The refresh credential is an `HttpOnly` cookie. On web the browser owns the jar and there is
 //! nothing to decide; a native `reqwest` has no cookie store at all unless asked, and a jar that
-//! only lives in memory ends the reader's session every time they close the app — which is what
-//! this build did until now.
+//! only lives in memory ends the reader's session every time they close the app.
 //!
 //! **Why the OS credential store and not a file.** The property the web build gets for free is
 //! that the refresh cookie is encrypted at rest, scoped to the user's login, and unreachable from
@@ -11,8 +10,8 @@
 //! running as the reader, so a long-lived bearer credential in it would be strictly worse than
 //! signing out on exit. The Credential Manager, the Secret Service and the Keychain each offer
 //! exactly the missing guarantee, so that is where this writes and nowhere else. Where the store
-//! is unavailable — a headless Linux session with no Secret Service provider — every call is a
-//! silent no-op and the app falls back to the old behaviour rather than to a file.
+//! is unavailable (a headless Linux session with no Secret Service provider) every call is a
+//! silent no-op and the session ends with the app, not lands in a file.
 //!
 //! **The access token is still memory-only, on both builds.** It is minted from the refresh
 //! credential in seconds and persisting it would widen the window a stolen copy is useful for,
@@ -35,27 +34,27 @@ const CREDENTIAL_ACCOUNT: &str = "session";
 
 /// What is written to the credential store.
 ///
-/// The `Set-Cookie` lines are kept **verbatim**, keyed by cookie name, rather than reduced to the
+/// The `Set-Cookie` lines are kept **verbatim**, keyed by cookie name, not reduced to the
 /// token they carry. The name and `Path` this server issues depend on its own `cookie_secure`
-/// setting — `__Host-refresh_token` at `/` when it is on, an unprefixed name at `/v1/auth` when
-/// it is not — and a frontend that hard-coded either would be mirroring a constant it has no
+/// setting (`__Host-refresh_token` at `/` when it is on, an unprefixed name at `/v1/auth` when
+/// it is not), and a frontend that hard-coded either would be mirroring a constant it has no
 /// compile-time relationship with. Replaying the line the server sent needs to know none of that.
 #[derive(serde::Serialize, serde::Deserialize, Default)]
 struct StoredSession {
     /// Serialised origin of the server these came from, so a document left behind by a server
     /// the reader has since re-pointed away from is discarded instead of replayed.
     origin: String,
-    /// `Set-Cookie` lines by cookie name. Empty means "signed out", and is never written — the
+    /// `Set-Cookie` lines by cookie name. Empty means "signed out", and is never written: the
     /// entry is deleted instead.
     cookies: BTreeMap<String, String>,
 }
 
 impl StoredSession {
-    /// Fold one response's `Set-Cookie` lines into this document, reporting whether it changed.
+    /// Folds one response's `Set-Cookie` lines into this document, reporting whether it changed.
     ///
     /// Pure, and separate from the credential store for that reason: rotation, removal and the
     /// server switch are the three cases that decide whether a reader stays signed in, and they
-    /// are asserted below rather than reasoned about.
+    /// are asserted below, not reasoned about.
     fn record(&mut self, origin: &str, lines: &[&str]) -> bool {
         if lines.is_empty() {
             return false;
@@ -82,11 +81,11 @@ impl StoredSession {
     }
 }
 
-/// Whether this `Set-Cookie` clears the cookie rather than setting it.
+/// Whether this `Set-Cookie` clears the cookie instead of setting it.
 ///
 /// The two forms this server uses: an empty value (its logout removal cookie) and a non-positive
 /// `Max-Age`. An `Expires` in the past would be a third, but recognising it needs a clock and
-/// nothing issues one — a stale line replayed into the jar is dropped there on the same test.
+/// nothing issues one: a stale line replayed into the jar is dropped there on the same test.
 fn is_removal(cookie: &Cookie<'_>) -> bool {
     cookie.value().is_empty() || cookie.max_age().is_some_and(|age| !age.is_positive())
 }
@@ -95,19 +94,19 @@ fn is_removal(cookie: &Cookie<'_>) -> bool {
 ///
 /// The mirroring hangs off [`CookieStore::set_cookies`] deliberately. That is the one point every
 /// response carrying a `Set-Cookie` passes through, so sign-in, the fifteen-minute rotation, the
-/// passkey and email-verification paths and logout are all covered without a call at any of them
-/// — and a route added later is covered without anyone remembering this file exists.
+/// passkey and email-verification paths and logout are all covered without a call at any of them,
+/// and a route added later is covered without anyone remembering this file exists.
 pub(crate) struct SessionJar {
     jar: Jar,
     stored: Mutex<StoredSession>,
 }
 
 impl SessionJar {
-    /// Build the jar, replaying the stored session into it if one is on file for the server this
+    /// Builds the jar, replaying the stored session into it if one is on file for the server this
     /// app is currently pointed at.
     ///
     /// Blocking, and it has to be. This runs from `provide_api` during the first render, which is
-    /// strictly before the boot-time silent refresh in [`crate::components::Shell`] fires — that
+    /// strictly before the boot-time silent refresh in [`crate::components::Shell`] fires: that
     /// ordering is the whole reason the refresh finds a cookie to present. Deferring the read to
     /// keep the first frame prompt would race it, and losing that race signs the reader out on a
     /// start where they should have stayed in. The cost is that a locked keyring's unlock prompt
@@ -117,7 +116,7 @@ impl SessionJar {
         let current = normalised_origin(&crate::platform::origin());
         let stored = match read_document() {
             Some(stored) if Some(&stored.origin) == current.as_ref() => stored,
-            // On file, but for another server. Delete rather than keep: it is a live credential
+            // On file, but for another server. Delete, not keep: it is a live credential
             // for a host this install no longer talks to, and nothing will ever come back for it.
             Some(_) => {
                 crate::platform::credential_delete(CREDENTIAL_ACCOUNT);
@@ -136,7 +135,7 @@ impl SessionJar {
         }
     }
 
-    /// Forget the persisted session, for when the app has concluded there is no longer one —
+    /// Forgets the persisted session, for when the app has concluded there is no longer one:
     /// a `401` from refresh, a sign-out, a deleted account, a re-pointed server.
     ///
     /// Only the persisted half: the in-memory jar keeps whatever it holds, which is either
@@ -149,7 +148,7 @@ impl SessionJar {
         crate::platform::credential_delete(CREDENTIAL_ACCOUNT);
     }
 
-    /// Fold `lines` into the stored document and write it out if it moved.
+    /// Folds `lines` into the stored document and writes it out if it moved.
     fn persist(&self, lines: &[&str], url: &reqwest::Url) {
         let Ok(mut stored) = self.stored.lock() else {
             return;
@@ -165,7 +164,7 @@ impl SessionJar {
     }
 }
 
-// `reqwest::Url` rather than `url::Url` throughout: it is the same type re-exported, and naming
+// `reqwest::Url` instead of `url::Url` throughout: it is the same type re-exported, and naming
 // it this way keeps `url` out of this crate's direct dependencies for one signature.
 impl CookieStore for SessionJar {
     fn set_cookies(
@@ -174,7 +173,7 @@ impl CookieStore for SessionJar {
         url: &reqwest::Url,
     ) {
         // Collected because the iterator is single-pass and both the jar and the credential store
-        // need it. Non-UTF-8 headers are dropped here only — the jar still receives them, since
+        // need it. Non-UTF-8 headers are dropped here only: the jar still receives them, since
         // what it can parse is its own business.
         let headers: Vec<&HeaderValue> = cookie_headers.collect();
         self.jar.set_cookies(&mut headers.iter().copied(), url);
@@ -191,7 +190,7 @@ impl CookieStore for SessionJar {
 /// The process's one jar, shared by every client `super::build_http_client` makes.
 ///
 /// **Shared, not per-client, and that is the whole point.** `build_http_client` runs again every
-/// time the access token changes — which is every fifteen minutes, by design — and a jar owned by
+/// time the access token changes (which is every fifteen minutes, by design), and a jar owned by
 /// the client would be discarded with it, taking the refresh cookie the *next* refresh depends
 /// on. The session would then end at the first expiry after sign-in.
 pub(crate) fn session_jar() -> Arc<SessionJar> {
@@ -205,10 +204,10 @@ fn read_document() -> Option<StoredSession> {
     serde_json::from_str(&document).ok()
 }
 
-/// `origin` as a URL origin, or `None` when it is empty or unparseable — first run, or a settings
+/// `origin` as a URL origin, or `None` when it is empty or unparseable: first run, or a settings
 /// file that has been edited into nonsense.
 ///
-/// Compared in this form rather than as the reader typed it: `https://tanko.example:443` and
+/// Compared in this form instead of as the reader typed it: `https://tanko.example:443` and
 /// `https://tanko.example` are the same server, and a string comparison would throw the
 /// credential away on the next start for a port number.
 fn normalised_origin(origin: &str) -> Option<String> {
@@ -258,7 +257,7 @@ mod tests {
         assert!(!stored.record(ORIGIN, &[SET]));
     }
 
-    /// Logout clears the cookie by setting it empty rather than by any header naming a deletion.
+    /// Logout clears the cookie by setting it empty instead of by any header naming a deletion.
     /// Read as an ordinary value that would leave the revoked token on file, and the next start
     /// would replay a credential the reader explicitly signed out of.
     #[test]
@@ -278,7 +277,7 @@ mod tests {
     }
 
     /// Re-pointing the app at another server must not leave the previous one's credential in a
-    /// document that now claims to describe the new one — the next start would replay it against
+    /// document that now claims to describe the new one: the next start would replay it against
     /// the wrong host.
     #[test]
     fn a_response_from_another_origin_replaces_the_whole_document() {

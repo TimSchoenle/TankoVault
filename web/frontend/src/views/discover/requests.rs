@@ -1,4 +1,4 @@
-//! The Discover screen's requests: the tag and provider facets, and one page of results.
+//! Owns the Discover screen's requests: the tag and provider facets, and one page of results.
 
 use dioxus::prelude::*;
 use progenitor_client::ResponseValue;
@@ -12,7 +12,7 @@ use crate::models::*;
 
 /// The tag and provider facets the filter panel offers.
 ///
-/// Degrades to an empty facet on failure rather than blocking the screen — a missing
+/// Degrades to an empty facet on failure instead of blocking the screen: a missing
 /// tag/provider filter is cheaper than an error state.
 pub(super) fn use_facets(api: Api) -> (Vec<TagFacet>, Vec<PublicProvider>) {
     let tags_res = use_resource(move || {
@@ -105,7 +105,7 @@ pub(super) async fn page(
         })
         .map_err(|e| api::friendly_error(i18n, e));
     // The request travels with its own answer, success or failure. A response that outlived
-    // the window it was asked for is then simply not the current one, rather than a page
+    // the window it was asked for is then simply not the current one, instead of a page
     // merged into a list it does not belong to.
     (request, outcome)
 }
@@ -122,8 +122,8 @@ pub(super) fn header_total(value: Option<&str>) -> Option<i64> {
 mod tests {
     use super::*;
 
-    /// A page fetched with `with_total=false` carries no `X-Total-Count`. The count line used to
-    /// fall back to the page's own length, so the second page of a 600-match window read
+    /// A page fetched with `with_total=false` carries no `X-Total-Count`. The bug: the count line
+    /// fell back to the page's own length, so the second page of a 600-match window read
     /// "25–48 of 24".
     #[test]
     fn a_page_without_a_total_header_reports_no_total() {

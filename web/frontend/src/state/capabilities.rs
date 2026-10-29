@@ -1,4 +1,4 @@
-//! What the signed-in reader may do, and what this deployment offers.
+//! Owns what the signed-in reader may do, and what this deployment offers.
 //!
 //! Capabilities are fetched from `GET /v1/me/capabilities`, keyed on the session token so they
 //! refetch across sign-in, the boot-time silent refresh and sign-out. A control needs both: the
@@ -11,14 +11,14 @@
 use crate::wire::types::{Capabilities, Feature, Permission};
 use dioxus::prelude::*;
 
-/// The capability snapshot, plus whether it has been fetched yet.
+/// The capability snapshot, and whether it has been fetched yet.
 ///
-/// `Loading` is a distinct state rather than "empty": until the fetch lands, "you hold nothing"
+/// `Loading` is a distinct state, not "empty": until the fetch lands, "you hold nothing"
 /// and "we have not asked" look identical, and treating the first as the second makes the whole
 /// console flash into view a moment after every page load.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) enum CapabilityState {
-    /// Not fetched yet — either signed out, or the request is in flight.
+    /// Not fetched yet: either signed out, or the request is in flight.
     #[default]
     Loading,
     /// The server's answer.
@@ -38,13 +38,13 @@ impl CapabilitySet {
         }
     }
 
-    /// Adopt a freshly fetched snapshot.
+    /// Adopts a freshly fetched snapshot.
     pub(crate) fn set(self, capabilities: Capabilities) {
         let mut inner = self.inner;
         inner.set(CapabilityState::Ready(capabilities));
     }
 
-    /// Forget everything — on sign-out, or when a fetch fails and the previous answer can no
+    /// Forgets everything: on sign-out, or when a fetch fails and the previous answer can no
     /// longer be trusted to describe the current session.
     pub(crate) fn clear(self) {
         let mut inner = self.inner;
@@ -63,8 +63,8 @@ impl CapabilitySet {
     /// than showing it a moment late.
     ///
     /// The super user grant answers yes to everything, mirroring `PermissionSet::has` on the
-    /// backend. The wire carries the single token rather than an expansion, so this is the one
-    /// place the implication has to be repeated — without it the deployment owner would be
+    /// backend. The wire carries the single token instead of an expansion, so this is the one
+    /// place the implication has to be repeated: without it the deployment owner would be
     /// handed a console with every panel hidden.
     pub(crate) fn can(&self, permission: Permission) -> bool {
         match &*self.inner.read() {
@@ -76,15 +76,15 @@ impl CapabilitySet {
         }
     }
 
-    /// Whether the reader holds **any** of `permissions` — the "should this tab exist at all?"
-    /// question, which is a union rather than a specific right.
+    /// Whether the reader holds **any** of `permissions`: the "should this tab exist at all?"
+    /// question, which is a union instead of a specific right.
     pub(crate) fn can_any(&self, permissions: &[Permission]) -> bool {
         permissions.iter().any(|p| self.can(*p))
     }
 
     /// Whether `feature` is switched on for this deployment.
     ///
-    /// Unlike [`Self::can`], this defaults to **true** while loading — defaulting to off would
+    /// Unlike [`Self::can`], this defaults to **true** while loading: defaulting to off would
     /// blank the whole app for one render on every page load. The cost of being wrong is a
     /// control that briefly appears and then 404s, same as an operator flipping the flag off
     /// mid-session.
@@ -105,7 +105,7 @@ impl CapabilitySet {
 
     /// The catalogue key of the word shown next to the reader's name in the rail and on Account.
     ///
-    /// Derived from capabilities, not stored — there is no role to display.
+    /// Derived from capabilities, not stored: there is no role to display.
     pub(crate) fn label_key(&self) -> &'static str {
         if self.is_staff() {
             "enum.tier.staff"
@@ -121,7 +121,7 @@ impl Default for CapabilitySet {
     }
 }
 
-/// Every permission that grants access to *some* console tab — kept beside the per-tab
+/// Every permission that grants access to *some* console tab: kept beside the per-tab
 /// requirements so adding one stays a single edit.
 pub(crate) const CONSOLE_PERMISSIONS: &[Permission] = &[
     Permission::SystemStats,

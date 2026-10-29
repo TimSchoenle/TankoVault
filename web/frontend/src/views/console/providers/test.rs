@@ -1,4 +1,4 @@
-//! The standalone adapter dry-run panel, shared by the inspector's Config tab and the
+//! Owns the standalone adapter dry-run panel, shared by the inspector's Config tab and the
 //! Adapter-test entity.
 
 use super::config::DryRunResult;

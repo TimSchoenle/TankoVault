@@ -1,5 +1,5 @@
-//! Form primitives, flavoured for this app: the kit's controls with this app's icons and its
-//! id conventions filled in.
+//! Owns the form primitives, flavoured for this app: the kit's controls with this app's icons and
+//! its id conventions filled in.
 
 use crate::icons::{Ic, Icon};
 use dioxus::prelude::*;
@@ -8,7 +8,7 @@ pub(crate) use inkstone_ui::SegControl;
 
 /// A labelled text input.
 ///
-/// `id` must be unique on the page — it is what binds the label to the control.
+/// `id` must be unique on the page: it is what binds the label to the control.
 #[component]
 pub(crate) fn Field(
     id: String,
@@ -33,7 +33,7 @@ pub(crate) fn Field(
     /// A validation failure. Replaces the hint and is announced with the control.
     #[props(default)]
     error: Option<String>,
-    /// Take focus as soon as the field appears. For the one field a dialog exists to collect —
+    /// Takes focus as soon as the field appears. For the one field a dialog exists to collect:
     /// reaching for the mouse to answer a question that just took the screen is friction, and
     /// the HTML attribute is ignored by browsers on an element inserted after load.
     #[props(default = false)]
@@ -93,7 +93,7 @@ pub(crate) fn ListSearch(
     /// signal here would hold a second copy of it.
     query: String,
     on_input: EventHandler<String>,
-    /// Already-worded, e.g. "4 hits" — the caller knows what it is counting.
+    /// Already-worded, e.g. "4 hits": the caller knows what it is counting.
     hits: String,
 ) -> Element {
     rsx! {

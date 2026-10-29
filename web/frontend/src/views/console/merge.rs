@@ -1,8 +1,8 @@
-//! The canonicalisation review queue: merge and dismiss actions, the standing duplicate sweep,
+//! Owns the canonicalisation review queue: merge and dismiss actions, the standing duplicate sweep,
 //! and the compact read-only series card the compare view is built from.
 //!
 //! Merge direction defaults to the server's `suggested_keep`, swappable by the operator, because
-//! merging into the wrong side discards the richer series — the absorbed id stops existing and
+//! merging into the wrong side discards the richer series: the absorbed id stops existing and
 //! everything pointing at it breaks.
 
 use crate::api;
@@ -33,7 +33,7 @@ const FULL_SWEEP_POLL_MS: u32 = 3_000;
 ///
 /// One entry, and a list anyway: `every_published_group_is_offered_and_worded` reads it against
 /// the vocabulary the API publishes, so a group added to the registry has to land on one of the
-/// console's panels rather than silently on neither.
+/// console's panels, not silently on neither.
 pub(in crate::views::console) const POLICY_GROUPS: [(TunableGroup, &str); 1] =
     [(TunableGroup::Matching, "console.merge.policy.title")];
 
@@ -99,8 +99,9 @@ pub(super) fn MergeQueue() -> Element {
                                     ("examined", &r.pairs_examined.to_string()),
                                     ("merged", &r.auto_merged.to_string()),
                                     // Newly queued and reopened both lengthen the queue; rescored
-                                    // ones do not. Reporting them as one number told an operator
-                                    // the queue had grown by the count of rows it merely re-read.
+                                    // ones do not. Reporting them as one number would tell an
+                                    // operator the queue had grown by the count of rows it merely
+                                    // re-read.
                                     ("queued", &(r.queued + r.reopened).to_string()),
                                     ("rescored", &r.requeued.to_string()),
                                     ("withdrawn", &r.withdrawn.to_string()),
@@ -203,7 +204,7 @@ pub(super) fn MergeQueue() -> Element {
 /// The exhaustive sweep: the button that starts one, and the state of the run it started.
 ///
 /// It has a surface of its own because it outlives the request that starts it. The button beside
-/// it reports itself in the response body — one sweep, one report — but an exhaustive run is
+/// it reports itself in the response body (one sweep, one report), but an exhaustive run is
 /// detached and takes minutes, so the only honest place for its outcome is something that keeps
 /// re-reading it. Without that, the operator who pressed the button has no way to tell a run
 /// that is working from one that has stopped.
@@ -232,7 +233,7 @@ fn FullSweep(reload: Reload, gate: StepUpGate) -> Element {
 
     // Only while a run holds the claim. A finished run's figures do not move, so a standing timer
     // over them would be a request every few seconds for an answer that cannot change. The flag
-    // is read *inside* the loop rather than captured from the render that spawned it: this future
+    // is read *inside* the loop, not captured from the render that spawned it: this future
     // runs once, and a copy taken at mount would be `false` for a run started from this button.
     use_future(move || async move {
         loop {
@@ -263,7 +264,7 @@ fn FullSweep(reload: Reload, gate: StepUpGate) -> Element {
                                 "console.merge.fullSweepBusy"
                             }));
                             // The poll reads the *fetched* state, which still says idle until
-                            // this refetch lands — without it nothing would ever start ticking.
+                            // this refetch lands: without it nothing would ever start ticking.
                             tick.bump();
                         }
                         Err(e) => {
@@ -307,13 +308,13 @@ fn FullSweep(reload: Reload, gate: StepUpGate) -> Element {
 
 /// The one-line account of the exhaustive sweep: what it is doing, or how the last run ended.
 ///
-/// `None` before any run has been recorded, so the panel can say "never run" rather than render
+/// `None` before any run has been recorded, so the panel can say "never run", not render
 /// a row of zeroes that reads like a run which found nothing.
 fn full_sweep_line(i18n: Translator, view: &MergeFullSweepStatusView) -> Option<String> {
     let rounds = view.rounds.to_string();
     let examined = view.pairs_examined.to_string();
     let merged = view.auto_merged.to_string();
-    // Newly queued and reopened both lengthen the queue; re-scored rows do not — the same reading
+    // Newly queued and reopened both lengthen the queue; re-scored rows do not: the same reading
     // as the single sweep's report, so the two sentences are counting the same thing.
     let queued = (view.queued + view.reopened).to_string();
     let withdrawn = view.withdrawn.to_string();
@@ -330,13 +331,12 @@ fn full_sweep_line(i18n: Translator, view: &MergeFullSweepStatusView) -> Option<
     }
     match view.stopped.as_deref()? {
         "exhausted" => Some(i18n.args("console.merge.fullSweepDone", &counts)),
-        // A run has no limit it can stop at any more. These two are what the control plane
-        // recorded when it had, and the last such run's row outlives the upgrade that lifted
-        // them — read as `failed` it would report a completed sweep as a broken one.
+        // A run has no limit it can stop at. These two outcomes can still sit in a stored run
+        // row: read as `failed` they would report a completed sweep as a broken one.
         "merge_ceiling" => Some(i18n.args("console.merge.fullSweepCeiling", &counts)),
         "round_cap" => Some(i18n.args("console.merge.fullSweepCapped", &counts)),
         // `failed`, and any reason a later control plane adds: say the run stopped and show what
-        // it said, rather than inventing a sentence for a reason this build does not know.
+        // it said, instead of inventing a sentence for a reason this build does not know.
         _ => Some(i18n.args(
             "console.merge.fullSweepFailed",
             &[("message", view.error.as_deref().unwrap_or("-"))],
@@ -346,8 +346,8 @@ fn full_sweep_line(i18n: Translator, view: &MergeFullSweepStatusView) -> Option<
 
 /// The policy the sweep applies, above the queue it produced.
 ///
-/// Here rather than on a page of its own because the two are one decision: an operator reads a
-/// row the sweep queued — or one it merged — and the question that follows is whether the bar
+/// Here instead of on a page of its own because the two are one decision: an operator reads a
+/// row the sweep queued (or one it merged), and the question that follows is whether the bar
 /// that put it there is the right bar. A separate page would mean judging the queue and tuning
 /// the rule that fills it without ever seeing them together.
 #[component]
@@ -358,7 +358,7 @@ fn MergePolicy(reload: Reload, gate: StepUpGate) -> Element {
     let can_write = caps.can(Permission::MergeWrite);
     let mut open = use_signal(|| false);
 
-    // Fetched only once the card is open, so the queue — the reason an operator is on this tab —
+    // Fetched only once the card is open, so the queue (the reason an operator is on this tab)
     // does not pay for a panel most visits never expand.
     let policy = use_resource(move || {
         reload.track();
@@ -425,7 +425,7 @@ fn MergePolicy(reload: Reload, gate: StepUpGate) -> Element {
 pub(super) fn MergeRow(
     candidate: Signal<MergeCandidate>,
     reload: Reload,
-    /// The queue's gate, so a refusal opens the one prompt above the list rather than a
+    /// The queue's gate, so a refusal opens the one prompt above the list, not a
     /// duplicate inside every row.
     gate: StepUpGate,
 ) -> Element {
@@ -486,7 +486,7 @@ pub(super) fn MergeRow(
                     {
                         Ok(_) => reload.bump(),
                         // The row has no error line of its own, so anything but a step-up demand
-                        // still leaves the queue as it was — but the demand has to reach the
+                        // still leaves the queue as it was, but the demand has to reach the
                         // panel's prompt, or the button silently does nothing forever.
                         Err(e) => {
                             let _refused = gate.refused(api::Refusal::of(&e));
@@ -619,7 +619,7 @@ struct SideSummary {
 }
 
 impl SideSummary {
-    /// "3 sources · 412 chapters" — the two numbers that decide which side should survive.
+    /// "3 sources · 412 chapters": the two numbers that decide which side should survive.
     fn summary(&self, i18n: crate::i18n::Translator) -> String {
         let sources = i18n.plural("series.sources", self.sources, &[]);
         let chapters = i18n.args(
@@ -634,7 +634,7 @@ impl SideSummary {
 ///
 /// Seeds the swap toggle, and is therefore what decides the direction of every merge the
 /// operator does not explicitly swap. Inverting it discards the side the scorer judged richer,
-/// and the absorbed id stops existing — so nothing downstream can report the mistake.
+/// and the absorbed id stops existing, so nothing downstream can report the mistake.
 fn keeps_first_by_default(candidate: &MergeCandidate) -> bool {
     candidate.suggested_keep == candidate.series_id
 }
@@ -649,7 +649,7 @@ struct MergeSides {
 }
 
 impl MergeSides {
-    /// Orient a candidate. `keep_first` is [`keeps_first_by_default`] as the operator has
+    /// Orients a candidate. `keep_first` is [`keeps_first_by_default`] as the operator has
     /// possibly since flipped it.
     fn of(candidate: &MergeCandidate, keep_first: bool) -> Self {
         let first = SideSummary {
@@ -817,7 +817,7 @@ mod tests {
         assert_eq!(sides.drop.id, first);
     }
 
-    /// Swapping exchanges the two sides and nothing else — the counts and titles must travel
+    /// Swapping exchanges the two sides and nothing else: the counts and titles must travel
     /// with their own id, or the operator reads one series' figures while merging away another.
     #[test]
     fn swapping_exchanges_the_sides_with_their_own_figures() {

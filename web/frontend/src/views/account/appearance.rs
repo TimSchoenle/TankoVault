@@ -1,4 +1,4 @@
-//! Appearance panel (`docs/DESIGN_SYSTEM.md` §8) — theme, accent, density and cover style.
+//! Owns the appearance panel (`docs/DESIGN_SYSTEM.md` §8): theme, accent, density and cover style.
 //!
 //! Each knob writes a `data-*` attribute on `<html>` and persists a `tv-*` key that `index.html`
 //! must re-apply before first paint, or the wrong theme flashes.

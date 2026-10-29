@@ -1,4 +1,4 @@
-//! The 54px watchlist row, its overflow menu, and the band heading above it.
+//! Owns the 54px watchlist row, its overflow menu, and the band heading above it.
 //!
 //! Status, mute and mark-read write the row optimistically and roll back on failure; only
 //! operations that change which rows exist (removal, bulk, sync) still trigger a refetch.
@@ -20,12 +20,12 @@ use std::rc::Rc;
 /// The handles every row and menu needs, provided once by the view instead of threaded through
 /// six props per component.
 ///
-/// A newtype rather than bare `Signal<Outcome>`, so `use_context` can't match some other
+/// A newtype, not bare `Signal<Outcome>`, so `use_context` can't match some other
 /// same-shaped slot by accident.
 ///
 /// Taken **by value** everywhere: it trips `clippy::large_types_passed_by_value` (288 vs 256
 /// bytes), but every action moves it into a `spawn`ed future, which no `&RowCtx` reference could
-/// outlive — copying it is just four pointer copies, hence the `#[expect]` on every call site.
+/// outlive; copying it is just four pointer copies, hence the `#[expect]` on every call site.
 #[derive(Clone, Copy)]
 pub(super) struct RowCtx {
     pub(super) api: api::Api,
@@ -35,7 +35,7 @@ pub(super) struct RowCtx {
 }
 
 impl RowCtx {
-    /// Report a mutation that the server refused. The optimistic write has already been rolled
+    /// Reports a mutation that the server refused. The optimistic write has already been rolled
     /// back by the caller; this is what tells the reader it happened.
     pub(super) fn failed(mut self, error: progenitor_client::Error<ProblemDetails>) {
         self.outcome
@@ -43,9 +43,9 @@ impl RowCtx {
     }
 }
 
-/// Open the next unread chapter of `item`.
+/// Opens the next unread chapter of `item`.
 ///
-/// A navigation, not a request — distinct from the title's plain link (which a middle-click
+/// A navigation, not a request: distinct from the title's plain link (which a middle-click
 /// can open in a tab); this is what `↵` is bound to.
 pub(super) fn continue_reading(item: &WatchlistItem) {
     navigator().push(Route::Series {
@@ -88,7 +88,7 @@ fn source_tiles(i18n: Translator, sources: &[WatchlistSource]) -> Element {
     }
 }
 
-/// Two characters of a provider slug, uppercased — what fits a 22px tile.
+/// Two characters of a provider slug, uppercased: what fits a 22px tile.
 fn monogram(code: &str) -> String {
     code.chars()
         .filter(|c| c.is_alphanumeric())
@@ -97,7 +97,7 @@ fn monogram(code: &str) -> String {
         .to_uppercase()
 }
 
-/// Find a row by id — the list is short enough (one page, a few hundred rows) that a scan
+/// Finds a row by id: the list is short enough (one page, a few hundred rows) that a scan
 /// beats an index kept in sync with every optimistic insert and removal.
 fn index_of(board: &Signal<Board>, series_id: SeriesId) -> Option<usize> {
     board
@@ -134,7 +134,7 @@ pub(super) fn toggle_mute(item: &WatchlistItem, mut board: Signal<Board>, ctx: R
             .send()
             .await
         {
-            // Put it back — a toggle that silently fails is worse than one that visibly refuses.
+            // Put it back: a toggle that silently fails is worse than one that visibly refuses.
             if let Some(index) = index_of(&board, series_id) {
                 board.write().items[index].notify = previous;
             }
@@ -143,9 +143,9 @@ pub(super) fn toggle_mute(item: &WatchlistItem, mut board: Signal<Board>, ctx: R
     });
 }
 
-/// Move a row to another status.
+/// Moves a row to another status.
 ///
-/// Updated in place, but **not** removed from a filtered tab it no longer belongs to — rows
+/// Updated in place, but **not** removed from a filtered tab it no longer belongs to: rows
 /// vanishing mid-triage is disorienting; the next fetch drops it instead.
 #[expect(
     clippy::large_types_passed_by_value,
@@ -194,7 +194,7 @@ fn set_status(item: &WatchlistItem, next: WatchStatus, mut board: Signal<Board>,
     });
 }
 
-/// Move one entry between two status buckets. `all` is untouched — the entry did not leave the
+/// Moves one entry between two status buckets. `all` is untouched: the entry did not leave the
 /// watchlist, it changed shelf.
 fn move_count(counts: &mut WatchlistCounts, from: WatchStatus, to: WatchStatus) {
     *bucket_mut(counts, from) -= 1;
@@ -211,7 +211,7 @@ fn bucket_mut(counts: &mut WatchlistCounts, status: WatchStatus) -> &mut i64 {
     }
 }
 
-/// Mark every chapter of one series read, via the bulk endpoint with a single id — a second
+/// Marks every chapter of one series read, via the bulk endpoint with a single id: a second
 /// code path for "everything" is how the two definitions would drift.
 #[expect(
     clippy::large_types_passed_by_value,
@@ -247,7 +247,7 @@ fn mark_all_read(item: &WatchlistItem, mut board: Signal<Board>, ctx: RowCtx) {
     });
 }
 
-/// Untrack a series — this one does remove the row, since the entry no longer exists.
+/// Untrack a series: this one does remove the row, since the entry no longer exists.
 #[expect(
     clippy::large_types_passed_by_value,
     reason = "`RowCtx` outlives this call inside a spawned future; see its doc comment"
@@ -293,7 +293,7 @@ pub(super) fn GroupHeader(
     title_count: i64,
     chapter_count: i64,
     /// Why the band cannot be marked read in one go, or `None` when it can. The view owns this
-    /// decision because it is the only side that knows how long the band is — the header sees
+    /// decision because it is the only side that knows how long the band is: the header sees
     /// what is rendered, which is never the whole of it.
     blocked: Option<String>,
     on_mark: EventHandler<()>,
@@ -356,7 +356,7 @@ pub(super) fn WatchRow(
     } else {
         0.0
     };
-    // Grey (muted) / jade (done) / accent (default) — no room for a second badge in 176px.
+    // Grey (muted) / jade (done) / accent (default): no room for a second badge in 176px.
     let bar_class = if !item.notify {
         "ik-wl-bar muted"
     } else if percent >= 100.0 {
@@ -403,7 +403,7 @@ pub(super) fn WatchRow(
             role: "row",
             "aria-selected": if is_selected { "true" } else { "false" },
             onclick: move |_| focus.set(index),
-            // Real `<input type="checkbox">`, not a styled div — native `Space` toggle and
+            // Real `<input type="checkbox">`, not a styled div: native `Space` toggle and
             // screen-reader announcement.
             span { role: "gridcell",
                 input {
@@ -532,7 +532,7 @@ pub(super) fn WatchRow(
     }
 }
 
-/// One entry in the row menu. A closed list rather than free-form markup so the arrow-key
+/// One entry in the row menu. A closed list, not free-form markup so the arrow-key
 /// cursor and the rendered buttons cannot disagree about how many items there are.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum MenuItem {
@@ -545,7 +545,7 @@ enum MenuItem {
 
 impl MenuItem {
     /// The menu, in order. `Move to` offers the three shelves a title leaves `Reading` for;
-    /// `Completed` isn't among them — that's what `Mark all read` is for, not a status picker.
+    /// `Completed` isn't among them: that's what `Mark all read` is for, not a status picker.
     fn all() -> [MenuItem; 6] {
         [
             Self::Move(WatchStatus::Planned),
@@ -564,9 +564,9 @@ impl MenuItem {
     }
 }
 
-/// Run one menu entry.
+/// Runs one menu entry.
 ///
-/// Re-reads the row by id rather than closing over `WatchlistItem` — a non-`Copy` capture can't
+/// Re-reads the row by id instead of closing over `WatchlistItem`: a non-`Copy` capture can't
 /// be shared by six `onclick` closures, and re-reading also acts on current state, not a stale
 /// snapshot.
 #[expect(
@@ -594,7 +594,7 @@ fn act(
         MenuItem::Move(status) => set_status(&item, status, board, ctx),
         MenuItem::MarkAllRead => mark_all_read(&item, board, ctx),
         MenuItem::ToggleMute => toggle_mute(&item, board, ctx),
-        // No per-user source override yet, so this opens the series page instead — better than
+        // No per-user source override yet, so this opens the series page instead: better than
         // a menu entry that does nothing.
         MenuItem::ChangeSource => {
             navigator().push(Route::Series {
@@ -626,7 +626,8 @@ fn RowMenu(
         cursor.set(to);
         if let Some(Some(handle)) = handles.read().get(to).cloned() {
             spawn(async move {
-                // Best-effort — a refused focus call (detached node mid-close) isn't worth surfacing.
+                // Best-effort: a refused focus call (detached node mid-close) isn't worth
+                // surfacing.
                 let _ = handle.set_focus(true).await;
             });
         }
@@ -650,7 +651,7 @@ fn RowMenu(
     };
 
     rsx! {
-        // Transparent backdrop, not a document-level listener — closes on outside click without
+        // Transparent backdrop, not a document-level listener: closes on outside click without
         // reaching outside this subtree, and stops the click reaching the row underneath.
         div {
             class: "ik-wl-backdrop",
@@ -682,7 +683,7 @@ fn RowMenu(
                     _ => {}
                 }
             },
-            // Separator is emitted by the item that follows it, not as a loop sibling — `rsx!`
+            // Separator is emitted by the item that follows it, not as a loop sibling: `rsx!`
             // only allows a `key` on a block's first node, so a conditional divider ahead of it
             // would leave the button unkeyed and the menu re-created wholesale every render.
             for (index , entry) in entries.into_iter().enumerate() {

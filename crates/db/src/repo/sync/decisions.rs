@@ -431,7 +431,7 @@ pub async fn get_sync_decision<'e, E: PgExecutor<'e>>(
     Ok(row.into())
 }
 
-/// Stamp a decision reverted. Returns whether this call was the one that did it.
+/// Stamps a decision reverted. Returns whether this call was the one that did it.
 ///
 /// # Errors
 /// [`DbError::Sqlx`] only; an unknown or already-reverted id is `Ok(false)`.
@@ -454,7 +454,7 @@ pub async fn mark_sync_decision_reverted<'e, E: PgExecutor<'e>>(
     Ok(result.rows_affected() > 0)
 }
 
-/// Stamp a decision wrong. Returns whether this call was the one that did it.
+/// Stamps a decision wrong. Returns whether this call was the one that did it.
 ///
 /// # Errors
 /// [`DbError::Sqlx`] only; an unknown or already-flagged id is `Ok(false)`.

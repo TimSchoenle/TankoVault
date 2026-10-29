@@ -1,4 +1,4 @@
-//! Turning API operation failures into text a reader can act on.
+//! Owns turning API operation failures into text a reader can act on.
 //!
 //! The generated client's `progenitor_client::Error` mixes transport, decode and error-response
 //! faults into one enum; this maps it to a short sentence and, occasionally, the raw status code.
@@ -8,8 +8,8 @@ use crate::state::account_wall::Admission;
 use crate::wire::types::{ProblemDetails, ProblemKind};
 use progenitor_client::Error as ApiOpError;
 
-/// The HTTP status of a failed operation, when the failure was an error *response* rather
-/// than a transport or decoding fault.
+/// The HTTP status of a failed operation, when the failure was an error *response*,
+/// not a transport or decoding fault.
 pub(crate) fn error_status<E>(err: &ApiOpError<E>) -> Option<u16> {
     match err {
         ApiOpError::ErrorResponse(response) => Some(response.status().as_u16()),
@@ -19,9 +19,9 @@ pub(crate) fn error_status<E>(err: &ApiOpError<E>) -> Option<u16> {
 
 /// The server's own explanation of a refusal, when it sent one.
 ///
-/// Only for operator surfaces whose 400s carry a rule rather than a validation slip: the
-/// recommendation console's tunables refuse a write with the *reason* — a privacy threshold, a
-/// range, or the cross-field rule that at least one score weight stays non-zero — and replacing
+/// Only for operator surfaces whose 400s carry a rule instead of a validation slip: the
+/// recommendation console's tunables refuse a write with the *reason* (a privacy threshold, a
+/// range, or the cross-field rule that at least one score weight stays non-zero), and replacing
 /// that with "the request was rejected" would leave an operator retrying a value the server will
 /// never take. Reader-facing screens keep [`friendly_error`], which never shows server prose.
 pub(crate) fn problem_detail(err: &ApiOpError<ProblemDetails>) -> Option<String> {
@@ -38,7 +38,7 @@ pub(crate) fn problem_detail(err: &ApiOpError<ProblemDetails>) -> Option<String>
 ///
 /// `account_required` is the one refusal that is not about the request that drew it: it says the
 /// server serves a signed-out caller nothing at all, which is what raises
-/// [`crate::state::account_wall::AccountWall`]. `None` where the server did not answer — a
+/// [`crate::state::account_wall::AccountWall`]. `None` where the server did not answer: a
 /// transport fault proves nothing about admission policy, and must not be read as either verdict.
 pub(crate) fn admission(err: &ApiOpError<ProblemDetails>) -> Option<Admission> {
     match err {
@@ -55,29 +55,29 @@ pub(crate) fn admission(err: &ApiOpError<ProblemDetails>) -> Option<Admission> {
 
 /// Which of the three refusals a guarded route answered with.
 ///
-/// `403` is not one answer on the guarded surfaces but three — "confirm it is you", "enrol a
-/// second factor first" and "you do not hold that grant" — and only the problem type separates
+/// `403` is not one answer on the guarded surfaces but three ("confirm it is you", "enrol a
+/// second factor first" and "you do not hold that grant"), and only the problem type separates
 /// them. Branching on the bare status is what made the operator console report a step-up demand
 /// as insufficient privileges, and would make it re-prompt forever for the other two: neither is
 /// something a step-up prompt can resolve, so a gate that opened for them would ask a question
 /// whose correct answer changes nothing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Refusal {
-    /// `step_up_required` — present a second factor, then retry.
+    /// `step_up_required`: present a second factor, then retry.
     StepUp,
-    /// `mfa_enrolment_required` — the account holds no second factor at all.
+    /// `mfa_enrolment_required`: the account holds no second factor at all.
     MfaEnrolment,
     /// Anything else, including a genuinely missing grant.
     Other,
 }
 
 impl Refusal {
-    /// Classify a published problem kind.
+    /// Classifies a published problem kind.
     ///
     /// Exhaustive on purpose: `openapi.json` is the only thing connecting this workspace to the
     /// API, so a token added there arrives here as a new generated variant and this match stops
     /// compiling until someone decides what the console should do with it. That is the whole
-    /// point of publishing the vocabulary as an enum — the previous version matched string
+    /// point of publishing the vocabulary as an enum: the previous version matched string
     /// literals, and a renamed token would have compiled and silently classified as `Other`.
     pub(crate) fn from_kind(kind: ProblemKind) -> Self {
         match kind {
@@ -100,7 +100,7 @@ impl Refusal {
         }
     }
 
-    /// Read the refusal off the server's problem body.
+    /// Reads the refusal off the server's problem body.
     pub(crate) fn of(err: &ApiOpError<ProblemDetails>) -> Self {
         match err {
             ApiOpError::ErrorResponse(response) => Self::from_kind(response.title),
@@ -110,8 +110,8 @@ impl Refusal {
 
     /// The best a bodyless operation can do: read the status alone.
     ///
-    /// For the handful of routes whose only documented failure is the elevation demand — the
-    /// account export and deletion, which publish no error schema — `403` has exactly one
+    /// For the handful of routes whose only documented failure is the elevation demand (the
+    /// account export and deletion, which publish no error schema) `403` has exactly one
     /// meaning, so this is precise there and a guess nowhere else.
     pub(crate) fn from_status(status: Option<u16>) -> Self {
         if status == Some(403) {
@@ -124,7 +124,7 @@ impl Refusal {
 
 /// A short, user-facing sentence for a failed operation (§17.3: name what failed).
 ///
-/// Never leaks `Debug` output into the UI — transport/decode faults are bucketed into plain
+/// Never leaks `Debug` output into the UI: transport/decode faults are bucketed into plain
 /// language instead. Resolved eagerly, in the language active when the call failed.
 pub(crate) fn friendly_error<E>(i18n: Translator, err: ApiOpError<E>) -> String {
     match err {
@@ -137,7 +137,7 @@ pub(crate) fn friendly_error<E>(i18n: Translator, err: ApiOpError<E>) -> String 
         }
         ApiOpError::ResponseBodyError(_) => i18n.t("error.truncated"),
         ApiOpError::InvalidResponsePayload(_, _) => i18n.t("error.unreadable"),
-        // Both are programming faults on our side rather than anything the reader did.
+        // Both are programming faults on our side instead of anything the reader did.
         ApiOpError::InvalidRequest(_) | ApiOpError::Custom(_) => i18n.t("error.unbuildable"),
     }
 }
@@ -145,7 +145,7 @@ pub(crate) fn friendly_error<E>(i18n: Translator, err: ApiOpError<E>) -> String 
 /// The wording for a call the API guards with a permission, an enrolment and an elevation.
 ///
 /// Differs from [`friendly_error`] in one place, and it is the place that matters: an account
-/// with no second factor is told to enrol one rather than that its privileges are insufficient —
+/// with no second factor is told to enrol one instead of that its privileges are insufficient,
 /// which is a sentence nobody can act on, for the one refusal that has an obvious remedy. A
 /// step-up demand never reaches here; the caller's [`crate::components::StepUpGate`] takes it
 /// first and opens the prompt.
@@ -156,7 +156,7 @@ pub(crate) fn guarded_error(i18n: Translator, err: ApiOpError<ProblemDetails>) -
     }
 }
 
-/// Map an HTTP status onto the sentence shown to the reader.
+/// Maps an HTTP status onto the sentence shown to the reader.
 fn status_message(i18n: Translator, status: u16) -> String {
     match status_key(status) {
         Some(key) => i18n.t(key),
@@ -167,7 +167,7 @@ fn status_message(i18n: Translator, status: u16) -> String {
 /// The catalogue key wording an HTTP status, or `None` when there is nothing better to say
 /// than the bare code.
 ///
-/// Split from [`status_message`] so this stays testable on the host target — the message
+/// Split from [`status_message`] so this stays testable on the host target: the message
 /// lookup needs a Dioxus runtime, this doesn't.
 fn status_key(status: u16) -> Option<&'static str> {
     Some(match status {
@@ -216,8 +216,8 @@ mod tests {
         Refusal::of(&problem(title, reqwest::StatusCode::FORBIDDEN))
     }
 
-    /// The two `401`s mean opposite things to a signed-out client — "your session ended" and
-    /// "this deployment serves you nothing" — and only the token tells them apart. Branching on
+    /// The two `401`s mean opposite things to a signed-out client ("your session ended" and
+    /// "this deployment serves you nothing"), and only the token tells them apart. Branching on
     /// the status instead would put the sign-in wall up on any expired session.
     #[test]
     fn only_the_account_required_token_reports_a_private_deployment() {
@@ -250,11 +250,11 @@ mod tests {
     /// host workspace, so no compiler relates the API's enum to the generated one here). The
     /// parse is the assertion: a token published but absent from the generated vocabulary means
     /// the client is stale, and a real response carrying it would decode as
-    /// `InvalidResponsePayload` — the server's message dropped, the reader shown "unreadable".
+    /// `InvalidResponsePayload`; the server's message dropped, the reader shown "unreadable".
     ///
     /// The defect this closes: the console matched these tokens as string literals across the
     /// workspace boundary. Renaming one on the API side compiled on both sides and silently
-    /// turned the step-up prompt back into "you don't have permission to do that" — the exact
+    /// turned the step-up prompt back into "you don't have permission to do that": the exact
     /// dead end the prompt exists to avoid.
     #[test]
     fn every_published_problem_kind_is_classified() {
@@ -276,7 +276,7 @@ mod tests {
                      regenerate with `cargo run -p xtask -- openapi`"
                 )
             });
-            // Total by construction — `from_kind` is exhaustive — but this pins that the
+            // Total by construction (`from_kind` is exhaustive), but this pins that the
             // published token, not just the variant, reaches a decision.
             let _ = Refusal::from_kind(kind);
         }

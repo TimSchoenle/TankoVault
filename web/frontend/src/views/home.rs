@@ -1,14 +1,13 @@
-//! Home dashboard (`docs/DESIGN_SYSTEM.md` §7.1) — the signed-in reader's landing screen. Greeting +
-//! lifetime stat tiles, a continue-reading rail and a day-grouped "New in your watchlist" feed.
-//! Signed out, the same route is [`GuestHome`] instead, and signed in with an empty watchlist it
-//! is [`FirstRun`]: every section here is derived from a watchlist, so until one exists there is
-//! nothing to show and the screen has to say what it is for instead. [`home_shape`] picks.
+//! Owns the Home dashboard (`docs/DESIGN_SYSTEM.md` §7.1): the signed-in reader's landing screen.
+//! It shows a greeting, lifetime stat tiles, a continue-reading rail and a day-grouped "New in your
+//! watchlist" feed. Signed out, the same route is [`GuestHome`] instead, and signed in with an
+//! empty watchlist it is [`FirstRun`]: every section here is derived from a watchlist, so until one
+//! exists there is nothing to show and the screen has to say what it is for instead. [`home_shape`]
+//! picks.
 //!
-//! Recommendations used to close this screen and now live at [`crate::Route::Recommendations`].
-//! They were the fourth section down, so they got whatever room was left: a short shelf below
-//! the fold with each suggestion's reason squeezed into one grey line. This screen is about what
-//! the reader is *already* reading; what they might read next is a different question and now
-//! has a page that can answer it properly.
+//! Recommendations live at [`crate::Route::Recommendations`], not here. This screen is about
+//! what the reader is *already* reading; what they might read next is a different question, with
+//! a page that can answer it properly.
 
 use super::auth::AuthBrand;
 use crate::api;
@@ -96,7 +95,7 @@ pub(crate) fn Home() -> Element {
 
     if !session.is_authenticated() {
         // Until the boot-time silent refresh settles, "signed out" only means "we have not
-        // looked yet" — so the landing waits rather than painting over the reader's own home.
+        // looked yet", so the landing waits instead of painting over the reader's own home.
         if !session.is_settled() {
             return rsx! {
                 SkeletonBlock { height: 96 }
@@ -112,7 +111,7 @@ pub(crate) fn Home() -> Element {
 
     let shape = home_shape(stats.read_unchecked().as_ref());
     // A shimmer while the lookup is in flight, the number once it lands, an em dash only if it
-    // failed — never a provisional zero. "New chapters" comes from stats' uncapped `unread`
+    // failed: never a provisional zero. "New chapters" comes from stats' uncapped `unread`
     // total, not the feed length, which caps at 100 rows.
     let (new_chapters, reading, chapters_read) = match &*stats.read_unchecked() {
         Some(Ok(Some(stats))) => (
@@ -223,10 +222,10 @@ enum HomeShape {
     Tracking,
 }
 
-/// Decide Home's shape from the stats resource.
+/// Decides Home's shape from the stats resource.
 ///
 /// Every section of this screen derives from the watchlist, so `tracking == 0` is exactly the
-/// condition under which all of them are guaranteed empty — and the only one that earns
+/// condition under which all of them are guaranteed empty, and the only one that earns
 /// [`FirstRun`]. The distinction a refactor must not lose is *not answered yet* versus
 /// *answered, nothing tracked*: flashing "your watchlist is empty" at a reader who has a hundred
 /// series is a worse screen than the one this replaces. A failed lookup is not evidence of an
@@ -242,7 +241,7 @@ fn home_shape(stats: Option<&Result<Option<MeStats>, String>>) -> HomeShape {
 /// What Home is on an account's first day: what a watchlist is for, and the two moves that fill
 /// one.
 ///
-/// Deliberately [`GuestHome`]'s shape — the two are the same screen at two moments, and the
+/// Deliberately [`GuestHome`]'s shape: the two are the same screen at two moments, and the
 /// reader who actually signed up must not be given less than the one who did not.
 #[component]
 fn FirstRun() -> Element {
@@ -275,9 +274,9 @@ fn FirstRun() -> Element {
 /// What `/` is for a reader with no session: the brand, what the product does, and the two
 /// moves that actually work from here.
 ///
-/// It replaces the bare "Home — sign in to see this" gate. Every section of the signed-in
-/// screen is derived from a watchlist that does not exist yet, so there is nothing to withhold;
-/// what was missing was a reason to sign in and a way into the part of the app that is public.
+/// Not a bare "Home: sign in to see this" gate: every section of the signed-in screen is
+/// derived from a watchlist that does not exist yet, so there is nothing to withhold, and what a
+/// visitor needs is a reason to sign in and a way into the part of the app that is public.
 #[component]
 fn GuestHome() -> Element {
     let i18n = use_i18n();
@@ -324,9 +323,9 @@ fn StatTile(icon: Icon, label: String, value: TileValue, tone: &'static str) -> 
                 "{label}"
             }
             match value {
-                // A shimmer rather than the em dash this used to show while loading: the dash is
-                // set in the 26px display face, so three tiles resized around their real numbers
-                // and re-flowed the header in the first second of every visit.
+                // A shimmer instead of an em dash while loading: the dash is set in the 26px
+                // display face, so three tiles would resize around their real numbers and
+                // re-flow the header in the first second of every visit.
                 TileValue::Pending => rsx! {
                     span { class: "val skel", "aria-hidden": "true" }
                 },
@@ -342,7 +341,7 @@ fn StatTile(icon: Icon, label: String, value: TileValue, tone: &'static str) -> 
     }
 }
 
-/// A continue-reading card: cover plus the next unread chapter, linking to the series so the
+/// A continue-reading card: cover and the next unread chapter, linking to the series so the
 /// reader can resume.
 #[component]
 fn ContinueCard(item: ContinueItem) -> Element {
@@ -380,19 +379,19 @@ fn ContinueCard(item: ContinueItem) -> Element {
 /// Everything one series released on one day, as a single row.
 ///
 /// The feed arrives one row per chapter. A series that dropped twelve overnight therefore took
-/// twelve rows of the reader's home screen and pushed everything else below the fold — the same
+/// twelve rows of the reader's home screen and pushed everything else below the fold: the same
 /// shape the notification inbox already coalesces server-side, and it has to read the same way
 /// here or the two surfaces disagree about what happened.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Release {
     pub(crate) series_id: SeriesId,
     pub(crate) series_title: String,
-    /// The carrier of the newest chapter in the group — the one `url` opens, so it moves with
-    /// `url` rather than being fixed by whichever entry happened to open the group.
+    /// The carrier of the newest chapter in the group: the one `url` opens, so it moves with
+    /// `url` instead of being fixed by whichever entry happened to open the group.
     pub(crate) provider_slug: String,
     /// Lowest chapter number in the group.
     pub(crate) first: f64,
-    /// Highest — the one "mark read" catches the reader up to, and the one the link opens.
+    /// Highest: the one "mark read" catches the reader up to, and the one the link opens.
     pub(crate) last: f64,
     pub(crate) count: usize,
     /// The newest chapter's own title, kept only for a single-chapter row: naming one of twelve
@@ -406,24 +405,23 @@ pub(crate) struct Release {
 ///
 /// Anything less is a duplicate key among siblings, and dioxus's keyed diff answers that by
 /// diffing one old node twice: the second pass reads a mount the first already took and panics
-/// `invalid key` inside `dioxus-core`, aborting the whole app rather than returning an error.
+/// `invalid key` inside `dioxus-core`, aborting the whole app instead of returning an error.
 /// The test `a_series_carried_by_two_sources_is_one_row_with_one_key` pins it.
 fn feed_row_key(release: &Release) -> String {
     release.series_id.to_string()
 }
 
-/// Fold one day's entries into one row per series, newest chapter first.
+/// Folds one day's entries into one row per series, newest chapter first.
 ///
 /// The server's ordering inside a day is by discovery, which is not chapter order, so this takes
-/// the extremes rather than the ends.
+/// the extremes instead of the ends.
 ///
-/// Grouping is by series alone. It used to be by series *and* provider, on the reasoning that the
-/// same chapter carried by two sources is two links and folding them would silently pick one —
-/// but a merge unions the absorbed series' sources onto the survivor, so that reasoning turned
-/// every merged series into two identical rows claiming twice the chapters, on the one screen
-/// whose stat tile counts each chapter once. Nothing is picked silently any more either: the feed
-/// now arrives one row per chapter, already resolved to the carrier the ledger calls this series'
-/// preferred source, so `provider_slug` names where this row's Open button actually goes.
+/// Grouping is by series alone. Grouping by series *and* provider would turn every merged series (a
+/// merge unions the absorbed series' sources onto the survivor) into two identical rows claiming
+/// twice the chapters, on the one screen whose stat tile counts each chapter once. Nothing is
+/// picked silently either: the feed arrives one row per chapter, already resolved to the carrier
+/// the ledger calls this series' preferred source, so `provider_slug` names where this row's Open
+/// button actually goes.
 fn group_by_series(entries: &[FeedEntry]) -> Vec<Release> {
     let mut out: Vec<Release> = Vec::new();
     for entry in entries {
@@ -530,7 +528,7 @@ fn FeedRow(release: Release, reload: Reload) -> Element {
     }
 }
 
-/// Group feed entries by the date component of `discovered_at`, preserving the server's
+/// Groups feed entries by the date component of `discovered_at`, preserving the server's
 /// newest-first ordering.
 ///
 /// Relies on that ordering: entries for one day are contiguous, so a single pass suffices and
@@ -562,7 +560,7 @@ mod tests {
     }
 
     /// The bug: every section of Home derives from the watchlist, so an account on its first day
-    /// got three em dashes, two empty sections and no action anywhere — less than the signed-out
+    /// got three em dashes, two empty sections and no action anywhere; less than the signed-out
     /// screen offers. The first-run block that replaces them keys off *resolved and nothing
     /// tracked*; keying it off "no numbers to show" instead would flash "your watchlist is empty"
     /// at a reader who has a hundred series, every time the stats request is in flight.
@@ -593,7 +591,7 @@ mod tests {
     /// The bug: a series that released twelve chapters overnight took twelve rows of the home
     /// screen and pushed the rest of the day below the fold, while the notification inbox showed
     /// the same event as one coalesced line. One row per series, carrying the range and the
-    /// count — and the *newest* chapter's link, whatever order discovery happened to record them
+    /// count, and the *newest* chapter's link, whatever order discovery happened to record them
     /// in.
     #[test]
     fn a_days_chapters_for_one_series_become_one_row() {
@@ -614,7 +612,7 @@ mod tests {
 
     /// The bug: a merge unions the absorbed series' sources onto the survivor, so from then on
     /// one series is carried by several providers. Folding by series *and* provider therefore
-    /// split every merged series into one row per carrier, each claiming its own count — on the
+    /// split every merged series into one row per carrier, each claiming its own count: on the
     /// one screen whose "New chapters" tile counts each chapter exactly once, because every
     /// server-side unread count is `DISTINCT` over the chapter number. The fold is by series
     /// alone, and the row names the carrier its Open button actually goes to.
@@ -639,14 +637,14 @@ mod tests {
         );
     }
 
-    /// The bug that crashed the desktop app (7.3.0): the row key was `"{series_id}-{last}"`,
-    /// which was the grouping identity *minus the provider* — so a series that grouped into two
+    /// The bug that crashed the desktop app: the row key was `"{series_id}-{last}"`,
+    /// which was the grouping identity *minus the provider*, so a series that grouped into two
     /// rows produced two siblings carrying one key. Dioxus's keyed diff maps both new nodes onto
     /// the same old node, the second pass reads a mount the first already took, and
     /// `dioxus-core` panics `invalid key`, aborting the process.
     ///
     /// The key and the grouping identity have to stay the same thing, whatever that identity is,
-    /// which is why this asserts against `group_by_series` rather than against hand-built
+    /// which is why this asserts against `group_by_series`, not against hand-built
     /// `Release`s.
     #[test]
     fn a_series_carried_by_two_sources_is_one_row_with_one_key() {

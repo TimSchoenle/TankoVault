@@ -1,5 +1,5 @@
-//! The Watchlist's view state, encoded as a URL query string (§3.4) so a filtered watchlist is
-//! shareable and the back button is meaningful; one catch-all `?:..query` field rather than seven.
+//! Owns the Watchlist's view state, encoded as a URL query string (§3.4) so a filtered watchlist is
+//! shareable and the back button is meaningful; one catch-all `?:..query` field, not seven.
 
 use crate::models::{WatchStatus, WatchStatusExt};
 use crate::util::{decode_component, encode_component};
@@ -9,7 +9,8 @@ use std::fmt;
 /// are the wire contract between them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum Sort {
-    /// Newest release first — the default, and the only order the band grouping means anything under.
+    /// Newest release first: the default, and the only order the band grouping means anything
+    /// under.
     #[default]
     Released,
     Unread,
@@ -48,7 +49,7 @@ impl Sort {
         }
     }
 
-    /// An unrecognised token falls back to the default rather than refusing the route — a typo
+    /// An unrecognised token falls back to the default instead of refusing the route: a typo
     /// in a hand-edited URL should land on the default list, not a broken page.
     fn parse(token: &str) -> Self {
         Self::ALL
@@ -57,7 +58,7 @@ impl Sort {
             .unwrap_or_default()
     }
 
-    /// The direction that reads as "most interesting first" — mirrors the server's rule so the
+    /// The direction that reads as "most interesting first": mirrors the server's rule so the
     /// column caret can be drawn without a round trip.
     pub(crate) fn natural_order(self) -> Order {
         match self {
@@ -66,7 +67,7 @@ impl Sort {
         }
     }
 
-    /// Whether release-recency group headers apply — meaningless once sorted by title or
+    /// Whether release-recency group headers apply: meaningless once sorted by title or
     /// progress, since a `TODAY` header over alphabetized rows is noise.
     pub(crate) fn groups_by_release(self) -> bool {
         self == Self::Released
@@ -175,11 +176,11 @@ pub(crate) struct WatchlistQuery {
     /// `None` is the `All` tab, not a missing value.
     pub(crate) status: Option<WatchStatus>,
     pub(crate) sort: Sort,
-    /// `None` means whichever direction [`Sort::natural_order`] gives — keeps `?sort=title` off
+    /// `None` means whichever direction [`Sort::natural_order`] gives: keeps `?sort=title` off
     /// the surprising Z→A order without pinning every other sort's direction into the URL.
     pub(crate) order: Option<Order>,
     pub(crate) q: String,
-    /// Defaults to **on** — the list is a triage queue, and most of a large watchlist is noise
+    /// Defaults to **on**: the list is a triage queue, and most of a large watchlist is noise
     /// without this.
     pub(crate) unread_only: bool,
     /// Only titles whose preferred source is unhealthy.
@@ -209,7 +210,7 @@ impl WatchlistQuery {
         self.order.unwrap_or_else(|| self.sort.natural_order())
     }
 
-    /// Whether any filter narrows the list beyond the default — gates the "widen your filter"
+    /// Whether any filter narrows the list beyond the default: gates the "widen your filter"
     /// empty state so it doesn't show when there's nothing to widen.
     pub(crate) fn is_narrowed(&self) -> bool {
         !self.q.is_empty()
@@ -224,7 +225,7 @@ impl WatchlistQuery {
     }
 }
 
-/// Parse the query string. Unknown keys and unparseable values fall back to the default for
+/// Parses the query string. Unknown keys and unparseable values fall back to the default for
 /// that field: a URL is user-editable, and half-understanding one is better than a blank page.
 impl From<&str> for WatchlistQuery {
     fn from(query: &str) -> Self {
@@ -249,14 +250,15 @@ impl From<&str> for WatchlistQuery {
     }
 }
 
-/// Write only what differs from the default, so the rail's link is `/watchlist?` and a shared
+/// Writes only what differs from the default, so the rail's link is `/watchlist?` and a shared
 /// URL names exactly what its sender changed.
 impl fmt::Display for WatchlistQuery {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let default = Self::default();
         let mut parts: Vec<String> = Vec::new();
         if self.status != default.status {
-            // `all`, not empty — the `All` tab is a choice; an absent parameter already means default.
+            // `all`, not empty: the `All` tab is a choice; an absent parameter already means
+            // default.
             parts.push(format!(
                 "status={}",
                 self.status.map_or("all", |s| s.token())
@@ -346,7 +348,7 @@ mod tests {
         assert_eq!(WatchlistQuery::default().to_string(), "");
     }
 
-    /// A filter containing the query grammar's own separators used to be re-parsed as extra
+    /// The bug: a filter containing the query grammar's own separators was re-parsed as extra
     /// parameters, losing everything after the `&`.
     #[test]
     fn reserved_characters_in_the_filter_survive() {
@@ -358,7 +360,7 @@ mod tests {
         assert_eq!(parsed.q, "fate/stay & night = ?");
     }
 
-    /// Non-ASCII has to survive too — a good part of this catalogue is not spelled in Latin.
+    /// Non-ASCII has to survive too: a good part of this catalogue is not spelled in Latin.
     #[test]
     fn non_ascii_filters_survive() {
         let query = WatchlistQuery {

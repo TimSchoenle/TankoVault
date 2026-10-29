@@ -1,4 +1,4 @@
-//! Login / Register (§17.4 auth flow). Access token is held in memory; the refresh token
+//! Owns Login / Register (§17.4 auth flow). Access token is held in memory; the refresh token
 //! is set as an httpOnly cookie by the API. On success we route to Discover.
 
 mod sign_in;
@@ -92,7 +92,7 @@ pub(crate) fn Login() -> Element {
                 }
             }
 
-            // The second leg takes over the whole form rather than appearing beside it: the
+            // The second leg takes over the whole form instead of appearing beside it: the
             // password has already been accepted, and leaving it on screen invites a reader who
             // mistypes their code to retype the password instead and wonder why nothing happens.
             if mfa_step {
@@ -131,7 +131,7 @@ pub(crate) fn Login() -> Element {
                     label: i18n.t("auth.field.password"),
                     kind: "password",
                     // `new-password` on the register form is what tells a password manager to
-                    // offer to *generate* one rather than fill the existing one.
+                    // offer to *generate* one, not fill the existing one.
                     autocomplete: if is_register { "new-password" } else { "current-password" },
                     value: password(),
                     on_input: move |v| password.set(v),
@@ -148,10 +148,10 @@ pub(crate) fn Login() -> Element {
                     }
                 }
 
-                // Offered only where it can work: the deployment has the feature on, and the platform
-                // can run a ceremony — `navigator.credentials` in a secure context on the web build,
-                // Windows Hello on the desktop one. A button that can only report "not available
-                // here" is worse than no button.
+                // Offered only where it can work: the deployment has the feature on, and the
+                // platform can run a ceremony; `navigator.credentials` in a secure context on the
+                // web build, Windows Hello on the desktop one. A button that can only report "not
+                // available here" is worse than no button.
                 if !is_register && caps.has_feature(Feature::AccountsPasskeys) && webauthn::is_available() {
                     div { class: "ik-or", style: "margin:4px 0 12px;text-align:center;",
                         span { class: "ik-muted", style: "font-size:12px;", {i18n.t("common.or")} }
@@ -262,7 +262,7 @@ fn second_factor_step(form: &SignIn, finish_mfa: Callback<()>) -> Element {
 ///
 /// The one place these two must be reachable *before* consent, which is why the API serves them
 /// unauthenticated. Rendered **only if both are configured**: an operator who publishes neither
-/// gets no sentence rather than one pointing nowhere, because a consent line that links a 404 is
+/// gets no sentence instead of one pointing nowhere, because a consent line that links a 404 is
 /// worse than no line at all. The sentence is one catalogue string with a placeholder per link,
 /// so a translation can reorder the clauses around them.
 fn acceptance(i18n: Translator) -> Element {
@@ -285,7 +285,7 @@ fn acceptance(i18n: Translator) -> Element {
     }
 }
 
-/// The shared brand lockup (§7.9) shown atop every auth screen: gradient tile + wordmark +
+/// The shared brand lockup (§7.9) shown atop every auth screen: gradient tile, wordmark and
 /// tagline. Extracted so the confirmation and password screens match the sign-in card.
 #[component]
 pub(crate) fn AuthBrand() -> Element {
@@ -294,7 +294,7 @@ pub(crate) fn AuthBrand() -> Element {
         div { class: "ik-auth-brand",
             div { class: "ik-brand-tile", Ic { icon: Icon::MenuBook, size: 22 } }
             div {
-                // The wordmark is the product's name, not a message — see `nav::Rail`.
+                // The wordmark is the product's name, not a message: see `nav::Rail`.
                 div { class: "ik-wordmark",
                     "Tankō"
                     span { class: "acc", "Vault" }

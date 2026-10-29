@@ -78,7 +78,7 @@ pub(crate) struct MergePlan {
     pub(crate) snapshot: Option<(f64, WatchStatus)>,
 }
 
-/// Decide the part of the plan that needs no common-ancestor snapshot.
+/// Decides the part of the plan that needs no common-ancestor snapshot.
 #[must_use]
 pub(crate) fn plan_series(local: &LocalSide, remote: Option<&RemoteEntry>) -> SeriesPlan {
     if local.excluded {

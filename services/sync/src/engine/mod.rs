@@ -142,7 +142,7 @@ impl SyncEngine {
         self.accounts.authorize_url(slug)
     }
 
-    /// Exchange an OAuth `code` and persist the (encrypted) tokens for `user_id`.
+    /// Exchanges an OAuth `code` and persists the (encrypted) tokens for `user_id`.
     pub(crate) async fn link(&self, slug: &str, user_id: UserId, code: &str) -> anyhow::Result<()> {
         self.accounts.link(slug, user_id, code).await
     }

@@ -1,7 +1,7 @@
-//! Two-factor authentication on the Security panel: enrol an authenticator app or a security
-//! key, keep recovery codes, and remove either.
+//! Owns the two-factor authentication on the Security panel: enrol an authenticator app or a
+//! security key, keep recovery codes, and remove either.
 //!
-//! Rendered **above** the passkey card, because it is now the prerequisite for it: a passkey
+//! Rendered **above** the passkey card, because it is the prerequisite for it: a passkey
 //! signs in on its own with no second leg, so the account has to hold a second factor before it
 //! may create one. A reader who arrives wanting a passkey should meet the thing they need first.
 //!
@@ -9,8 +9,8 @@
 //!
 //! * **The secret is shown once.** `POST /v1/me/mfa/totp` is the only response that will ever
 //!   carry it, and the same is true of a recovery-code set. So the card holds them in a signal
-//!   until the reader dismisses them, and never re-fetches — there is nothing to re-fetch.
-//! * **Every change needs an elevation once a factor exists.** The prompt is inline rather than
+//!   until the reader dismisses them, and never re-fetches: there is nothing to re-fetch.
+//! * **Every change needs an elevation once a factor exists.** The prompt is inline, not
 //!   a route of its own, so the list the reader is editing stays visible behind the question.
 
 mod enrolment;
@@ -96,7 +96,7 @@ pub(crate) fn MfaCard() -> Element {
 
             // The single sight of a fresh recovery-code set. Not dismissible by a stray click:
             // it is the only copy that will ever exist, and a reader who loses it has to
-            // regenerate — which invalidates the set they were half-way through writing down.
+            // regenerate, which invalidates the set they were half-way through writing down.
             if !fresh_codes.read().is_empty() {
                 div { class: "ik-note", style: "padding:12px;margin:12px 0;",
                     p { style: "margin:0 0 6px;font-weight:600;", {i18n.t("mfa.recovery.title")} }
@@ -197,7 +197,7 @@ pub(crate) fn MfaCard() -> Element {
             h4 { style: "margin:20px 0 6px;font-size:14px;", {i18n.t("mfa.key.title")} }
             {
                 // `async_block`, not `async_list`: the keys are a field of the status document
-                // rather than the whole response, so the empty case is rendered here.
+                // instead of the whole response, so the empty case is rendered here.
                 async_block(&status, reload, 48, |s| {
                     if s.security_keys.is_empty() {
                         return rsx! {
@@ -273,7 +273,7 @@ pub(crate) fn MfaCard() -> Element {
 /// One registered security key, with rename and revoke.
 ///
 /// `gate` belongs to the card: both actions are elevated, and a refusal has to open the one
-/// prompt above the list rather than a prompt per row.
+/// prompt above the list instead of a prompt per row.
 #[component]
 fn SecurityKeyRow(
     id: String,
@@ -413,7 +413,7 @@ fn SecurityKeyRow(
 
 /// The provisioning URI as a scannable QR code.
 ///
-/// Drawn as `<rect>` elements from the module matrix rather than injected as markup: the served
+/// Drawn as `<rect>` elements from the module matrix, not injected as markup: the served
 /// CSP carries no `'unsafe-eval'` and this crate bans `document::eval` outright, and
 /// `dangerous_inner_html` for something this component generates itself would be a habit worth
 /// not forming. The matrix is small enough that the element count is unremarkable.
@@ -421,7 +421,7 @@ fn SecurityKeyRow(
 fn QrCode(data: String) -> Element {
     let Ok(code) = qrcode::QrCode::new(data.as_bytes()) else {
         // An over-long URI cannot be encoded. The base32 secret is rendered beside this either
-        // way, so the reader still has a way through — silence beats an error box here.
+        // way, so the reader still has a way through: silence beats an error box here.
         return rsx! {};
     };
     let width = code.width();

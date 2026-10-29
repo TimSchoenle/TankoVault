@@ -1,5 +1,5 @@
-//! Operator Console: a master–detail surface with an entity rail, an entity list, and a deep
-//! inspector, one module per entity.
+//! Owns the Operator Console: a master–detail surface with an entity rail, an entity list, and a
+//! deep inspector, one module per entity.
 //!
 //! Every filter and selection lives in the URL (see [`query`]), so a console view can be linked
 //! to. Panels read it through [`ConsoleNav`] and never keep a second copy: a signal shadowing a
@@ -49,19 +49,19 @@ use std::str::FromStr;
 
 /// The shared refetch signal for every auto-refreshing console panel.
 ///
-/// A newtype over [`Reload`] rather than reusing it directly: in prop position it says "the
+/// A newtype over [`Reload`] instead of reusing it directly: in prop position it says "the
 /// shared console cadence", not "this panel's own reload", so a tick-driven panel still has
 /// something distinct to hand [`ErrorBox`](crate::components::ErrorBox) as its retry action.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct RefreshTick(Reload);
 
 impl RefreshTick {
-    /// Subscribe the calling reactive scope, so it refetches on the next tick.
+    /// Subscribes the calling reactive scope, so it refetches on the next tick.
     pub(super) fn track(self) {
         self.0.track();
     }
 
-    /// Advance the tick, refetching every panel that tracks it.
+    /// Advances the tick, refetching every panel that tracks it.
     pub(super) fn bump(self) {
         self.0.bump();
     }
@@ -75,7 +75,7 @@ impl RefreshTick {
 /// The console's entities, in rail order within their group.
 ///
 /// Public because it is a route segment: [`ConsoleEntity::slug`] *is* the URL, so
-/// `/console/providers` and `/console/feature-flags` are addresses rather than parameters.
+/// `/console/providers` and `/console/feature-flags` are addresses, not parameters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ConsoleEntity {
     Overview,
@@ -181,7 +181,7 @@ impl ConsoleEntity {
             // The merges that were performed, as opposed to the queue of ones awaiting a
             // verdict: the same glyph would say the two screens hold the same rows.
             Self::Merges => Icon::Unmerge,
-            // A judgement surface for two automatic engines, not a queue to work — and
+            // A judgement surface for two automatic engines, not a queue to work, and
             // distinct from Audit, which records what *people* did.
             Self::Decisions => Icon::Gavel,
             // A tuning surface, not a discovery one: the operator's view of it is the knobs.
@@ -227,7 +227,8 @@ impl ConsoleEntity {
             Self::Overview => (Permission::SystemStats, Feature::AdminStats),
             Self::Catalogue => (Permission::CatalogueRead, Feature::AdminCatalogue),
             Self::Scans => (Permission::ScansRead, Feature::ScanningManual),
-            // Solver health is provider health from the fetch pipeline's side: same data and permission.
+            // Solver health is provider health from the fetch pipeline's side: same data and
+            // permission.
             Self::Providers | Self::Solver => (Permission::ProvidersRead, Feature::AdminProviders),
             Self::AdapterTest => (Permission::ProvidersTest, Feature::AdminAdapterTest),
             Self::Merge => (Permission::MergeRead, Feature::ScanningMergeQueue),
@@ -262,7 +263,7 @@ impl ConsoleEntity {
         matches!(self, Self::Providers | Self::Users | Self::Merges)
     }
 
-    /// Whether this entity refetches from the shared tick. Work surfaces opt out — see the
+    /// Whether this entity refetches from the shared tick. Work surfaces opt out: see the
     /// module docs.
     fn auto_refreshes(self) -> bool {
         !matches!(
@@ -278,7 +279,7 @@ impl fmt::Display for ConsoleEntity {
     }
 }
 
-/// An unrecognised slug. The route table turns this into a redirect to `/console` rather than a
+/// An unrecognised slug. The route table turns this into a redirect to `/console`, not a
 /// 404: a link to an entity this build has dropped should still land the operator in the
 /// console.
 #[derive(Debug)]
@@ -303,7 +304,7 @@ impl FromStr for ConsoleEntity {
 
 /// The console's addressable state, and the two ways a panel changes it.
 ///
-/// Handed down as context rather than threaded as props: the inspector tabs sit four components
+/// Handed down as context, not threaded as props: the inspector tabs sit four components
 /// below the route, and every handle here is `Copy`, so a lookup is cheaper than the clone chain
 /// would be.
 #[derive(Clone, Copy)]
@@ -341,7 +342,7 @@ impl ConsoleNav {
         });
     }
 
-    /// Move to another entity, dropping the filters — they belong to the panel being left.
+    /// Moves to another entity, dropping the filters: they belong to the panel being left.
     pub(super) fn open(self, entity: ConsoleEntity) {
         self.nav.push(Route::ConsoleSection {
             entity,
@@ -359,10 +360,10 @@ pub(super) fn use_console_nav() -> ConsoleNav {
 /// URL as it stands.
 ///
 /// A panel resolves its own landing row when the URL names none, so the inspector is never
-/// empty — but `sel` stays absent, and `/console/providers` then addresses "whichever row sorts
-/// first under whatever filter is applied" rather than the row on screen. Only that landing case
+/// empty, but `sel` stays absent, and `/console/providers` then addresses "whichever row sorts
+/// first under whatever filter is applied" instead of the row on screen. Only that landing case
 /// is written back. A `sel` the operator chose is left alone even when the current filters
-/// exclude it, so widening the filter brings their row back rather than finding it overwritten;
+/// exclude it, so widening the filter brings their row back instead of finding it overwritten;
 /// and returning `None` once `sel` is set is what stops the write from re-triggering itself.
 pub(super) fn landing_selection(sel: Option<&str>, resolved: Option<String>) -> Option<String> {
     resolved.filter(|_| sel.is_none())
@@ -416,7 +417,7 @@ fn landing_entity(caps: &CapabilitySet) -> Option<ConsoleEntity> {
         })
 }
 
-/// `/console` — the way in, not a place. Resolves the landing entity and rewrites the address
+/// `/console`: the way in, not a place. Resolves the landing entity and rewrites the address
 /// bar to it, so every console view an operator can reach is one they can also send.
 #[component]
 pub(crate) fn Console() -> Element {
@@ -457,7 +458,7 @@ pub(crate) fn Console() -> Element {
     }
 }
 
-/// `/console/:entity?:..query` — the console itself.
+/// `/console/:entity?:..query`: the console itself.
 #[component]
 pub(crate) fn ConsoleSection(entity: ConsoleEntity, query: ConsoleQuery) -> Element {
     let i18n = use_i18n();
@@ -466,8 +467,8 @@ pub(crate) fn ConsoleSection(entity: ConsoleEntity, query: ConsoleQuery) -> Elem
     let session = crate::state::use_session();
     let navigator = navigator();
 
-    // The route is the read side of every filter; these memos recompute when it changes rather
-    // than mirroring it into signals that could drift out of step with the address bar.
+    // The route is the read side of every filter; these memos recompute when it changes,
+    // not mirroring it into signals that could drift out of step with the address bar.
     let entity_memo = use_memo(use_reactive!(|entity| entity));
     let query_memo = use_memo(use_reactive!(|query| query.clone()));
     let nav = use_context_provider(|| ConsoleNav {
@@ -495,9 +496,8 @@ pub(crate) fn ConsoleSection(entity: ConsoleEntity, query: ConsoleQuery) -> Elem
 
     let tick = RefreshTick(use_reload());
     let auto = use_signal(prefs::console_live);
-    // The stream is the cadence now; `RefreshTick` stays for the panels it carries no event for
-    // and for the manual refresh button. The timer that used to bump it every four seconds is
-    // gone — twelve panels refetching in lockstep is what this replaced.
+    // The stream is the cadence; `RefreshTick` serves the panels it carries no event for and the
+    // manual refresh button. No timer bumps it: a timer would refetch twelve panels in lockstep.
     let live = live::use_console_live(api, auto.into());
 
     // A reader without `system.stats` simply gets a rail with no numbers on it. The first paint
@@ -523,7 +523,7 @@ pub(crate) fn ConsoleSection(entity: ConsoleEntity, query: ConsoleQuery) -> Elem
     // rail reads as a broken list.
     //
     // Memoised because this component re-renders on the shared tick, and the rail's shape
-    // depends on nothing that changes between ticks — only on the capability set.
+    // depends on nothing that changes between ticks: only on the capability set.
     let groups = use_memo(move || {
         RAIL.iter()
             .map(|(key, entities)| {
@@ -634,10 +634,9 @@ pub(crate) fn ConsoleSection(entity: ConsoleEntity, query: ConsoleQuery) -> Elem
 
     rsx! {
         div { class: "ik-cons",
-            // A page head, not a second app bar. This used to carry the product's own tile and
-            // wordmark under the rail that already shows both, and a search box that only moved
-            // focus to the one in the top bar — so the console read as an application embedded in
-            // the application, with two brands and two search fields on screen at once.
+            // A page head, not a second app bar: the product's own tile and wordmark under a
+            // rail that already shows both, and a second search box, would make the console read
+            // as an application embedded in the application.
             div { class: "ik-cons-bar",
                 div { class: "ik-cons-heading",
                     h1 { class: "ik-page-title", {i18n.t("console.title")} }
@@ -720,9 +719,9 @@ fn RailCount(entity: ConsoleEntity, counts: Option<SystemStats>) -> Element {
     }
 }
 
-// The console's jump field is gone. It was a search-shaped button that searched nothing: it
-// moved focus to the top bar's catalogue search, which looks up *series*, on a screen whose rows
-// are providers, runs and accounts. `⌘K` still reaches that box from here, as it does everywhere.
+// The console has no jump field of its own: the top bar's catalogue search looks up *series*,
+// on a screen whose rows are providers, runs and accounts. `⌘K` reaches that box from here, as it
+// does everywhere.
 
 /// The pill class encoding a run state. The wording comes from [`RunStateExt::label_key`], so the
 /// colour and the text cannot drift apart into two different enumerations.
@@ -738,7 +737,7 @@ pub(super) fn run_state_pill(state: RunState) -> &'static str {
 /// The catalogue wording for a scoring rule or signal slug, falling back to the slug.
 ///
 /// The vocabulary lives in the scorer, and the console must not need a release to display a rule
-/// someone has just added — rendering `console.merge.signal.foo` to an operator is worse than
+/// someone has just added: rendering `console.merge.signal.foo` to an operator is worse than
 /// rendering `foo`. Shared by the merge queue and the decision journal, which score the same
 /// pairs and so name the same signals.
 pub(super) fn signal_label(i18n: crate::i18n::Translator, slug: &str) -> String {
@@ -751,7 +750,7 @@ pub(super) fn signal_label(i18n: crate::i18n::Translator, slug: &str) -> String 
     .unwrap_or_else(|| slug.to_owned())
 }
 
-/// Pretty-print a stored adapter config for the editor (empty / null → `{}`).
+/// Pretty-prints a stored adapter config for the editor (empty / null → `{}`).
 pub(super) fn config_editor_text(v: &serde_json::Value) -> String {
     if v.is_null() {
         "{}".to_owned()
@@ -765,8 +764,8 @@ mod tests {
     use super::{adapter_label_key, landing_selection, ConsoleEntity, ADAPTER_KINDS, RAIL};
     use crate::models::AdapterKind;
 
-    /// Providers and Users resolved a landing row so the inspector was never empty, but left
-    /// `sel` out of the URL: `/console/providers` addressed whichever row sorted first under
+    /// The bug: Providers and Users resolved a landing row so the inspector was never empty, but
+    /// left `sel` out of the URL: `/console/providers` addressed whichever row sorted first under
     /// whatever filter was applied, so a shared link opened a different provider than the one
     /// its sender was looking at.
     ///
@@ -814,7 +813,7 @@ mod tests {
     }
 
     /// A rail entry with no wording renders as `console.tab.…` to the operator, because a
-    /// missing catalogue key falls back to the key itself rather than failing.
+    /// missing catalogue key falls back to the key itself instead of failing.
     #[test]
     fn every_entity_is_worded() {
         for entity in ConsoleEntity::ALL {
@@ -829,15 +828,15 @@ mod tests {
 
     /// The provider-registration picker must offer every adapter the API accepts.
     ///
-    /// `ADAPTER_KINDS` is the last hand-maintained part of this vocabulary — the tokens and the
-    /// parse are generated now — so this is what keeps it in step. Read out of the committed
+    /// `ADAPTER_KINDS` is the last hand-maintained part of this vocabulary (the tokens and the
+    /// parse are generated), so this is what keeps it in step. Read out of the committed
     /// `openapi.json`, the artefact `crates/api-client` is generated from and the only thing
     /// that connects these two workspaces (`web/frontend` is outside the host workspace, so no
     /// compiler relates a table here to an enum there).
     ///
-    /// The defect this closes: the picker used to carry hand-written token strings, and
+    /// The defect this closes: the picker carried hand-written token strings, and
     /// `create.rs` parsed them back with a `_ => AdapterKind::Custom` arm, so one wrong
-    /// character registered every new provider as `Custom` — a working-looking form producing
+    /// character registered every new provider as `Custom`; a working-looking form producing
     /// a provider that scans nothing.
     #[test]
     fn the_picker_offers_every_adapter_kind() {
@@ -876,7 +875,7 @@ mod tests {
     }
 
     /// Wording is a separate axis from membership, and a missing catalogue key renders as the
-    /// key itself rather than as an error — so a kind added to the picker without a label ships
+    /// key itself instead of as an error, so a kind added to the picker without a label ships
     /// an option reading `console.adapterKind.…` to the operator.
     #[test]
     fn every_offered_adapter_kind_is_worded() {

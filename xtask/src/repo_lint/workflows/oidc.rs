@@ -116,8 +116,8 @@ mod tests {
         let documented = "          # never `jq -er '.value' > \"$RUNNER_TEMP/cosign-oidc-token\"`";
         assert_eq!(oidc_token_writes(documented), Vec::<(usize, bool)>::new());
 
-        // The no-op guard: a renamed file leaves nothing to check, which the rule reports rather
-        // than passing silently.
+        // The no-op guard: a renamed file leaves nothing to check, which the rule reports
+        // instead of passing silently.
         assert_eq!(
             oidc_token_writes("          printf '%s' \"$token\" > \"$other\""),
             Vec::<(usize, bool)>::new()

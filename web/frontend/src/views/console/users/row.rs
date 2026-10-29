@@ -1,4 +1,4 @@
-//! One row of the user directory list pane.
+//! Owns one row of the user directory list pane.
 
 use crate::i18n::use_i18n;
 use crate::models::AccountStatusExt as _;

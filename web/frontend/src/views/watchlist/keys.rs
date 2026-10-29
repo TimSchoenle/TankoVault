@@ -1,4 +1,4 @@
-//! The list's keyboard contract (§3.5) — the one list the keydown handler dispatches from and
+//! Owns the list's keyboard contract (§3.5): the one list the keydown handler dispatches from and
 //! the `?` overlay prints.
 //!
 //! A binding names its chords and its wording on [`Action`] itself, so the reference the reader
@@ -15,7 +15,7 @@ use std::collections::HashSet;
 
 /// The screen state a key press writes to.
 ///
-/// One struct rather than one parameter each: the handler needs five signals beside the row
+/// One struct instead of one parameter each: the handler needs five signals beside the row
 /// context, which is past what `clippy::too_many_arguments` allows.
 #[derive(Clone, Copy)]
 pub(super) struct Keyboard {
@@ -58,7 +58,7 @@ impl Action {
     ];
 
     /// The chords that run it, spelled the way the overlay prints them. More than one means
-    /// *either* — `J` or `↓` — not both together.
+    /// *either* (`J` or `↓`) not both together.
     const fn chords(self) -> &'static [&'static str] {
         match self {
             Self::Down => &["J", "↓"],
@@ -93,7 +93,7 @@ impl Action {
 
 /// The single-character bindings, as `event.key()` reports them once lower-cased.
 ///
-/// A table rather than match arms so the drift test can walk it: a character the handler answers
+/// A table, not match arms so the drift test can walk it: a character the handler answers
 /// and no chord prints is exactly the divergence this module exists to prevent.
 const CHARACTERS: &[(&str, Action)] = &[
     ("j", Action::Down),
@@ -109,8 +109,8 @@ const CHARACTERS: &[(&str, Action)] = &[
 ///
 /// Every binding but `Ctrl`/`⌘`+`A` is inert under a modifier, so the browser's own `⌘K`/`Ctrl+F`
 /// keep working. `Shift` is not one of them: it extends the selection, and `?` *is* a shifted
-/// key. Nothing here has to test for a focused text field — the handler hangs off the list
-/// element, and the filter box is its sibling rather than its child.
+/// key. Nothing here has to test for a focused text field: the handler hangs off the list
+/// element, and the filter box is its sibling instead of its child.
 pub(super) fn action_for(event: &Event<KeyboardData>) -> Option<Action> {
     let modifiers = event.modifiers();
     if modifiers.ctrl() || modifiers.alt() || modifiers.meta() {
@@ -164,7 +164,7 @@ pub(super) fn on_key(
         mut help,
     } = keys;
 
-    // Both answer with nothing on screen, so they run ahead of the guard below rather than being
+    // Both answer with nothing on screen, so they run ahead of the guard below instead of being
     // inert on the empty list the reference is most likely to be opened from.
     match action {
         Action::SelectAll => {
@@ -266,8 +266,8 @@ pub(super) fn shortcut_group(i18n: Translator) -> ShortcutGroup {
 mod tests {
     use super::*;
 
-    /// Nine bindings shipped with nowhere to learn them, and the obvious fix — a hand-written
-    /// table of key names in the overlay — is a second copy of the contract that goes stale the
+    /// Nine bindings shipped with nowhere to learn them, and the obvious fix (a hand-written
+    /// table of key names in the overlay) is a second copy of the contract that goes stale the
     /// first time a key moves. It cannot: the overlay prints [`Action::ALL`], and a character the
     /// handler dispatches that no action prints fails here.
     #[test]

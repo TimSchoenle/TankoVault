@@ -1,4 +1,4 @@
-//! Wire DTOs and the presentation-only helpers hung off them.
+//! Owns the wire DTOs and the presentation-only helpers hung off them.
 //!
 //! Every request and response shape is generated at compile time from the API service's
 //! `utoipa` schema (`xtask openapi` → `progenitor` → `tankovault-api-client`). This module
@@ -76,7 +76,7 @@ pub(crate) struct LiveNotification {
 
 /// One page of `GET /v1/series`. The body is a plain `Vec<SeriesSummary>`; the match total
 /// and next-page cursor ride on the `X-Total-Count` / `X-Next-Cursor` response headers, so
-/// they are stitched back together here rather than being part of the generated type.
+/// they are stitched back together here instead of being part of the generated type.
 #[derive(Debug, Clone)]
 pub(crate) struct SeriesPage {
     pub(crate) items: Vec<SeriesSummary>,
@@ -127,7 +127,7 @@ impl ContentTypeExt for ContentType {
         }
     }
     // Manhwa and manhua both begin "manh", so their marks are taken from the syllable that
-    // differs rather than from the first two letters, which would collide.
+    // differs instead of from the first two letters, which would collide.
     fn initial(&self) -> &'static str {
         match self {
             Self::Manga => "MG",
@@ -151,8 +151,8 @@ pub(crate) trait SeriesStatusExt {
     /// The catalogue key of this variant's display name (see [`crate::i18n`]).
     fn label_key(&self) -> &'static str;
     fn token(&self) -> &'static str;
-    /// The ink this status is set in — muted for every variant, because series status is prose
-    /// about a title rather than a signal an operator scans for.
+    /// The ink this status is set in: muted for every variant, because series status is prose
+    /// about a title instead of a signal an operator scans for.
     fn color(&self) -> &'static str;
     fn all() -> &'static [SeriesStatus];
 }
@@ -283,7 +283,7 @@ impl RequestKindExt for RequestKind {
 pub(crate) trait RequestStatusExt {
     /// The catalogue key of this variant's display name (see [`crate::i18n`]).
     fn label_key(self) -> &'static str;
-    /// Whether the request is still awaiting a resolution — the only state in which either
+    /// Whether the request is still awaiting a resolution: the only state in which either
     /// side can still act on it.
     fn is_open(&self) -> bool;
 }
@@ -409,7 +409,7 @@ pub(crate) trait RunSortExt: Sized {
     fn label_key(self) -> &'static str;
     /// The `?sort=` token, which is also what the API accepts.
     fn token(self) -> &'static str;
-    /// Parse a token back. An unrecognised one is the default rather than an error: a
+    /// Parses a token back. An unrecognised one is the default instead of an error: a
     /// hand-edited URL should still open the panel.
     fn parse(token: &str) -> Self;
 }
@@ -454,7 +454,7 @@ pub(crate) trait ScanModeExt: Sized {
     fn label_key(self) -> &'static str;
     /// The `?mode=` token, which is also what the API accepts.
     fn token(self) -> &'static str;
-    /// Parse a token back, or `None` for "any mode".
+    /// Parses a token back, or `None` for "any mode".
     fn parse(token: &str) -> Option<Self>;
 }
 
@@ -524,7 +524,7 @@ mod tests {
     /// The tokens are the wire contract with `tankovault_domain::WatchStatus` and with the
     /// watchlist's `?status=` parameter, and callers select a status by comparing against
     /// them. Two variants sharing a token would make one of them unreachable from a URL and
-    /// unpickable from the bulk bar — silently, and only for whichever the `find` hit second.
+    /// unpickable from the bulk bar: silently, and only for whichever the `find` hit second.
     #[test]
     fn every_watch_status_has_a_distinct_token() {
         let mut tokens: Vec<&str> = WatchStatus::all()
@@ -538,12 +538,12 @@ mod tests {
         assert_eq!(listed, 5, "a status is missing from WatchStatus::all()");
     }
 
-    /// The role tokens once drew twenty values across four axes from five literal hues, so
-    /// `#6fa8dc` was `manga`, `completed`, `solving` and `running` at the same time and a console
-    /// row's colour could not be read without the label beside it. Colour encodes health alone
-    /// now: every role token points at a `--color-health-*` stop or at `--muted`, and shape and
-    /// letter carry the other three axes. A token re-pointed at a literal of its own — the
-    /// obvious way to "tell them apart" again — is that bug returning.
+    /// The bug this pins: role tokens drawing twenty values across four axes from five literal
+    /// hues made `#6fa8dc` mean `manga`, `completed`, `solving` and `running` at once, so a console
+    /// row's colour could not be read without the label beside it. Colour encodes health alone:
+    /// every role token points at a `--color-health-*` stop or at `--muted`, and shape and
+    /// letter carry the other three axes. A token re-pointed at a literal of its own (the
+    /// obvious way to "tell them apart" again) is that bug returning.
     #[test]
     fn no_role_token_carries_a_colour_of_its_own() {
         const SHEET: &str = include_str!("../input.css");
@@ -574,7 +574,7 @@ mod tests {
     }
 
     /// Content types are told apart by their mark, not by a hue, so two sharing one mark would
-    /// make them indistinguishable rather than merely hard to tell apart.
+    /// make them indistinguishable, not merely hard to tell apart.
     #[test]
     fn every_content_type_has_a_distinct_mark() {
         let mut marks: Vec<&str> = ContentType::all()
@@ -590,8 +590,8 @@ mod tests {
     /// The policy picker must offer every policy the server accepts.
     ///
     /// `ConflictPolicy::all()` is the last hand-maintained list in this file. Read against the
-    /// committed `openapi.json` — the artefact `crates/api-client` is generated from — so a
-    /// policy added to `tankovault_contracts::sync::ConflictPolicy` fails here rather than
+    /// committed `openapi.json` (the artefact `crates/api-client` is generated from), so a
+    /// policy added to `tankovault_contracts::sync::ConflictPolicy` fails here instead of
     /// quietly never appearing in the UI.
     #[test]
     fn the_policy_picker_offers_every_published_policy() {

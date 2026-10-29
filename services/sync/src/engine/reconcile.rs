@@ -417,7 +417,7 @@ impl Reconciler {
         Ok(())
     }
 
-    /// Fold each matched entry's upstream metadata into its local series, reusing the metadata
+    /// Folds each matched entry's upstream metadata into its local series, reusing the metadata
     /// already returned by the list fetch: no extra provider call. Only series due per
     /// [`METADATA_REFRESH_INTERVAL`] are written, so a settled catalogue costs one query.
     /// Best-effort: a failure is logged and the progress/status merge proceeds regardless.
@@ -560,7 +560,7 @@ impl Reconciler {
         Ok(())
     }
 
-    /// Reconcile the linked group behind one external id against the remote. `remote` is `None`
+    /// Reconciles the linked group behind one external id against the remote. `remote` is `None`
     /// when the group is not present on the remote yet (it must be created there). Every decision
     /// is [`super::plan`]'s or [`super::linked`]'s; this method only performs them and counts
     /// what it did.
@@ -690,7 +690,7 @@ impl Reconciler {
         Ok(())
     }
 
-    /// Perform a decided merge: the optional watchlist import, then each field, then the single
+    /// Performs a decided merge: the optional watchlist import, then each field, then the single
     /// remote write, then the refreshed snapshot.
     async fn apply_merge(
         &self,
@@ -746,8 +746,8 @@ impl Reconciler {
         Ok(())
     }
 
-    /// Carry out the plan's progress action: pull it, record a conflict, or journal a no-op. A push
-    /// waits for [`Self::write_remote`].
+    /// Carries out the plan's progress action: pulls it, records a conflict, or journals a no-op. A
+    /// push waits for [`Self::write_remote`].
     async fn merge_progress(
         &self,
         run: &RunContext<'_>,
@@ -858,7 +858,7 @@ impl Reconciler {
         Ok(())
     }
 
-    /// Carry out the plan's status action: pull it or record a conflict. A push waits for
+    /// Carries out the plan's status action: pulls it or records a conflict. A push waits for
     /// [`Self::write_remote`].
     async fn merge_status(
         &self,

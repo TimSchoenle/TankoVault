@@ -1,4 +1,4 @@
-//! The legal documents this deployment publishes, through `terrace-legal-dioxus`.
+//! Owns the legal documents this deployment publishes, through `terrace-legal-dioxus`.
 //!
 //! [`LegalRoot`] mounts the library's provider once, in the shell, so the footer, the **More**
 //! sheet, the register form and `/legal/:slug` share one index fetch per language. The rest of
@@ -19,7 +19,7 @@ use terrace_legal_model::{
     DocumentFormat, LegalDocumentView, LegalIndexEntry, LegalKind, LocaleTag,
 };
 
-/// Provide the legal index to everything below it. Mount once, in the shell.
+/// Provides the legal index to everything below it. Mount once, in the shell.
 ///
 /// Best-effort and silent on failure, like Discover's facets: an unpublished document produces no
 /// link, so a failed fetch producing no links is the same, correct, degradation.
@@ -28,7 +28,7 @@ pub(crate) fn LegalRoot(children: Element) -> Element {
     let i18n = use_i18n();
     let api = api::use_api();
     // Keyed on the language: the operator's titles are per locale, so switching language has to
-    // re-ask rather than keep the previous language's titles.
+    // re-ask, not keep the previous language's titles.
     let language = use_memo(move || i18n.language());
     // Created once: the provider reads its handles on first render only.
     let handles = use_hook(move || Handles {
@@ -77,7 +77,7 @@ pub(crate) fn external_url(entry: &LegalIndexEntry) -> Option<&str> {
 }
 
 /// What to call a document with no operator title: this build's name for a slug it knows, else
-/// the slug — the honest answer for one it has never heard of, and the reason an operator can
+/// the slug; the honest answer for one it has never heard of, and the reason an operator can
 /// publish `dmca` without a code change.
 pub(crate) fn known_title(i18n: Translator, slug: &str) -> Option<String> {
     match slug {
@@ -134,8 +134,8 @@ fn index_entry(wire: models::LegalIndexEntry) -> LegalIndexEntry {
         models::LegalKind::Inline => LegalKind::Inline,
         models::LegalKind::External => LegalKind::External,
     };
-    // A locale this build cannot parse is one it cannot request either, so it is dropped rather
-    // than failing the whole index.
+    // A locale this build cannot parse is one it cannot request either, so it is dropped,
+    // not failing the whole index.
     let locales = wire
         .locales
         .iter()
@@ -194,7 +194,7 @@ impl LegalRouting for Routes {
 }
 
 /// The `ik-*` class for each part the library renders. The names live here, in a file the
-/// Tailwind build scans, rather than in the library's source.
+/// Tailwind build scans, instead of in the library's source.
 struct Skin;
 
 impl LegalSkin for Skin {

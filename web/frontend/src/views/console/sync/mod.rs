@@ -1,4 +1,4 @@
-//! Sync administration: the linked-account directory and the per-series mapping tools.
+//! Owns sync administration: the linked-account directory and the per-series mapping tools.
 
 mod enrichment;
 mod inspector;
@@ -21,7 +21,7 @@ use queues::UnmatchedRemoteQueue;
 use reverify::MappingReverifyPanel;
 /// The sync panel's step-up gate, for any component below it.
 ///
-/// Context rather than a prop, unlike the other console panels: the actions that need the
+/// Context instead of a prop, unlike the other console panels: the actions that need the
 /// elevation sit four components deep across three sub-modules, and threading one handle
 /// through every row in between would put it in signatures that otherwise have no interest in
 /// it. Provided once by [`SyncAdminPanel`], which is also the only component that renders the
@@ -140,8 +140,8 @@ pub(super) fn SyncAccountRow(account: Signal<AdminSyncAccount>, reload: Reload) 
                         tankovault_api_client::types::SyncAccountTarget { provider, user_id };
                     match client.admin_sync_pull().body(body).send().await {
                         Ok(_) => reload.bump(),
-                        // The row has no error line, so every other failure stays as silent as it
-                        // was; an elevation demand has to reach the panel's prompt or the button
+                        // The row has no error line, so every other failure stays silent; an
+                        // elevation demand has to reach the panel's prompt or the button
                         // does nothing for the rest of the session.
                         Err(e) => {
                             let _refused = gate.refused(api::Refusal::of(&e));

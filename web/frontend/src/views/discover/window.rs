@@ -1,4 +1,5 @@
-//! The window of catalogue pages the Discover screen keeps mounted, and the requests that fill it.
+//! Owns the window of catalogue pages the Discover screen keeps mounted, and the requests that fill
+//! it.
 
 use std::collections::{HashMap, VecDeque};
 
@@ -9,7 +10,7 @@ use crate::models::*;
 ///
 /// A sentinel with no ceiling turns a 54 000-title catalogue into an unbounded DOM: nothing is
 /// released as it scrolls past, so the cost of the screen grows for as long as the reader keeps
-/// going. At the ceiling the window *slides* instead — the page furthest above the viewport is
+/// going. At the ceiling the window *slides* instead: the page furthest above the viewport is
 /// released, a spacer holds its measured height open, and scrolling back into that spacer fetches
 /// it again. The DOM stays bounded and neither direction costs the reader a click.
 pub(super) const WINDOW_ITEMS: usize = 600;
@@ -26,7 +27,7 @@ pub(super) enum Edge {
 /// One request: which catalogue page, and enough of the window to tell whether the answer still
 /// belongs to it.
 ///
-/// Separate from [`Held`] because the window slides *without* asking for anything — releasing a
+/// Separate from [`Held`] because the window slides *without* asking for anything: releasing a
 /// page is not a fetch, and a request keyed on the whole window would issue one for a page the
 /// window already holds. `generation` keeps two otherwise identical requests distinguishable, so
 /// a response can never be merged into the window that replaced it.
@@ -47,7 +48,7 @@ pub(super) struct Fetch {
 ///
 /// The page size is part of it because a window is *expressed* in pages: a resize that changes the
 /// size makes every page boundary in the loaded list wrong, so the window is rebuilt at the
-/// reader's current anchor rather than continued at a size the pages before it were never fetched
+/// reader's current anchor, not continued at a size the pages before it were never fetched
 /// at.
 #[derive(Clone, PartialEq)]
 pub(super) struct Held {
@@ -55,7 +56,7 @@ pub(super) struct Held {
     pub(super) filters: DiscoverFilters,
     pub(super) size: usize,
     /// The first page this window ever asked for. Nothing above it was ever rendered, so there is
-    /// no measured height to hold its place — that is what `Back to start` is for.
+    /// no measured height to hold its place: that is what `Back to start` is for.
     pub(super) origin: usize,
     /// The first page still held.
     pub(super) start: usize,
@@ -91,7 +92,7 @@ impl Held {
     ///
     /// This is what separates "the reader scrolled" from "the reader jumped": an anchor the window
     /// already covers is a scroll position to record, and one outside it is a request to rebuild
-    /// the window there — which is how a deep link and the back button reach the same code path.
+    /// the window there, which is how a deep link and the back button reach the same code path.
     /// Scrolling up into the released span is neither, because the markers only ever name a page
     /// that is still held.
     pub(super) fn covers(&self, at: usize) -> bool {
@@ -107,7 +108,7 @@ impl Held {
         (WINDOW_ITEMS / self.size.max(1)).max(2)
     }
 
-    /// Pages released above the window — the span the spacer has to hold open.
+    /// Pages released above the window: the span the spacer has to hold open.
     pub(super) fn released(&self) -> usize {
         self.start.saturating_sub(self.origin)
     }
@@ -124,7 +125,7 @@ impl Held {
         }
     }
 
-    /// Add an answered page at its end of the window, releasing from the other end past the
+    /// Adds an answered page at its end of the window, releasing from the other end past the
     /// window's capacity. Returns whether the tail was released, which means the end of the result
     /// set has something to ask for again.
     pub(super) fn absorb(&mut self, edge: Edge, page: usize, items: Vec<SeriesSummary>) -> bool {
@@ -178,7 +179,7 @@ impl Held {
 /// they were mounted.
 ///
 /// A page with no measurement falls back to the mean of the ones there are: every page in a window
-/// is the same whole rows of the same cards, so the mean *is* the height — the fallback only
+/// is the same whole rows of the same cards, so the mean *is* the height; the fallback only
 /// covers a page released before its observer first reported.
 pub(super) fn released_height(heights: &HashMap<usize, f64>, from: usize, to: usize) -> f64 {
     if to <= from || heights.is_empty() {
@@ -255,7 +256,7 @@ mod tests {
     }
 
     /// A released page has to leave exactly its own height behind. Summing the *measured* heights
-    /// rather than multiplying one of them is what keeps the spacer honest when the last page of
+    /// instead of multiplying one of them is what keeps the spacer honest when the last page of
     /// a result set is short; a mismatch here scrolls the grid under the reader's eyes on every
     /// release.
     #[test]
@@ -267,7 +268,8 @@ mod tests {
         // A page released before its observer reported falls back to the mean of the rest.
         let partial = HashMap::from([(0, 1000.0), (1, 1000.0)]);
         assert!((released_height(&partial, 0, 3) - 3000.0).abs() < f64::EPSILON);
-        // Nothing measured at all is a spacer of nothing, never a NaN height in the style attribute.
+        // Nothing measured at all is a spacer of nothing, never a NaN height in the style
+        // attribute.
         assert!(released_height(&HashMap::new(), 0, 3).abs() < f64::EPSILON);
     }
 

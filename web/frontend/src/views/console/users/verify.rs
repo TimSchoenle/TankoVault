@@ -1,4 +1,4 @@
-//! Confirming an account's address on its behalf.
+//! Owns confirming an account's address on its behalf.
 
 use crate::api;
 use crate::components::StepUpGate;
@@ -7,7 +7,7 @@ use crate::i18n::use_i18n;
 use dioxus::prelude::*;
 use inkstone_ui::{Button, Size};
 
-/// Confirm an address administratively, for an account that never clicked its link.
+/// Confirms an address administratively, for an account that never clicked its link.
 #[component]
 pub(super) fn VerifyEmailAction(
     user_id: String,

@@ -1,13 +1,13 @@
-//! Client session state (`docs/ARCHITECTURE.md` §17.4).
+//! Owns the client session state (`docs/ARCHITECTURE.md` §17.4).
 //!
-//! The access token lives only in memory — never `localStorage`, so an XSS foothold cannot
-//! exfiltrate it — and is re-adopted from the httpOnly refresh cookie on boot. That holds on
+//! The access token lives only in memory (never `localStorage`, so an XSS foothold cannot
+//! exfiltrate it), and is re-adopted from the httpOnly refresh cookie on boot. That holds on
 //! both builds; what differs is only where the *refresh* cookie is kept between runs, which is
 //! the browser's own store on web and the OS credential store on desktop
 //! (`crate::api::session_store`).
 //!
 //! The session carries **identity only**. What the reader is allowed to do lives in
-//! [`capabilities`], fetched from the server rather than decoded from the token: the backend
+//! [`capabilities`], fetched from the server, not decoded from the token: the backend
 //! authorizes per capability and a grant can be revoked at any moment, neither of which a claim
 //! baked into a 15-minute token can represent. See [`jwt`] for what is still read out of the
 //! token (a display name) and why doing so unverified is safe.
@@ -34,10 +34,10 @@ pub(crate) struct Session {
     pub(crate) token: Signal<Option<String>>,
     /// Who the token speaks for: `Some(sub)` while signed in, `None` otherwise.
     ///
-    /// A memo, so it notifies only when the account changes — sign-in, sign-out, a different
-    /// reader — and **not** when the token is merely renewed. Every screen's resources used to
-    /// subscribe to the raw token, so the silent refresh every ~14 minutes refetched the whole
-    /// visible screen at once; on Home that was five heavy statements per reader, in step.
+    /// A memo, so it notifies only when the account changes (sign-in, sign-out, a different
+    /// reader), and **not** when the token is merely renewed. Resources subscribed to the raw
+    /// token would refetch the whole visible screen on every silent refresh (~14 minutes); on Home
+    /// that is five heavy statements per reader, in step.
     identity: Memo<Option<String>>,
     /// The live display name. Seeded from the token on sign-in, but overridable so a profile
     /// rename shows everywhere *instantly*, without waiting for a new token.
@@ -48,7 +48,7 @@ pub(crate) struct Session {
 }
 
 impl Session {
-    /// Create the signals. Call once inside a component (the router root).
+    /// Creates the signals. Call once inside a component (the router root).
     pub(crate) fn new() -> Self {
         let token: Signal<Option<String>> = Signal::new(None);
         Self {
@@ -79,14 +79,14 @@ impl Session {
         self.token.peek().clone()
     }
 
-    /// Whether the boot-time silent refresh has settled, so an absent token is an *answer*
-    /// rather than "we have not looked yet".
+    /// Whether the boot-time silent refresh has settled, so an absent token is an *answer*,
+    /// not "we have not looked yet".
     pub(crate) fn is_settled(&self) -> bool {
         *self.ready.read()
     }
 
     /// The signed-in user's display name: a local override (set right after a profile
-    /// rename) if present, else the token's claim. Purely cosmetic — the server is
+    /// rename) if present, else the token's claim. Purely cosmetic: the server is
     /// authoritative.
     pub(crate) fn username(&self) -> Option<String> {
         if let Some(name) = self.name.read().clone() {
@@ -95,7 +95,7 @@ impl Session {
         self.token.read().as_deref().and_then(jwt::username)
     }
 
-    /// Override the display name shown across the UI, e.g. once a profile PATCH succeeds.
+    /// Overrides the display name shown across the UI, e.g. once a profile PATCH succeeds.
     /// Blank names are ignored so a stale token claim keeps showing instead of nothing.
     pub(crate) fn set_display_name(self, name: impl Into<String>) {
         let name = name.into();
@@ -103,7 +103,7 @@ impl Session {
         current.set((!name.trim().is_empty()).then_some(name));
     }
 
-    /// Record a freshly-minted access token, seeding the display name from it. A fresh token is
+    /// Records a freshly-minted access token, seeding the display name from it. A fresh token is
     /// authoritative, so it replaces any earlier local override.
     pub(crate) fn set_token(self, token: String) {
         let name = jwt::username(&token);
@@ -112,11 +112,11 @@ impl Session {
         token_sig.set(Some(token));
     }
 
-    /// Clear the session (sign out).
+    /// Clears the session (sign out).
     ///
     /// On desktop this also forgets the refresh credential in the OS credential store. That
-    /// belongs here rather than at the call sites because this is what "the session is over"
-    /// means in this app — a sign-out, a `401` from refresh, a deleted account and a re-pointed
+    /// belongs here instead of at the call sites because this is what "the session is over"
+    /// means in this app: a sign-out, a `401` from refresh, a deleted account and a re-pointed
     /// server all arrive through it, and a credential left behind by any one of them would sign
     /// the reader back in on the next start.
     pub(crate) fn clear(self) {
@@ -133,7 +133,7 @@ impl Session {
     }
 
     /// Milliseconds until the current token's `exp`, or `None` when signed out or the token
-    /// won't decode. Drives the refresh schedule in [`crate::components::Shell`] — a
+    /// won't decode. Drives the refresh schedule in [`crate::components::Shell`]: a
     /// client-side hint only; the server remains the authority on expiry.
     pub(crate) fn expires_in_ms(&self) -> Option<f64> {
         let token = self.token.read().clone()?;

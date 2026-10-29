@@ -135,7 +135,7 @@ const MATRIX: &[Frontier] = &[
     },
 ];
 
-/// Ingest one series carrying `chapters` on `provider_id`.
+/// Ingests one series carrying `chapters` on `provider_id`.
 async fn a_series(db: &TestDb, provider_id: ProviderId, title: &str, chapters: &[f64]) -> SeriesId {
     seed::series(db, provider_id, title)
         .chapters(chapters)
@@ -143,7 +143,7 @@ async fn a_series(db: &TestDb, provider_id: ProviderId, title: &str, chapters: &
         .await
 }
 
-/// Plant a progress state directly.
+/// Plants a progress state directly.
 ///
 /// Deliberately not routed through [`progress_mark_read`]: this suite is testing the *read*
 /// models against [`ReadProgress::covers`], and driving the fixture through the write path would
@@ -610,7 +610,7 @@ async fn a_merged_series_lists_each_chapter_once_in_the_feed() {
     assert_stored_matches_live(&db, "after a merge").await;
 }
 
-/// Rank one of a series' sources by giving it a chapter count, as a scan does.
+/// Ranks one of a series' sources by giving it a chapter count, as a scan does.
 async fn prefer_source(db: &TestDb, series: SeriesId, provider: ProviderId, chapter_count: i32) {
     sqlx::query(
         "UPDATE series_sources SET chapter_count = $3 WHERE series_id = $1 AND provider_id = $2",
@@ -1241,7 +1241,7 @@ async fn search(db: &TestDb, user: UserId, term: &str) -> WatchlistPage {
     .expect("watchlist search")
 }
 
-/// Put every one of `series` on `user`'s watchlist.
+/// Puts every one of `series` on `user`'s watchlist.
 async fn track_all(db: &TestDb, user: UserId, series: &[SeriesId]) {
     for id in series {
         watchlist_upsert(&db.pool, user, *id, WatchStatus::Reading, true)

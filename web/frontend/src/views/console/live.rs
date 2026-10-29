@@ -1,7 +1,7 @@
-//! The console's live push: one stream for the whole surface.
+//! Owns the console's live push: one stream for the whole surface.
 //!
 //! Replaces a four-second timer that bumped a shared tick, after which every subscribed panel
-//! re-issued its own GET — `system_stats` twice per tick, because the rail and Overview each
+//! re-issued its own GET: `system_stats` twice per tick, because the rail and Overview each
 //! held one. Here the payload arrives once and both read it.
 //!
 //! Same ticket discipline as [`crate::live`]: the credential is single-use, so a transport's
@@ -22,7 +22,7 @@ const RECONNECT_BACKOFF_MAX_MS: u32 = 15_000;
 /// How long an attempt has to stay open before it counts as having worked.
 ///
 /// The API ends each stream at the access token's lifetime, which looks identical to a failure
-/// from here — duration tells them apart: a refused ticket fails in milliseconds, a served
+/// from here: duration tells them apart: a refused ticket fails in milliseconds, a served
 /// stream lasts minutes. Without this, a healthy stream would ratchet the backoff up every time
 /// it is recycled.
 const SETTLED_MS: f64 = 5_000.0;
@@ -62,7 +62,7 @@ impl LiveState {
 #[derive(Clone, Copy)]
 pub(super) struct ConsoleLive {
     pub(super) state: Signal<LiveState>,
-    /// The rail's counts and Overview's tiles — one payload, two readers.
+    /// The rail's counts and Overview's tiles: one payload, two readers.
     pub(super) stats: Signal<Option<SystemStats>>,
     pub(super) runs: Signal<Option<Vec<ScanRun>>>,
     /// The task-level state of whatever is in flight. Separate from `runs` because it answers a
@@ -82,14 +82,14 @@ impl ConsoleLive {
     }
 }
 
-/// Provide [`ConsoleLive`] and keep it fed for as long as the console is mounted.
+/// Provides [`ConsoleLive`] and keeps it fed for as long as the console is mounted.
 ///
 /// `attached` is read, never written: detaching is the operator's decision, made in the bar.
 pub(super) fn use_console_live(api: Api, attached: ReadSignal<bool>) -> ConsoleLive {
     let live = use_context_provider(ConsoleLive::new);
     let session = crate::state::use_session();
 
-    // Restarts on pause and on sign-out, so detaching *closes* the connection rather than
+    // Restarts on pause and on sign-out, so detaching *closes* the connection instead of
     // merely ignoring it: a paused console must not hold a connection open, and a sign-out must
     // not leave one attached to the previous session.
     use_resource(move || {
@@ -112,9 +112,9 @@ pub(super) fn use_console_live(api: Api, attached: ReadSignal<bool>) -> ConsoleL
     live
 }
 
-/// Keep one stream open, reconnecting with a fresh ticket after each failure.
+/// Keeps one stream open, reconnecting with a fresh ticket after each failure.
 ///
-/// Runs until dropped — the caller's `use_resource` does that on pause, sign-out or unmount,
+/// Runs until dropped: the caller's `use_resource` does that on pause, sign-out or unmount,
 /// closing the stream.
 async fn run(api: Api, live: ConsoleLive) {
     let mut state = live.state;
@@ -122,7 +122,7 @@ async fn run(api: Api, live: ConsoleLive) {
     loop {
         // A fresh ticket per attempt: redeeming one spends it.
         let Ok(response) = api.client().stream_ticket().send().await else {
-            // Covers a gone-away session (401) and a suspension (403); backing off rather than
+            // Covers a gone-away session (401) and a suspension (403); backing off instead of
             // giving up resumes a recovered session without a reload.
             state.set(LiveState::Reconnecting);
             crate::platform::sleep_ms(backoff_ms).await;
@@ -140,10 +140,10 @@ async fn run(api: Api, live: ConsoleLive) {
     }
 }
 
-/// Open one stream with `ticket` and pump it until it ends.
+/// Opens one stream with `ticket` and pumps it until it ends.
 ///
-/// Returns whether the attempt is judged to have *worked* — see [`SETTLED_MS`] for why that is
-/// a duration rather than a status.
+/// Returns whether the attempt is judged to have *worked*: see [`SETTLED_MS`] for why that is
+/// a duration instead of a status.
 async fn consume(api: &Api, ticket: &str, live: ConsoleLive) -> bool {
     let url = format!("{}{}", api.base_url(), crate::api::admin_stream_url(ticket));
     // Every name off one connection: they arrive on their own cadences, and a stream per name

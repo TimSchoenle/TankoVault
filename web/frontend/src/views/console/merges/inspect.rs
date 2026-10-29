@@ -1,9 +1,9 @@
-//! The merge inspector: why the pair scored the way it did on the left, what a revert would put
-//! back on the right, and the two writes that end the question underneath.
+//! Owns the merge inspector: why the pair scored the way it did on the left, what a revert would
+//! put back on the right, and the two writes that end the question underneath.
 //!
 //! The layout is the argument. An operator deciding whether to unmerge is weighing evidence
-//! against cost, and those are the two columns — the old screen made them two expanders that
-//! could not be open at once.
+//! against cost, and those are the two columns, side by side: two expanders that cannot be open at
+//! once would hide one while the other is read.
 
 use super::unmerge::UnmergeBlock;
 use crate::components::{Section, StepUpGate, TabBar, TabKind};
@@ -48,7 +48,7 @@ impl Tab {
         }
     }
 
-    /// An unrecognised token opens the default tab rather than refusing the link.
+    /// An unrecognised token opens the default tab instead of refusing the link.
     fn parse(token: &str) -> Self {
         <Self as TabKind>::all()
             .iter()
@@ -271,8 +271,8 @@ fn ScoreTable(decision: MergeDecision) -> Element {
 
 /// Both series as the sweep saw them, from the evidence the decision stored.
 ///
-/// Read out of `evidence` rather than fetched: the absorbed id no longer resolves, so there is
-/// nothing left to fetch — and the numbers that mattered are the ones at merge time anyway.
+/// Read out of `evidence`, not fetched: the absorbed id no longer resolves, so there is
+/// nothing left to fetch, and the numbers that mattered are the ones at merge time anyway.
 #[component]
 fn BothRecords(decision: MergeDecision) -> Element {
     let i18n = use_i18n();
@@ -308,7 +308,7 @@ struct SideFacts {
     watchers: Option<i64>,
 }
 
-/// Pull one side out of the stored evidence by id, when the journal recorded it.
+/// Pulls one side out of the stored evidence by id, when the journal recorded it.
 fn side_facts(decision: &MergeDecision, id: SeriesId) -> Option<SideFacts> {
     ["left", "right"]
         .into_iter()
@@ -367,7 +367,7 @@ fn RecordCard(role: String, facts: SideFacts, kept: bool) -> Element {
 /// What a revert would write, itemised by the table it would write to.
 ///
 /// The total is the row's `undo_rows`; the itemisation is `undo_breakdown`, and both come from
-/// the stored journal rather than from a count of what exists now — a revert restores what was
+/// the stored journal instead of from a count of what exists now: a revert restores what was
 /// captured, not what has accumulated since.
 #[component]
 fn UndoInventory(decision: MergeDecision) -> Element {
@@ -463,8 +463,8 @@ fn AuditTrail(decision: MergeDecision) -> Element {
 
 /// The catalogue wording for an undo-journal segment, falling back to the key.
 ///
-/// Falling back rather than failing is deliberate: the journal's shape is the merge code's, and
-/// a segment added there must not render as a missing-translation string in the console — see
+/// Falling back instead of failing is deliberate: the journal's shape is the merge code's, and
+/// a segment added there must not render as a missing-translation string in the console; see
 /// [`signal_label`], which takes the same position for the scorer's vocabulary.
 fn segment_label(i18n: crate::i18n::Translator, kind: &str) -> String {
     i18n.t_opt(&format!("console.merges.segment.{kind}"))

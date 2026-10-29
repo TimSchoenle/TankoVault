@@ -1,12 +1,12 @@
-//! The button, in the three shapes an app needs: with a label, with only a glyph, and as a
-//! class string for anything that has to be an `<a>` (a router `Link`) rather than a `<button>`.
+//! Owns the button, in the three shapes an app needs: with a label, with only a glyph, and as a
+//! class string for anything that has to be an `<a>` (a router `Link`) instead of a `<button>`.
 
 use crate::skin::{use_skin, Flag, Part, Variant};
 use crate::tone::{Size, Tone};
 use dioxus::prelude::*;
 
 /// The `type` attribute. Defaults to [`ButtonType::Button`], which is what a control outside a
-/// `<form>` wants — the HTML default is `submit`, and inside a form that reloads the page.
+/// `<form>` wants: the HTML default is `submit`, and inside a form that reloads the page.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum ButtonType {
     /// A plain button, with no effect on a surrounding form.
@@ -28,7 +28,7 @@ impl ButtonType {
 /// The class string a button of this shape carries, under the skin in force.
 ///
 /// Public because a navigation control has to be an anchor to be middle-clickable, so a router
-/// `Link` cannot be a `<button>` and still needs to look like one. Call it during a render — it
+/// `Link` cannot be a `<button>` and still needs to look like one. Call it during a render: it
 /// reads the skin from context.
 #[must_use]
 pub fn button_class(tone: Tone, size: Size, block: bool) -> String {
@@ -42,7 +42,7 @@ pub fn button_class(tone: Tone, size: Size, block: bool) -> String {
     )
 }
 
-/// `""` for an unset tri-state ARIA attribute, so it is omitted rather than rendered `false`.
+/// `""` for an unset tri-state ARIA attribute, so it is omitted, not rendered `false`.
 fn bool_attr(on: bool) -> &'static str {
     if on {
         "true"
@@ -60,7 +60,7 @@ fn bool_attr(on: bool) -> &'static str {
 pub fn Button(
     #[props(default)] tone: Tone,
     #[props(default)] size: Size,
-    /// Fill the container and centre the label.
+    /// Fills the container and centres the label.
     #[props(default = false)]
     block: bool,
     #[props(default = false)] disabled: bool,
@@ -68,14 +68,14 @@ pub fn Button(
     #[props(default = false)]
     busy: bool,
     #[props(default)] r#type: ButtonType,
-    /// A glyph before the label. `Element` rather than an icon enum — the kit ships no icons.
+    /// A glyph before the label. `Element` instead of an icon enum: the kit ships no icons.
     #[props(default)]
     icon: Option<Element>,
     /// Native tooltip. Also the accessible name when there are no children (see [`IconButton`]).
     #[props(default)]
     title: Option<String>,
     #[props(default)] aria_label: Option<String>,
-    /// Renders as pressed. For a control that toggles a state which stays on — usually
+    /// Renders as pressed. For a control that toggles a state which stays on: usually
     /// [`ToggleButton`], which is that control with its lit tone already decided.
     #[props(default)]
     pressed: Option<bool>,
@@ -122,10 +122,9 @@ pub fn Button(
 
 /// A button that lights up while the state it controls is on.
 ///
-/// The convention it fixes: the screens this replaced each decided for themselves what "on"
-/// looks like — `primary`, `acc`, or `active`, and `active` was never a rule, so one row of
-/// these had no visible selection at all. Here the lit tone is a prop with a default, and
-/// `aria-pressed` is not optional.
+/// The lit tone is a prop with a default, and `aria-pressed` is not optional: screens that
+/// decide for themselves what "on" looks like (`primary`, `acc`, or an `active` class no rule
+/// defines) end up with rows that have no visible selection at all.
 #[component]
 pub fn ToggleButton(
     on: bool,
@@ -162,8 +161,8 @@ pub fn ToggleButton(
 /// A button whose whole content is a glyph.
 ///
 /// `label` is mandatory and becomes both the tooltip and the accessible name, because a button
-/// with no text has neither otherwise — the commonest accessibility defect in the screens this
-/// kit replaced.
+/// with no text has neither otherwise: the commonest accessibility defect in hand-built
+/// screens.
 #[component]
 pub fn IconButton(
     icon: Element,

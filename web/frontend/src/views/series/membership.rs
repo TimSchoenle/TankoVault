@@ -1,8 +1,8 @@
-//! The Tracking card's membership footer, its untracked state, and the operator's merge note.
+//! Owns the Tracking card's membership footer, its untracked state, and the operator's merge note.
 //!
-//! Membership is the last block on the card rather than the first because it is the destructive
+//! Membership is the last block on the card instead of the first because it is the destructive
 //! one: everything above it edits an entry that exists, and this is the control that stops it
-//! existing. It confirms inline, and the confirmation says what survives removal — read progress
+//! existing. It confirms inline, and the confirmation says what survives removal: read progress
 //! and the tracker mapping do, which is what makes re-adding cheap and is not guessable from the
 //! word "remove".
 
@@ -143,8 +143,8 @@ pub(super) fn NotTrackedNote(series_id: SeriesId, reload_wl: Reload) -> Element 
 
 /// The merge note: this series absorbed another one, shown only to an operator who may audit it.
 ///
-/// The reader's side of a merge is deliberately silent — a merged catalogue is the point — so
-/// this is gated on `merge.audit` rather than on being signed in, and it exists because the
+/// The reader's side of a merge is deliberately silent (a merged catalogue is the point), so
+/// this is gated on `merge.audit` instead of on being signed in, and it exists because the
 /// operator who notices a wrong merge is usually the one reading the series page, not the one
 /// scrolling the journal.
 #[component]

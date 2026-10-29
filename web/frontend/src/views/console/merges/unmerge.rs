@@ -1,7 +1,7 @@
-//! The two ways to say a merge was wrong: put the catalogue back, or record the judgement and
+//! Owns the two ways to say a merge was wrong: put the catalogue back, or record the judgement and
 //! leave it merged.
 //!
-//! They are deliberately separate, and both write the same durable "not a duplicate" — a merge
+//! They are deliberately separate, and both write the same durable "not a duplicate": a merge
 //! can be correct and still worth undoing as a precaution, and a merge can be wrong and no longer
 //! worth the disruption of unpicking. Whichever is taken, the suppression is what stops the next
 //! sweep re-making the same decision; a bare revert would simply be re-merged.

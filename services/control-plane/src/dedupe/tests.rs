@@ -213,8 +213,8 @@ const fn budget(max_auto_merges: i64) -> SweepBudget {
 /// that waited for an empty round would never end against a catalogue holding a single open
 /// candidate, re-scoring that one pair for as long as the process lived.
 ///
-/// Both pairs must reach `seen` in the first round, which is why the filter is counted rather
-/// than short-circuited: with `any()` the second pair would still look new in round two.
+/// Both pairs must reach `seen` in the first round, which is why the filter is counted,
+/// not short-circuited: with `any()` the second pair would still look new in round two.
 #[test]
 fn an_exhaustive_run_ends_when_a_round_shortlists_nothing_new() {
     let a = (SeriesId::new(), SeriesId::new());

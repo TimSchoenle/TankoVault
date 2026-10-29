@@ -1,5 +1,5 @@
-//! Account & settings (`docs/DESIGN_SYSTEM.md` §7.7) — a settings shell with a sub-nav and one panel per
-//! concern. Each panel owns its own data and lives in its own module.
+//! Owns Account & settings (`docs/DESIGN_SYSTEM.md` §7.7): a settings shell with a sub-nav and one
+//! panel per concern. Each panel owns its own data and lives in its own module.
 //!
 //! The open panel is a route segment, not a signal: `/account/security` is an address, so a
 //! reload, the back button and a footer link all land where they say they do.
@@ -36,7 +36,7 @@ use std::str::FromStr;
 /// One settings panel.
 ///
 /// Public because it is a route segment: [`AccountPanel::slug`] *is* the URL, so
-/// `/account/privacy` is an address rather than a parameter.
+/// `/account/privacy` is an address instead of a parameter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AccountPanel {
     Profile,
@@ -109,10 +109,10 @@ impl AccountPanel {
     fn is_visible(self, caps: &CapabilitySet) -> bool {
         match self {
             // Neither has a flag behind it: appearance is device-local, and the source order is
-            // ungated on the server because it only shapes outbound links — a reader who cannot
+            // ungated on the server because it only shapes outbound links; a reader who cannot
             // change it is worse off than one who can.
             Self::Appearance | Self::Sources => true,
-            // The one panel gated on the *build* rather than on the deployment: it advertises
+            // The one panel gated on the *build* instead of on the deployment: it advertises
             // the native client, and the reader of the native client already has it.
             Self::DesktopApp => cfg!(feature = "web"),
             // Deliberately *not* gated on `CatalogueAdultContent`. The panel explains that the
@@ -144,8 +144,8 @@ impl fmt::Display for AccountPanel {
     }
 }
 
-/// An unrecognised panel slug. The route table turns this into a redirect to `/account` rather
-/// than a 404: a link to a panel this build has dropped should still land on the settings.
+/// An unrecognised panel slug. The route table turns this into a redirect to `/account`,
+/// not a 404: a link to a panel this build has dropped should still land on the settings.
 #[derive(Debug)]
 pub(crate) struct UnknownPanel;
 
@@ -179,7 +179,7 @@ fn landing_panel(caps: &CapabilitySet) -> AccountPanel {
         .unwrap_or(AccountPanel::Appearance)
 }
 
-/// `/account` — the way in, not a place. Resolves the panel this reader can actually open and
+/// `/account`: the way in, not a place. Resolves the panel this reader can actually open and
 /// rewrites the address bar to it, so no settings panel is unlinkable.
 #[component]
 pub(crate) fn Account() -> Element {
@@ -208,7 +208,7 @@ pub(crate) fn Account() -> Element {
     }
 }
 
-/// `/account/:panel` — the settings shell itself.
+/// `/account/:panel`: the settings shell itself.
 #[component]
 pub(crate) fn AccountSection(panel: AccountPanel) -> Element {
     let session = use_session();
@@ -217,12 +217,12 @@ pub(crate) fn AccountSection(panel: AccountPanel) -> Element {
     let api = api::use_api();
     let navigator = navigator();
 
-    // The route is the read side of the panel choice; a memo rather than a signal, because a
+    // The route is the read side of the panel choice; a memo instead of a signal, because a
     // signal here would be a second copy of it that the back button cannot reach.
     let routed = use_memo(use_reactive!(|panel| panel));
 
     // The panel named in the URL can lose its feature under the reader's feet. Rewrite the
-    // address rather than leave it naming a panel that renders something else.
+    // address, not leave it naming a panel that renders something else.
     use_effect(move || {
         let open = *routed.read();
         if caps.is_ready() && !open.is_visible(&caps) {
@@ -239,7 +239,7 @@ pub(crate) fn AccountSection(panel: AccountPanel) -> Element {
     let name = session
         .username()
         .unwrap_or_else(|| i18n.t("common.readerFallback"));
-    // Derived from capabilities, not a stored role — see `CapabilitySet::label_key`.
+    // Derived from capabilities, not a stored role: see `CapabilitySet::label_key`.
     let tier = i18n.t(caps.label_key());
 
     let visible: Vec<AccountPanel> = AccountPanel::all()
@@ -275,9 +275,9 @@ pub(crate) fn AccountSection(panel: AccountPanel) -> Element {
                 {i18n.t("account.signOut")}
             }
         }
-        // A sub-page nav, not a chip cloud. Ten panels wrapped into two or three ragged rows at
-        // every width below a wide desktop, and the second row's left edge under the first read
-        // as a list that had spilled rather than as the screen's own navigation. `scroll` keeps
+        // A sub-page nav, not a chip cloud. Ten panels would wrap into two or three ragged rows at
+        // every width below a wide desktop, and the second row's left edge under the first would
+        // read as a list that had spilled instead of as the screen's own navigation. `scroll` keeps
         // it to one row on the page's own column, between the head above it and the panel below.
         //
         // No `<nav>` around it: the kit puts the label on the tablist, and a landmark whose only
@@ -313,7 +313,7 @@ mod tests {
     use super::*;
 
     /// Every panel's slug is its URL, so a slug that does not parse back to itself is a panel no
-    /// link can reach — which is the whole defect routing the panel exists to close. Ten panels
+    /// link can reach, which is the whole defect routing the panel exists to close. Ten panels
     /// shared one address (`/account`) until they became segments.
     #[test]
     fn every_panel_slug_parses_back_to_itself() {
@@ -329,7 +329,7 @@ mod tests {
     }
 
     /// Two panels sharing a slug would make one of them unreachable, and the shadowed one would
-    /// simply never open — silently, because the parse still succeeds.
+    /// simply never open: silently, because the parse still succeeds.
     #[test]
     fn panel_slugs_are_unique() {
         let mut slugs: Vec<&str> = AccountPanel::all().iter().map(|p| p.slug()).collect();
@@ -350,8 +350,8 @@ mod tests {
         assert!("anilist-callback".parse::<AccountPanel>().is_err());
     }
 
-    /// `landing_panel` walks the strip in order, so the default segment is whatever comes first
-    /// — Profile, as the sub-nav shows it.
+    /// `landing_panel` walks the strip in order, so the default segment is whatever comes first:
+    /// Profile, as the sub-nav shows it.
     #[test]
     fn profile_is_the_first_panel_in_the_strip() {
         assert_eq!(AccountPanel::all().first(), Some(&AccountPanel::Profile));

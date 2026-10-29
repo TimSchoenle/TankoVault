@@ -1,10 +1,10 @@
-//! The GDPR data-subject request queue: what people have asked for, when it is due, and the
+//! Owns the GDPR data-subject request queue: what people have asked for, when it is due, and the
 //! actions that answer it. Ordered by urgency, with overdue requests marked, since an overdue
 //! request is a compliance breach in progress.
 //!
-//! Fulfilment is deliberately two buttons rather than one: "resolve" records how a request was
+//! Fulfilment is deliberately two buttons, not one: "resolve" records how a request was
 //! answered, while "export" and "erase" do the thing. Merging them would lose the trail's ability
-//! to distinguish *we said we did it* from *we did it* — also why erasure requires the subject's
+//! to distinguish *we said we did it* from *we did it*: also why erasure requires the subject's
 //! username typed back.
 
 use crate::api;
@@ -25,7 +25,7 @@ use progenitor_client::ResponseValue;
 ///
 /// `erase` is deliberately the conjunction of two permissions: answering an erasure request
 /// destroys an account, so holding the privacy queue's write permission is not on its own
-/// enough — the reader must also be trusted to delete users.
+/// enough; the reader must also be trusted to delete users.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) struct QueuePermits {
     write: bool,
@@ -47,13 +47,13 @@ impl QueuePermits {
 /// A control a queue row can offer.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum RowAction {
-    /// Take ownership of a request nobody is working.
+    /// Takes ownership of a request nobody is working.
     Claim,
     /// Release the subject's data export.
     Export,
     /// Carry out the erasure.
     Erase,
-    /// Record how the request was answered.
+    /// Records how the request was answered.
     Resolve,
 }
 
@@ -63,7 +63,7 @@ pub(super) enum RowAction {
 /// leaves its row in the queue with `user_id: None`, and offering export or erasure over an
 /// account that is already gone is a call the server refuses.
 ///
-/// `needs_export` is the server's answer rather than a re-derivation from `kind` — the set of
+/// `needs_export` is the server's answer instead of a re-derivation from `kind`: the set of
 /// kinds that disclose an export belongs where the export is produced (see the field's own doc).
 pub(super) fn offers(row: &AdminRequestRow, permits: QueuePermits, action: RowAction) -> bool {
     let open = row.request.status.is_open();
@@ -348,7 +348,8 @@ fn ActionButton(
                         .send()
                         .await
                         .map(|_| ()),
-                    // Rejections must state reasons (Art. 12(4)); the server enforces that, so this sends a standing one.
+                    // Rejections must state reasons (Art. 12(4)); the server enforces that, so this
+                    // sends a standing one.
                     QueueAction::Reject => client
                         .resolve_privacy_request()
                         .id(id)
@@ -382,7 +383,7 @@ fn ActionButton(
     }
 }
 
-/// Download the subject's export to fulfil an access or portability request.
+/// Downloads the subject's export to fulfil an access or portability request.
 #[component]
 fn ExportButton(
     id: uuid::Uuid,
@@ -402,8 +403,8 @@ fn ExportButton(
             outcome.set(None);
             let client = gate.client(api);
             spawn(async move {
-                // Filename carries the request id, not the subject's: naming it after a person risks
-                // the export becoming personal data in someone's downloads folder.
+                // Filename carries the request id, not the subject's: naming it after a person
+                // risks the export becoming personal data in someone's downloads folder.
                 let filename = format!("tankovault-export-{id}.json");
                 match client.export_subject_data().id(id).send().await {
                     Ok(response) => {
@@ -444,7 +445,7 @@ fn ExportButton(
     }
 }
 
-/// Carry out an erasure request. Disabled until the subject's username has been typed back.
+/// Carries out an erasure request. Disabled until the subject's username has been typed back.
 #[component]
 fn EraseButton(
     id: uuid::Uuid,
@@ -555,7 +556,7 @@ mod tests {
         assert!(offers(&gone, ALL, RowAction::Resolve));
     }
 
-    /// Erasure is offered on erasure requests only — never as a shortcut out of an access or
+    /// Erasure is offered on erasure requests only: never as a shortcut out of an access or
     /// rectification request that merely happens to be open.
     #[test]
     fn only_an_erasure_request_offers_erasure() {
@@ -599,8 +600,8 @@ mod tests {
         assert!(!offers(&taken, ALL, RowAction::Claim));
     }
 
-    /// The export control follows the server's `needs_export`, which is why that field exists —
-    /// the console re-deriving it from `kind` was FRONTEND F10.
+    /// The export control follows the server's `needs_export`, which is why that field exists:
+    /// a console re-deriving it from `kind` drifts from the server.
     #[test]
     fn the_export_control_follows_the_servers_own_answer() {
         let mut request = row(RequestKind::Access, RequestStatus::Pending, Some("kaori"));
@@ -610,7 +611,7 @@ mod tests {
     }
 
     /// The typed confirmation must match the subject exactly, and an already-erased subject can
-    /// never be confirmed — comparing an empty field against a missing name would arm the most
+    /// never be confirmed: comparing an empty field against a missing name would arm the most
     /// destructive control on the page with nothing typed at all.
     #[test]
     fn the_erasure_confirmation_needs_the_exact_username() {

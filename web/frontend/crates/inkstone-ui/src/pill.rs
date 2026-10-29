@@ -1,4 +1,4 @@
-//! Status decorations: the pill, the filter chip and the state dot.
+//! Owns the status decorations: the pill, the filter chip and the state dot.
 
 use crate::skin::{use_skin, Flag, Part, Variant};
 use crate::tone::Tone;

@@ -1,8 +1,8 @@
-//! The "More like this" sidebar rail, from `GET /v1/series/{id}/similar`.
+//! Owns the "More like this" sidebar rail, from `GET /v1/series/{id}/similar`.
 //!
 //! Content similarity, not a relation: the endpoint ranks by the recommendation model's
 //! embedding space and says which features each match shares with the seed. A sequel is *not*
-//! what this finds — `relations` is unbuilt — so the wording must not promise one.
+//! what this finds (`relations` is unbuilt), so the wording must not promise one.
 
 use crate::api;
 use crate::components::{async_view, Cover, SkeletonBlock};
@@ -21,12 +21,12 @@ const RAIL_SIZE: i64 = 6;
 
 /// Series close to this one, with what each has in common.
 ///
-/// Renders nothing when the deployment has recommendations switched off — the endpoint is gated
+/// Renders nothing when the deployment has recommendations switched off: the endpoint is gated
 /// on the same feature and would answer 404.
 ///
 /// This is the furthest below the fold of the eight requests one series page issues, so `ready`
 /// holds it back until the screen above it has landed. It is a *prop*, which a `use_resource`
-/// does not react to on its own — hence `use_reactive!`.
+/// does not react to on its own: hence `use_reactive!`.
 ///
 /// The held-back state is `Ok(None)`, not `Ok(vec![])`: a resource keeps its last value while it
 /// restarts, so an empty list would render as "nothing similar" for the length of the real fetch,
@@ -92,9 +92,9 @@ pub(super) fn SimilarRail(series_id: SeriesId, ready: bool) -> Element {
 
 /// The rail's loading state, one placeholder per row it is about to ask for.
 ///
-/// A single flat block was 120px against a loaded rail of roughly six times that, so the sidebar
-/// grew under the reader every time the neighbours landed. Reserving row-shaped boxes reserves
-/// the height as well.
+/// A single flat block of 120px, against a loaded rail of roughly six times that, would make the
+/// sidebar grow under the reader every time the neighbours land. Reserving row-shaped boxes
+/// reserves the height as well.
 #[component]
 fn RailSkeleton() -> Element {
     rsx! {
@@ -117,12 +117,11 @@ fn RailSkeleton() -> Element {
 
 /// One neighbour: a thumbnail, the title, its length, and the features it shares with the seed.
 ///
-/// The thumbnail is sized by a class rather than an inline `width`, because the box has to be
-/// reserved in *both* dimensions. It was a 38px-wide `div` with no height, leaving the height to
-/// the `<img>`'s aspect ratio — which a cover that fails to load does not have, so one broken
-/// image collapsed its row and pulled the whole rail's spacing out of alignment. `Cover` now
-/// swaps a failed image for the fallback element as well, so the two fixes are belt and braces:
-/// the box exists whatever renders inside it.
+/// The thumbnail is sized by a class instead of an inline `width`, because the box has to be
+/// reserved in *both* dimensions. A width alone leaves the height to the `<img>`'s aspect ratio,
+/// which a cover that fails to load does not have, so one broken image would collapse its row and
+/// pull the whole rail's spacing out of alignment. `Cover` also swaps a failed image for the
+/// fallback element, so the two are belt and braces: the box exists whatever renders inside it.
 #[component]
 fn SimilarRow(item: SimilarSeries) -> Element {
     let i18n = use_i18n();

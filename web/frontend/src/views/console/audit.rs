@@ -1,7 +1,8 @@
-//! The privileged-action audit trail (`docs/ARCHITECTURE.md` §16): filtered, paged, newest first.
+//! Owns the privileged-action audit trail (`docs/ARCHITECTURE.md` §16): filtered, paged, newest
+//! first.
 //!
 //! Every filter here is a server-side predicate. Filtering a page client-side would silently
-//! answer a different question than the one asked — the panel would say "no matches" when it
+//! answer a different question than the one asked: the panel would say "no matches" when it
 //! means "no matches in the forty rows I happen to hold".
 
 use crate::api;
@@ -36,7 +37,7 @@ fn action_tone(action: &str) -> &'static str {
 
 /// The catalogue wording for an action, falling back to the raw token.
 ///
-/// A server-side action this build has never heard of renders as itself rather than as a
+/// A server-side action this build has never heard of renders as itself instead of as a
 /// missing key: the vocabulary lives in the handlers, and the console must not need a release
 /// to display a new one.
 fn action_label(i18n: crate::i18n::Translator, action: &str) -> String {
@@ -210,7 +211,7 @@ pub(super) fn AuditPanel(tick: RefreshTick) -> Element {
 
 /// One trail row, with the stored `detail` behind an expander.
 ///
-/// `detail` is what actually changed — the before and after of a permission or a flag — and it
+/// `detail` is what actually changed (the before and after of a permission or a flag), and it
 /// was fetched and thrown away before this panel could show it.
 #[component]
 fn AuditRow(entry: Signal<AuditEntry>) -> Element {
@@ -273,7 +274,7 @@ fn AuditRow(entry: Signal<AuditEntry>) -> Element {
 mod tests {
     use super::action_tone;
 
-    /// The tone is derived from the token, not from a table of known actions — a destructive
+    /// The tone is derived from the token, not from a table of known actions: a destructive
     /// action this build has never heard of must still be drawn as destructive, because the
     /// operator scanning the trail for one is the reason the tone exists.
     #[test]

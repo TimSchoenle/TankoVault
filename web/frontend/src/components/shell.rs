@@ -1,5 +1,5 @@
-//! The persistent app shell: left rail + top command bar, with the routed view in the
-//! content area. Also owns the two background concerns that must outlive any single screen —
+//! Owns the persistent app shell: left rail and top command bar, with the routed view in the
+//! content area. Also owns the two background concerns that must outlive any single screen:
 //! the silent token refresh and the live-notification subscription.
 
 use crate::api;
@@ -14,14 +14,14 @@ use dioxus::prelude::*;
 /// the server's 15-minute default `access_ttl_minutes`.
 const REFRESH_BUFFER_MS: f64 = 60_000.0;
 
-/// Poll cadence while signed out — there is no cookie to adopt yet, so we just check back.
+/// Poll cadence while signed out: there is no cookie to adopt yet, so we just check back.
 const SIGNED_OUT_POLL_MS: u32 = 15_000;
 
 /// First delay before retrying a *transient* refresh failure.
 const RETRY_BACKOFF_START_MS: u32 = 2_000;
 
 /// Ceiling for the transient-failure backoff, so a prolonged outage settles into a steady,
-/// low-frequency retry rather than growing unbounded.
+/// low-frequency retry instead of growing unbounded.
 const RETRY_BACKOFF_MAX_MS: u32 = 60_000;
 
 #[component]
@@ -32,7 +32,7 @@ pub(crate) fn Shell() -> Element {
     use_unread_count();
     use_live_notifications();
     crate::state::branding::use_branding_sync();
-    // Here rather than in each screen: the layout is the one component every route renders
+    // Here instead of in each screen: the layout is the one component every route renders
     // through, so no route can be added without a title.
     crate::title::use_document_title();
 
@@ -69,14 +69,14 @@ pub(crate) fn Shell() -> Element {
     }
 }
 
-/// Send a signed-out visitor to the sign-in screen on a deployment that serves nobody else, and
+/// Sends a signed-out visitor to the sign-in screen on a deployment that serves nobody else, and
 /// report whether this render is one the reader may not see.
 ///
-/// The client half of `accounts.required`. Only the server enforces it — every request is
-/// refused with or without this — but a reader left staring at a screen of failed panels has no
+/// The client half of `accounts.required`. Only the server enforces it (every request is
+/// refused with or without this), but a reader left staring at a screen of failed panels has no
 /// way to tell a private deployment from a broken one, and no obvious way to the sign-in form.
 ///
-/// Redirecting rather than rendering a "please sign in" card, because the wall is not about the
+/// Redirecting instead of rendering a "please sign in" card, because the wall is not about the
 /// route: on a private deployment *no* address serves this reader, so leaving them on one is
 /// leaving them somewhere that cannot ever load.
 fn use_account_wall_redirect(route: &Route) -> bool {
@@ -103,8 +103,8 @@ fn use_account_wall_redirect(route: &Route) -> bool {
 /// The mirror of `is_sign_in_surface` in `services/api/src/account_gate.rs`, and it has to stay
 /// one: a screen listed here whose data the server walls renders empty forever, and a screen
 /// missing from here that the server *does* serve is one the reader is bounced away from. There
-/// is no compile-time relationship between the two — `openapi.json` connects the workspaces, and
-/// it carries routes, not screens — so the pairing is this comment and the tests below it.
+/// is no compile-time relationship between the two (`openapi.json` connects the workspaces, and
+/// it carries routes, not screens), so the pairing is this comment and the tests below it.
 fn is_reachable_signed_out(route: &Route) -> bool {
     matches!(
         route,
@@ -120,9 +120,9 @@ fn is_reachable_signed_out(route: &Route) -> bool {
 
 /// Whether this route gets the one-line footer instead of the five-column one.
 ///
-/// The auth card and the console are both surfaces a full directory would outweigh — a 400px
+/// The auth card and the console are both surfaces a full directory would outweigh: a 400px
 /// sign-in card with three columns of links under it, an operator console that is an
-/// application rather than a document. Chosen here rather than by the views so a route cannot
+/// application instead of a document. Chosen here instead of by the views so a route cannot
 /// end up rendering two footers, which is what happened when the auth view supplied its own.
 fn is_compact(route: &Route) -> bool {
     matches!(
@@ -153,21 +153,19 @@ fn measure_for(route: &Route) -> &'static str {
     }
 }
 
-/// Keep an access token in memory for as long as the tab is open (`docs/ARCHITECTURE.md` §17.4).
+/// Keeps an access token in memory for as long as the tab is open (`docs/ARCHITECTURE.md` §17.4).
 ///
-/// Runs once on boot — adopting a token from the httpOnly refresh cookie so a page reload
-/// stays signed in — and then again shortly before each token expires.
+/// Runs once on boot (adopting a token from the httpOnly refresh cookie so a page reload
+/// stays signed in), and then again shortly before each token expires.
 ///
 /// The recurring half is not optional. Without it the in-memory token goes stale ~15 minutes
 /// after boot and every authenticated call starts 401ing until the user manually reloads.
-/// The SSE stream used to suffer worst: `EventSource` baked the access token into its URL and, per
-/// spec, stops reconnecting for good the first time a reconnect attempt draws a non-200 — so one
-/// stale-token 401 killed live notifications permanently. Since SEC-8 the stream authenticates with
-/// a ticket it mints per attempt and drives its own reconnect (`crate::live`), so it no longer
-/// depends on the token staying fresh — but every other authenticated call still does.
+/// The SSE stream is the exception: it authenticates with a ticket it mints per attempt and
+/// drives its own reconnect (`crate::live`), so it does not depend on the token staying fresh,
+/// but every other authenticated call does.
 ///
-/// Crucially, a *failed* refresh is not a sign-out. Only a genuine `401` — the refresh
-/// session really is gone: expired past its 30-day window, rotated away, or reuse-revoked —
+/// Crucially, a *failed* refresh is not a sign-out. Only a genuine `401` (the refresh
+/// session really is gone: expired past its 30-day window, rotated away, or reuse-revoked)
 /// clears the session. Everything else (offline, DNS, timeout, 5xx, a server restart, a
 /// laptop waking from sleep) is transient, the httpOnly cookie is still valid, and we retry
 /// with exponential backoff. That distinction is what makes reloads and brief outages behave
@@ -192,7 +190,8 @@ fn use_token_refresh() {
                 Some(ms) if ms > REFRESH_BUFFER_MS => ms - REFRESH_BUFFER_MS,
                 // Already inside the buffer (or past expiry): refresh immediately.
                 Some(_) => 0.0,
-                // Signed out, or a transient boot failure left us tokenless: poll without hammering.
+                // Signed out, or a transient boot failure left us tokenless: poll without
+                // hammering.
                 None if booted => {
                     crate::platform::sleep_ms(SIGNED_OUT_POLL_MS).await;
                     continue;
@@ -234,21 +233,21 @@ fn use_token_refresh() {
     });
 }
 
-/// Keep the reader's capabilities — their permissions and this deployment's enabled features —
+/// Keeps the reader's capabilities (their permissions and this deployment's enabled features)
 /// in step with the session.
 ///
 /// Keyed on the access token via `use_resource`, exactly like the live stream below, so it
 /// refetches on sign-in, on the boot-time silent refresh, and on every renewal. That cadence is
 /// what makes a permission granted or revoked while someone is signed in reach their UI within
-/// one token lifetime rather than never.
+/// one token lifetime, not never.
 ///
-/// A failed fetch clears rather than keeps the previous answer: a stale capability set is how a
+/// A failed fetch clears the previous answer instead of keeping it: a stale capability set is how a
 /// reader ends up looking at a console tab they no longer have, and showing less than they are
-/// entitled to is the recoverable direction — the next refresh puts it back.
+/// entitled to is the recoverable direction; the next refresh puts it back.
 ///
 /// While signed *out* the same probe answers a different question: whether this deployment
-/// serves anonymous callers at all. Its refusal is the only channel that carries the answer —
-/// `account_required` rather than `unauthorized` — because a deployment behind
+/// serves anonymous callers at all. Its refusal is the only channel that carries the answer
+/// (`account_required` instead of `unauthorized`) because a deployment behind
 /// `accounts.required` publishes nothing to a caller with no account, this endpoint included.
 /// Held back until the session has settled: before the boot-time silent refresh lands, "signed
 /// out" only means "we have not looked yet", and probing then would raise the wall in front of a
@@ -290,7 +289,7 @@ fn use_capability_sync() {
     });
 }
 
-/// Keep the cached global source order in step with the session.
+/// Keeps the cached global source order in step with the session.
 ///
 /// Keyed on the signed-in account: the order is per reader, so a sign-out must not leave the
 /// previous reader's preference shaping this one's links. A renewal changes nothing it reads.
@@ -322,20 +321,20 @@ fn use_source_order_sync() {
     });
 }
 
-/// Subscribe to the per-user SSE stream while signed in, keeping the rail's unread badge
+/// Subscribes to the per-user SSE stream while signed in, keeping the rail's unread badge
 /// current (`docs/ARCHITECTURE.md` §14, §17.4).
 ///
-/// `use_resource` restarts when the signed-in account changes — dropping the previous
-/// `EventSource` and closing its connection — so a sign-out tears the stream down and a sign-in
+/// `use_resource` restarts when the signed-in account changes (dropping the previous
+/// `EventSource` and closing its connection), so a sign-out tears the stream down and a sign-in
 /// establishes it. A renewal does not restart it: the stream authenticates with a single-use
-/// ticket [`crate::live::run`] mints for itself (SEC-8), so a fresh token changes nothing it
-/// holds, and restarting it on every refresh was a reconnect burst per reader per ~14 minutes.
+/// ticket [`crate::live::run`] mints for itself, so a fresh token changes nothing it holds,
+/// and restarting it on every refresh would be a reconnect burst per reader per ~14 minutes.
 fn use_live_notifications() {
     let session = use_session();
     let api = api::use_api();
     let badge = use_context::<UnreadBadge>();
-    // Threaded in rather than read inside the stream: the desktop build words its OS
-    // notification through the catalogue, and `use_i18n` is a hook — it cannot be called from
+    // Threaded in, not read inside the stream: the desktop build words its OS
+    // notification through the catalogue, and `use_i18n` is a hook; it cannot be called from
     // inside a future that has already awaited.
     let i18n = crate::i18n::use_i18n();
     // Same reasoning as `i18n`: the toast names the deployment, and the lookup that resolves it
@@ -352,7 +351,7 @@ fn use_live_notifications() {
     });
 }
 
-/// Seed the unread badge from the server, and re-seed it on every token renewal.
+/// Seeds the unread badge from the server, and re-seeds it on every token renewal.
 ///
 /// The stream alone was not enough, and this is the defect that made the count "not always
 /// load": the SSE stream only ever *pushes a change*. A reader who opens the app with unread
@@ -361,12 +360,12 @@ fn use_live_notifications() {
 /// screen that recounts. On a reload the same thing happened again.
 ///
 /// Keyed on the token like the stream and the capability sync, so the count is fetched on
-/// sign-in, on the boot-time silent refresh, and on each renewal — the cadence that also
+/// sign-in, on the boot-time silent refresh, and on each renewal: the cadence that also
 /// repairs a badge the stream drifted away from during a disconnection.
 ///
 /// `limit(1)`: the inbox-wide `unread` total is a field of the response, not something counted
 /// from the rows, so there is no reason to transfer a page of them to read it. A failed fetch
-/// deliberately leaves the previous count alone — the badge is a nicety, and blanking it on a
+/// deliberately leaves the previous count alone: the badge is a nicety, and blanking it on a
 /// transient error would report "nothing unread", which is a specific and wrong claim.
 fn use_unread_count() {
     let session = use_session();
@@ -400,7 +399,7 @@ mod tests {
 
     /// Every screen the API's `account_gate` also lets through, so a private deployment still
     /// has a way in. A screen dropped from this list is a reader bounced off the very form they
-    /// were sent a link to — the password reset and the email confirmation both arrive by email
+    /// were sent a link to: the password reset and the email confirmation both arrive by email
     /// at an address whose owner is, by definition, signed out.
     #[test]
     fn the_way_in_is_reachable_signed_out() {

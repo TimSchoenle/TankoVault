@@ -1,4 +1,4 @@
-//! One merge in the list: what absorbed what, and whether it can still be taken back.
+//! Owns one merge in the list: what absorbed what, and whether it can still be taken back.
 
 use crate::i18n::use_i18n;
 use crate::models::*;
@@ -79,8 +79,8 @@ pub(super) fn MergeListRow(
 
 /// The catalogue key wording what produced a decision.
 ///
-/// Falls back to `sweep` rather than to the raw token: the vocabulary is the sweep's, and a
-/// trigger this build has not been taught is still a sweep of some kind — the one thing it is
+/// Falls back to `sweep`, not to the raw token: the vocabulary is the sweep's, and a
+/// trigger this build has not been taught is still a sweep of some kind; the one thing it is
 /// definitely not is an operator, which is the distinction the row is drawing.
 fn trigger_key(trigger: &str) -> &'static str {
     if trigger == "operator" {

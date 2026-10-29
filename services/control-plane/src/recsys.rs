@@ -434,7 +434,7 @@ async fn extract_all(
     Ok(built)
 }
 
-/// Intern one page's features and store its vectors. Returns the vectors as written.
+/// Interns one page's features and stores its vectors. Returns the vectors as written.
 async fn extract_batch(
     pool: &PgPool,
     page: &[recsys::SeriesFactsRow],
@@ -540,7 +540,7 @@ fn dense_row(feature_ids: &[i32], weights: &[f32], vocabulary: &DenseMap) -> Vec
     row
 }
 
-/// Project a row and widen it to the width `series_embedding` is declared with.
+/// Projects a row and widens it to the width `series_embedding` is declared with.
 ///
 /// The basis can be narrower than the column. Orthogonal iteration cannot produce more than
 /// `dim` orthonormal directions, so a catalogue whose *vocabulary* is smaller than
@@ -558,7 +558,7 @@ fn embed(basis: &Basis, row: &[(usize, f32)]) -> Vec<f32> {
     vector
 }
 
-/// Stream the catalogue into a covariance matrix and reduce it to a projection.
+/// Streams the catalogue into a covariance matrix and reduces it to a projection.
 async fn solve_basis(
     pool: &PgPool,
     budget: BuildBudget,
@@ -628,7 +628,7 @@ async fn load_basis(pool: &PgPool) -> anyhow::Result<Option<Basis>> {
     Ok(Basis::from_columns(dim, width, columns))
 }
 
-/// Project every stored vector and write the embeddings.
+/// Projects every stored vector and writes the embeddings.
 async fn project_all(
     pool: &PgPool,
     budget: BuildBudget,
@@ -684,7 +684,7 @@ async fn incremental_targets(pool: &PgPool, budget: BuildBudget) -> anyhow::Resu
     Ok(targets)
 }
 
-/// Re-extract and re-embed a named set, fusing the two passes.
+/// Re-extracts and re-embeds a named set, fusing the two passes.
 ///
 /// The full path cannot do this (the covariance matrix has to see everything before a basis
 /// exists), but the incremental path projects with a basis that is already fixed, so the vectors
@@ -758,7 +758,7 @@ fn predecessor_of(id: SeriesId) -> Option<SeriesId> {
         .map(|previous| SeriesId::from_uuid(uuid::Uuid::from_u128(previous)))
 }
 
-/// Recompute appeal priors, for the whole catalogue or for a named subset.
+/// Recomputes appeal priors, for the whole catalogue or for a named subset.
 async fn prior_pass(
     pool: &PgPool,
     tuning: BuildTuning,
@@ -847,7 +847,7 @@ fn is_recommendable(inputs: &recsys::PriorInputs, min_features: i64) -> bool {
         && inputs.descriptive_features >= min_features.max(1)
 }
 
-/// Blend the appeal signals into `[0, 1]`.
+/// Blends the appeal signals into `[0, 1]`.
 ///
 /// The watcher term is confidence-scaled by the catalogue's own scale instead of trusted
 /// outright: on a new deployment `watchers` is a handful of arbitrary early watchlists, and

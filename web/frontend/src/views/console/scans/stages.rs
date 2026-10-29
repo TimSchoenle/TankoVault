@@ -1,4 +1,4 @@
-//! Wording for the stage a scan task reports, and the reading of a run's timing breakdown.
+//! Owns the wording for the stage a scan task reports, and the reading of a run's timing breakdown.
 //!
 //! # Why the vocabulary is a table and not an enum
 //!
@@ -14,8 +14,8 @@ use crate::models::{RunTelemetry, StageTotal};
 /// Every stage this console has wording for, paired with its catalogue key.
 ///
 /// Mirrors `tankovault_domain::ScanStage`, which pins the tokens themselves in a unit test. The
-/// two are related by nothing else — `web/frontend` is a separate workspace — so a stage added
-/// there and not here renders as its token rather than as an error.
+/// two are related by nothing else (`web/frontend` is a separate workspace), so a stage added
+/// there and not here renders as its token instead of as an error.
 const STAGES: [(&str, &str); 9] = [
     ("starting", "console.scan.stage.starting"),
     ("catalog_fetch", "console.scan.stage.catalogFetch"),
@@ -28,7 +28,7 @@ const STAGES: [(&str, &str); 9] = [
     ("series_ingest", "console.scan.stage.seriesIngest"),
 ];
 
-/// A stage token, worded — or the token itself when this console does not know it yet.
+/// A stage token, worded, or the token itself when this console does not know it yet.
 pub(super) fn stage_label(i18n: Translator, token: &str) -> String {
     STAGES
         .iter()
@@ -38,8 +38,8 @@ pub(super) fn stage_label(i18n: Translator, token: &str) -> String {
 
 /// What the breakdown says about why a run took as long as it did.
 ///
-/// A decision, not a sentence: the wording is [`word`]'s job, so the *policy* — which reading
-/// outranks which — can be tested without a rendered component behind it.
+/// A decision, not a sentence: the wording is [`word`]'s job, so the *policy* (which reading
+/// outranks which) can be tested without a rendered component behind it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Verdict {
     /// Nothing recorded a breakdown. Every run from before this instrumentation lands here.
@@ -61,7 +61,7 @@ pub(super) enum Verdict {
 }
 
 impl Verdict {
-    /// Read the breakdown.
+    /// Reads the breakdown.
     ///
     /// The order below is the order of usefulness, and the first two entries are the whole point.
     /// A provider answering 429 has told us its budget is wrong, which is actionable; a run whose
@@ -184,7 +184,7 @@ mod tests {
         }
     }
 
-    /// A stage this console has no wording for must render as its token rather than as the
+    /// A stage this console has no wording for must render as its token instead of as the
     /// catalogue key: a worker one release ahead writes stages this build has never heard of, and
     /// `console.scan.stage.…` on screen is worse than the token it was meant to describe.
     #[test]
@@ -250,7 +250,7 @@ mod tests {
         );
     }
 
-    /// A run with nothing recorded must say so rather than divide by its zero and claim 100% of
+    /// A run with nothing recorded must say so, not divide by its zero and claim 100% of
     /// nothing. Every run from before this instrumentation existed lands here, and so does every
     /// run that has not settled a task yet.
     #[test]
@@ -263,7 +263,7 @@ mod tests {
     }
 
     /// With nothing in the fetch stack dominating, the time is ours, and the answer is which
-    /// stage took it — the case that distinguishes a slow provider from a slow ingest.
+    /// stage took it: the case that distinguishes a slow provider from a slow ingest.
     #[test]
     fn an_unremarkable_run_names_its_costliest_stage() {
         let mut telemetry = measured(100_000);

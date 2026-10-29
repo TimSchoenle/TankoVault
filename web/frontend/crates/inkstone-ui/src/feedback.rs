@@ -1,4 +1,5 @@
-//! Loading, empty and error states, plus the helpers that render all three from one `Resource`.
+//! Owns the loading, empty and error states, and the helpers that render all three from one
+//! `Resource`.
 //!
 //! The rule these encode: never a bare spinner, and never an empty list styled like a failure.
 //! A reader has to be able to tell "nothing matched" from "we could not ask".
@@ -84,7 +85,7 @@ pub fn ErrorLine(message: String) -> Element {
     }
 }
 
-/// An empty state. Never styled as an error — it is not one.
+/// An empty state. Never styled as an error: it is not one.
 #[component]
 pub fn EmptyBox(message: String, #[props(default)] action: Option<Element>) -> Element {
     rsx! {
@@ -118,7 +119,7 @@ pub fn OutcomeLine(outcome: Outcome) -> Element {
     }
 }
 
-/// Render a `Resource` through its three states: `loading` while in flight, an [`ErrorBox`] when
+/// Renders a `Resource` through its three states: `loading` while in flight, an [`ErrorBox`] when
 /// it failed, `content` once it resolved.
 ///
 /// # Errors

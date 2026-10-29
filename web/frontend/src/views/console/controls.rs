@@ -1,4 +1,4 @@
-//! The console's live-stream control: a connection-state pill plus detach/attach and a manual
+//! Owns the console's live-stream control: a connection-state pill and detach/attach and a manual
 //! refresh.
 //!
 //! The pill reports the *connection*, not a timer. An operator staring at a queue that has
@@ -9,7 +9,7 @@ use crate::views::console::live::LiveState;
 use crate::views::console::RefreshTick;
 use dioxus::prelude::*;
 use inkstone_ui::Button;
-/// Live-stream status pill plus detach/attach and manual-refresh controls.
+/// Live-stream status pill and detach/attach and manual-refresh controls.
 #[component]
 pub(super) fn LiveControls(
     tick: RefreshTick,
@@ -28,8 +28,8 @@ pub(super) fn LiveControls(
         div { class: "ik-flex",
             span {
                 class: "{pill_class}",
-                // The one place the console reports its own staleness, so it is announced
-                // rather than left to the colour of a dot.
+                // The one place the console reports its own staleness, so it is announced,
+                // not left to the colour of a dot.
                 "aria-live": "polite",
                 span { class: "ik-live-dot" }
                 {i18n.t(connection.label_key())}

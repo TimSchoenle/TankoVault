@@ -1,12 +1,10 @@
-//! Notifications (§17.2.5) — chronological, unread emphasised, one-click mark-all-read, and
+//! Owns Notifications (§17.2.5): chronological, unread emphasised, one-click mark-all-read, and
 //! deep links into the series. Also keeps the rail's unread badge in sync.
 //!
 //! A row has to be readable *without* being opened. The server resolves each stored document into
-//! the display fields ([`Notification`]), so this screen renders rather than parses: it used to
-//! read a free-form payload looking for a `series_title` no writer ever set, which is why every
-//! row said, literally, "new chapter".
+//! the display fields ([`Notification`]), so this screen renders, not parses.
 //!
-//! Tab and page live in the URL (see [`NotificationsQuery`]) rather than in signals, so opening a
+//! Tab and page live in the URL (see [`NotificationsQuery`]) instead of in signals, so opening a
 //! notification and coming back returns to the row it was found on.
 
 use crate::api;
@@ -25,8 +23,8 @@ use dioxus::prelude::*;
 use inkstone_ui::{button_class, Button, Pill, Size, Tone};
 use progenitor_client::ResponseValue;
 use std::fmt;
-/// Filter tabs (`docs/DESIGN_SYSTEM.md` §7.5). Applied server-side: filtering the one loaded page is what
-/// let "Unread" render empty while unread rows sat on page two.
+/// Filter tabs (`docs/DESIGN_SYSTEM.md` §7.5). Applied server-side: filtering the one loaded page
+/// is what let "Unread" render empty while unread rows sat on page two.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum Tab {
     #[default]
@@ -72,7 +70,7 @@ impl Tab {
         }
     }
 
-    /// An unrecognised token widens to `All` rather than refusing the link — a hand-edited URL
+    /// An unrecognised token widens to `All` instead of refusing the link: a hand-edited URL
     /// should show more, never an error.
     fn parse(token: &str) -> Self {
         Self::all()
@@ -86,7 +84,7 @@ impl Tab {
 /// The inbox's view state, encoded as a URL query string, so a reader triaging fifty rows keeps
 /// their filter and their place when they open one and come back.
 ///
-/// Follows `views::watchlist::query` — `Default`, `From<&str>`, `Display` and a round-trip test —
+/// Follows `views::watchlist::query` (`Default`, `From<&str>`, `Display` and a round-trip test)
 /// because two encoders that disagree about defaults is a filter that silently resets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) struct NotificationsQuery {
@@ -98,15 +96,15 @@ pub(crate) struct NotificationsQuery {
 impl NotificationsQuery {
     /// The inbox on `tab`, at page one.
     ///
-    /// A constructor rather than the `with_*` method its neighbours use: those preserve the
-    /// fields they do not name, and this query has none — switching tab changes the row set, so
+    /// A constructor instead of the `with_*` method its neighbours use: those preserve the
+    /// fields they do not name, and this query has none; switching tab changes the row set, so
     /// the page it carries has to reset and nothing of the old query survives.
     fn on_tab(tab: Tab) -> Self {
         Self { tab, page: 0 }
     }
 }
 
-/// Parse the query string. Unknown keys and unparseable values fall back to the default for that
+/// Parses the query string. Unknown keys and unparseable values fall back to the default for that
 /// field: a URL is user-editable, and half-understanding one beats a blank inbox.
 impl From<&str> for NotificationsQuery {
     fn from(query: &str) -> Self {
@@ -124,7 +122,7 @@ impl From<&str> for NotificationsQuery {
     }
 }
 
-/// Write only what differs from the default, so the rail's link stays `/notifications` and a
+/// Writes only what differs from the default, so the rail's link stays `/notifications` and a
 /// shared URL names exactly what its sender changed.
 impl fmt::Display for NotificationsQuery {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -139,7 +137,7 @@ impl fmt::Display for NotificationsQuery {
     }
 }
 
-/// Normalised notification kind → icon + tint.
+/// Normalised notification kind → icon and tint.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
     NewChapter,
@@ -175,9 +173,9 @@ impl Kind {
     }
 
     /// The tile's ink. The icon is what tells the kinds apart, so the ordinary inbox events all
-    /// share the accent; only the one kind that is a health signal — a sync conflict the reader
-    /// has to resolve — spends a hue, and it spends the health scale's rather than one of its
-    /// own. `SourceAdded` used to borrow `--color-type-manga`, a content-type token on an axis
+    /// share the accent; only the one kind that is a health signal (a sync conflict the reader
+    /// has to resolve) spends a hue, and it spends the health scale's instead of one of its
+    /// own. `SourceAdded` must not borrow `--color-type-manga`, a content-type token on an axis
     /// that is not content type.
     fn color(self) -> &'static str {
         match self {
@@ -188,8 +186,8 @@ impl Kind {
     }
 }
 
-/// Rows per request. The inbox is paged rather than truncated: it used to arrive as one
-/// hard-capped batch, which is why a busy account's list and bell both sat at exactly 100.
+/// Rows per request. The inbox is paged, not truncated: one hard-capped batch would pin a busy
+/// account's list and bell at exactly 100.
 const PAGE_SIZE: usize = 50;
 
 #[component]
@@ -201,7 +199,7 @@ pub(crate) fn Notifications(query: NotificationsQuery) -> Element {
     let reload = use_reload();
     let navigator = navigator();
 
-    // The route is the read side of both the tab and the page; a memo rather than signals,
+    // The route is the read side of both the tab and the page; a memo, not signals,
     // because a signal here would be a second copy the back button cannot reach.
     let routed = use_memo(use_reactive!(|query| query));
 
@@ -257,7 +255,7 @@ pub(crate) fn Notifications(query: NotificationsQuery) -> Element {
     });
 
     // The SSE push is best-effort; this navigation-time recount is what keeps the rail badge
-    // honest. It takes the server's inbox-wide count, not this page's — counting the page is
+    // honest. It takes the server's inbox-wide count, not this page's: counting the page is
     // what pinned the badge at the page size.
     use_effect(move || {
         let mut count = badge.0;
@@ -470,11 +468,11 @@ pub(crate) fn headline(notification: &Notification, i18n: Translator) -> String 
 
 /// What a row's headline says, before it is worded.
 ///
-/// Kept separate from the wording so the shape logic stays testable on the host target — a
+/// Kept separate from the wording so the shape logic stays testable on the host target: a
 /// message needs a Dioxus runtime.
 #[derive(Debug, Clone, PartialEq)]
 enum Line {
-    /// A grouped row covers a range, and says so rather than showing the newest chapter and
+    /// A grouped row covers a range, and says so instead of showing the newest chapter and
     /// hiding the other eleven.
     Range {
         title: String,
@@ -485,7 +483,7 @@ enum Line {
     Single { title: String, number: f64 },
     /// Some other update to a series we know the title of.
     Update { title: String },
-    /// No title resolved — shown as the server's kind token with its underscores spaced out,
+    /// No title resolved: shown as the server's kind token with its underscores spaced out,
     /// which is still readable. The catalogue cannot enumerate kinds the notifier has not
     /// shipped yet.
     Kind(String),
@@ -582,7 +580,7 @@ mod tests {
         }
     }
 
-    /// Tab and page used to be `use_signal` against a bare `/notifications`, so opening a
+    /// The bug: tab and page were `use_signal` against a bare `/notifications`, so opening a
     /// notification and coming back dropped the reader on page 1 of All. Both have to survive the
     /// query string, or that reset is back.
     #[test]
@@ -620,7 +618,7 @@ mod tests {
         assert_eq!(NotificationsQuery::from(""), NotificationsQuery::default());
     }
 
-    /// A hand-edited URL must widen rather than break: an unknown tab is All, and a nonsense page
+    /// A hand-edited URL must widen, not break: an unknown tab is All, and a nonsense page
     /// is page one.
     #[test]
     fn unparseable_parameters_fall_back_to_the_default() {
@@ -652,7 +650,7 @@ mod tests {
         assert!(matches!(Kind::of(&row("brand_new_kind")), Kind::Unknown));
     }
 
-    /// Every row used to read, literally, "new chapter": the view demanded a `series_title` the
+    /// The bug: every row read, literally, "new chapter": the view demanded a `series_title` the
     /// notifier never wrote, so the titled arms were unreachable and every row fell through to
     /// the kind token. With a title, the headline must name the series.
     #[test]
@@ -689,7 +687,7 @@ mod tests {
     }
 
     /// A coalesced row says the range and the count, and drops the one chapter title it happens
-    /// to hold — otherwise twelve chapters read as though only the newest arrived.
+    /// to hold: otherwise twelve chapters read as though only the newest arrived.
     #[test]
     fn a_grouped_row_says_the_range_and_the_count() {
         let mut n = row("new_chapter");

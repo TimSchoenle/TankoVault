@@ -1,9 +1,8 @@
-//! What the current filter matched, as figures: run outcomes, task success rate, open failures
-//! and throughput, plus the per-provider breakdown behind them.
+//! Owns what the current filter matched, as figures: run outcomes, task success rate, open failures
+//! and throughput, and the per-provider breakdown behind them.
 //!
-//! This is the half of the panel the filter used to have no effect on at all. It is deliberately
-//! computed from the *same* provider and window the row list uses, so narrowing to one provider
-//! reports that provider's success rate rather than the deployment's.
+//! It is deliberately computed from the *same* provider and window the row list uses, so narrowing
+//! to one provider reports that provider's success rate instead of the deployment's.
 
 use super::{duration_label, filters::ProviderOptions, percent, ScanFilter};
 use crate::i18n::use_i18n;
@@ -12,8 +11,8 @@ use crate::util::{rel_time, thousands};
 use crate::views::console::{use_console_nav, ConsoleQuery};
 use dioxus::prelude::*;
 
-/// A failure rate at or above this is called out rather than merely printed. Not a threshold the
-/// system acts on — an operator's eye needs somewhere to land on a table of twenty providers.
+/// A failure rate at or above this is called out, not merely printed. Not a threshold the
+/// system acts on: an operator's eye needs somewhere to land on a table of twenty providers.
 const CONCERNING_FAILURE_RATE: f64 = 0.1;
 
 /// Tasks settled per minute of run time, or `None` when nothing has run long enough to divide by.
@@ -133,7 +132,7 @@ pub(super) fn HealthStrip(summary: ScanSummary, filter: ScanFilter) -> Element {
 }
 
 /// Per-provider scan health, worst first. A row selects that provider into the filter, which is
-/// what an operator wants next after spotting one — every figure on the panel then narrows to it.
+/// what an operator wants next after spotting one: every figure on the panel then narrows to it.
 #[component]
 fn ProviderHealthTable(providers: Vec<ProviderScanHealthView>, filter: ScanFilter) -> Element {
     let i18n = use_i18n();
@@ -269,7 +268,7 @@ mod tests {
     }
 
     /// An idle deployment has no rate to report, and reporting one would be a division by zero
-    /// rendered as `NaN%` — or worse, as `0%`, which reads as "everything is failing".
+    /// rendered as `NaN%`, or worse, as `0%`, which reads as "everything is failing".
     #[test]
     fn an_idle_window_reports_no_rate_rather_than_zero() {
         assert_eq!(success_ratio(0, 0), None);

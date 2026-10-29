@@ -1,4 +1,4 @@
-//! One provider card's requests: its link status and automatic-sync settings, linking and
+//! Owns one provider card's requests: its link status and automatic-sync settings, linking and
 //! unlinking the account, changing the settings, and a manual pull or push.
 
 use dioxus::prelude::*;
@@ -115,7 +115,7 @@ impl ProviderSync {
         })
     }
 
-    /// Save a change to the provider's automatic-sync settings, then refetch.
+    /// Saves a change to the provider's automatic-sync settings, then refetches.
     pub(super) fn patch_settings(self, slug: String, patch: SyncSettingsPatch) {
         let Self { api, reload, .. } = self;
         let client = api.client();
@@ -130,7 +130,7 @@ impl ProviderSync {
         });
     }
 
-    /// Link the account: fetch the provider's consent URL and leave for it.
+    /// Links the account: fetches the provider's consent URL and leaves for it.
     pub(super) fn connect(self, slug: String) {
         let Self {
             i18n,
@@ -163,7 +163,7 @@ impl ProviderSync {
         });
     }
 
-    /// Unlink the account from the provider `name`.
+    /// Unlinks the account from the provider `name`.
     pub(super) fn disconnect(self, slug: String, name: String) {
         let Self {
             i18n,
@@ -202,7 +202,7 @@ impl ProviderSync {
         });
     }
 
-    /// Start a manual sync in `direction`, resolving conflicts by `policy`.
+    /// Starts a manual sync in `direction`, resolving conflicts by `policy`.
     pub(super) fn transfer(self, slug: String, direction: Direction, policy: ConflictPolicy) {
         let Self {
             i18n,

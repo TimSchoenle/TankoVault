@@ -1,8 +1,8 @@
-//! Privacy & data — the reader's own GDPR controls: download everything, file a formal
+//! Owns Privacy & data: the reader's own GDPR controls: download everything, file a formal
 //! request, and delete the account.
 //!
 //! Each section shows only when its feature is on. When self-service deletion is off, the
-//! erasure *right* isn't gone — it moves into the request queue, which is why requests list
+//! erasure *right* isn't gone: it moves into the request queue, which is why requests list
 //! erasure as a kind an operator can act on.
 
 use crate::api;
@@ -36,9 +36,9 @@ pub(crate) fn PrivacyPanel() -> Element {
     }
 }
 
-/// Download everything the system holds about the reader (GDPR Art. 20).
+/// Downloads everything the system holds about the reader (GDPR Art. 20).
 ///
-/// Fetched and saved from memory rather than linked to directly: the endpoint is
+/// Fetched and saved from memory, not linked to directly: the endpoint is
 /// bearer-authenticated, and a plain anchor navigation carries no `Authorization` header. See
 /// [`crate::platform::save_text_file`], which also explains why the web build revokes the object
 /// URL straight away for a document of this sensitivity.
@@ -83,8 +83,8 @@ fn ExportCard() -> Element {
                         }
                     }
                     // A `403` here is "confirm it is you", not "you may not". The export is the
-                    // single highest-value thing a stolen session can ask for, so the API demands an
-                    // elevation — and reporting the raw problem told the owner they lacked
+                    // single highest-value thing a stolen session can ask for, so the API demands
+                    // an elevation, and reporting the raw problem told the owner they lacked
                     // permission to download their own record.
                     Err(e) => {
                         if !gate.refused(api::Refusal::from_status(api::error_status(&e))) {
@@ -119,8 +119,8 @@ fn ExportCard() -> Element {
     }
 }
 
-/// Resolve a `<select>` value back to a kind, defaulting to the first option for anything
-/// unrecognised — which can only happen if the markup and this function disagree.
+/// Resolves a `<select>` value back to a kind, defaulting to the first option for anything
+/// unrecognised, which can only happen if the markup and this function disagree.
 fn parse_kind(token: &str) -> RequestKind {
     RequestKind::all()
         .iter()
@@ -263,7 +263,7 @@ fn RequestsCard() -> Element {
 
 /// One of the reader's own requests, with a withdraw action while it is still open.
 ///
-/// `gate` belongs to the card rather than the row: withdrawing needs an elevation, and a refusal
+/// `gate` belongs to the card instead of the row: withdrawing needs an elevation, and a refusal
 /// has to open the one prompt the card renders instead of a prompt per row.
 #[component]
 fn RequestRowView(request: RequestRow, reload: Reload, gate: StepUpGate) -> Element {
@@ -277,15 +277,15 @@ fn RequestRowView(request: RequestRow, reload: Reload, gate: StepUpGate) -> Elem
             if !busy.claim() {
                 return;
             }
-            // Elevated: withdrawing is how an attacker would silence the rectification request their
-            // victim filed about the change they made.
+            // Elevated: withdrawing is how an attacker would silence the rectification request
+            // their victim filed about the change they made.
             let client = gate.client(api);
             spawn(async move {
                 match client.cancel_privacy_request().id(id).send().await {
                     Ok(_) => reload.bump(),
                     // The row has no error line of its own. A `403` opens the card's prompt, which
                     // is the only outcome a reader can act on; anything else leaves the row as it
-                    // was, as it did before the gate existed.
+                    // was.
                     Err(e) => {
                         let _refused = gate.refused(api::Refusal::of(&e));
                     }
@@ -330,11 +330,11 @@ fn RequestRowView(request: RequestRow, reload: Reload, gate: StepUpGate) -> Elem
     }
 }
 
-/// Delete the account and everything in it (GDPR Art. 17).
+/// Deletes the account and everything in it (GDPR Art. 17).
 ///
 /// Two barriers, both deliberate: the destructive controls stay hidden until the reader asks
 /// for them, and the confirm button stays disabled until they type their own username. The
-/// server requires the username too — this is not the check, it is the pause before it.
+/// server requires the username too: this is not the check, it is the pause before it.
 #[component]
 fn DeleteAccountCard() -> Element {
     let i18n = use_i18n();
@@ -366,7 +366,7 @@ fn DeleteAccountCard() -> Element {
             spawn(async move {
                 match client.delete_account().body(body).send().await {
                     Ok(_) => {
-                        // The account is gone; clear locally now rather than leaving a shell whose
+                        // The account is gone; clear locally now instead of leaving a shell whose
                         // every request 401s.
                         session.clear();
                         caps.clear();

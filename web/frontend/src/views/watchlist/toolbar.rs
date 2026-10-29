@@ -1,6 +1,6 @@
-//! The status tab strip and the filter/sort toolbar.
+//! Owns the status tab strip and the filter/sort toolbar.
 //!
-//! Both write the route rather than a local signal — see [`super::query`] for why the view
+//! Both write the route instead of a local signal: see [`super::query`] for why the view
 //! state lives in the URL.
 
 use super::query::{Released, Sort, View, WatchlistQuery};
@@ -11,7 +11,7 @@ use dioxus::prelude::*;
 use inkstone_ui::{TabBar, TabItem};
 
 /// The filter input's DOM id. Focusing it goes through [`crate::components::FocusTargets`]
-/// rather than this — the id is kept because it is a stable hook for the field in the rendered
+/// instead of this: the id is kept because it is a stable hook for the field in the rendered
 /// document.
 const FILTER_INPUT_ID: &str = "wl-filter";
 
@@ -26,7 +26,7 @@ const DEBOUNCE_MS: u32 = 200;
 /// every filter **except** status, which is what makes "Plan to read · 21" the answer to "what
 /// would I see if I clicked this".
 ///
-/// The kit's strip rather than the app wrapper: the selection here is `Option<WatchStatus>`,
+/// The kit's strip instead of the app wrapper: the selection here is `Option<WatchStatus>`,
 /// which is not a `TabKind`.
 #[component]
 pub(super) fn StatusTabs(
@@ -90,11 +90,11 @@ pub(super) fn StatusTabs(
 #[component]
 pub(super) fn FilterBar(
     query: WatchlistQuery,
-    /// Rows currently loaded — only used to word the placeholder, so it says "Filter 564
-    /// titles…" rather than a number the reader has to guess the meaning of.
+    /// Rows currently loaded: only used to word the placeholder, so it says "Filter 564
+    /// titles…" instead of a number the reader has to guess the meaning of.
     visible: usize,
     /// How many rows across the whole filtered list have an unhealthy source. The chip only
-    /// exists when there is something wrong to point at — a permanent "Source issues (0)" is
+    /// exists when there is something wrong to point at: a permanent "Source issues (0)" is
     /// chrome that trains the reader to ignore the one time it matters.
     source_issues: i64,
     on_change: EventHandler<WatchlistQuery>,
@@ -105,7 +105,7 @@ pub(super) fn FilterBar(
     let i18n = use_i18n();
     let mut draft = use_signal(|| query.q.clone());
     // Bumped on every keystroke; the timer that wakes up to find it changed knows a newer
-    // keystroke superseded it and does nothing. That is the whole debounce — no timer handle to
+    // keystroke superseded it and does nothing. That is the whole debounce: no timer handle to
     // cancel, and no way for two in-flight timers to both commit.
     let mut generation = use_signal(|| 0u32);
     let mut focus_targets = crate::components::use_focus_targets();

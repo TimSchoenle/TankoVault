@@ -172,7 +172,7 @@ impl RoundLoop {
         }
     }
 
-    /// Fold one round in, answering whether the walk is finished.
+    /// Folds one round in, answering whether the walk is finished.
     pub(super) fn admit(&mut self, run: &SweepRun) -> bool {
         self.rounds = self.rounds.saturating_add(1);
         // `count()`, not `any()`: every pair has to reach `seen`, or one the short-circuit
@@ -260,7 +260,7 @@ pub(crate) async fn sweep_all_detached(
     Ok(true)
 }
 
-/// Draw rounds under a claim already taken, until one turns up nothing new.
+/// Draws rounds under a claim already taken, until one turns up nothing new.
 ///
 /// # Errors
 ///

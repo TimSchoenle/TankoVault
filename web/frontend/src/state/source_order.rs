@@ -1,10 +1,10 @@
-//! The reader's global provider order, cached app-wide.
+//! Owns the reader's global provider order, cached app-wide.
 //!
-//! Fetched once per session rather than per series page: every series screen needs it to decide
+//! Fetched once per session instead of per series page: every series screen needs it to decide
 //! which source leads, and a preference that changes only when the reader edits it has no
 //! business costing a request per navigation.
 //!
-//! Held as slugs because that is the key both ends already agree on — the source lists the
+//! Held as slugs because that is the key both ends already agree on: the source lists the
 //! catalogue publishes carry `provider_slug`, and matching on it needs no id table in between.
 
 use dioxus::prelude::*;
@@ -13,7 +13,7 @@ use dioxus::prelude::*;
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct SourceOrder {
     /// Ranked provider slugs, most preferred first. Empty means "no opinion recorded", which is
-    /// also what a signed-out reader has — both resolve by the catalogue's own order.
+    /// also what a signed-out reader has: both resolve by the catalogue's own order.
     inner: Signal<Vec<String>>,
 }
 
@@ -24,13 +24,13 @@ impl SourceOrder {
         }
     }
 
-    /// Adopt a freshly fetched or freshly saved order.
+    /// Adopts a freshly fetched or freshly saved order.
     pub(crate) fn set(self, slugs: Vec<String>) {
         let mut inner = self.inner;
         inner.set(slugs);
     }
 
-    /// Forget the order — on sign-out, or when a fetch fails and the previous answer can no
+    /// Forgets the order: on sign-out, or when a fetch fails and the previous answer can no
     /// longer be trusted to describe the current session.
     pub(crate) fn clear(self) {
         self.set(Vec::new());

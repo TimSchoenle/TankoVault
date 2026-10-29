@@ -1,7 +1,7 @@
-//! What is happening *right now*: one card per run in flight, and a tail of the tasks that have
-//! just settled.
+//! Owns what is happening *right now*: one card per run in flight, and a tail of the tasks that
+//! have just settled.
 //!
-//! Run counters alone cannot tell "working" from "wedged" — both leave `done_tasks` where it
+//! Run counters alone cannot tell "working" from "wedged": both leave `done_tasks` where it
 //! was. The figures that can are here: how many tasks a worker is holding, how long the oldest
 //! claim has been held, how many workers are on it, and what settled in the last few seconds.
 
@@ -68,7 +68,7 @@ pub(super) fn LivePanel(
 /// What a run is doing right now, in one line.
 ///
 /// The distinction this exists to draw: a run in `running` with **nothing claimed** is not
-/// working, it is waiting for a worker slot — a worker serves one task per provider, so a
+/// working, it is waiting for a worker slot; a worker serves one task per provider, so a
 /// provider's second run queues behind its first. Both read as `RUNNING` with an unmoving
 /// counter, and conflating them is what made a queued run look like a hung one.
 #[derive(Debug, Clone, PartialEq)]
@@ -82,7 +82,7 @@ enum Doing {
     },
     /// Nothing is claimed and tasks are queued: waiting for a slot, for this long.
     Waiting { seconds: Option<f64> },
-    /// Nothing claimed and nothing queued — the planner has not fanned out yet.
+    /// Nothing claimed and nothing queued: the planner has not fanned out yet.
     Planning,
 }
 
@@ -112,7 +112,7 @@ impl Doing {
 }
 
 /// One in-flight run: what it is doing, progress split by outcome, the figures that say whether
-/// it is moving, and the two things an operator can do about it — explain it, or stop it.
+/// it is moving, and the two things an operator can do about it; explain it, or stop it.
 #[component]
 fn RunCard(run: ScanRun, activity: Option<RunActivity>, tick: RefreshTick) -> Element {
     let i18n = use_i18n();
@@ -136,7 +136,7 @@ fn RunCard(run: ScanRun, activity: Option<RunActivity>, tick: RefreshTick) -> El
     let elapsed_label = elapsed.map_or_else(|| i18n.t("time.unknown"), |s| duration_label(i18n, s));
 
     // Settled tasks per minute, and from it the time the rest would take at the same pace. Both
-    // are `None` until something has actually settled — an ETA extrapolated from nothing is a
+    // are `None` until something has actually settled: an ETA extrapolated from nothing is a
     // number an operator would plan around and should not.
     let settled = f64::from(run.done_tasks + run.failed_tasks);
     let rate = elapsed
@@ -347,8 +347,8 @@ fn Figure(label: String, value: String) -> Element {
 
 /// The tasks that settled most recently, newest first.
 ///
-/// Scoped server-side to the runs in flight, so it goes quiet when nothing is running rather
-/// than replaying the last scan forever — an empty tail beside an empty active list is the
+/// Scoped server-side to the runs in flight, so it goes quiet when nothing is running,
+/// not replaying the last scan forever: an empty tail beside an empty active list is the
 /// honest picture of an idle deployment.
 #[component]
 fn ActivityTail(events: Vec<TaskEvent>) -> Element {
@@ -426,8 +426,8 @@ mod tests {
     use super::target_label;
     use serde_json::json;
 
-    /// The tail is one line per task; a target rendered as raw JSON pushes the error message —
-    /// the only part an operator is reading for — off the end of the row.
+    /// The tail is one line per task; a target rendered as raw JSON pushes the error message
+    /// (the only part an operator is reading for) off the end of the row.
     #[test]
     fn a_target_renders_as_a_path_not_as_json() {
         assert_eq!(
@@ -438,7 +438,7 @@ mod tests {
         assert_eq!(target_label(&json!({ "page": 12 })), "#12");
     }
 
-    /// An unrecognised shape still says *something*, truncated rather than unbounded.
+    /// An unrecognised shape still says *something*, truncated, not unbounded.
     #[test]
     fn an_unknown_target_falls_back_to_bounded_json() {
         let label = target_label(&json!({ "series_id": "018f4c2a-0000-7000-8000-000000000001" }));

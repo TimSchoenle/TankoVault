@@ -1,16 +1,16 @@
-//! Reading claims out of an access token.
+//! Owns reading claims out of an access token.
 //!
-//! Every decode here is **unverified** — the payload segment is base64-decoded and parsed,
+//! Every decode here is **unverified**: the payload segment is base64-decoded and parsed,
 //! and the signature is ignored. That is safe because nothing security-relevant hangs off it,
-//! and it is safe *by construction* rather than by care: the token carries no authorization
-//! claims at all any more (see `tankovault_auth::AccessClaims`). What is left is a display name
+//! and it is safe *by construction* instead of by care: the token carries no authorization
+//! claims at all (see `tankovault_auth::AccessClaims`). What is left is a display name
 //! and an expiry, which decide who to greet and when to schedule the next silent refresh.
 //! Forging either buys nothing.
 
 use base64::Engine;
 use serde_json::Value;
 
-/// Decode a JWT's payload segment. `None` for anything that isn't a well-formed,
+/// Decodes a JWT's payload segment. `None` for anything that isn't a well-formed,
 /// base64url-encoded JSON object in the second dot-separated position.
 fn payload(token: &str) -> Option<Value> {
     let encoded = token.split('.').nth(1)?;
@@ -20,7 +20,7 @@ fn payload(token: &str) -> Option<Value> {
     serde_json::from_slice(&bytes).ok()
 }
 
-/// A human-facing display name — the first of `username`, `name`, `sub` that carries a
+/// A human-facing display name: the first of `username`, `name`, `sub` that carries a
 /// non-blank string.
 pub(crate) fn username(token: &str) -> Option<String> {
     let claims = payload(token)?;
@@ -56,8 +56,8 @@ mod tests {
     use super::*;
     use base64::Engine;
 
-    /// Build an unsigned token whose payload is `claims`. The signature segment is junk on
-    /// purpose — these decoders must not care.
+    /// Builds an unsigned token whose payload is `claims`. The signature segment is junk on
+    /// purpose: these decoders must not care.
     fn token(claims: &str) -> String {
         let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(claims);
         format!("header.{payload}.signature")

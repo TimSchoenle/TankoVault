@@ -1,4 +1,4 @@
-//! System overview — the at-a-glance health of the whole system as a grid of KPI tiles.
+//! Owns the system overview: the at-a-glance health of the whole system as a grid of KPI tiles.
 
 use crate::api;
 use crate::components::{async_block, Kpi};
@@ -9,7 +9,7 @@ use crate::views::console::RefreshTick;
 use dioxus::prelude::*;
 use progenitor_client::ResponseValue;
 
-/// System-wide KPI header — the at-a-glance health of the whole system.
+/// System-wide KPI header: the at-a-glance health of the whole system.
 #[component]
 pub(super) fn SystemOverview(tick: RefreshTick) -> Element {
     let api = api::use_api();

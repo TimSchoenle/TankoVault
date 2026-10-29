@@ -81,7 +81,7 @@ pub(crate) fn run(root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Hold every marked region in the Dockerfile to what the generator prints.
+/// Holds every marked region in the Dockerfile to what the generator prints.
 ///
 /// One service is enough and any of them will do: all three values are constants of the
 /// *deployment*, not of the binary; the envelope version, the in-image path, and the loader's

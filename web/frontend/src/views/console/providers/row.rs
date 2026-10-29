@@ -1,4 +1,4 @@
-//! One provider in the list pane: name, state, a mono meta line and the healthy-links meter.
+//! Owns one provider in the list pane: name, state, a mono meta line and the healthy-links meter.
 
 use crate::components::HealthPill;
 use crate::i18n::use_i18n;
@@ -18,7 +18,7 @@ pub(super) fn ProviderRow(
     let id = provider.id;
     let disabled = provider.state == ProviderState::Disabled;
     let healthy = stat.as_ref().and_then(healthy_percent);
-    // A glyph rather than a word: the row is dense, and the inspector states the link in full.
+    // A glyph instead of a word: the row is dense, and the inspector states the link in full.
     // Present only for preset-derived rows, so the absence of one is itself the answer for a
     // provider an operator registered.
     let preset_mark = provider.preset.as_ref().map(|link| {
@@ -85,7 +85,7 @@ pub(super) fn ProviderRow(
 
 /// Share of this provider's source links that are in a serving state.
 ///
-/// The UI calls this meter "solve %", but no challenge-solve ratio exists on the wire — this is
+/// The UI calls this meter "solve %", but no challenge-solve ratio exists on the wire: this is
 /// what the API actually measures.
 pub(super) fn healthy_percent(stat: &ProviderStat) -> Option<f64> {
     if stat.source_count <= 0 {

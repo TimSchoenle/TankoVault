@@ -1,9 +1,9 @@
-//! Routed screens (`docs/ARCHITECTURE.md` §17.2). Each is a Dioxus component named to match a `Route`
-//! variant in `main.rs`.
+//! Owns the routed screens (`docs/ARCHITECTURE.md` §17.2). Each is a Dioxus component named to
+//! match a `Route` variant in `main.rs`.
 
 mod account;
 mod auth;
-// Not a route: it renders instead of the router until a server is chosen. Desktop only — the
+// Not a route: it renders instead of the router until a server is chosen. Desktop only: the
 // web build is served by the API it talks to and has nothing to ask.
 #[cfg(feature = "desktop")]
 pub(crate) mod connect;
@@ -13,7 +13,7 @@ mod home;
 mod legal;
 mod licenses;
 // `pub(crate)` for one function: `crate::live` reuses this screen's payload-to-sentence logic
-// for the OS notification, rather than growing a second reading of the same free-form JSON.
+// for the OS notification, instead of growing a second reading of the same free-form JSON.
 pub(crate) mod notifications;
 mod password;
 mod recommendations;

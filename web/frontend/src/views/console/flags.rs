@@ -1,4 +1,4 @@
-//! The feature-flag control plane: every switchable capability, grouped, with its current
+//! Owns the feature-flag control plane: every switchable capability, grouped, with its current
 //! state and who last changed it.
 //!
 //! Deliberately not on the shared auto-refresh tick: a background refetch landing between a
@@ -39,7 +39,7 @@ pub(super) fn FeatureFlagsPanel() -> Element {
     let reload = use_reload();
     let can_write = caps.can(Permission::FlagsWrite);
     // One gate for the whole board: an operator flipping five switches confirms once, and the
-    // prompt has a single place to appear rather than one inside every row.
+    // prompt has a single place to appear instead of one inside every row.
     let gate = use_step_up_gate();
 
     let flags = use_resource(move || {
@@ -146,7 +146,8 @@ fn FlagRow(flag: FlagView, can_write: bool, reload: Reload, gate: StepUpGate) ->
                             {i18n.t("console.flags.locked")}
                         }
                     }
-                    // Show only when it differs from the shipped default: that's what an operator scans for.
+                    // Show only when it differs from the shipped default: that's what an operator
+                    // scans for.
                     if flag.overridden && flag.enabled != flag.default_enabled {
                         Pill {
                             tone: Tone::Accent,
@@ -180,7 +181,8 @@ fn FlagRow(flag: FlagView, can_write: bool, reload: Reload, gate: StepUpGate) ->
                         reload,
                         gate,
                     }
-                    // Only offered when there's an override to withdraw; otherwise reset would do nothing.
+                    // Only offered when there's an override to withdraw; otherwise reset would do
+                    // nothing.
                     if flag.overridden {
                         ResetButton { feature: key.clone(), busy, reload, gate }
                     }
@@ -190,7 +192,7 @@ fn FlagRow(flag: FlagView, can_write: bool, reload: Reload, gate: StepUpGate) ->
     }
 }
 
-/// Switch one feature on or off.
+/// Switches one feature on or off.
 #[component]
 fn FlagToggle(
     feature: String,
@@ -220,12 +222,13 @@ fn FlagToggle(
                     .send()
                     .await
                 {
-                    // The refetch below is what reports every other failure — the switch simply
+                    // The refetch below is what reports every other failure: the switch simply
                     // comes back unchanged. A step-up demand has no such tell, so it is the one
                     // outcome that has to be raised.
                     let _refused = gate.refused(api::Refusal::of(&e));
                 }
-                // Refetch either way: the list is what tells the reader whether it actually changed.
+                // Refetch either way: the list is what tells the reader whether it actually
+                // changed.
                 reload.bump();
                 busy.release();
             });
@@ -241,7 +244,7 @@ fn FlagToggle(
     }
 }
 
-/// Withdraw the stored override, returning the feature to its shipped default.
+/// Withdraws the stored override, returning the feature to its shipped default.
 #[component]
 fn ResetButton(feature: String, busy: Busy, reload: Reload, gate: StepUpGate) -> Element {
     let api = api::use_api();

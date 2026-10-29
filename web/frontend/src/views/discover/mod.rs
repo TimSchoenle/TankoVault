@@ -1,11 +1,11 @@
-//! Discover (`docs/DESIGN_SYSTEM.md` §7.2): filter panel plus a results grid that pages on a scroll
-//! sentinel, filtered/sorted/paginated server-side via `GET /v1/series` (§9.1). The panel and chip
-//! bar live in [`filters`] and [`active`]; the URL contract lives in [`query`].
+//! Owns Discover (`docs/DESIGN_SYSTEM.md` §7.2): filter panel and a results grid that pages on a
+//! scroll sentinel, filtered/sorted/paginated server-side via `GET /v1/series` (§9.1). The panel
+//! and chip bar live in [`filters`] and [`active`]; the URL contract lives in [`query`].
 //!
 //! Everything the screen shows is addressable: the filters *and* how far down the reader had
 //! scrolled ride in the query string, so a shared link opens on the same covers. The position is
-//! an item index rather than a page number because the page size is measured from the window's
-//! width — page 12 is a different series on a phone than on a desktop, an item index is not.
+//! an item index instead of a page number because the page size is measured from the window's
+//! width: page 12 is a different series on a phone than on a desktop, an item index is not.
 
 mod active;
 mod filters;
@@ -31,7 +31,7 @@ pub(crate) use query::{DiscoverQuery, Sort, Tracking};
 use std::collections::{BTreeSet, HashMap};
 use window::{released_height, Edge, Fetch, Held};
 /// How many *rows* of covers one fetched page holds. How many series that is depends on how
-/// many columns the window fits — see [`crate::components::use_grid_fit`].
+/// many columns the window fits: see [`crate::components::use_grid_fit`].
 const PAGE_ROWS: usize = 4;
 
 /// Discover screen.
@@ -57,10 +57,10 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
     // page has to leave exactly its own height behind or the release scrolls the covers out from
     // under the reader.
     let mut heights = use_signal(HashMap::<usize, f64>::new);
-    // Which pages of the catalogue overlap the viewport, by absolute index — relative ones would
+    // Which pages of the catalogue overlap the viewport, by absolute index: relative ones would
     // shift under the set every time the window slid. The lowest is the reader's position;
-    // tracking the whole set rather than the last event is what keeps a fast scroll — which can
-    // leave two markers intersecting between frames — from recording the wrong one.
+    // tracking the whole set instead of the last event is what keeps a fast scroll (which can
+    // leave two markers intersecting between frames) from recording the wrong one.
     let mut on_screen = use_signal(BTreeSet::<usize>::new);
     let mut restore = use_signal(|| false);
 
@@ -173,13 +173,13 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
             Err(message) if request.as_ref() == Some(answered) => Some(message.clone()),
             _ => None,
         });
-    // A failure leaves this true, which is deliberate: paging stops at a refused page rather than
+    // A failure leaves this true, which is deliberate: paging stops at a refused page instead of
     // asking the same server the same question every time the sentinel crosses the viewport.
     let in_flight = request.is_some() && merged.read().as_ref() != request.as_ref();
     let more = !*exhausted.read();
 
     // Asking for a page is the only way one is ever fetched, and it is refused while another is
-    // still on the wire — an ungated ask is a duplicate request per frame.
+    // still on the wire: an ungated ask is a duplicate request per frame.
     let mut ask = move |edge: Edge| {
         if in_flight {
             return;
@@ -239,7 +239,7 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
                     {count_line(i18n, first, count, *total.read(), start, &head_filters, on_filters)}
                     div { class: "ik-scroll-pages",
                         // The span released above the window, held open at the height it had while
-                        // it was mounted — without it, releasing a page scrolls the covers out from
+                        // it was mounted: without it, releasing a page scrolls the covers out from
                         // under the reader. The lead-in hangs below the spacer's foot, over the
                         // first page still held, so the released page is on the wire while the
                         // reader is still a screenful short of the gap.
@@ -259,12 +259,12 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
                         }
                         for (n , chunk) in window.iter().flat_map(|w| w.pages.iter()).enumerate() {
                             {
-                                // One clone per page rather than per card: each marker's handler
+                                // One clone per page instead of per card: each marker's handler
                                 // has to outlive this render to answer a scroll.
                                 let filters = head_filters.clone();
                                 let at_now = query.at;
                                 // The page's own place in the catalogue. Everything a handler
-                                // records is keyed on this rather than on `n`, which shifts under
+                                // records is keyed on this instead of on `n`, which shifts under
                                 // the whole set every time the window slides.
                                 let index = start + n;
                                 rsx! {
@@ -276,10 +276,10 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
                                                 heights.write().insert(index, box_size.height);
                                             }
                                         },
-                                        // One marker per page, sized to the page, rather than an
+                                        // One marker per page, sized to the page, not an
                                         // observer per card: 600 covers would be 600 observers to
                                         // answer a question one per page answers as well. It is
-                                        // also what the deep link scrolls to — exactly right when
+                                        // also what the deep link scrolls to: exactly right when
                                         // the page size matches the one the link was written at,
                                         // and at most one page out when it does not.
                                         div {
@@ -326,7 +326,7 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
                     }
                     // `onvisible` (`IntersectionObserver`) fetches the next page with no scroll
                     // handler and no polling. It unmounts while a page is on the wire, so it fires
-                    // again on remount if it is still in view — which is what keeps a viewport
+                    // again on remount if it is still in view, which is what keeps a viewport
                     // taller than one page loading without a click.
                     if more && !in_flight {
                         div {
@@ -465,7 +465,7 @@ fn count_line(
 }
 
 /// Nothing to show: either the filters match nothing, or the link named a position the current
-/// result set no longer reaches. They need different offers — widening helps the first and does
+/// result set no longer reaches. They need different offers: widening helps the first and does
 /// nothing for the second.
 fn empty_state(
     i18n: Translator,

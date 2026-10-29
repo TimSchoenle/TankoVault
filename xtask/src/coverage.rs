@@ -165,7 +165,7 @@ pub(crate) enum Verdict {
     Unmeasured { measured: f64 },
 }
 
-/// Compare `measured` against `floor`.
+/// Compares `measured` against `floor`.
 ///
 /// Equality passes. A floor is a minimum, and a change that lands exactly on it has not made
 /// anything worse: failing there would make the gate depend on floating-point noise in the
@@ -180,8 +180,8 @@ pub(crate) fn judge(measured: f64, floor: f64) -> Verdict {
 }
 
 impl Verdict {
-    /// What to print. Written for the person reading a red CI log, so it says what to do rather
-    /// than only what happened.
+    /// What to print. Written for the person reading a red CI log, so it says what to do,
+    /// not only what happened.
     #[must_use]
     pub(crate) fn message(&self, suite: Suite) -> String {
         let label = suite.label();

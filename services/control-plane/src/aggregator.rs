@@ -49,7 +49,7 @@ pub(crate) async fn run(
     Ok(())
 }
 
-/// Finalise the run behind `event` when every task has settled, then relay one terminal
+/// Finalises the run behind `event` when every task has settled, then relays one terminal
 /// progress event. The event counters are a cheap gate; the DB UPDATE is authoritative.
 async fn handle_progress(pool: &PgPool, bus: &Bus, event: &ProgressEvent) -> anyhow::Result<()> {
     if !should_finalize(event.total_tasks, event.done_tasks, event.failed_tasks) {

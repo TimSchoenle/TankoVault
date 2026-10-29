@@ -1,14 +1,13 @@
-//! The "confirm it is you" prompt a sensitive action puts up before it will run.
+//! Owns the "confirm it is you" prompt a sensitive action puts up before it will run.
 //!
-//! **A modal, and deliberately the one thing on screen.** It used to render inline in the panel
-//! that needed it, on the theory that keeping the reader's work visible behind the question was
-//! kinder. What it actually produced was a button that appeared to do nothing: the demand
-//! arrived as a note somewhere in a long panel, sometimes below the fold, and the action the
-//! reader had asked for simply never happened. A question that gates work has to be answered,
+//! **A modal, and deliberately the one thing on screen.** Rendered inline in the panel that
+//! needs it, it would produce a button that appears to do nothing: the demand arrives as a note
+//! somewhere in a long panel, sometimes below the fold, and the action the reader asked for
+//! simply never happens. A question that gates work has to be answered,
 //! so it takes the screen until it is.
 //!
 //! **Answering it resumes the action.** The gate remembers what was attempted
-//! ([`StepUpGate::attempt`]) and replays it once the grant lands, because "confirmed — now click
+//! ([`StepUpGate::attempt`]) and replays it once the grant lands, because "confirmed: now click
 //! it again" is a second thing to do for a question the reader did not ask to be asked.
 //!
 //! Whichever factor they present, the grant that comes back goes into [`crate::state::step_up`]
@@ -16,15 +15,15 @@
 //! is an idle one server-side, so working on through a panel keeps it alive.
 //!
 //! **What it offers is read off the account, not assumed.** The factors an account actually holds
-//! are whatever it enrolled — a security key, an authenticator app, or both — so the prompt asks
-//! `GET /v1/me/mfa` and offers those. Guessing produced a dead end: an account with only a
-//! security key was shown a box for an authenticator code it had no way to produce.
+//! are whatever it enrolled (a security key, an authenticator app, or both), so the prompt asks
+//! `GET /v1/me/mfa` and offers those. Guessing leads to a dead end: an account with only a
+//! security key would be shown a box for an authenticator code it has no way to produce.
 //!
 //! It offers the password only to an account with **no** second factor. That is not a
 //! convenience: such an account has nothing stronger to present, and refusing it would make the
-//! sensitive routes — including the enrolment that would fix that — unreachable. The API refuses
-//! the same branch the moment a factor exists, so this is a mirror of the server's rule rather
-//! than a second copy of the decision.
+//! sensitive routes (including the enrolment that would fix that) unreachable. The API refuses
+//! the same branch the moment a factor exists, so this is a mirror of the server's rule,
+//! not a second copy of the decision.
 
 use crate::api::{self, Refusal};
 use crate::components::Field;
@@ -68,7 +67,7 @@ impl StepUpFactor {
 /// probe 404s but step-up itself still works.
 ///
 /// A security key is offered ahead of a typed code because it is both the stronger proof and the
-/// shorter path — one touch against six digits copied from a phone.
+/// shorter path: one touch against six digits copied from a phone.
 fn offered_factors(
     fallback_enrolled: bool,
     status: Option<&MfaStatus>,
@@ -103,10 +102,10 @@ fn offered_factors(
 /// The prompt, mounted for the whole screen and rendering only once the gate has been refused.
 ///
 /// One line per screen: `StepUpGuard { gate }`. Confirming it replays whatever
-/// [`StepUpGate::attempt`] last recorded, so the caller has nothing to do on success — screens
+/// [`StepUpGate::attempt`] last recorded, so the caller has nothing to do on success: screens
 /// that also need to say something can still pass `on_done`, which runs after the replay.
 ///
-/// `intro` replaces the default sentence, which says the action changes *your account* — true of
+/// `intro` replaces the default sentence, which says the action changes *your account*: true of
 /// every reader-facing use and of none of the operator ones. `enrolled` is the caller's best
 /// guess at whether the account holds a factor, used only until the account's real factor list
 /// arrives; every operator surface is behind a permission that implies enrolment.
@@ -135,7 +134,7 @@ pub(crate) fn StepUpGuard(
 }
 
 /// The dialog itself: mounted only while the question is open, so the factor probe below runs
-/// when it is asked rather than on every screen that *might* ask.
+/// when it is asked instead of on every screen that *might* ask.
 #[component]
 fn StepUpDialog(
     enrolled: bool,
@@ -193,7 +192,7 @@ fn StepUpDialog(
                     password: None,
                 },
                 // The password is the only typed factor left. `SecurityKey` rides along
-                // unreachably — it has no field to submit and `assert_key` below instead — and
+                // unreachably (it has no field to submit and `assert_key` below instead), and
                 // arrives here only if a future factor forgets to pick a branch.
                 StepUpFactor::SecurityKey | StepUpFactor::Password => StepUpRequest {
                     totp_code: None,
@@ -435,8 +434,8 @@ fn StepUpDialog(
 
 /// What a screen was doing when the API demanded an elevation, held until it can be redone.
 ///
-/// `Rc` rather than a `Callback`: the actions this replays take arguments — a provider id, a row
-/// — and are invoked from half a dozen shapes of handler, so the invocation site closes over its
+/// `Rc` instead of a `Callback`: the actions this replays take arguments (a provider id, a row),
+/// and are invoked from half a dozen shapes of handler, so the invocation site closes over its
 /// own arguments and hands the gate something it can simply call.
 ///
 /// `FnMut` behind a `RefCell` because writing a signal takes `&mut`, and every one of these
@@ -445,12 +444,12 @@ type PendingAction = Rc<RefCell<dyn FnMut()>>;
 
 /// The "a `403` means confirm, not refuse" rule, held once per screen that needs it.
 ///
-/// Every sensitive call is the same four steps — send with whatever elevation is held, read a
-/// `403` as a prompt rather than a refusal, confirm, run the thing that was asked for — and each
-/// screen that spelled them out itself got one of them wrong. The privacy panel reported "you
-/// don't have permission to do that" for a download the reader was entitled to; the session list
-/// swallowed the refusal and did nothing at all; and every screen that got the prompt right
-/// still made the reader click the button a second time afterwards.
+/// Every sensitive call is the same four steps (send with whatever elevation is held, read a
+/// `403` as a prompt instead of a refusal, confirm, run the thing that was asked for), and a
+/// screen that spells them out itself gets one of them wrong: it reports "you don't have
+/// permission to do that" for a download the reader is entitled to, swallows the refusal and
+/// does nothing at all, or gets the prompt right and still makes the reader click the button a
+/// second time afterwards.
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) struct StepUpGate {
     step_up: StepUp,
@@ -464,24 +463,24 @@ impl StepUpGate {
         self.step_up.client(api)
     }
 
-    /// Run a guarded action, remembering it in case the API asks who is doing it.
+    /// Runs a guarded action, remembering it in case the API asks who is doing it.
     ///
     /// Every invocation of a guarded action goes through here, including the ones that will
     /// succeed: what the gate replays has to be the thing that was actually attempted, and the
-    /// only place that knows it — with its arguments bound — is the handler that started it.
+    /// only place that knows it (with its arguments bound) is the handler that started it.
     pub(crate) fn attempt(mut self, action: impl FnMut() + 'static) {
         let action: PendingAction = Rc::new(RefCell::new(action));
         self.pending.set(Some(Rc::clone(&action)));
         (*action.borrow_mut())();
     }
 
-    /// Route a failed call. `true` means it was a step-up demand and the prompt is now open, so
+    /// Routes a failed call. `true` means it was a step-up demand and the prompt is now open, so
     /// the caller reports nothing; `false` means the failure is the caller's to word.
     ///
-    /// Takes the *classified* refusal rather than the error: every generated operation has its
-    /// own error type, so one method could not accept them all — and one is the point.
+    /// Takes the *classified* refusal instead of the error: every generated operation has its
+    /// own error type, so one method could not accept them all, and one is the point.
     ///
-    /// It is [`Refusal`] rather than the bare status because the guarded surfaces answer `403`
+    /// It is [`Refusal`] instead of the bare status because the guarded surfaces answer `403`
     /// three ways, and only one of them is a question this prompt can answer. Opening for the
     /// other two would leave an operator confirming themselves against a refusal that a
     /// confirmation does not change.
@@ -505,7 +504,7 @@ impl StepUpGate {
     /// The grant is in hand: close the prompt and finish what was interrupted.
     ///
     /// The pending action is taken out before it runs, so a second refusal from the replay
-    /// re-records rather than stacking, and a `cancel` cannot fire it a second time.
+    /// re-records instead of stacking, and a `cancel` cannot fire it a second time.
     pub(crate) fn confirmed(mut self) {
         self.prompting.set(false);
         let action = self.pending.write().take();
@@ -514,7 +513,7 @@ impl StepUpGate {
         }
     }
 
-    /// The reader declined. Nothing ran, and the interrupted action is forgotten rather than
+    /// The reader declined. Nothing ran, and the interrupted action is forgotten, not
     /// left to fire at whatever the *next* confirmation was for.
     pub(crate) fn cancel(mut self) {
         self.prompting.set(false);
@@ -526,7 +525,7 @@ impl StepUpGate {
 pub(crate) fn use_step_up_gate() -> StepUpGate {
     StepUpGate {
         step_up: use_step_up(),
-        // Opened by the server's `403`, never pre-emptively — a reader who came to look should
+        // Opened by the server's `403`, never pre-emptively: a reader who came to look should
         // not be challenged before they have asked for anything.
         prompting: use_signal(|| false),
         pending: use_signal(|| None),
@@ -557,7 +556,7 @@ mod tests {
     }
 
     /// The bug: the prompt offered the authenticator code and nothing else, so an account whose
-    /// only factor is a security key was asked for a code it had no way to produce — and every
+    /// only factor is a security key was asked for a code it had no way to produce, and every
     /// sensitive action was unreachable behind a box it could not fill in.
     #[test]
     fn a_key_only_account_is_asked_for_its_key() {
@@ -569,7 +568,7 @@ mod tests {
         );
     }
 
-    /// Both factors enrolled: both offered, and the key first — it is the stronger proof and the
+    /// Both factors enrolled: both offered, and the key first; it is the stronger proof and the
     /// shorter path.
     #[test]
     fn both_factors_are_offered_key_first() {

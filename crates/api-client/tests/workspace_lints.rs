@@ -1,17 +1,16 @@
-//! Pins this crate's hand-written `[lints.rust]` block against `[workspace.lints.rust]`.
+//! Tests that this crate's hand-written `[lints.rust]` block matches `[workspace.lints.rust]`.
 //!
 //! `crates/api-client` is the **only** workspace member that does not write
 //! `[lints] workspace = true`, and it cannot: Cargo refuses a manifest that both inherits the
 //! workspace lint table and declares its own, and this crate has to declare its own to silence
 //! clippy over 780 KB of `progenitor` output (see the comment in `Cargo.toml`).
 //!
-//! The consequence the audit flagged (BUILD_AND_OPS §2.4) is that a lint added to
-//! `[workspace.lints.rust]` silently skips this crate — and generated code is exactly where a
-//! new rustc lint is most likely to fire and least likely to be noticed, because nobody reads
-//! the file. The clippy half is a deliberate divergence and stays one; the **rustc** half is
-//! supposed to be a copy, and nothing checked that it still was.
+//! The consequence is that a lint added to `[workspace.lints.rust]` silently skips this crate, and
+//! generated code is exactly where a new rustc lint is most likely to fire and least likely to be
+//! noticed, because nobody reads the file. The clippy half is a deliberate divergence and stays
+//! one; the **rustc** half is supposed to be a copy, and only a check keeps it one.
 //!
-//! This test is that check. It compares the two blocks textually rather than through a TOML
+//! This test is that check. It compares the two blocks textually instead of through a TOML
 //! parser: the crate is a leaf whose entire purpose is to carry generated code, and adding a
 //! dependency to it to read four lines of its own manifest is a worse trade than a scanner that
 //! fails loudly if the manifest stops being formatted one-lint-per-line.
@@ -25,7 +24,7 @@ use std::path::{Path, PathBuf};
 /// The lint declarations under `header`, one per entry, comments and blank lines dropped.
 ///
 /// Stops at the next `[section]`, so it reads exactly one table. A missing header yields
-/// `None`, which the assertions below treat as a failure rather than as an empty set — a
+/// `None`, which the assertions below treat as a failure, not as an empty set: a
 /// renamed or deleted table must not read as "the two agree, both empty".
 fn lint_block(manifest: &str, header: &str) -> Option<Vec<String>> {
     let mut lines = manifest.lines().skip_while(|l| l.trim() != header);
@@ -50,8 +49,8 @@ fn lint_block(manifest: &str, header: &str) -> Option<Vec<String>> {
 ///
 /// `missing_docs` is the only one. `progenitor` emits 2 607 items whose sole possible
 /// documentation is the OpenAPI `description` it already writes as `#[doc = "…"]`, and the
-/// source of those descriptions is the API's own `///` comments — which is where the estate's
-/// doc-comment gate holds them, rather than on the output.
+/// source of those descriptions is the API's own `///` comments, which is where the estate's
+/// doc-comment gate holds them, not on the output.
 const EXEMPT: [(&str, &str); 1] = [("missing_docs", "allow")];
 
 /// `entry` with its level replaced when [`EXEMPT`] names its lint, otherwise unchanged.
@@ -78,9 +77,9 @@ fn read(path: &Path) -> String {
 /// Every rustc lint the workspace sets must be set identically here.
 ///
 /// The failure this prevents: someone adds `unused_qualifications = "warn"` (or, worse,
-/// `= "deny"`) to `[workspace.lints.rust]`, every member picks it up, and this one does not —
-/// so the generated file is the single place in the repository where that lint does not hold,
-/// and the first sign of it is a confusing diff the next time `xtask openapi` runs.
+/// `= "deny"`) to `[workspace.lints.rust]`, every member picks it up, and this one does not.
+/// The generated file is then the single place in the repository where that lint does not
+/// hold, and the first sign of it is a confusing diff the next time `xtask openapi` runs.
 #[test]
 fn the_rustc_lints_match_the_workspace() {
     let root = workspace_root();

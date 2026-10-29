@@ -1,4 +1,4 @@
-//! Console · Providers — the provider list and inspector.
+//! Owns Console · Providers: the provider list and inspector.
 //!
 //! Saving a config edit is gated on a passing dry-run; name and base-URL edits are not, since
 //! they cannot break parsing.
@@ -82,7 +82,7 @@ impl Tab {
         }
     }
 
-    /// An unrecognised token opens the default tab rather than refusing the link.
+    /// An unrecognised token opens the default tab instead of refusing the link.
     fn parse(token: &str) -> Self {
         <Self as TabKind>::all()
             .iter()
@@ -171,7 +171,7 @@ pub(super) fn ProvidersEntity() -> Element {
     let rows = filtered.read().clone();
 
     // Falls back to the first row so the inspector is never empty. A `sel` naming a provider
-    // that is filtered out falls back too, rather than showing an inspector with no lit row.
+    // that is filtered out falls back too, instead of showing an inspector with no lit row.
     let current = view
         .sel
         .as_deref()
@@ -179,10 +179,10 @@ pub(super) fn ProvidersEntity() -> Element {
         .or_else(|| rows.first().map(|p| p.id));
     let chosen = current.and_then(|id| rows.iter().find(|p| p.id == id).cloned());
 
-    // …and the fallback goes into the URL, so the address names the provider on screen rather
-    // than whichever one sorts first under the filter that happens to be applied. It replaces
-    // rather than pushes — the operator did not choose this row and must not have to back out
-    // of it — and the next query is built out here rather than inside the effect, because
+    // …and the fallback goes into the URL, so the address names the provider on screen,
+    // not whichever one sorts first under the filter that happens to be applied. It replaces,
+    // not pushes (the operator did not choose this row and must not have to back out
+    // of it), and the next query is built out here, not inside the effect, because
     // reading `nav.query()` in there would subscribe the effect to the memo the write changes.
     let landing = landing_selection(view.sel.as_deref(), current.map(|id| id.to_string()))
         .map(|sel| view.with_selection(Some(sel)));
@@ -315,7 +315,7 @@ fn PresetBanner(
 
     rsx! {
         // Tinted with the accent while the row follows its preset and with the warning colour
-        // once it has stopped: styled inline rather than as a new class, so this needs no
+        // once it has stopped: styled inline instead of as a new class, so this needs no
         // Tailwind rebuild of the shipped stylesheet.
         div {
             style: if link.locked {
@@ -376,7 +376,7 @@ fn PresetBanner(
 /// The shipped definition governing `provider`, if it came from a preset this build still
 /// ships.
 ///
-/// A miss is meaningful rather than a loading artefact: it is a provider whose preset the
+/// A miss is meaningful instead of a loading artefact: it is a provider whose preset the
 /// build has retired, and the inspector says so instead of offering a re-link it cannot honour.
 fn preset_for(
     catalogue: Option<&Vec<PresetDefinition>>,

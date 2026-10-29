@@ -407,7 +407,7 @@ pub async fn list_public<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<PublicP
     Ok(rows)
 }
 
-/// Stamp the completion time of a full scan.
+/// Stamps the completion time of a full scan.
 ///
 /// # Errors
 /// `Sqlx` only; a provider deleted mid-scan updates nothing and still returns `Ok(())`.

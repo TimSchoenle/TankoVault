@@ -3622,7 +3622,7 @@ async fn the_sweep_blocks_on_listing_titles_and_loads_them() {
     assert_eq!(facts[0].anilist_id.as_deref(), Some("4242"));
 }
 
-/// Re-stamp `series`' chapter discoveries: chapters 1–10 at the epoch as one bulk import,
+/// Re-stamps `series`' chapter discoveries: chapters 1–10 at the epoch as one bulk import,
 /// chapter `n` above that `n` days later plus `lag_hours`.
 async fn stamp_discoveries(db: &TestDb, series: SeriesId, lag_hours: i32) {
     sqlx::query(

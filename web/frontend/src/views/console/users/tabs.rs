@@ -1,4 +1,4 @@
-//! The inspector's tab bodies, one per tab.
+//! Owns the inspector's tab bodies, one per tab.
 
 use dioxus::prelude::*;
 use inkstone_ui::{Button, Size};

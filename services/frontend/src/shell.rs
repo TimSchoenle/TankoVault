@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use tankovault_config::BrandingConfig;
 
-/// Rewrite the shell's `<title>` and description to name *this* deployment.
+/// Rewrites the shell's `<title>` and description to name *this* deployment.
 ///
 /// Both are pre-boot placeholders (the SPA replaces the document title from `/v1/branding` as
 /// soon as it mounts), but they are what a reader sees for the several hundred milliseconds the
@@ -68,7 +68,7 @@ fn replace_between(source: &str, open: &str, close: &str, value: &str) -> Option
     Some(out)
 }
 
-/// Escape a configured value on its way into markup.
+/// Escapes a configured value on its way into markup.
 ///
 /// The value is the operator's, not a reader's, so this is not an XSS boundary, but an
 /// unescaped `&` or `"` in a perfectly ordinary product name would still break the attribute it

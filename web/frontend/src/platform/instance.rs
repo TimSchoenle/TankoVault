@@ -1,30 +1,31 @@
-//! One running instance per reader, and the handoff that makes a second launch behave like one.
+//! Owns single-instance launch: one running instance per reader, and the handoff that makes a
+//! second launch behave like one.
 //!
 //! **Why this is a session bug and not a nicety.** Two copies of this app cannot coexist. They
-//! share one OS credential-store entry and, through it, one server-side refresh-token *family* —
+//! share one OS credential-store entry and, through it, one server-side refresh-token *family*:
 //! a rotating single-token lineage the API polices with reuse detection. Each copy rotates on its
 //! own fourteen-minute schedule, and every rotation revokes the token the other one is still
 //! holding. The first rotation after the second launch usually lands inside the API's one-minute
 //! grace window and is forgiven; the next one does not, and a token presented long after a
 //! rotation the holder never took delivery of is indistinguishable from a stolen one. The API
 //! answers `401` and revokes the whole family, and `Session::clear` then deletes the stored
-//! credential — so *both* windows land on the sign-in screen and the next start has nothing left
+//! credential, so *both* windows land on the sign-in screen and the next start has nothing left
 //! to restore. That is the "randomly signed out after leaving it closed for a few hours" report,
 //! and closing it is what this module is for.
 //!
 //! **The lock is an OS one, never a pid file.** A pid file left behind by a crash locks the
 //! reader out of their own app until they find and delete it. Both primitives below are released
-//! by the kernel when the process ends, however it ends — and the Unix side treats a socket that
-//! outlived its owner as the stale entry it is rather than as a live instance.
+//! by the kernel when the process ends, however it ends, and the Unix side treats a socket that
+//! outlived its owner as the stale entry it is instead of as a live instance.
 //!
 //! **A refused launch still has to do something.** An app that appears to ignore its own icon
 //! reads as broken, so the duplicate leaves an activation request behind before it exits and the
-//! running instance brings its window forward — see [`request_activation`] and
+//! running instance brings its window forward: see [`request_activation`] and
 //! [`crate::components::TrayHost`], which owns the one loop already holding a window handle.
 
 use std::path::{Path, PathBuf};
 
-/// The lock file. Never read or written — its *handle* is the lock, and the bytes are incidental.
+/// The lock file. Never read or written: its *handle* is the lock, and the bytes are incidental.
 const LOCK_FILE_NAME: &str = "instance.lock";
 
 /// The activation request. Its existence is the whole message, so it is created empty and
@@ -48,7 +49,7 @@ enum Outcome {
     Held(imp::Lock),
     /// Another live instance holds it.
     Contended,
-    /// The lock could not be evaluated at all — no config directory, or an unwritable one.
+    /// The lock could not be evaluated at all: no config directory, or an unwritable one.
     Unavailable,
 }
 
@@ -56,7 +57,7 @@ pub(crate) fn acquire_instance_lock() -> Option<InstanceLock> {
     match lock_path().map_or(Outcome::Unavailable, |path| imp::acquire(&path)) {
         Outcome::Held(lock) => Some(InstanceLock(Some(lock))),
         Outcome::Unavailable => {
-            // Not fatal, but it is the state in which the guarantee above stops holding — so a
+            // Not fatal, but it is the state in which the guarantee above stops holding, so a
             // "signed out again" report from a machine whose log says this is a different bug
             // from one whose log does not.
             tracing::warn!(
@@ -69,16 +70,16 @@ pub(crate) fn acquire_instance_lock() -> Option<InstanceLock> {
     }
 }
 
-/// Ask the instance that holds the lock to bring its window forward. Best effort: a request that
-/// cannot be written leaves the reader with a launch that did nothing visible, which is the same
-/// place they were before this existed.
+/// Asks the instance that holds the lock to bring its window forward. Best effort: a request that
+/// cannot be written leaves the reader with a launch that did nothing visible, and no worse off
+/// than without the handoff.
 pub(crate) fn request_activation() {
     if let Some(path) = activation_path() {
         write_request(&path);
     }
 }
 
-/// Take a pending activation request, if there is one.
+/// Takes a pending activation request, if there is one.
 ///
 /// True at most once per request: the file *is* the request and removing it is what consumes it,
 /// so two polls cannot both act on one launch.
@@ -86,7 +87,7 @@ pub(crate) fn take_activation_request() -> bool {
     activation_path().is_some_and(|path| std::fs::remove_file(path).is_ok())
 }
 
-/// Create the request, making the directory first — a second launch can be the first thing that
+/// Creates the request, making the directory first: a second launch can be the first thing that
 /// ever needs it.
 fn write_request(path: &Path) {
     if path
@@ -106,7 +107,7 @@ fn activation_path() -> Option<PathBuf> {
 }
 
 /// The config directory, created if it is missing. `None` when the platform exposes none or it
-/// cannot be made — both of which [`acquire_instance_lock`] reads as `Unavailable`.
+/// cannot be made: both of which [`acquire_instance_lock`] reads as `Unavailable`.
 fn prepared_config_dir() -> Option<PathBuf> {
     let dir = super::desktop::config_dir()?;
     std::fs::create_dir_all(&dir).ok()?;
@@ -123,12 +124,12 @@ mod imp {
     use std::path::Path;
 
     /// `FILE_SHARE_READ`, and deliberately not `0`. With no sharing at all, any process that so
-    /// much as opens the file — a backup agent, a search indexer, an anti-malware scanner — makes
+    /// much as opens the file (a backup agent, a search indexer, an anti-malware scanner) makes
     /// this open fail, and the app would refuse to start over a scan it has nothing to do with.
     /// Sharing reads denies the one thing that has to be denied, a second writer, and nothing else.
     const FILE_SHARE_READ: u32 = 0x0000_0001;
 
-    /// `ERROR_SHARING_VIOLATION` and `ERROR_LOCK_VIOLATION` — the two ways Windows says "someone
+    /// `ERROR_SHARING_VIOLATION` and `ERROR_LOCK_VIOLATION`: the two ways Windows says "someone
     /// else has this open on terms that exclude you". Matched by number because neither has a
     /// stable [`std::io::ErrorKind`], and reading every other error as contention would turn a
     /// full disk into a silent refusal to start.
@@ -186,7 +187,7 @@ mod imp {
         }
     }
 
-    /// `AddrInUse` reports that the *path* is taken, not that anything is listening on it — a
+    /// `AddrInUse` reports that the *path* is taken, not that anything is listening on it: a
     /// socket file outlives the process that made it, so a crash would otherwise lock the reader
     /// out for good. Connecting is the only way to tell the two apart: refused means the owner is
     /// gone, and the stale entry is removed and the bind retried.
@@ -210,7 +211,7 @@ mod tests {
     use std::sync::atomic::{AtomicU32, Ordering};
 
     /// A directory of this test's own, since the lock is a name in the filesystem and two tests
-    /// sharing one would contend with each other rather than with what they are asserting.
+    /// sharing one would contend with each other instead of with what they are asserting.
     fn scratch() -> PathBuf {
         static NEXT: AtomicU32 = AtomicU32::new(0);
         let dir = std::env::temp_dir().join(format!(
@@ -226,9 +227,9 @@ mod tests {
         matches!(outcome, Outcome::Held(_))
     }
 
-    /// The bug: the desktop client had no single-instance guard, so a second launch — an
+    /// The bug: the desktop client had no single-instance guard, so a second launch (an
     /// accidental double click, or the shortcut pressed again while the first copy sat in the
-    /// tray — ran a second copy against the same OS credential entry and the same server-side
+    /// tray) ran a second copy against the same OS credential entry and the same server-side
     /// refresh-token family. The two rotated over each other until one presented a token revoked
     /// outside the API's grace window, which is reuse as far as the API can tell: it revoked the
     /// family, and both copies were signed out with the stored credential deleted behind them.
@@ -244,8 +245,8 @@ mod tests {
         drop(first);
     }
 
-    /// The other half of the same rule, and the reason the lock is an OS handle rather than a pid
-    /// file: an instance that ends — cleanly, or by being killed — must leave the app startable.
+    /// The other half of the same rule, and the reason the lock is an OS handle instead of a pid
+    /// file: an instance that ends (cleanly, or by being killed) must leave the app startable.
     #[test]
     fn the_lock_is_free_again_once_the_holder_releases_it() {
         let path = scratch().join(LOCK_FILE_NAME);
@@ -257,7 +258,7 @@ mod tests {
     }
 
     /// `Unavailable` is not `Contended`, and conflating them would make an unwritable config
-    /// directory look exactly like a running instance — the app would refuse to start and say
+    /// directory look exactly like a running instance: the app would refuse to start and say
     /// nothing. A path under a *file* is the cheapest way to have the platform refuse.
     #[test]
     fn an_unusable_location_reports_unavailable_rather_than_contention() {

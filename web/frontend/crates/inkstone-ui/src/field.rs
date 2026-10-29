@@ -1,14 +1,14 @@
-//! Form controls. Every one of them is *controlled* — the caller owns the value and receives
-//! edits — because the screens using this kit keep their state in a URL or a signal that other
-//! panels read, and a control holding a second copy is how the two drift apart.
+//! Owns the form controls. Every one of them is *controlled* (the caller owns the value and
+//! receives edits) because the screens using this kit keep their state in a URL or a signal that
+//! other panels read, and a control holding a second copy is how the two drift apart.
 
 use crate::skin::{use_skin, Flag, Part, Variant};
 use dioxus::prelude::*;
 
 /// The label / control / hint / error frame every field shares.
 ///
-/// Separate from [`TextInput`] so a caller can put anything inside it — a pair of controls, a
-/// third-party widget — and still get the label association and error wiring right.
+/// Separate from [`TextInput`] so a caller can put anything inside it (a pair of controls, a
+/// third-party widget), and still get the label association and error wiring right.
 #[component]
 pub fn FieldShell(
     /// Must be unique on the page: it binds the label to the control and the control to its
@@ -79,7 +79,7 @@ pub fn TextInput(
     /// the caller says what it means.
     #[props(default)]
     on_enter: Option<EventHandler<()>>,
-    /// Take focus as soon as the field appears. The HTML attribute is ignored by browsers on an
+    /// Takes focus as soon as the field appears. The HTML attribute is ignored by browsers on an
     /// element inserted after load, so this is done from `onmounted`.
     #[props(default = false)]
     autofocus: bool,
@@ -187,7 +187,7 @@ pub fn SelectField(
 /// One option in a [`SegControl`] or [`SelectField`]: the value written back, and the word for it.
 pub type SegOption = (String, String);
 
-/// A segmented control — a small closed set of choices with exactly one lit.
+/// A segmented control: a small closed set of choices with exactly one lit.
 #[component]
 pub fn SegControl(
     options: Vec<SegOption>,
@@ -196,7 +196,7 @@ pub fn SegControl(
     /// Names the group for a screen reader, which otherwise announces a bare set of buttons.
     #[props(default)]
     label: Option<String>,
-    /// Read-only: the choice is shown but cannot be changed. Genuinely `disabled`, not dimmed —
+    /// Read-only: the choice is shown but cannot be changed. Genuinely `disabled`, not dimmed:
     /// a dimmed-but-live radio is worse than one that refuses the click.
     #[props(default = false)]
     disabled: bool,
@@ -310,7 +310,7 @@ pub fn SearchField(
     /// A glyph shown at the leading edge. The kit ships no icons, so this is the app's.
     #[props(default)]
     icon: Option<Element>,
-    /// Already-worded, e.g. "4 hits" — the caller knows what it is counting.
+    /// Already-worded, e.g. "4 hits": the caller knows what it is counting.
     #[props(default)]
     hits: Option<String>,
 ) -> Element {
@@ -335,7 +335,7 @@ pub fn SearchField(
     }
 }
 
-/// A labelled text input with no `FieldShell` around it — the bare control, for a toolbar.
+/// A labelled text input with no `FieldShell` around it: the bare control, for a toolbar.
 #[component]
 pub fn Field(
     id: String,

@@ -1,8 +1,8 @@
-//! The console's view state, encoded as a URL query string, so an operator can paste "the
+//! Owns the console's view state, encoded as a URL query string, so an operator can paste "the
 //! provider that is failing" into chat and the receiver lands on the same row.
 //!
-//! Follows `views::watchlist::query` exactly — one catch-all `?:..query` field with `Default`,
-//! `From<&str>`, `Display` and a round-trip test — because two encoders that disagree about
+//! Follows `views::watchlist::query` exactly (one catch-all `?:..query` field with `Default`,
+//! `From<&str>`, `Display` and a round-trip test) because two encoders that disagree about
 //! escaping is a defect neither one's tests would find.
 
 use std::fmt;
@@ -11,7 +11,7 @@ use std::fmt::Write as _;
 /// A time window on the panels that have one (Audit, Scans, Overview).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum Window {
-    /// The absence of the parameter, not a value — a shared URL should not carry a no-op.
+    /// The absence of the parameter, not a value: a shared URL should not carry a no-op.
     #[default]
     Any,
     Hour,
@@ -43,7 +43,7 @@ impl Window {
 
     /// How many hours back this window reaches; `None` is no lower bound at all.
     ///
-    /// `u32` so the conversion to milliseconds below is lossless — these are small numbers, and
+    /// `u32` so the conversion to milliseconds below is lossless: these are small numbers, and
     /// an `i64` here would only buy a precision-loss lint.
     pub(crate) fn hours(self) -> Option<u32> {
         match self {
@@ -56,7 +56,7 @@ impl Window {
 
     /// The RFC 3339 instant this window starts at, as the API's `since` parameter wants it.
     ///
-    /// `None` for [`Window::Any`], which is the absence of the parameter rather than a bound at
+    /// `None` for [`Window::Any`], which is the absence of the parameter instead of a bound at
     /// the beginning of time. Computed from the operator's own clock: the window is what they
     /// see on their own screen, and a server-relative one would drift against it.
     pub(crate) fn since_iso(self) -> Option<String> {
@@ -66,8 +66,8 @@ impl Window {
         crate::platform::format_timestamp_iso(start)
     }
 
-    /// Parse a `?since=` token. An unrecognised one widens to "any time" rather than refusing
-    /// the link — a hand-edited URL should show more, never an error.
+    /// Parses a `?since=` token. An unrecognised one widens to "any time" instead of refusing
+    /// the link: a hand-edited URL should show more, never an error.
     pub(crate) fn parse_token(token: &str) -> Self {
         Self::parse(token)
     }
@@ -82,7 +82,7 @@ impl Window {
 
 /// The merge queue's confidence band.
 ///
-/// An enum rather than the raw `min_score` float it sends: a float in the URL round-trips
+/// An enum instead of the raw `min_score` float it sends: a float in the URL round-trips
 /// through decimal formatting, and the operator picks from four buttons regardless.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum Band {
@@ -158,8 +158,8 @@ impl Default for QueueFilter {
 /// The complete console view state below the entity segment.
 ///
 /// Every field is a filter or a selection that an operator would lose on reload today. The
-/// entity itself is *not* here — it is the path segment, so `/console/providers` is a place
-/// rather than a parameter.
+/// entity itself is *not* here: it is the path segment, so `/console/providers` is a place
+/// instead of a parameter.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct ConsoleQuery {
     /// The selected row, as the string the panel's rows are keyed by.
@@ -171,7 +171,7 @@ pub(crate) struct ConsoleQuery {
     pub(crate) tab: Option<String>,
     /// The panel's primary `ListSearch` text.
     pub(crate) q: String,
-    /// Users' status chip, Privacy's queue filter, Scans' run state — three panels, three
+    /// Users' status chip, Privacy's queue filter, Scans' run state: three panels, three
     /// vocabularies, one parameter, each parsed by the panel that owns it.
     pub(crate) status: Option<String>,
     /// Provider slug filter on Scans and Audit.
@@ -203,8 +203,8 @@ impl ConsoleQuery {
     /// The same view with a different row selected.
     ///
     /// The page is kept, not reset: every caller selects a row that is on the page in front of
-    /// them — an operator's click, and the landing write that resolves the first row of the
-    /// current page — so resetting would scroll the selection out of the list it was picked from.
+    /// them (an operator's click, and the landing write that resolves the first row of the
+    /// current page), so resetting would scroll the selection out of the list it was picked from.
     pub(crate) fn with_selection(&self, sel: Option<String>) -> Self {
         Self {
             sel,
@@ -248,7 +248,7 @@ impl ConsoleQuery {
     }
 }
 
-/// Parse the query string. Unknown keys and unparseable values fall back to the default for
+/// Parses the query string. Unknown keys and unparseable values fall back to the default for
 /// that field: a URL is user-editable, and half-understanding one beats a blank console.
 impl From<&str> for ConsoleQuery {
     fn from(query: &str) -> Self {
@@ -280,7 +280,7 @@ impl From<&str> for ConsoleQuery {
     }
 }
 
-/// Write only what differs from the default, so a rail click is `/console/providers` and a
+/// Writes only what differs from the default, so a rail click is `/console/providers` and a
 /// shared URL names exactly what its sender changed.
 impl fmt::Display for ConsoleQuery {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -346,7 +346,7 @@ fn non_empty(value: String) -> Option<String> {
     }
 }
 
-/// Percent-encode everything the query grammar reserves.
+/// Percent-encodes everything the query grammar reserves.
 ///
 /// The router's own encoding leaves `&` and `=` alone, so a provider slug or a search term
 /// carrying one would otherwise re-parse as two parameters.
@@ -366,8 +366,8 @@ fn encode_component(value: &str) -> String {
     out
 }
 
-/// The inverse of [`encode_component`]. A malformed escape is kept verbatim rather than
-/// dropped — a hand-typed `100%` in a filter box should search for `100%`, not `100`.
+/// The inverse of [`encode_component`]. A malformed escape is kept verbatim, not
+/// dropped: a hand-typed `100%` in a filter box should search for `100%`, not `100`.
 fn decode_component(value: &str) -> String {
     let bytes = value.as_bytes();
     let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
@@ -458,7 +458,7 @@ mod tests {
         );
     }
 
-    /// Non-ASCII has to survive too — a good part of this catalogue is not spelled in Latin.
+    /// Non-ASCII has to survive too: a good part of this catalogue is not spelled in Latin.
     #[test]
     fn non_ascii_filters_survive() {
         let query = ConsoleQuery {
@@ -468,7 +468,7 @@ mod tests {
         assert_eq!(ConsoleQuery::from(query.to_string().as_str()).q, "九番の鐘");
     }
 
-    /// An empty parameter must clear the filter rather than search for the empty string —
+    /// An empty parameter must clear the filter, not search for the empty string:
     /// `?sel=` is what a hand-cleared URL looks like, and `Some("")` would select no row while
     /// suppressing the fall-back-to-first-row behaviour.
     #[test]
@@ -489,7 +489,7 @@ mod tests {
     }
 
     /// Every rail entity's slug is its URL, so a slug that does not parse back to itself is a
-    /// rail entry no link can reach — the same defect class `the_picker_offers_every_adapter_kind`
+    /// rail entry no link can reach: the same defect class `the_picker_offers_every_adapter_kind`
     /// pins for the adapter vocabulary.
     #[test]
     fn every_entity_slug_parses_back_to_itself() {

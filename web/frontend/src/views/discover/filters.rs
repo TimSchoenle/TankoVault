@@ -1,7 +1,7 @@
-//! Discover's collapsible filter panel and the three chip kinds it is built from.
+//! Owns Discover's collapsible filter panel and the three chip kinds it is built from.
 //!
 //! Split out of `views/discover/mod.rs`: `FilterPanel` alone is a screen's worth of markup sitting
-//! inside another screen's module. The panel owns no filter state — every control hands the whole
+//! inside another screen's module. The panel owns no filter state: every control hands the whole
 //! next [`DiscoverFilters`] to its caller, which puts it in the URL (see `super::query`).
 
 use super::query::{DiscoverFilters, Tracking, MIN_CHAPTERS_MAX, YEAR_MAX, YEAR_MIN};
@@ -93,7 +93,7 @@ pub(super) fn FilterPanel(
             on_change.call(next);
         }
     });
-    // Both commits read the draft rather than a value captured at render time: `input` and
+    // Both commits read the draft instead of a value captured at render time: `input` and
     // `change` are two events, and taking the number from the render between them would commit
     // whatever the slider read one step ago if that render had not landed yet.
     let commit_years = EventHandler::new({
@@ -193,7 +193,7 @@ pub(super) fn FilterPanel(
                 }
             }
 
-            // YOUR LIBRARY — resolved server-side against the caller's own token, so it is only
+            // YOUR LIBRARY: resolved server-side against the caller's own token, so it is only
             // offered to a reader who has a watchlist for it to mean anything about.
             if session.is_authenticated() {
                 div { class: "ik-filter-group",
@@ -211,7 +211,7 @@ pub(super) fn FilterPanel(
                 }
             }
 
-            // PROVIDER — public providers list (§9.3), filtered server-side by slug (§9.1).
+            // PROVIDER: public providers list (§9.3), filtered server-side by slug (§9.1).
             div { class: "ik-filter-group",
                 div { class: "lbl", {i18n.t("discover.provider")} }
                 if providers.is_empty() {
@@ -235,7 +235,7 @@ pub(super) fn FilterPanel(
                 }
             }
 
-            // RELEASE YEAR — server-side range (§9.1); bounds sent only when narrowed.
+            // RELEASE YEAR: server-side range (§9.1); bounds sent only when narrowed.
             div { class: "ik-filter-group",
                 div { class: "lbl", {i18n.t("discover.releaseYear")} }
                 div { class: "ik-range-row",
@@ -244,8 +244,8 @@ pub(super) fn FilterPanel(
                         id: "tv-year-min",
                         class: "ik-range",
                         r#type: "range",
-                        // Constants, not literals — duplicating these as strings previously
-                        // let the sliders drift out of sync with the declared range.
+                        // Constants, not literals: duplicated strings let the sliders drift out
+                        // of sync with the declared range.
                         min: "{YEAR_MIN}",
                         max: "{YEAR_MAX}",
                         "aria-label": i18n.t("discover.releaseYearFrom"),
@@ -272,7 +272,7 @@ pub(super) fn FilterPanel(
                 }
             }
 
-            // MIN. CHAPTERS — server-side (§9.1).
+            // MIN. CHAPTERS: server-side (§9.1).
             div { class: "ik-filter-group",
                 label { class: "lbl", r#for: "tv-min-chapters",
                     {i18n.t("discover.minChapters")}
@@ -293,7 +293,7 @@ pub(super) fn FilterPanel(
                 }
             }
 
-            // SAVED PRESETS — stub.
+            // SAVED PRESETS: stub.
             div { class: "ik-filter-group",
                 div { class: "lbl", {i18n.t("discover.presets")} }
                 div { class: "ik-muted", style: "font-size:12px;", {i18n.t("discover.presetsSoon")} }
@@ -322,7 +322,7 @@ pub(super) fn TypeChip(
 }
 
 /// One of the three watchlist options. A radio in chip clothing: picking one replaces the
-/// selection rather than adding to it.
+/// selection instead of adding to it.
 #[component]
 pub(super) fn TrackingChip(
     option: Tracking,
@@ -364,19 +364,18 @@ pub(super) fn StatusChip(
 /// Chips shown before the reader asks for the rest.
 ///
 /// The list arrives commonest-first, so this prefix is the genres most of the catalogue is
-/// actually tagged with rather than the ones whose names happen to sort early. It used to be a
-/// flat `.take(40)` over an *alphabetical* list, which is why the panel appeared to stop
-/// mid-alphabet: the cap was real, the ordering made it look like the catalogue simply had no
-/// tags past whatever letter chip forty landed on.
+/// actually tagged with instead of the ones whose names happen to sort early. A flat
+/// `.take(40)` over an *alphabetical* list would make the panel appear to stop mid-alphabet, as
+/// if the catalogue had no tags past whatever letter chip forty landed on.
 const VISIBLE_TAGS: usize = 32;
 
 /// The tag facet: a searchable, expandable chip list over the whole vocabulary.
 ///
-/// Three affordances rather than one longer list, because they answer different questions. The
+/// Three affordances instead of one longer list, because they answer different questions. The
 /// prefix answers "what is this catalogue mostly about"; the search box answers "does it have
 /// *X*", which is the only workable interaction once a catalogue has hundreds of tags; and
 /// "show all" is the escape hatch for browsing the tail. Every tag is reachable through at
-/// least one of them, which is the property the old fixed cap did not have.
+/// least one of them, which is the property a fixed cap lacks.
 #[component]
 pub(super) fn TagFacetPanel(
     tags: Vec<TagFacet>,

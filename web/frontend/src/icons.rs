@@ -1,4 +1,4 @@
-//! Inline-SVG icon module. A single Rust enum + `Ic` component,
+//! Owns the inline-SVG icons: a single Rust enum and the `Ic` component,
 //! no web font: works offline, tree-shaken, crisp at any size. Glyphs are 24×24 Lucide
 //! (MIT) paths, drawn with `currentColor` so a text-color utility tints them.
 
@@ -56,8 +56,8 @@ pub(crate) enum Icon {
     Warning,
     /// The per-row overflow menu (`⋯`).
     MoreHoriz,
-    /// A muted title's bell-with-a-slash, distinct from [`Icon::Notify`] rather than a dimmed
-    /// copy of it — "notifications are off here" has to be legible without comparing two rows.
+    /// A muted title's bell-with-a-slash, distinct from [`Icon::Notify`] instead of a dimmed
+    /// copy of it: "notifications are off here" has to be legible without comparing two rows.
     NotifyOff,
     ViewList,
     ViewGrid,
@@ -77,7 +77,7 @@ pub(crate) enum Icon {
     // fallback
     Circle,
     /// Window controls for the desktop build's app-drawn title bar. Drawn to the platform
-    /// convention — an outline for "fill the screen", two offset outlines for "put it back" —
+    /// convention (an outline for "fill the screen", two offset outlines for "put it back")
     /// because a reader reaches for these by shape without reading a label.
     ///
     /// Desktop-only: the browser draws its own window chrome, so on the web build these would be
@@ -88,7 +88,7 @@ pub(crate) enum Icon {
     WindowRestore,
 }
 
-/// Render a glyph. `size` in px (default 20); `class` applies a text-color utility.
+/// Renders a glyph. `size` in px (default 20); `class` applies a text-color utility.
 #[component]
 pub(crate) fn Ic(
     icon: Icon,
@@ -203,8 +203,8 @@ fn path_for(icon: Icon) -> &'static str {
         Icon::MoreHoriz => {
             r#"<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>"#
         }
-        // The bell of `Icon::Notify` with a strike through it. The path data is duplicated
-        // rather than composed because `path_for` returns one `&'static str`.
+        // The bell of `Icon::Notify` with a strike through it. The path data is duplicated,
+        // not composed because `path_for` returns one `&'static str`.
         Icon::NotifyOff => {
             r#"<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a2 2 0 0 0 3.4 0"/><path d="M3 3l18 18"/>"#
         }

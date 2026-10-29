@@ -1,10 +1,9 @@
-//! The multi-select bulk bar.
+//! Owns the multi-select bulk bar.
 //!
-//! This is what replaced drag-and-drop for the case drag never handled: "these forty titles are
-//! dead, drop them all". Every action here is **one** request (`POST`/`DELETE
-//! /v1/me/watchlist/bulk`, `POST /v1/me/progress/bulk-read`) rather than one per id — forty
-//! `PUT`s each followed by a refetch of six hundred rows is what the old board did, and it is
-//! why moving a handful of titles took the better part of a minute.
+//! It covers the case drag-and-drop cannot: "these forty titles are dead, drop them all". Every
+//! action here is **one** request (`POST`/`DELETE /v1/me/watchlist/bulk`,
+//! `POST /v1/me/progress/bulk-read`) instead of one per id: forty `PUT`s each followed by a
+//! refetch of six hundred rows would take the better part of a minute.
 
 use super::row::RowCtx;
 use super::{Board, BULK_LIMIT};
@@ -35,7 +34,7 @@ pub(super) fn BulkBar(
 
     // A bulk call either lands or it does not; there is no meaningful half-applied local state
     // to paint, and every one of these changes which rows belong on the page. So unlike the
-    // single-row actions, these refetch — and the selection is cleared, because holding a
+    // single-row actions, these refetch, and the selection is cleared, because holding a
     // selection of rows that may no longer be there is how a second click acts on the wrong set.
     let settle = move |result: Result<BulkResult, progenitor_client::Error<ProblemDetails>>| {
         let mut ctx = ctx;
@@ -178,7 +177,7 @@ pub(super) fn BulkBar(
                 {i18n.t("watchlist.unmute")}
                 }
             }
-            // Untracking forty titles is not undoable from this screen, so it asks once — the
+            // Untracking forty titles is not undoable from this screen, so it asks once: the
             // two-tier rule for a reversible-in-principle destructive action, in the shape a
             // 44px bar has room for: the first click arms the button and states the
             // consequence, the second acts. The rest of the bar does not ask, because a wrong

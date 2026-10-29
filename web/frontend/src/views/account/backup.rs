@@ -1,5 +1,5 @@
-//! Watchlist backup — download the reader's watchlist as a portable file, restore one, and see
-//! which restored entries are still waiting for their series to be crawled.
+//! Owns the watchlist backup: download the reader's watchlist as a portable file, restore one, and
+//! see which restored entries are still waiting for their series to be crawled.
 //!
 //! A restore is always previewed first: the server computes the import against the current
 //! watchlist and rolls it back, and only that exact file and those exact options can then be
@@ -34,7 +34,7 @@ pub(crate) fn BackupPanel() -> Element {
     }
 }
 
-/// Download the watchlist as a backup file.
+/// Downloads the watchlist as a backup file.
 #[component]
 fn ExportCard() -> Element {
     let i18n = use_i18n();
@@ -115,7 +115,7 @@ struct Previewed {
     report: WatchlistImportReport,
 }
 
-/// Choose a backup file, preview what restoring it would do, then apply it.
+/// Chooses a backup file, previews what restoring it would do, then applies it.
 #[component]
 fn ImportCard(pending_reload: Reload) -> Element {
     let i18n = use_i18n();

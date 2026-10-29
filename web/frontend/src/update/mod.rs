@@ -1,12 +1,12 @@
-//! Keeping the desktop client current from the GitHub releases this repository publishes.
+//! Owns keeping the desktop client current from the GitHub releases this repository publishes.
 //!
 //! Desktop only, and deliberately **not** under [`crate::platform`]: that module is a contract with
 //! two implementations that views are held to equally, and this has one implementation and no
-//! browser counterpart — a web SPA is updated by reloading it. Only [`install`] reaches for
+//! browser counterpart; a web SPA is updated by reloading it. Only [`install`] reaches for
 //! `cfg(windows)`/`cfg(unix)`, and only for the hand-off itself.
 //!
 //! Three things are settings of *this installation*, so they live in `settings.json` beside the
-//! server address rather than on the account: the [`Policy`], the hold-back window, and what has
+//! server address instead of on the account: the [`Policy`], the hold-back window, and what has
 //! been staged or dismissed. A reader with two machines may reasonably want one of them current
 //! and the other pinned.
 //!
@@ -14,15 +14,15 @@
 //!
 //! [`run`] waits out first paint, then checks at most every six hours. A check asks the connected
 //! server which repository to read and how far it may go ([`channel`]), asks GitHub for that
-//! repository's recent releases, picks the newest one that is newer than this build, older than
-//! the hold-back window **and** within the server's supported range ([`discover::eligible`]), and
-//! then — depending on the policy — announces it or downloads it. Nothing is executed at that point: [`install::apply_staged`] runs the
-//! installer from `main` at the *next* start, which is why an unattended update never interrupts
-//! a reading session with an elevation prompt.
+//! repository's recent releases, picks the newest one that is newer than this build, older than the
+//! hold-back window **and** within the server's supported range ([`discover::eligible`]), and then
+//! (depending on the policy) announces it or downloads it. Nothing is executed at that point:
+//! [`install::apply_staged`] runs the installer from `main` at the *next* start, which is why an
+//! unattended update never interrupts a reading session with an elevation prompt.
 //!
 //! That start is also where the reader finally sees any of it: [`adopt_applied`] notices that the
 //! version has changed and opens the "what's new" panel over the app with the release notes of
-//! the version now running (`components::whats_new`). It is keyed to the version rather than to
+//! the version now running (`components::whats_new`). It is keyed to the version, not to
 //! the hand-off, so an installer the reader ran themselves opens it too.
 //!
 //! ## What is trusted
@@ -34,17 +34,17 @@
 //!
 //! Two consequences worth stating because they read as omissions:
 //!
-//! * **The HTTP client that talks to GitHub is its own**, built below rather than taken from
+//! * **The HTTP client that talks to GitHub is its own**, built below, not taken from
 //!   [`crate::api`]. That one carries the process-wide cookie jar holding the refresh credential
 //!   ([`crate::api::session_store`]); using it would send the reader's session cookie to
 //!   github.com on every check. This client has no jar, no `Authorization` header and no
-//!   credential of any kind — the release list and the assets are public. [`channel`] is the one
+//!   credential of any kind: the release list and the assets are public. [`channel`] is the one
 //!   part of the updater that *does* use [`crate::api`], and correctly: it asks the reader's own
 //!   deployment about itself.
 //! * **A check contacts `api.github.com`**, which is the only request this app makes to anywhere
 //!   but the reader's own server. The settings sheet says so, and `Policy::Off` stops it.
 //!
-//! Every error in this module and its two children is a **catalogue key**, not a sentence — the
+//! Every error in this module and its two children is a **catalogue key**, not a sentence: the
 //! same contract [`crate::platform::save_text_file`] has, so the settings sheet resolves them
 //! through the reader's own translator. They all live under `settings.update.error.`, which the
 //! `# Errors` sections below abbreviate to `…`.
@@ -75,7 +75,7 @@ const STAGED_KEY: &str = "tv-update-staged";
 const APPLIED_KEY: &str = "tv-update-applied";
 /// The version the last start was running.
 ///
-/// Compared against this build rather than against [`APPLIED_KEY`], so an installer the reader
+/// Compared against this build, not against [`APPLIED_KEY`], so an installer the reader
 /// double-clicked themselves is noticed as well as one this app handed off to. See
 /// [`version_change`].
 const SEEN_VERSION_KEY: &str = "tv-update-seen-version";
@@ -93,7 +93,7 @@ pub(crate) const MAX_MIN_AGE_DAYS: u32 = 30;
 /// How long after mount the first check waits. Long enough that it never competes with first paint
 /// or the boot-time silent refresh.
 const STARTUP_DELAY_MS: u32 = 20_000;
-/// Between checks, and the floor on how often one may run — a reader who restarts the app ten
+/// Between checks, and the floor on how often one may run: a reader who restarts the app ten
 /// times in an evening causes one check, not ten.
 const CHECK_INTERVAL_MS: u32 = 6 * 60 * 60 * 1_000;
 /// How soon a *failed* check is tried again.
@@ -130,7 +130,7 @@ pub(crate) enum Policy {
 }
 
 impl Policy {
-    /// The stored token. Stable — it is written to the settings file.
+    /// The stored token. Stable: it is written to the settings file.
     pub(crate) fn token(self) -> &'static str {
         match self {
             Self::Auto => "auto",
@@ -163,7 +163,7 @@ impl Policy {
     }
 }
 
-/// The reader's policy. Unrecognised or absent reads as [`Policy::Prompt`] — the shipped default,
+/// The reader's policy. Unrecognised or absent reads as [`Policy::Prompt`]: the shipped default,
 /// which asks before it does anything.
 pub(crate) fn policy() -> Policy {
     crate::platform::store_get(POLICY_KEY)
@@ -175,7 +175,7 @@ pub(crate) fn set_policy(policy: Policy) {
     crate::platform::store_set(POLICY_KEY, policy.token());
 }
 
-/// The hold-back window in days. A value that will not parse falls back to the default rather than
+/// The hold-back window in days. A value that will not parse falls back to the default, not
 /// to zero: a corrupt settings file must not turn "hold releases back" into "take them at once".
 pub(crate) fn min_age_days() -> u32 {
     parse_min_age(crate::platform::store_get(MIN_AGE_KEY).as_deref())
@@ -184,7 +184,7 @@ pub(crate) fn min_age_days() -> u32 {
 /// The stored hold-back value as a usable number of days.
 ///
 /// Split from the read so the fallback is testable without a settings file. Absent, blank or
-/// unparseable all give the default rather than zero — a value that will not parse must not turn
+/// unparseable all give the default, not zero: a value that will not parse must not turn
 /// "hold releases back" into "take them the moment they appear".
 fn parse_min_age(stored: Option<&str>) -> u32 {
     stored
@@ -204,8 +204,8 @@ pub(crate) fn set_min_age_days(days: u32) {
 /// reached is the same answer with none of that.
 ///
 /// Only `NaN` and a position at or below zero mean no delay. An out-of-range position clamps to
-/// the top of the range — `!is_finite()` here made an infinity mean "take every release at once",
-/// which inverts the control rather than saturating it.
+/// the top of the range: `!is_finite()` here made an infinity mean "take every release at once",
+/// which inverts the control instead of saturating it.
 pub(crate) fn days_from_slider(position: f64) -> u32 {
     if position.is_nan() || position <= 0.0 {
         return 0;
@@ -217,7 +217,7 @@ pub(crate) fn days_from_slider(position: f64) -> u32 {
 }
 
 /// Whether this build carries a signing key to verify a release against. `false` switches the
-/// whole feature off, including the network call — see `discover`'s `TRUSTED_KEYS`.
+/// whole feature off, including the network call: see `discover`'s `TRUSTED_KEYS`.
 pub(crate) fn is_configured() -> bool {
     discover::is_configured()
 }
@@ -237,7 +237,7 @@ pub(crate) enum Status {
     Idle,
     Checking,
     UpToDate,
-    /// A newer release exists. `installable` is false when this app must not apply it — a release
+    /// A newer release exists. `installable` is false when this app must not apply it: a release
     /// with no signed manifest, or a copy owned by a package manager.
     Available {
         version: String,
@@ -275,10 +275,10 @@ pub(crate) enum Status {
 ///
 /// Separate from [`Status`] because the two answer different questions: the status is what the
 /// updater is *doing*, and this is what the release it found *is*. They also move at different
-/// times — a check that finds nothing clears the notes without the panel changing what it shows.
+/// times: a check that finds nothing clears the notes without the panel changing what it shows.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) enum Notes {
-    /// Nothing to show — not asked for, or the release list could not be reached.
+    /// Nothing to show: not asked for, or the release list could not be reached.
     #[default]
     None,
     Fetching,
@@ -325,7 +325,7 @@ impl UpdateState {
         *self.panel.read()
     }
 
-    /// Put the "what's new" panel on screen. Called at a start that changed version, and by the
+    /// Puts the "what's new" panel on screen. Called at a start that changed version, and by the
     /// settings sheet for a release on offer. Closing goes through [`close_panel`], which has a
     /// receipt to retire as well.
     pub(crate) fn open_panel(mut self) {
@@ -356,7 +356,7 @@ impl UpdateState {
     }
 }
 
-/// Report an update this installation has taken, at the first start that is running it.
+/// Reports an update this installation has taken, at the first start that is running it.
 ///
 /// Two things happen here, and they are deliberately independent.
 ///
@@ -367,7 +367,7 @@ impl UpdateState {
 /// says why. It is read once and cleared, so a receipt cannot be claimed by a later start.
 ///
 /// **The version change.** [`SEEN_VERSION_KEY`] is compared against this build, which catches an
-/// installer the reader ran themselves as well as one this app handed off to — it is the same
+/// installer the reader ran themselves as well as one this app handed off to: it is the same
 /// event either way, and only one of the two leaves a receipt. That is what opens the "what's
 /// new" panel. The notification stays tied to the receipt: a reader who has just double-clicked
 /// an installer does not need to be told that an installer ran.
@@ -384,7 +384,7 @@ pub(crate) fn adopt_applied(state: UpdateState, i18n: Translator) {
     };
     let version = current.to_string();
     // Anything but the version this build reports means the installer did not produce what it
-    // said it would — a failed install, or a downgrade someone arranged by hand. Saying "updated
+    // said it would: a failed install, or a downgrade someone arranged by hand. Saying "updated
     // to 2.4.0" while running 2.3.0 is worse than saying nothing.
     let confirmed = handed_off.as_deref() == Some(version.as_str());
     if confirmed {
@@ -411,7 +411,7 @@ pub(crate) fn adopt_applied(state: UpdateState, i18n: Translator) {
     });
 }
 
-/// Record `current` as the version this installation is on, and report the one it replaced.
+/// Records `current` as the version this installation is on, and reports the one it replaced.
 fn note_running_version(current: &semver::Version) -> Option<semver::Version> {
     let previous = version_change(
         crate::platform::store_get(SEEN_VERSION_KEY).as_deref(),
@@ -426,7 +426,7 @@ fn note_running_version(current: &semver::Version) -> Option<semver::Version> {
 /// `None` unless the stored value parses **and** is genuinely older. A first run has recorded
 /// nothing and has replaced nothing, so treating it as an update would meet every reader at
 /// their first launch with the changelog of a version they have never not been on; and a
-/// downgrade — a reader reinstalling an older build on purpose — is not an update to announce.
+/// downgrade (a reader reinstalling an older build on purpose) is not an update to announce.
 fn version_change(stored: Option<&str>, current: &semver::Version) -> Option<semver::Version> {
     let previous = semver::Version::parse(stored?.trim()).ok()?;
     (previous < *current).then_some(previous)
@@ -435,7 +435,7 @@ fn version_change(stored: Option<&str>, current: &semver::Version) -> Option<sem
 /// What the release this build came from says about itself.
 ///
 /// [`Policy::Off`] is honoured here as everywhere else: a reader who chose it asked for no
-/// request to github.com, and the panel still names the version it is about — it simply has no
+/// request to github.com, and the panel still names the version it is about; it simply has no
 /// notes under the heading.
 async fn running_notes(version: &semver::Version) -> Option<ReleaseNotes> {
     if policy() == Policy::Off {
@@ -448,7 +448,7 @@ async fn running_notes(version: &semver::Version) -> Option<ReleaseNotes> {
     discover::notes_for(&releases, version)
 }
 
-/// Close the "what's new" panel, and retire the receipt it was showing.
+/// Closes the "what's new" panel, and retires the receipt it was showing.
 ///
 /// The panel is the one surface an unattended update is certain to have been seen through, so
 /// dismissing it is what clears [`Status::Applied`] and with it the title bar's dot.
@@ -459,24 +459,24 @@ pub(crate) fn close_panel(state: UpdateState) {
 
 /// Whether the reader has declined `version`.
 ///
-/// Compared by version rather than remembered as a flag, so declining 2.1.0 says nothing about
-/// 2.2.0 — a dismissal is about one release, not about updates.
+/// Compared by version, not remembered as a flag, so declining 2.1.0 says nothing about
+/// 2.2.0: a dismissal is about one release, not about updates.
 fn is_dismissed(version: &str) -> bool {
     crate::platform::store_get(DISMISSED_KEY).is_some_and(|declined| declined == version)
 }
 
-/// Retire the "updated to …" receipt once the reader has had the settings sheet open.
+/// Retires the "updated to …" receipt once the reader has had the settings sheet open.
 ///
 /// [`Status::Applied`] draws the title bar's dot, and a dot that never clears stops meaning
 /// anything. Closing the sheet is the one moment it is safe to assume the line was there to be
-/// read — clearing it when the sheet *opens* would race the reader to it.
+/// read: clearing it when the sheet *opens* would race the reader to it.
 pub(crate) fn acknowledge_applied(state: UpdateState) {
     if matches!(state.status(), Status::Applied { .. }) {
         state.set(Status::UpToDate);
     }
 }
 
-/// Stop asking about the release currently on offer.
+/// Stops asking about the release currently on offer.
 pub(crate) fn dismiss(state: UpdateState) {
     if let Status::Available { version, .. } = state.status() {
         crate::platform::store_set(DISMISSED_KEY, &version);
@@ -509,7 +509,7 @@ pub(crate) async fn run(state: UpdateState, api: crate::api::Api, i18n: Translat
 ///
 /// Split from the loop so the escalation is testable without a clock. A failed check does not
 /// write [`LAST_CHECK_KEY`], so [`due`] is still true when the shorter wait elapses and the retry
-/// actually runs — the two have to agree for this to be more than a shorter sleep.
+/// actually runs: the two have to agree for this to be more than a shorter sleep.
 fn wait_after(failures: u32) -> u32 {
     if (1..=MAX_QUICK_RETRIES).contains(&failures) {
         RETRY_INTERVAL_MS
@@ -535,14 +535,14 @@ fn due() -> bool {
         .and_then(|value| value.parse::<f64>().ok())
         .unwrap_or(0.0);
     let now = crate::platform::now_ms();
-    // A stored time in the future — a clock that was wound back — must not lock checks out for
+    // A stored time in the future (a clock that was wound back) must not lock checks out for
     // ever, so anything that is not "recently" counts as due.
     !(last..last + f64::from(CHECK_INTERVAL_MS)).contains(&now)
 }
 
-/// Look for a release, and act on the policy.
+/// Looks for a release, and acts on the policy.
 ///
-/// Also the "check now" button's handler, which is why it does not consult [`due`] — that gate
+/// Also the "check now" button's handler, which is why it does not consult [`due`]: that gate
 /// belongs to the loop, not to a reader who asked.
 pub(crate) async fn check(state: UpdateState, api: crate::api::Api, i18n: Translator) {
     let previous = state.status();
@@ -556,7 +556,7 @@ pub(crate) async fn check(state: UpdateState, api: crate::api::Api, i18n: Transl
     }
 }
 
-/// Download and stage the release currently on offer, whatever the policy says — the reader
+/// Downloads and stages the release currently on offer, whatever the policy says: the reader
 /// pressed the button.
 pub(crate) async fn install_now(state: UpdateState, api: crate::api::Api, i18n: Translator) {
     let previous = state.status();
@@ -569,15 +569,15 @@ pub(crate) async fn install_now(state: UpdateState, api: crate::api::Api, i18n: 
     }
 }
 
-/// Resolve the release on offer, staging it when `stage` and the install allow.
+/// Resolves the release on offer, staging it when `stage` and the install allow.
 ///
 /// The channel is refreshed first, so the ceiling a check honours is the one the server holds
-/// *now* rather than the one it held when the app started — an operator who upgrades their
+/// *now* instead of the one it held when the app started: an operator who upgrades their
 /// deployment on Tuesday should not have to restart every reader's client to unblock them.
 ///
-/// The discovery is repeated rather than remembered between the check and the install. It is two
+/// The discovery is repeated, not remembered between the check and the install. It is two
 /// small requests, and the alternative is holding a manifest and its signature in a signal across
-/// an arbitrary gap — during which the reader can change the hold-back window, and the answer
+/// an arbitrary gap: during which the reader can change the hold-back window, and the answer
 /// should change with it.
 ///
 /// # Errors
@@ -656,7 +656,7 @@ async fn look(
     Ok(Status::Staged { version })
 }
 
-/// Hand the panel what this check found — unless it is already on screen.
+/// Hands the panel what this check found, unless it is already on screen.
 ///
 /// The first check runs twenty seconds after a start, which is exactly when a reader is still
 /// reading the notes of the release they have just been updated to. Overwriting them there would
@@ -667,7 +667,7 @@ fn offer_notes(state: UpdateState, notes: Notes) {
     }
 }
 
-/// Raise an OS notification when the outcome is new.
+/// Raises an OS notification when the outcome is new.
 ///
 /// Compared against the previous status so a six-hourly check does not re-announce the same
 /// release, and a version the reader declined is not announced at all.
@@ -706,9 +706,9 @@ fn announce(previous: &Status, next: &Status, i18n: Translator) {
 /// The updater's own HTTP client.
 ///
 /// **Never [`crate::api`]'s.** That one attaches the process-wide cookie jar that holds the
-/// refresh credential, and the access token as a bearer header — so reusing it would send the
+/// refresh credential, and the access token as a bearer header, so reusing it would send the
 /// reader's session to github.com on every check. This one carries no credential at all, which is
-/// correct rather than merely sufficient: everything it fetches is public.
+/// correct, not merely sufficient: everything it fetches is public.
 ///
 /// # Errors
 /// `settings.update.error.network` if the client cannot be built.
@@ -748,7 +748,7 @@ mod tests {
 
     /// A corrupt or missing value falls back to the default window, never to zero.
     ///
-    /// Zero is not a neutral fallback here — it means "take every release the moment it appears",
+    /// Zero is not a neutral fallback here: it means "take every release the moment it appears",
     /// which is the one behaviour the hold-back exists to prevent. A settings file that will not
     /// parse must not silently opt the reader into it.
     #[test]
@@ -766,7 +766,7 @@ mod tests {
         }
         assert_eq!(parse_min_age(Some("7")), 7);
         assert_eq!(parse_min_age(Some(" 7 ")), 7);
-        // Clamped rather than honoured, so a hand-edited file cannot exceed what the slider offers.
+        // Clamped, not honoured, so a hand-edited file cannot exceed what the slider offers.
         assert_eq!(parse_min_age(Some("4000")), MAX_MIN_AGE_DAYS);
     }
 

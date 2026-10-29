@@ -1,4 +1,4 @@
-//! The failure triage feed, grouped or flat, and the clear that empties it.
+//! Owns the failure triage feed, grouped or flat, and the clear that empties it.
 //!
 //! # Clearing is acknowledgement, never deletion
 //!
@@ -34,7 +34,7 @@ pub(super) fn FailuresSection(
     let mut busy = use_signal(|| false);
     let mut outcome = use_signal(|| Option::<Result<String, String>>::None);
     // What a confirmation is currently asking about. `None` is "nothing pending"; the inner
-    // `Option<String>` is the error group, where `None` means the group that recorded none —
+    // `Option<String>` is the error group, where `None` means the group that recorded none,
     // which is why this is not flattened into one level.
     let mut pending = use_signal(|| Option::<Option<Option<String>>>::None);
 
@@ -251,7 +251,7 @@ fn GroupedFailures(groups: Vec<FailureGroup>, on_clear: EventHandler<Option<Stri
     }
 }
 
-/// Recent task failures with their errors — the operator's triage feed.
+/// Recent task failures with their errors: the operator's triage feed.
 #[component]
 fn FailuresPanel(failures: Vec<FailedTask>) -> Element {
     let i18n = use_i18n();
@@ -269,7 +269,7 @@ fn FailuresPanel(failures: Vec<FailedTask>) -> Element {
                     key: "{failure.id}",
                     class: "ik-fail",
                     // A cleared row is only ever on screen because the operator asked to see
-                    // cleared ones, so it is dimmed rather than badged as an alert.
+                    // cleared ones, so it is dimmed, not badged as an alert.
                     style: if failure.acknowledged_at.is_some() { "opacity:.6;" } else { "" },
                     div { class: "ik-flex", style: "justify-content:space-between;gap:10px;flex-wrap:wrap;",
                         div { class: "ik-flex", style: "gap:8px;flex-wrap:wrap;",

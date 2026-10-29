@@ -455,7 +455,7 @@ fn skip_any_value(meta: &syn::meta::ParseNestedMeta<'_>) -> syn::Result<()> {
     Ok(())
 }
 
-/// Reduce a declared type to the name a lookup can use.
+/// Reduces a declared type to the name a lookup can use.
 ///
 /// `Option<T>` and `Box<T>` are transparent to figment, so they unwrap: `Option<NatsConfig>`
 /// on the API's `Config` still contributes `TANKOVAULT_NATS__URL`. `Vec<T>` and `HashMap<K, V>`

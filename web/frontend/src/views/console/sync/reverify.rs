@@ -1,4 +1,4 @@
-//! Re-verifying the stored `AniList` mappings: start a run, follow it, review what it refused.
+//! Owns re-verifying the stored `AniList` mappings: start a run, follow it, review what it refused.
 //!
 //! A real run removes and blocks every mapping it refuses, so the panel offers it only once a
 //! dry run has finished and its list is on screen to review.

@@ -1,4 +1,4 @@
-//! The watchlist's requests: the slice on screen, the sync account's status, and a two-way
+//! Owns the watchlist's requests: the slice on screen, the sync account's status, and a two-way
 //! sync.
 
 use dioxus::prelude::*;
@@ -25,7 +25,7 @@ pub(super) fn use_page(
         reload.track();
         let req = request.read().clone();
         // In the grid view the bite is whole rows of tiles, and the fetch waits for the first
-        // measurement rather than firing a request the corrected one would immediately replace.
+        // measurement instead of firing a request the corrected one would immediately replace.
         let bite = bite_size(req.query.view, fit);
         let client = api.client();
         let authed = session.is_authenticated();
@@ -64,7 +64,7 @@ fn signed_out() -> WatchlistView {
         groups: Vec::new(),
         total: 0,
         // Offset paging, not keyset: this list refetches its whole window on every
-        // page rather than appending, which is immune to the shifting-list defect the
+        // page instead of appending, which is immune to the shifting-list defect the
         // cursor exists to fix and cannot use a cursor to express "rows 120 to 180".
         // The token is there for consumers that do append.
         next_cursor: None,
@@ -97,7 +97,7 @@ pub(super) fn use_sync_status(
     })
 }
 
-/// Pull from the sync provider, then push to it, and report the outcome.
+/// Pulls from the sync provider, then pushes to it, and reports the outcome.
 pub(super) fn sync_both_ways(
     api: Api,
     i18n: Translator,

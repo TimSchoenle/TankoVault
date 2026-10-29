@@ -1,5 +1,5 @@
-//! Card, section and list chrome shared across the console, the account panels and the series
-//! screens.
+//! Owns the card, section and list chrome shared across the console, the account panels and the
+//! series screens.
 
 use crate::components::EmptyBox;
 use crate::icons::{Ic, Icon};
@@ -31,7 +31,7 @@ pub(crate) fn NoSelection(message: String) -> Element {
     }
 }
 
-/// The panel chrome an account or series card sits in: an icon + title header, a body.
+/// The panel chrome an account or series card sits in: an icon-and-title header and a body.
 #[component]
 pub(crate) fn PanelCard(icon: Icon, title: String, children: Element) -> Element {
     rsx! {

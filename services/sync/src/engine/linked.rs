@@ -46,7 +46,7 @@ pub(crate) struct GroupSide {
     pub(crate) side: LocalSide,
 }
 
-/// Fold a linked group into the single local side the merge compares against the remote.
+/// Folds a linked group into the single local side the merge compares against the remote.
 ///
 /// Progress is the **highest** frontier any included member holds, not `preferred`'s. The remote
 /// keeps one number for the whole group, so mirroring a lower member's value back over a higher

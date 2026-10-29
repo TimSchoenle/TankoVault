@@ -1,8 +1,8 @@
-//! The reader's global source order — which provider a series should open on by default.
+//! Owns the reader's global source order, which provider a series should open on by default.
 //!
-//! Ranking is explicit and ordered rather than a single favourite, because the realistic case is
+//! Ranking is explicit and ordered instead of a single favourite, because the realistic case is
 //! "this site, else that one, else whatever has it": a series simply is not on every provider.
-//! Providers left unranked are not last, they are unopinionated — those series keep resolving by
+//! Providers left unranked are not last, they are unopinionated: those series keep resolving by
 //! the objective richest-source order the API publishes.
 //!
 //! Reordering is buttons, not drag-and-drop: a pointer-only affordance would put the whole
@@ -24,7 +24,7 @@ pub(crate) fn SourcesPanel() -> Element {
     let api = api::use_api();
     let mut outcome = use_outcome();
     // The same cache the Series screen ranks against, so a save here reaches that screen
-    // without a reload — and without this panel becoming a second source of truth.
+    // without a reload, and without this panel becoming a second source of truth.
     let order_cache = use_source_order();
     // `None` until the first load settles, so the panel skeletons instead of rendering an
     // empty order that a reader could mistake for "nothing is ranked".
@@ -64,7 +64,7 @@ pub(crate) fn SourcesPanel() -> Element {
         outcome.set(None);
         let client = api.client();
         spawn(async move {
-            // `early_access_provider_ids: None` leaves the opt-ins untouched — the order and
+            // `early_access_provider_ids: None` leaves the opt-ins untouched: the order and
             // the opt-ins are edited by different controls and must not overwrite each other.
             let body = SourcePreferencesUpdate {
                 provider_ids: next,
@@ -88,7 +88,7 @@ pub(crate) fn SourcesPanel() -> Element {
         outcome.set(None);
         let client = api.client();
         spawn(async move {
-            // The order half is sent unchanged rather than omitted: the endpoint replaces it
+            // The order half is sent unchanged, not omitted: the endpoint replaces it
             // wholesale, so leaving it out would clear the reader's ranking as a side effect of
             // toggling a paywall switch.
             let current = ranked.read().clone().unwrap_or_default();

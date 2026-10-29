@@ -1,4 +1,4 @@
-//! The per-series sync inspector: find a series, then add, correct or clear its external
+//! Owns the per-series sync inspector: find a series, then add, correct or clear its external
 //! mapping for each known provider.
 
 use crate::api;
@@ -15,7 +15,7 @@ use dioxus::prelude::*;
 use inkstone_ui::{Button, Pill, Tone};
 use progenitor_client::ResponseValue;
 /// Either the editable per-series "manga info" view (when a series is selected) or a title
-/// search + recently-mapped list to open one.
+/// search and a recently-mapped list to open one.
 #[component]
 pub(super) fn SeriesSyncInspector(reload: Reload) -> Element {
     let api = api::use_api();
@@ -70,7 +70,7 @@ pub(super) fn SeriesSyncInspector(reload: Reload) -> Element {
         None => rsx! {},
         Some(Err(message)) => {
             let message = message.clone();
-            // Retrying means re-running the query, and the resource is keyed on `query` — so
+            // Retrying means re-running the query, and the resource is keyed on `query`, so
             // writing the same value back is the retry.
             rsx! {
                 ErrorBox {
@@ -180,7 +180,7 @@ pub(super) fn MappingPickRow(mapping: Signal<AdminSyncMapping>) -> Element {
     }
 }
 
-/// The editable per-series "manga info" view: the series card plus one editor row per known
+/// The editable per-series "manga info" view: the series card and one editor row per known
 /// sync provider, prefilled with its current external id.
 #[component]
 pub(super) fn SeriesSyncEditor(series_id: String, reload: Reload) -> Element {
@@ -285,7 +285,7 @@ pub(super) fn SeriesSyncEditor(series_id: String, reload: Reload) -> Element {
     }
 }
 
-/// One provider's mapping editor: an input prefilled with the current external id, plus
+/// One provider's mapping editor: an input prefilled with the current external id, and
 /// Save (upsert) and, when a mapping exists, Clear (delete).
 #[component]
 pub(super) fn MappingEditorRow(

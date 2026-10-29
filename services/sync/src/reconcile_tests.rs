@@ -245,10 +245,10 @@ impl Fixture {
         }
     }
 
-    /// Re-scrape the fixture's series from the local adapter, carrying `tags`.
+    /// Re-scrapes the fixture's series from the local adapter, carrying `tags`.
     ///
-    /// Same provider and source path, so this converges on the same canonical series rather
-    /// than creating a second one.
+    /// Same provider and source path, so this converges on the same canonical series
+    /// instead of creating a second one.
     async fn rescrape_with_tags(&self, tags: Vec<String>) {
         ingest_series(
             &self.db.pool,
@@ -318,7 +318,7 @@ impl Fixture {
             .expect("seed local progress");
     }
 
-    /// Ingest a second local series under its own source path, so the catalogue holds two rows
+    /// Ingests a second local series under its own source path, so the catalogue holds two rows
     /// that a single remote entry can be mapped to: the duplicate the linked-group work exists
     /// for. `title` is deliberately unlike [`TITLE`], so the matcher cannot attach the remote
     /// entry to it by score; only an explicit mapping links it.
@@ -399,7 +399,7 @@ impl Fixture {
         .expect("record snapshot");
     }
 
-    /// Pre-map the series to `external_id` so `resolve_series` short-circuits.
+    /// Pre-maps the series to `external_id` so `resolve_series` short-circuits.
     async fn map(&self, external_id: &str) {
         sync::upsert_mapping(&self.db.pool, self.series, SLUG, external_id)
             .await

@@ -1,4 +1,4 @@
-//! What this account has actually done, read out of the privileged-action trail.
+//! Owns what this account has actually done, read out of the privileged-action trail.
 
 use crate::api;
 use crate::components::{async_view, Section, SkeletonBlock};
@@ -15,11 +15,10 @@ const RECENT: u32 = 10;
 
 /// What this account has actually done, out of the privileged-action trail.
 ///
-/// Filtered by `?actor=` on the server. It used to fetch the global forty most recent records
-/// and keep the ones whose `actor` string matched this username — so an operator who had not
-/// acted inside the last forty actions *system-wide* rendered "no recent actions". The panel
-/// was silently wrong rather than merely shallow, and on a deployment with a nightly sweep it
-/// was wrong for nearly everyone.
+/// Filtered by `?actor=` on the server. Filtering the global forty most recent records on the
+/// client would render "no recent actions" for an operator who had not acted inside the last
+/// forty actions *system-wide*: silently wrong, not merely shallow, and on a deployment with a
+/// nightly sweep wrong for nearly everyone.
 #[component]
 pub(super) fn RecentActions(user_id: String) -> Element {
     let api = api::use_api();

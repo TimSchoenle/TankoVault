@@ -1,4 +1,4 @@
-//! One row of the catalogue maintenance table.
+//! Owns one row of the catalogue maintenance table.
 
 use crate::i18n::use_i18n;
 use crate::util::{iso_date, thousands};
@@ -9,7 +9,7 @@ use std::collections::HashSet;
 
 /// One series: what it is, who carries it, and the two numbers that say what deleting it costs.
 ///
-/// The whole row toggles its checkbox, so ticking is a click anywhere on it — a selection surface
+/// The whole row toggles its checkbox, so ticking is a click anywhere on it: a selection surface
 /// where only a 15-pixel box is live makes selecting fifty rows a chore.
 #[component]
 pub(super) fn CatalogueTableRow(
@@ -21,7 +21,7 @@ pub(super) fn CatalogueTableRow(
     let mut picked = picked;
     let id = entry.id;
     let checked = picked.read().contains(&id);
-    // Precomputed rather than read inside `rsx!`: both handlers below own their captures, so a
+    // Precomputed, not read inside `rsx!`: both handlers below own their captures, so a
     // single shared closure cannot be moved into each of them.
     let pick_label = i18n.args("console.catalogue.select", &[("title", &entry.title)]);
     let added = iso_date(Some(&entry.created_at)).to_owned();

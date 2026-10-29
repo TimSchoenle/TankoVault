@@ -1,4 +1,4 @@
-//! The native implementation of [`crate::platform`], for the wry webview — `WebView2` on
+//! Owns the native implementation of [`crate::platform`], for the wry webview: `WebView2` on
 //! Windows, `WebKitGTK` on Linux.
 //!
 //! Two things have no browser equivalent and are decided here.
@@ -12,18 +12,18 @@
 //! and nothing above them, and the one API that could reach `<html>` is `eval`, which this crate
 //! bans (see `mod.rs`). Appearance attributes are therefore held in [`ROOT_ATTRIBUTES`] and
 //! rendered onto the app's own root element by `crate::app::App`; the stylesheet already selects
-//! on bare `[data-theme]`/`[data-accent]` attributes rather than `:root[…]`, so they cascade
+//! on bare `[data-theme]`/`[data-accent]` attributes instead of `:root[…]`, so they cascade
 //! from there unchanged.
 //!
 //! What the settings file holds is the server URL and the appearance preferences, and nothing
-//! else. **The access token is not in it, and must not be** — it lives in memory for exactly as
+//! else. **The access token is not in it, and must not be**: it lives in memory for exactly as
 //! long as the process does, which is the property the web build's CSP rules exist to protect.
 //! Having a filesystem is not a reason to weaken it.
 //!
 //! The refresh credential *is* kept between runs, but never as a file: it goes to the OS
 //! credential store through [`credential_get`] and friends, which is the one place on a desktop
-//! that offers what the browser's cookie jar offers on the other side — encryption at rest under
-//! the user's login, and access scoped to their account rather than to anything that can read
+//! that offers what the browser's cookie jar offers on the other side; encryption at rest under
+//! the user's login, and access scoped to their account, not to anything that can read
 //! their config directory. See `crate::api::session_store` for what is written there.
 
 use dioxus::prelude::*;
@@ -49,7 +49,7 @@ const CLOSE_TO_TRAY_KEY: &str = "tv-close-to-tray";
 // Settings file
 // ---------------------------------------------------------------------------------------------
 
-/// The parsed settings document, plus where it came from.
+/// The parsed settings document, and where it came from.
 ///
 /// `path` is `None` when the platform exposes no config directory. Every read then answers
 /// `None` and every write is dropped, which is the same contract the web side has under blocked
@@ -76,7 +76,7 @@ pub(super) fn config_dir() -> Option<PathBuf> {
 /// Where the rolling log and any crash reports go, or `None` where the platform exposes no local
 /// data directory.
 ///
-/// The *local* data directory, deliberately, rather than sitting beside `settings.json`: on a
+/// The *local* data directory, deliberately, instead of sitting beside `settings.json`: on a
 /// domain-joined Windows machine the config directory is the roaming profile, copied over the
 /// network at every sign-in and sign-out. A log is the last thing that should be carried across
 /// a network, and a crash report is worth nothing on a second machine anyway.
@@ -90,7 +90,7 @@ fn settings() -> &'static RwLock<Settings> {
 }
 
 impl Settings {
-    /// Read the settings document once, tolerating every way it can be absent or unreadable.
+    /// Reads the settings document once, tolerating every way it can be absent or unreadable.
     fn load() -> Self {
         let path = config_dir().map(|dir| dir.join(SETTINGS_FILE_NAME));
         let values = match path.as_ref().map(std::fs::read_to_string) {
@@ -116,10 +116,10 @@ impl Settings {
         Self { path, values }
     }
 
-    /// Write the document out through a temporary file and a rename.
+    /// Writes the document out through a temporary file and a rename.
     ///
     /// Not a plain truncate-and-write: a crash or a full disk partway through that leaves a
-    /// half-written JSON document, which the next start silently discards — taking the reader's
+    /// half-written JSON document, which the next start silently discards; taking the reader's
     /// configured server with it and dropping them back on the first-run screen.
     fn flush(&self) {
         let Some(path) = self.path.as_ref() else {
@@ -147,8 +147,8 @@ impl Settings {
     }
 }
 
-/// Where the settings document lives, shown on the connection screen so an operator can find —
-/// or delete — the one *file* this app writes outside its install directory. The other thing it
+/// Where the settings document lives, shown on the connection screen so an operator can find
+/// (or delete) the one *file* this app writes outside its install directory. The other thing it
 /// writes is the refresh credential, which is not a file and is not here; it is an entry in the
 /// OS credential store, and signing out removes it (see [`credential_delete`]).
 pub(crate) fn settings_path() -> Option<PathBuf> {
@@ -179,7 +179,7 @@ pub(crate) fn store_remove(key: &str) {
 // OS credential store
 // ---------------------------------------------------------------------------------------------
 
-/// The service name every entry is filed under — what the reader sees next to the secret in the
+/// The service name every entry is filed under: what the reader sees next to the secret in the
 /// Windows Credential Manager or Seahorse, and what they delete to sign the app out from outside
 /// it.
 // Deliberately a literal and **not** `build_info::PRODUCT_NAME`: this is the key credentials
@@ -200,17 +200,17 @@ enum CredentialRequest {
 ///
 /// **On Linux it is what stops the process aborting.** The Secret Service backend is
 /// `secret-service`'s blocking API, which is `zbus::blocking`, which is
-/// `tokio::runtime::Runtime::block_on` — because `notify-rust`'s `z-with-tokio` turns on zbus's
+/// `tokio::runtime::Runtime::block_on`, because `notify-rust`'s `z-with-tokio` turns on zbus's
 /// `tokio` feature for the whole graph. `block_on` panics when the calling thread is already
 /// inside a runtime ("Cannot start a runtime from within a runtime"), and [`credential_set`] is
 /// called from `reqwest`'s response path, which *is* a runtime worker. This crate builds with
-/// `panic = "abort"`, so that panic is not an error anyone sees — it is the app disappearing
+/// `panic = "abort"`, so that panic is not an error anyone sees: it is the app disappearing
 /// while the reader signs in. A plain OS thread carries no runtime context, so the call is legal
 /// here and nowhere else.
 ///
 /// **And it is the ordering guarantee.** One FIFO, not a thread per call: two independently
 /// spawned threads could land a stale write *after* a sign-out's delete and leave a revoked
-/// credential on disk. Reads go through it for the same reason rather than around it.
+/// credential on disk. Reads go through it for the same reason, not around it.
 fn credentials() -> &'static std::sync::mpsc::Sender<CredentialRequest> {
     static REQUESTS: OnceLock<std::sync::mpsc::Sender<CredentialRequest>> = OnceLock::new();
     REQUESTS.get_or_init(|| {
@@ -223,7 +223,7 @@ fn credentials() -> &'static std::sync::mpsc::Sender<CredentialRequest> {
                         let _ = reply.send(secret);
                     }
                     // Both are logged because a store that refuses writes is invisible until the
-                    // *next* start, where it shows up as an unexplained sign-out — and the
+                    // *next* start, where it shows up as an unexplained sign-out, and the
                     // credential itself is never logged, only whether the store took it.
                     CredentialRequest::Set(account, secret) => {
                         if let Some(entry) = entry(&account) {
@@ -254,7 +254,7 @@ fn credentials() -> &'static std::sync::mpsc::Sender<CredentialRequest> {
     })
 }
 
-/// An entry handle, or `None` when the platform has no usable credential store — a headless
+/// An entry handle, or `None` when the platform has no usable credential store: a headless
 /// Linux session with no Secret Service provider is the ordinary case. Absent is a valid answer
 /// here for the same reason it is for the settings file: the caller's fallback is "signed out",
 /// not an error to interrupt the reader with.
@@ -264,7 +264,7 @@ fn entry(account: &str) -> Option<keyring::Entry> {
 
 /// The secret stored under `account`, or `None` if there is none or the store is unavailable.
 ///
-/// Blocks until the credential thread answers. Callers are boot-time only, by design — see
+/// Blocks until the credential thread answers. Callers are boot-time only, by design: see
 /// [`credentials`].
 pub(crate) fn credential_get(account: &str) -> Option<String> {
     let (tx, rx) = std::sync::mpsc::channel();
@@ -274,7 +274,7 @@ pub(crate) fn credential_get(account: &str) -> Option<String> {
     rx.recv().ok().flatten()
 }
 
-/// Store `secret` under `account`, replacing whatever was there. Queued; a refusal is silent.
+/// Stores `secret` under `account`, replacing whatever was there. Queued; a refusal is silent.
 pub(crate) fn credential_set(account: &str, secret: &str) {
     let _ = credentials().send(CredentialRequest::Set(
         account.to_owned(),
@@ -282,8 +282,8 @@ pub(crate) fn credential_set(account: &str, secret: &str) {
     ));
 }
 
-/// Forget `account` entirely. Queued behind any pending write for that account, which is what
-/// makes a sign-out final rather than a race.
+/// Forgets `account` entirely. Queued behind any pending write for that account, which is what
+/// makes a sign-out final instead of a race.
 pub(crate) fn credential_delete(account: &str) {
     let _ = credentials().send(CredentialRequest::Delete(account.to_owned()));
 }
@@ -297,7 +297,7 @@ pub(crate) fn server_origin() -> Option<String> {
     store_get(SERVER_ORIGIN_KEY).filter(|origin| !origin.is_empty())
 }
 
-/// Remember `origin` as the server to talk to. `None` forgets it, which returns the app to the
+/// Remembers `origin` as the server to talk to. `None` forgets it, which returns the app to the
 /// first-run screen on the next start.
 pub(crate) fn set_server_origin(origin: Option<&str>) {
     match origin {
@@ -317,28 +317,23 @@ pub(crate) fn origin() -> String {
 /// The OS window, or `None` outside the Dioxus runtime.
 ///
 /// `try_consume_context`, never `dioxus::desktop::window()`: that one panics when there is no
-/// desktop context, and a panic aborts the process (`panic = "abort"`) — over a title bar button.
+/// desktop context, and a panic aborts the process (`panic = "abort"`); over a title bar button.
 pub(crate) fn window() -> Option<dioxus::desktop::DesktopContext> {
     try_consume_context::<dioxus::desktop::DesktopContext>()
 }
 
 /// The inner size the window opens at, before [`fit_window_to_display`] replaces it.
 ///
-/// Declared here rather than left at `main`'s `WindowBuilder` because the fit below is defined
+/// Declared here, not left at `main`'s `WindowBuilder` because the fit below is defined
 /// against it: this is a placeholder, and the contract is that no screen is ever *laid out* at it.
 pub(crate) const STARTUP_INNER_SIZE: (f64, f64) = (1280.0, 860.0);
 
 /// Of the monitor's **work area**, in both directions.
 ///
-/// Breathing room and nothing else now: the taskbar, dock or panel is subtracted by
-/// [`work_area`] before this applies, so the window no longer has to be shrunk on the chance that
-/// something is parked along an edge. That is what it used to be for — `0.82` of the whole
-/// monitor was one number doing two jobs, and it did the second one by guessing. Raised to `0.9`
-/// because it is only doing the first one now; a window that still leaves a visible frame of
-/// desktop on each side reads as a window rather than a botched maximise.
-///
-/// (A third constant, `MAX_FRACTION: 0.92`, used to sit here claiming the taskbar job. It never
-/// bound at any width, because `0.82 * w` is the smaller of the two everywhere.)
+/// Breathing room and nothing else: the taskbar, dock or panel is subtracted by [`work_area`]
+/// before this applies, so the window does not have to be shrunk on the chance that something is
+/// parked along an edge. A window that still leaves a visible frame of desktop on each side reads
+/// as a window instead of a botched maximise.
 const PREFERRED_FRACTION: f64 = 0.9;
 
 /// What the window carries besides the content column, and what the ceiling below is built from.
@@ -350,29 +345,29 @@ const RAIL_WIDTH: f64 = 280.0;
 /// Padding either side of the content band. The `:root` value: the narrow-viewport override is
 /// far below any width this ceiling is about.
 const CONTENT_GUTTER: f64 = 40.0;
-/// `.ik-desktop-body` scrolls rather than the window, and its scrollbar takes layout width.
+/// `.ik-desktop-body` scrolls instead of the window, and its scrollbar takes layout width.
 const SCROLLBAR_WIDTH: f64 = 15.0;
 /// The widest measured content column any route asks for.
 const WIDEST_MEASURE: f64 = 1760.0;
 
 /// The widest window the layout can still fill.
 ///
-/// Past this, a wider window buys margin rather than covers: every band inside `.ik-main` is
+/// Past this, a wider window buys margin, not covers: every band inside `.ik-main` is
 /// capped at `--measure`, so the extra pixels land in the gutters either side of a column that
 /// has stopped growing. It also stops a window spanning an ultrawide, where that capped column
 /// would sit in a narrow strip down the middle of a very wide frame.
 ///
-/// A sum rather than a number because the number was wrong. `1760` was hardcoded here — but that
-/// is the cap on the *content column*, and the window also carries the rail, both gutters and the
-/// body's scrollbar. A 1760px window therefore left Discover a 1063px results column: five covers
-/// across, where the same layout fits seven once the window is wide enough to reach the cap. A
+/// A sum instead of a number: `1760` is the cap on the *content column*, and the window also
+/// carries the rail, both gutters and the body's scrollbar. A 1760px window would leave Discover
+/// a 1063px results column: five covers across, where the same layout fits seven once the window
+/// is wide enough to reach the cap. A
 /// ceiling stated in the units of the thing it bounds cannot drift from it that way.
 fn widest_useful_window() -> f64 {
     RAIL_WIDTH + 2.0 * CONTENT_GUTTER + SCROLLBAR_WIDTH + WIDEST_MEASURE
 }
 
 /// Longest [`fit_window_to_display`] waits for the window to report its new size before letting
-/// the app render anyway. A backstop, not a delay — the ordinary case resolves in a frame or two.
+/// the app render anyway. A backstop, not a delay: the ordinary case resolves in a frame or two.
 const FIT_TIMEOUT_MS: u32 = 600;
 /// Gap between size checks while waiting.
 const FIT_POLL_MS: u32 = 16;
@@ -381,7 +376,7 @@ const FIT_POLL_MS: u32 = 16;
 ///
 /// Absolute because the window is centred in it: a taskbar along the bottom moves the usable
 /// area's *edge*, and a window centred on the monitor instead would sit low in what is left of
-/// it — or under the taskbar.
+/// it, or under the taskbar.
 #[derive(Clone, Copy)]
 struct WorkArea {
     x: f64,
@@ -391,8 +386,8 @@ struct WorkArea {
 }
 
 impl WorkArea {
-    /// Reject a monitor that reports nothing usable — a display disconnected mid-query, a
-    /// compositor still starting up — so the caller falls back instead of sizing to nothing.
+    /// Rejects a monitor that reports nothing usable (a display disconnected mid-query, a
+    /// compositor still starting up), so the caller falls back instead of sizing to nothing.
     fn usable(self) -> Option<Self> {
         (self.width > 0.0 && self.height > 0.0).then_some(self)
     }
@@ -400,15 +395,14 @@ impl WorkArea {
 
 /// What the system leaves after its own furniture: the Windows taskbar, a GNOME panel, a dock.
 ///
-/// `tao` reports the whole monitor and nothing else — `MonitorHandle` offers `size`, `position`
-/// and `scale_factor` — so this asks the platform directly. Both implementations identify the
-/// monitor by the rectangle `tao` already reports rather than by a handle borrowed across crates,
+/// `tao` reports the whole monitor and nothing else (`MonitorHandle` offers `size`, `position`
+/// and `scale_factor`), so this asks the platform directly. Both implementations identify the
+/// monitor by the rectangle `tao` already reports instead of by a handle borrowed across crates,
 /// and both calls are safe: this crate `forbid`s unsafe, which is why `winsafe` is a dependency
 /// and `windows` is not.
 ///
 /// `None` means the platform would not say, and the caller falls back to the whole monitor. That
-/// is a worse answer rather than a wrong one — it is the behaviour the fraction above used to be
-/// shrunk to compensate for.
+/// is a worse answer, not a wrong one.
 #[cfg(windows)]
 fn work_area(monitor: &dioxus::desktop::tao::monitor::MonitorHandle) -> Option<WorkArea> {
     let position = monitor.position();
@@ -433,8 +427,8 @@ fn work_area(monitor: &dioxus::desktop::tao::monitor::MonitorHandle) -> Option<W
     .usable()
 }
 
-/// See the Windows twin above. GDK already answers in application pixels — the logical ones this
-/// module works in — so unlike `rcWork` there is no scale factor to divide out.
+/// See the Windows twin above. GDK already answers in application pixels (the logical ones this
+/// module works in), so unlike `rcWork` there is no scale factor to divide out.
 #[cfg(all(unix, not(target_vendor = "apple")))]
 fn work_area(monitor: &dioxus::desktop::tao::monitor::MonitorHandle) -> Option<WorkArea> {
     use dioxus::desktop::tao::platform::unix::MonitorHandleExtUnix as _;
@@ -450,8 +444,8 @@ fn work_area(monitor: &dioxus::desktop::tao::monitor::MonitorHandle) -> Option<W
     .usable()
 }
 
-/// macOS is not shipped — the release workflow builds Windows and Linux — so this exists to keep
-/// the module compiling on a developer's Mac rather than to serve anyone.
+/// macOS is not shipped (the release workflow builds Windows and Linux), so this exists to keep
+/// the module compiling on a developer's Mac, not to serve anyone.
 #[cfg(not(any(windows, all(unix, not(target_vendor = "apple")))))]
 fn work_area(_monitor: &dioxus::desktop::tao::monitor::MonitorHandle) -> Option<WorkArea> {
     None
@@ -460,14 +454,14 @@ fn work_area(_monitor: &dioxus::desktop::tao::monitor::MonitorHandle) -> Option<
 /// The inner size to open at within `available` logical pixels of usable area, or `None` when
 /// nothing usable was reported.
 ///
-/// Proportional rather than fixed, in both directions. A fixed default is either cramped on a
-/// large display or taller than the screen on a laptop, and this app's densest screen — the
-/// watchlist — reveals two more columns at 1500px, so the space is worth taking when it exists.
+/// Proportional, not fixed, in both directions. A fixed default is either cramped on a
+/// large display or taller than the screen on a laptop, and this app's densest screen (the
+/// watchlist) reveals two more columns at 1500px, so the space is worth taking when it exists.
 ///
 /// Only the width is capped, by [`widest_useful_window`]. Height is not: nothing in the layout
 /// caps a page's height, so a taller window is always more rows, and the display is the only
-/// limit worth having. It used to be capped at a flat 1120px, which cost a 1440p display 60px of
-/// covers and a 4K one 650px.
+/// limit worth having. A flat 1120px cap would cost a 1440p display 60px of covers and a 4K
+/// one 650px.
 fn fitted_inner_size(available: (f64, f64)) -> Option<(f64, f64)> {
     let (width, height) = available;
     if width <= 0.0 || height <= 0.0 {
@@ -479,21 +473,21 @@ fn fitted_inner_size(available: (f64, f64)) -> Option<(f64, f64)> {
     ))
 }
 
-/// Size the window to the display it opened on, centre it, and resolve once the window reports
+/// Sizes the window to the display it opened on, centres it, and resolves once the window reports
 /// the new size.
 ///
 /// `WindowBuilder` has to pick a size before there is an event loop, so it cannot know which
-/// monitor the window will land on — [`STARTUP_INNER_SIZE`] is that placeholder, and this runs
+/// monitor the window will land on: [`STARTUP_INNER_SIZE`] is that placeholder, and this runs
 /// once from the first render, when the monitor is knowable.
 ///
 /// **Awaiting it is load-bearing, not tidiness.** `app::AppRoot` holds the UI back until this
 /// resolves, because a screen that mounts while the window is still the placeholder measures
-/// the placeholder's geometry — and [`crate::components::use_grid_fit`] turns exactly that
-/// measurement into a page size. Discover fetched a 1280px window's worth of covers, the resize
-/// widened the grid under them, and the correction never landed: every page was laid out short,
-/// leaving a ragged row and a band of dead space at each page boundary.
+/// the placeholder's geometry, and [`crate::components::use_grid_fit`] turns exactly that
+/// measurement into a page size. Discover would fetch a 1280px window's worth of covers, the
+/// resize would widen the grid under them, and the correction would never land: every page laid
+/// out short, leaving a ragged row and a band of dead space at each page boundary.
 ///
-/// `window` is passed in rather than read here because this runs from a spawned task; the caller
+/// `window` is passed in, not read here because this runs from a spawned task; the caller
 /// takes the context during its own render, where it is reliably reachable.
 pub(crate) async fn fit_window_to_display(window: Option<dioxus::desktop::DesktopContext>) {
     let Some(window) = window else {
@@ -520,8 +514,8 @@ pub(crate) async fn fit_window_to_display(window: Option<dioxus::desktop::Deskto
 
     window.set_inner_size(dioxus::desktop::LogicalSize::new(width, height));
     // Centred as well: resizing moves the bottom-right corner only, so a window the OS placed
-    // for the old size ends up off-centre — and, when it grew, possibly off-screen. Centred in
-    // the *work area*, so a taskbar along one edge shifts the window off it rather than under it.
+    // for the old size ends up off-centre; and, when it grew, possibly off-screen. Centred in
+    // the *work area*, so a taskbar along one edge shifts the window off it instead of under it.
     window.set_outer_position(dioxus::desktop::LogicalPosition::new(
         area.x + (area.width - width) / 2.0,
         area.y + (area.height - height) / 2.0,
@@ -543,7 +537,7 @@ pub(crate) async fn fit_window_to_display(window: Option<dioxus::desktop::Deskto
 // ---------------------------------------------------------------------------------------------
 
 /// Whether a push should raise an OS notification. Defaults to on: the app exists to tell you a
-/// chapter landed, and a reader who does not want that has a switch (below) rather than a
+/// chapter landed, and a reader who does not want that has a switch (below), not a
 /// default that hides it.
 pub(crate) fn notifications_enabled() -> bool {
     store_get(DESKTOP_NOTIFICATIONS_KEY).is_none_or(|stored| stored != "0")
@@ -557,7 +551,7 @@ pub(crate) fn set_notifications_enabled(enabled: bool) {
     }
 }
 
-/// Raise an OS notification and return without waiting for it.
+/// Raises an OS notification and returns without waiting for it.
 ///
 /// Best-effort and silent on failure; the in-app badge is updated either way and is the source
 /// of truth. See [`raise`] for what that costs and [`notify_now`] for the one caller that
@@ -566,15 +560,15 @@ pub(crate) fn notify(summary: &str, body: &str) {
     let _ = raise(summary, body);
 }
 
-/// Raise an OS notification and wait for it to have been handed over.
+/// Raises an OS notification and waits for it to have been handed over.
 ///
 /// For the one caller that is about to end the process: `update::install`'s hand-off replaces
 /// this app with an installer, and a notification still queued on a detached thread when
-/// `exit` is called is never delivered — which is exactly the moment the reader most needs
+/// `exit` is called is never delivered, which is exactly the moment the reader most needs
 /// telling, because the window they just opened is about to vanish for a minute.
 ///
 /// Safe to block here and nowhere else: it runs from `main` before the event loop exists, so
-/// there is no frame to stall and — the reason it is still a thread — no async runtime for
+/// there is no frame to stall and (the reason it is still a thread) no async runtime for
 /// `notify-rust`'s blocking D-Bus call to panic inside of on Linux.
 pub(crate) fn notify_now(summary: &str, body: &str) {
     let _ = raise(summary, body).join();
@@ -613,10 +607,10 @@ fn raise(summary: &str, body: &str) -> std::thread::JoinHandle<()> {
 const NOTIFICATION_APP_NAME: &str = crate::build_info::PRODUCT_NAME;
 
 /// The identity the OS files them under. The bundle identifier, which is also the `.desktop`
-/// entry's basename and — on Windows — the `AppUserModelID` registered by [`identify`].
+/// entry's basename and (on Windows) the `AppUserModelID` registered by [`identify`].
 const NOTIFICATION_APP_ID: &str = "dev.tankovault.frontend";
 
-/// Tell the OS *whose* notification this is.
+/// Tells the OS *whose* notification this is.
 ///
 /// **Not cosmetic on either platform.** An unidentified toast is not a `TankoVault` toast that
 /// looks plain: it is one Windows files under whichever application it thinks raised it, which
@@ -630,15 +624,15 @@ fn identify(notification: &mut notify_rust::Notification) {
     notification.app_id(NOTIFICATION_APP_ID);
 }
 
-/// Register the `AppUserModelID` these toasts claim, once per process.
+/// Registers the `AppUserModelID` these toasts claim, once per process.
 ///
 /// **A toast whose `AppUserModelID` is not registered is silently dropped**, so this is a
-/// precondition of [`identify`] rather than a nicety alongside it. `notify-rust`'s default is
-/// `PowerShell`'s own id — which does appear, attributed to Windows `PowerShell`, with its icon
+/// precondition of [`identify`] instead of a nicety alongside it. `notify-rust`'s default is
+/// `PowerShell`'s own id, which does appear, attributed to Windows `PowerShell`, with its icon
 /// and its entry in the notification settings.
 ///
 /// `HKCU\Software\Classes\AppUserModelId\<id>` is the documented registration for an app that is
-/// not packaged and has no shell shortcut carrying the property — which this one cannot create,
+/// not packaged and has no shell shortcut carrying the property, which this one cannot create,
 /// since a `.lnk` is a COM object and this crate forbids unsafe.
 #[cfg(windows)]
 fn register_app_id() {
@@ -656,7 +650,7 @@ fn register_app_id() {
     });
 }
 
-/// Hand the notification daemon our `.desktop` entry, which is where it reads the application's
+/// Hands the notification daemon our `.desktop` entry, which is where it reads the application's
 /// name and icon from. The autostart entry above writes one under the same basename, and the
 /// `.deb` and `AppImage` both install one.
 #[cfg(all(unix, not(target_vendor = "apple")))]
@@ -673,10 +667,10 @@ fn identify(_notification: &mut notify_rust::Notification) {}
 /// The brand mark on disk, for the one consumer that needs a *file*: Windows' notification
 /// registration takes a path, not bytes.
 ///
-/// Written beside the settings document rather than looked for next to the executable, because
+/// Written beside the settings document, not looked for next to the executable, because
 /// the four ways this app is installed put the executable in four different places and a
 /// portable copy has no stable one at all. Written once and reused; a failure simply leaves the
-/// registration without an icon, which is a plainer toast rather than no toast.
+/// registration without an icon, which is a plainer toast instead of no toast.
 #[cfg(windows)]
 fn notification_icon() -> Option<PathBuf> {
     const ICON: &[u8] = include_bytes!("../../assets/icons/128x128.png");
@@ -696,7 +690,7 @@ fn notification_icon() -> Option<PathBuf> {
 
 /// Whether this build can put the app in the reader's sign-in list at all.
 ///
-/// False leaves the switch out of the settings sheet rather than showing one that does nothing.
+/// False leaves the switch out of the settings sheet instead of showing one that does nothing.
 ///
 /// What the implementations below register is the running binary's own path, never the install
 /// directory the installer would have used: this app also ships as a portable archive and as an
@@ -709,13 +703,13 @@ pub(crate) fn autostart_supported() -> bool {
 ///
 /// **Read from the OS, not from the settings file.** The Windows installer offers the same choice
 /// as a checkbox and writes the same registry value, so a mirror in `settings.json` would be a
-/// second opinion that disagrees the moment the reader uses the other one — and the OS is the
+/// second opinion that disagrees the moment the reader uses the other one, and the OS is the
 /// copy that decides what actually happens.
 pub(crate) fn autostart_enabled() -> bool {
     autostart::enabled()
 }
 
-/// Register or deregister the app for sign-in. Returns whether the OS accepted it.
+/// Registers or deregisters the app for sign-in. Returns whether the OS accepted it.
 ///
 /// Unlike the rest of this module a refusal is *not* silent: this one is a switch the reader
 /// flipped and watched, so the caller puts the toggle back where it was and says so.
@@ -723,7 +717,7 @@ pub(crate) fn set_autostart(enabled: bool) -> bool {
     autostart::set(enabled)
 }
 
-/// `HKCU\…\Run`, the one supported way to start an app at sign-in without a shell shortcut — and
+/// `HKCU\…\Run`, the one supported way to start an app at sign-in without a shell shortcut, and
 /// a shortcut is a COM object, which a crate that forbids `unsafe` cannot build.
 #[cfg(windows)]
 mod autostart {
@@ -732,7 +726,7 @@ mod autostart {
     /// The value name, and what Task Manager's Startup tab lists the entry as.
     ///
     /// **`bundle/windows/installer.nsi.hbs` writes this exact name at this exact key**, so the
-    /// installer checkbox and this switch are two views of one value rather than two settings
+    /// installer checkbox and this switch are two views of one value instead of two settings
     /// that could disagree. Renaming either side alone orphans whatever the other one wrote,
     /// leaving the app starting at sign-in with nothing in the UI admitting it.
     const VALUE: &str = "TankoVault";
@@ -746,7 +740,7 @@ mod autostart {
     }
 
     pub(super) fn set(enabled: bool) -> bool {
-        // `create` rather than `open`: the Run key exists on every Windows install, but opening
+        // `create` instead of `open`: the Run key exists on every Windows install, but opening
         // for write is the same call either way and this one cannot fail for a missing key.
         let Ok(key) = windows_registry::CURRENT_USER.create(KEY) else {
             return false;
@@ -755,15 +749,15 @@ mod autostart {
             let Ok(command) = std::env::current_exe() else {
                 return false;
             };
-            // Quoted, because a path with a space in it — `C:\Program Files\…` under a
-            // per-machine install — is otherwise read as a program name plus arguments.
+            // Quoted, because a path with a space in it (`C:\Program Files\…` under a
+            // per-machine install) is otherwise read as a program name and arguments.
             key.set_string(VALUE, format!("\"{}\"", command.display()))
                 .is_ok()
         } else {
             match key.remove_value(VALUE) {
                 Ok(()) => true,
                 // `remove_value` reports "no such value" as an error, and a value that was never
-                // there is the state being asked for. Re-read rather than match on the code.
+                // there is the state being asked for. Re-read, not match on the code.
                 Err(_) => key.get_string(VALUE).is_err(),
             }
         }
@@ -834,8 +828,8 @@ mod autostart {
     }
 }
 
-/// No third desktop platform is shipped — the release workflow builds Windows and Linux — so this
-/// exists to keep the module compiling on a developer's macOS rather than to serve anyone. The
+/// No third desktop platform is shipped (the release workflow builds Windows and Linux), so this
+/// exists to keep the module compiling on a developer's macOS, not to serve anyone. The
 /// settings sheet reads [`SUPPORTED`] and leaves the switch out entirely.
 #[cfg(not(any(windows, all(unix, not(target_vendor = "apple")))))]
 mod autostart {
@@ -857,7 +851,7 @@ mod autostart {
 /// Whether this machine can carry a tray icon.
 ///
 /// Not a build-time answer on Linux, which is the whole reason this is a function: see
-/// [`tray::available`]. Resolved once — the answer is a property of the installed system, and it
+/// [`tray::available`]. Resolved once: the answer is a property of the installed system, and it
 /// is read on every render of the settings sheet.
 pub(crate) fn tray_supported() -> bool {
     static SUPPORTED: OnceLock<bool> = OnceLock::new();
@@ -866,7 +860,7 @@ pub(crate) fn tray_supported() -> bool {
 
 /// Whether the close button leaves the app running in the tray instead of ending it.
 ///
-/// Off unless the reader asked, and forced off where there is no tray to close to — a window
+/// Off unless the reader asked, and forced off where there is no tray to close to: a window
 /// that hides with nothing left to bring it back is an app that has to be killed.
 pub(crate) fn close_to_tray_enabled() -> bool {
     store_get(CLOSE_TO_TRAY_KEY).is_some_and(|stored| stored == "1") && tray_supported()
@@ -902,9 +896,9 @@ pub(crate) struct Tray {
 }
 
 impl Tray {
-    /// Put an icon in the tray, labelling its two menu entries with the reader's own wording.
+    /// Puts an icon in the tray, labelling its two menu entries with the reader's own wording.
     ///
-    /// `None` when the platform refused it, which the caller treats as "no tray" rather than as
+    /// `None` when the platform refused it, which the caller treats as "no tray", not as
     /// an error to report: the switch that asks for one is only offered where
     /// [`tray_supported`] already said yes.
     pub(crate) fn install(open: &str, quit: &str) -> Option<Self> {
@@ -912,16 +906,16 @@ impl Tray {
     }
 }
 
-/// Call `on_command` whenever the reader uses whichever icon `tray` currently holds.
+/// Calls `on_command` whenever the reader uses whichever icon `tray` currently holds.
 ///
 /// A hook, so it is registered once by a component that outlives every icon the settings switch
-/// installs — hence the signal rather than a borrowed [`Tray`]: the subscription stays put while
+/// installs: hence the signal instead of a borrowed [`Tray`]: the subscription stays put while
 /// the icon under it comes and goes.
 ///
 /// **The events are taken from the event loop, never from `MenuEvent::receiver()`.**
 /// `dioxus-desktop` claims muda's and tray-icon's process-global queues with `set_event_handler`
 /// while it builds the app, and both crates keep that handler in a `OnceCell` and send to it
-/// *instead of* the channel — first writer wins, and it is never us. A receiver of our own is
+/// *instead of* the channel: first writer wins, and it is never us. A receiver of our own is
 /// therefore not a slower route to the same events, it is an empty queue for the life of the
 /// process, which is how every tray menu entry came to do nothing at all. Banned in
 /// `web/frontend/clippy.toml` so it cannot be reintroduced quietly.
@@ -935,7 +929,7 @@ pub(crate) fn use_tray_commands(
 /// Bring the window back from the tray: visible, un-minimised and focused.
 ///
 /// All three, because they are three different states a window can be in when the reader asks
-/// for it — hidden by a close, minimised by the taskbar, or merely behind something else — and
+/// for it (hidden by a close, minimised by the taskbar, or merely behind something else), and
 /// only one of them is the one the tray entry was clicked from.
 pub(crate) fn show_window(window: &dioxus::desktop::DesktopContext) {
     window.set_visible(true);
@@ -943,11 +937,11 @@ pub(crate) fn show_window(window: &dioxus::desktop::DesktopContext) {
     window.set_focus();
 }
 
-/// End the app, whatever the close-to-tray setting says.
+/// Ends the app, whatever the close-to-tray setting says.
 ///
 /// The one exit that is not the reader pressing the window's close button: the tray's Quit, and
 /// the restart that applies a staged update. Both mean *end*, so the behaviour is put back
-/// before the window is closed — otherwise this would hide it and the app would live on with no
+/// before the window is closed: otherwise this would hide it and the app would live on with no
 /// way to say so.
 pub(crate) fn quit_app(window: &dioxus::desktop::DesktopContext) {
     window.set_close_behavior(dioxus::desktop::WindowCloseBehaviour::WindowCloses);
@@ -979,12 +973,12 @@ mod tray {
     pub(super) use dioxus::desktop::trayicon::menu::MenuId;
     pub(super) type Handle = dioxus::desktop::trayicon::TrayIcon;
 
-    /// The tray image. The 32px mark rather than the 128px one: a tray slot is 16–24px on both
+    /// The tray image. The 32px mark instead of the 128px one: a tray slot is 16–24px on both
     /// platforms, and downscaling the large mark turns its strokes to grey.
     const TRAY_ICON: &[u8] = include_bytes!("../../assets/icons/32x32.png");
 
     /// What the pointer reads when it rests on the icon. The product, not the window's current
-    /// title — the tray entry is the *app*, and it is most useful when no window exists.
+    /// title: the tray entry is the *app*, and it is most useful when no window exists.
     ///
     /// The compiled default: the tray is installed at startup, on a client that may have no
     /// server configured yet, and a tooltip that changed under the pointer would be stranger
@@ -1029,7 +1023,7 @@ mod tray {
         let from_menu = Rc::clone(&on_command);
         use_tray_menu_event_handler(move |event| {
             // The queues are global to the process, so an event that belongs to no icon of ours
-            // — or to the icon the settings switch has just dropped — is not ours to act on.
+            // (or to the icon the settings switch has just dropped) is not ours to act on.
             let command = match tray.peek().as_ref() {
                 Some(tray) if event.id == tray.open => super::TrayCommand::Open,
                 Some(tray) if event.id == tray.quit => super::TrayCommand::Quit,
@@ -1039,8 +1033,8 @@ mod tray {
         });
 
         use_tray_icon_event_handler(move |event| {
-            // Windows only — the GTK backend reports no clicks at all, which is why the menu
-            // carries an Open entry rather than relying on this.
+            // Windows only: the GTK backend reports no clicks at all, which is why the menu
+            // carries an Open entry instead of relying on this.
             if let TrayIconEvent::DoubleClick {
                 button: MouseButton::Left,
                 ..
@@ -1061,8 +1055,8 @@ mod tray {
     /// **Asked before a tray icon is ever built, because getting it wrong ends the process.**
     /// `libappindicator-sys` resolves the library with `dlopen` on first use and `panic!`s when
     /// neither soname is found; this crate is `panic = "abort"`, so an unchecked tray on a
-    /// session without the library kills the app rather than degrading. Loading it here to find
-    /// out is not an option either — `dlopen` is `unsafe` and this crate forbids unsafe.
+    /// session without the library kills the app instead of degrading. Loading it here to find
+    /// out is not an option either: `dlopen` is `unsafe` and this crate forbids unsafe.
     ///
     /// So the loader's search path is walked by hand. A false negative costs the reader the
     /// option; a false positive would cost them the app, which is why nothing is assumed from
@@ -1091,7 +1085,7 @@ mod tray {
             .map(PathBuf::from),
         );
         // `is_file` follows symlinks, so a soname left dangling by a half-removed package reads
-        // as absent — which is the answer that keeps the app alive.
+        // as absent, which is the answer that keeps the app alive.
         dirs.iter()
             .any(|dir| SONAMES.iter().any(|name| dir.join(name).is_file()))
     }
@@ -1130,14 +1124,14 @@ mod tray {
 pub(crate) struct AppearanceAttributes(BTreeMap<String, String>);
 
 impl AppearanceAttributes {
-    /// The value of `name`, or `None` so the renderer omits the attribute entirely — an empty
+    /// The value of `name`, or `None` so the renderer omits the attribute entirely: an empty
     /// `data-theme=""` would match none of the stylesheet's rules but is still noise in the tree.
     pub(crate) fn get(&self, name: &str) -> Option<String> {
         self.0.get(name).cloned()
     }
 }
 
-/// Read by `crate::app::App`, which renders these onto the element every screen sits inside.
+/// Reads by `crate::app::App`, which renders these onto the element every screen sits inside.
 pub(crate) static ROOT_ATTRIBUTES: GlobalSignal<AppearanceAttributes> =
     Signal::global(AppearanceAttributes::default);
 
@@ -1163,9 +1157,9 @@ pub(crate) fn set_document_language(tag: &str) {
 /// The screen's own name, for the app-drawn title bar to render.
 ///
 /// Deliberately *not* the window title. The OS title is decorated for the taskbar and alt-tab
-/// (`"Home — TankoVault"`), and repeating the brand in a header that sits directly above the
+/// (`"Home: TankoVault"`), and repeating the brand in a header that sits directly above the
 /// rail's own wordmark says nothing twice. The bar also renders above the router, so it cannot
-/// ask what the route is called — see [`crate::components::TitleBar`]. Empty until the first
+/// ask what the route is called: see [`crate::components::TitleBar`]. Empty until the first
 /// routed screen mounts, which is the connection screen, and the bar falls back to the product
 /// name there.
 pub(crate) static WINDOW_HEADING: GlobalSignal<String> = Signal::global(String::new);
@@ -1180,7 +1174,7 @@ pub(crate) fn set_document_title(title: &str) {
     }
 }
 
-/// Publish the undecorated screen name for the title bar.
+/// Publishes the undecorated screen name for the title bar.
 ///
 /// Guarded: `set` invalidates unconditionally, and this runs from an effect that re-fires on
 /// every render of the routed screen.
@@ -1193,7 +1187,7 @@ pub(crate) fn set_window_heading(heading: &str) {
 /// Hands `url` to the user's own browser.
 ///
 /// The destinations this is used for are OAuth consent screens, which belong in the browser
-/// where the reader is already signed in to that provider — and which a webview would in any
+/// where the reader is already signed in to that provider, and which a webview would in any
 /// case be refused by several of them.
 pub(crate) fn navigate_to(url: &str) {
     let _ = open::that_detached(url);
@@ -1209,7 +1203,7 @@ pub(crate) fn reveal_path(path: &std::path::Path) {
 }
 
 /// A no-op: `MountedData` has no selection API, and the only way to reach the DOM's would be
-/// `eval`, which this crate bans. The field is focused either way — see the surface's contract.
+/// `eval`, which this crate bans. The field is focused either way: see the surface's contract.
 pub(crate) fn select_focused_text() {}
 
 // ---------------------------------------------------------------------------------------------
@@ -1226,7 +1220,7 @@ pub(crate) fn now_ms() -> f64 {
 }
 
 /// The API emits RFC-3339 and nothing else, so this parses that and reports `NAN` for anything
-/// it does not recognise — matching `Date.parse`, whose callers render the raw string on `NAN`.
+/// it does not recognise: matching `Date.parse`, whose callers render the raw string on `NAN`.
 #[expect(
     clippy::cast_precision_loss,
     reason = "see `now_ms`; the same millisecond range, the same exactness"
@@ -1237,7 +1231,7 @@ pub(crate) fn parse_timestamp_ms(text: &str) -> f64 {
 }
 
 /// Millisecond precision and a `Z` suffix, matching what `Date.prototype.toISOString` emits on
-/// the other side — the API parses both, but a parameter that differs by build is a difference
+/// the other side: the API parses both, but a parameter that differs by build is a difference
 /// waiting to be depended on.
 #[expect(
     clippy::cast_possible_truncation,
@@ -1266,9 +1260,9 @@ pub(crate) fn preferred_language() -> Option<String> {
 // Files
 // ---------------------------------------------------------------------------------------------
 
-/// Ask for a destination and write `contents` there.
+/// Asks for a destination and writes `contents` there.
 ///
-/// Cancelling the dialog is reported as its own key rather than as success: the caller renders
+/// Cancelling the dialog is reported as its own key instead of as success: the caller renders
 /// "export saved" on `Ok`, and saying that about a file nobody chose a home for would be a lie.
 pub(crate) async fn save_text_file(
     filename: &str,
@@ -1356,7 +1350,7 @@ mod tests {
 
     /// Work areas the sweeps below stand in for: a laptop, two desktop sizes and an ultrawide.
     ///
-    /// Whole-monitor figures, which is the *worst* case for these bounds — a real work area is
+    /// Whole-monitor figures, which is the *worst* case for these bounds: a real work area is
     /// smaller, so anything that fits inside these fits inside that.
     const DISPLAYS: [(f64, f64); 5] = [
         (1366.0, 768.0),
@@ -1374,8 +1368,8 @@ mod tests {
     /// at every page boundary.
     ///
     /// That the two sizes differ on an ordinary display is what makes the window real. If they
-    /// ever agreed, `fit_window_to_display`'s await would be silently untested rather than
-    /// unnecessary — so this pins the difference, not the numbers.
+    /// ever agreed, `fit_window_to_display`'s await would be silently untested, not
+    /// unnecessary, so this pins the difference, not the numbers.
     #[test]
     fn the_fitted_size_is_never_the_size_the_window_opens_at() {
         for display in DISPLAYS {
@@ -1404,9 +1398,9 @@ mod tests {
         }
     }
 
-    /// The bug the ceiling is a sum for. It used to be a flat `1760` — the cap on the *content
-    /// column* — applied to the *window*, which also carries the rail, both gutters and the body's
-    /// scrollbar. That left the column 335px short of its own cap: five covers across Discover
+    /// The bug the ceiling is a sum for: a flat `1760` (the cap on the *content column*) applied
+    /// to the *window*, which also carries the rail, both gutters and the body's scrollbar. That
+    /// left the column 335px short of its own cap: five covers across Discover
     /// where the layout fits seven. A ceiling has to be stated in the units of the thing it bounds,
     /// so this pins that the window it allows is one the content column can actually fill.
     #[test]
@@ -1431,7 +1425,7 @@ mod tests {
         );
     }
 
-    /// A monitor that reports no usable size leaves the window alone rather than collapsing it —
+    /// A monitor that reports no usable size leaves the window alone instead of collapsing it:
     /// the placeholder is a worse answer than nothing, but a zero-sized window is worse than both.
     #[test]
     fn a_monitor_with_no_size_is_not_fitted_to() {

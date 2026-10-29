@@ -36,7 +36,7 @@ const PROVIDERS_BEFORE_0059: &str = "SELECT p.id, \
 
 type ProviderFigures = (Uuid, i64, i64, i64, Option<OffsetDateTime>);
 
-/// Assert every chapter figure the console shows equals the pre-rollup live count.
+/// Asserts every chapter figure the console shows equals the pre-rollup live count.
 async fn assert_figures_match_a_live_count(db: &TestDb, context: &str) {
     let live: (i64, i64, i64, i64) = sqlx::query_as(SYSTEM_BEFORE_0059)
         .fetch_one(&db.pool)
@@ -127,7 +127,7 @@ async fn insert_discovered_at(db: &TestDb, source: SeriesSourceId, numbers: &[i3
     .expect("insert historic chapters");
 }
 
-/// Move one chapter's discovery instant, then move another chapter between sources, checking the
+/// Moves one chapter's discovery instant, then moves another chapter between sources, checking the
 /// figures after each.
 async fn move_chapters(db: &TestDb, from: SeriesSourceId, to: SeriesSourceId) {
     sqlx::query(

@@ -1,12 +1,13 @@
-//! `TankoVault` frontend — Dioxus + the Inkstone design system (`docs/ARCHITECTURE.md` §17).
+//! Owns the `TankoVault` frontend: Dioxus and the Inkstone design system (`docs/ARCHITECTURE.md`
+//! §17).
 //!
 //! One component tree, two builds: a WASM SPA served by the API (`--features web`, the default)
 //! and a native desktop app in a wry webview (`--no-default-features --features desktop`).
 //! Everything either one needs from the system it runs on is behind [`platform`]; nothing in
 //! `views` knows which it is.
 //!
-//! A reader-facing SPA plus an operator console; the access token lives in memory only and is
-//! re-adopted from the httpOnly refresh cookie on boot — on both builds.
+//! A reader-facing SPA and an operator console; the access token lives in memory only and is
+//! re-adopted from the httpOnly refresh cookie on boot: on both builds.
 
 mod api;
 mod app;
@@ -33,8 +34,8 @@ pub(crate) use app::Route;
 
 #[cfg(feature = "web")]
 fn main() {
-    // Not `dioxus::launch`: the router's history is configured rather than defaulted, because
-    // the stock browser provider scrolls to the top of the page on a *replace* — see
+    // Not `dioxus::launch`: the router's history is configured, not defaulted, because
+    // the stock browser provider scrolls to the top of the page on a *replace*; see
     // `platform::history_provider` for what that did to Discover.
     dioxus::LaunchBuilder::web()
         .with_cfg(dioxus::web::Config::new().history(platform::history_provider()))
@@ -61,8 +62,8 @@ fn main() {
     // Before the staged update below and before anything touches the reader's session: a second
     // copy of this app would rotate the *same* refresh-token family as the first, until the API's
     // reuse detection revoked it and signed both of them out. The lock is held for the lifetime
-    // of this binding — see `platform::instance`, which also explains why a refused launch leaves
-    // a request behind rather than exiting silently.
+    // of this binding: see `platform::instance`, which also explains why a refused launch leaves
+    // a request behind instead of exiting silently.
     let Some(_instance) = platform::acquire_instance_lock() else {
         tracing::info!("another instance holds the lock; asking it to come forward instead");
         platform::request_activation();
@@ -70,21 +71,21 @@ fn main() {
     };
 
     // Only now, because the two returns above are this same binary and neither is the running
-    // instance — a marker cleared by one of them would blame the OS for a session that is still
+    // instance: a marker cleared by one of them would blame the OS for a session that is still
     // very much alive. See `diagnostics::session`.
     diagnostics::begin_session();
 
     // Before the window, and before anything else reads the settings file: a staged update is
     // applied by *starting* the app, so this either hands off to the installer and never returns or
-    // falls through having cleared whatever it could not use. Doing it here rather than on window
+    // falls through having cleared whatever it could not use. Doing it here instead of on window
     // close keeps it off the event loop and keeps an elevation prompt out of a reading session.
     update::apply_staged();
 
     dioxus::LaunchBuilder::desktop()
         .with_cfg(
             Config::new()
-                // The one hook that fires on the way out. `tao`'s event loop never returns — it
-                // ends the process itself — so there is no code after `launch` to mark a clean
+                // The one hook that fires on the way out. `tao`'s event loop never returns (it
+                // ends the process itself), so there is no code after `launch` to mark a clean
                 // shutdown from, and an unmarked shutdown is what the next start reports as a
                 // kill.
                 .with_custom_event_handler(|event, _| {
@@ -99,7 +100,7 @@ fn main() {
                 .with_menu(None)
                 .with_window(with_platform_chrome(
                     WindowBuilder::new()
-                        // The app draws its own — see `components::TitleBar`, which also
+                        // The app draws its own: see `components::TitleBar`, which also
                         // records what that costs (Windows 11's snap-layouts flyout).
                         .with_decorations(false)
                         // Names the taskbar button and the alt-tab entry; `crate::title`
@@ -124,7 +125,7 @@ fn main() {
 /// A window with no decorations loses its drop shadow and its resize border along with them.
 ///
 /// Windows can give both back while leaving the caption off, which is what makes an app-drawn
-/// title bar look like a window rather than a rectangle painted on the desktop. Nothing to do on
+/// title bar look like a window instead of a rectangle painted on the desktop. Nothing to do on
 /// the other platforms: the compositor keeps drawing the shadow there.
 #[cfg(all(feature = "desktop", windows))]
 fn with_platform_chrome(builder: dioxus::desktop::WindowBuilder) -> dioxus::desktop::WindowBuilder {

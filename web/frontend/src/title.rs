@@ -1,8 +1,8 @@
-//! What the browser tab is called, per screen.
+//! Owns what the browser tab is called, per screen.
 //!
-//! The name is derived from the *route* rather than set by each screen, so a route nobody
+//! The name is derived from the *route*, not set by each screen, so a route nobody
 //! remembered to annotate still gets its own title instead of keeping the previous page's.
-//! Screens that know a name the route cannot spell — a series' own title — publish it through
+//! Screens that know a name the route cannot spell (a series' own title) publish it through
 //! [`PageTitle`].
 
 use crate::i18n::{use_i18n, Translator};
@@ -11,9 +11,9 @@ use dioxus::prelude::*;
 
 /// A title a screen supplies for itself, tagged with the route it describes.
 ///
-/// The tag is the point. A screen publishes asynchronously — a series title arrives with its
-/// fetch — so by the time one lands the reader may already be somewhere else. Comparing the tag
-/// against the live route means a late or left-behind title is dropped rather than shown over
+/// The tag is the point. A screen publishes asynchronously (a series title arrives with its
+/// fetch), so by the time one lands the reader may already be somewhere else. Comparing the tag
+/// against the live route means a late or left-behind title is dropped, not shown over
 /// the screen that replaced it.
 #[derive(Clone, Copy)]
 pub(crate) struct PageTitle(Signal<Option<(Route, String)>>);
@@ -23,7 +23,7 @@ impl PageTitle {
         Self(Signal::new(None))
     }
 
-    /// Publish `title` as the tab name for as long as `route` is the one on screen.
+    /// Publishes `title` as the tab name for as long as `route` is the one on screen.
     pub(crate) fn set(mut self, route: Route, title: String) {
         self.0.set(Some((route, title)));
     }
@@ -43,7 +43,7 @@ fn claimed_for<'a>(published: Option<&'a (Route, String)>, route: &Route) -> Opt
     }
 }
 
-/// Keep `document.title` in step with the screen on display. Mount once, inside the router.
+/// Keeps `document.title` in step with the screen on display. Mount once, inside the router.
 pub(crate) fn use_document_title() {
     let i18n = use_i18n();
     let route = use_route::<Route>();
@@ -71,7 +71,7 @@ pub(crate) fn use_document_title() {
 
 /// The tab name for `route` alone, ignoring anything a screen has published.
 fn route_title(route: &Route, i18n: Translator) -> String {
-    // The landing page is named for the product, not for a section of it — and matching the
+    // The landing page is named for the product, not for a section of it, and matching the
     // `<title>` in `index.html` means the tab doesn't visibly rename itself once WASM boots.
     if matches!(route, Route::Home {}) {
         return i18n.t("title.app");
@@ -104,14 +104,14 @@ pub(crate) fn page_name(route: &Route, i18n: Translator) -> String {
         Route::ResetPassword { .. } => i18n.t("password.reset.heading"),
         Route::Console {} | Route::ConsoleSection { .. } => i18n.t("nav.console"),
         // Named generically until the document lands and publishes its own title through
-        // `PageTitle` — the slug is operator configuration, so the route cannot spell it.
+        // `PageTitle`: the slug is operator configuration, so the route cannot spell it.
         Route::Legal { .. } => i18n.t("title.legal"),
         Route::Licenses {} => i18n.t("licenses.title"),
         Route::NotFound { .. } => i18n.t("notFound.title"),
     }
 }
 
-/// `"<screen> — TankoVault"`. The join and the brand live in the catalogue so a translation can
+/// `"<screen>: TankoVault"`. The join and the brand live in the catalogue so a translation can
 /// reorder them.
 fn decorate(page: &str, i18n: Translator) -> String {
     i18n.args("title.template", &[("page", page)])
@@ -129,7 +129,7 @@ mod tests {
     ///
     /// The series title arrives with its fetch, so a reader who navigates on before it lands
     /// leaves a published title behind. Without the route tag it would be shown over whatever
-    /// screen replaced it — the tab reading `Blame! — TankoVault` on the watchlist.
+    /// screen replaced it: the tab reading `Blame! — TankoVault` on the watchlist.
     #[test]
     fn a_published_title_is_ignored_once_its_route_is_gone() {
         let published = (series("abc"), "Blame!".to_owned());

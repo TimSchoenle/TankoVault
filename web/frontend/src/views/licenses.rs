@@ -1,11 +1,10 @@
-//! `/licenses` — the third-party notices, rendered.
+//! Owns `/licenses`: the third-party notices, rendered.
 //!
-//! The obligation is old and unchanged: a reader whose browser downloads and runs the WASM
-//! bundle has received a binary distribution, and almost every licence in it requires its text
-//! to travel along. What changed is the shape it arrives in. The footer used to hand that reader
-//! `/third-party-notices` in a new tab — half a megabyte of `text/plain`, outside the app, with
-//! the licence a crate ships under findable only by scrolling — and a document nobody can read
-//! discharges the obligation on paper and not in fact.
+//! A reader whose browser downloads and runs the WASM bundle has received a binary
+//! distribution, and almost every licence in it requires its text to travel along. Handing that
+//! reader `/third-party-notices` in a new tab (half a megabyte of `text/plain`, outside the app,
+//! with the licence a crate ships under findable only by scrolling) discharges the obligation on
+//! paper and not in fact.
 //!
 //! So the same notices are rendered here instead, from the structured inventory
 //! `xtask notices --json` writes into the image: grouped by licence, each distinct text
@@ -13,7 +12,7 @@
 //! linked for anyone who wants to `curl` it.
 //!
 //! **The inventory is fetched, not embedded.** It is 1.1 MB (71 KB over the wire, compressed),
-//! and `include_str!`ing it would put every byte into the WASM bundle every reader downloads —
+//! and `include_str!`ing it would put every byte into the WASM bundle every reader downloads,
 //! including the ones who never open this screen. That is the same reasoning that keeps the
 //! plain-text document out of the served bundle; see `FrontendConfig::notices_json_path`.
 
@@ -28,13 +27,13 @@ use crate::platform;
 
 /// Where `services/frontend` publishes the structured inventory.
 ///
-/// That crate's `NOTICES_JSON_ROUTE` is the same literal — this is a separate workspace, so there
-/// is no compile-time relationship between the two — and `xtask repo-lint` is what holds them
+/// That crate's `NOTICES_JSON_ROUTE` is the same literal (this is a separate workspace, so there
+/// is no compile-time relationship between the two), and `xtask repo-lint` is what holds them
 /// equal.
 const NOTICES_JSON_ROUTE: &str = "/third-party-notices.json";
 
 /// Dependency names a collapsed notice is labelled with before the list is cut short. Sized to a
-/// couple of lines at the screen's measure — enough to tell two notices apart, short enough that
+/// couple of lines at the screen's measure: enough to tell two notices apart, short enough that
 /// the row stays a row.
 const LABEL_NAMES: usize = 12;
 
@@ -44,7 +43,7 @@ const NOTICES_ROUTE: &str = "/third-party-notices";
 
 /// The inventory as `xtask notices --json` writes it, one entry per dependency graph.
 ///
-/// Hand-written rather than generated, unlike everything in [`crate::models`]: this is not an API
+/// Hand-written, not generated, unlike everything in [`crate::models`]: this is not an API
 /// payload. It is an artefact of this repository's own build, and the only thing that can move it
 /// out from under this file is a change to `xtask/src/notices.rs` in the same commit.
 #[derive(Clone, PartialEq, Deserialize)]
@@ -52,13 +51,13 @@ struct Inventory {
     sections: Vec<Section>,
 }
 
-/// One graph — the service binaries, or the bundle running in the reader's browser.
+/// One graph: the service binaries, or the bundle running in the reader's browser.
 #[derive(Clone, PartialEq, Deserialize)]
 struct Section {
     /// `backend` or `frontend`, translated through `licenses.section.*`.
     slug: String,
     /// The generator's own English heading, used when the catalogue has no string for `slug`.
-    /// A section added to `xtask` and not to the catalogues is then named rather than blank.
+    /// A section added to `xtask` and not to the catalogues is then named, not blank.
     title: String,
     ships_as: String,
     licences: Vec<Licence>,
@@ -98,7 +97,7 @@ impl Notice {
     /// Truncated because the largest Apache-2.0 notice here covers 322 crates, and forty lines of
     /// names is not an index of anything. Nothing is lost by cutting it: the row's body lists
     /// every dependency with its version, the count beside the label states the total, and the
-    /// body is in the DOM whether the row is open or not — so find-in-page and a crawler still
+    /// body is in the DOM whether the row is open or not, so find-in-page and a crawler still
     /// reach every name.
     fn labelled(&self) -> String {
         let mut names: Vec<&str> = self.crates.iter().map(|c| c.name.as_str()).collect();
@@ -149,7 +148,7 @@ pub(crate) fn Licenses() -> Element {
                         Some(inventory) => rsx! { Sections { inventory: inventory.clone() } },
                         // Not an error box: an image built before the inventory existed, and a
                         // desktop build with no server chosen yet, are both "nothing to show"
-                        // rather than "something went wrong", and a retry button would keep
+                        // instead of "something went wrong", and a retry button would keep
                         // offering to do it again.
                         None => rsx! {
                             p { class: "ik-note", {i18n.t("licenses.unavailable")} }
@@ -163,8 +162,8 @@ pub(crate) fn Licenses() -> Element {
 
 /// The inventory, or `None` when this deployment publishes none.
 ///
-/// A 404 is the expected absence — an image built before this existed, or a checkout where
-/// `xtask notices --json` has not run — and is not reported as a failure. Anything else is: a
+/// A 404 is the expected absence (an image built before this existed, or a checkout where
+/// `xtask notices --json` has not run), and is not reported as a failure. Anything else is: a
 /// reader who cannot reach the notices should be told, not shown an empty page.
 async fn fetch_inventory() -> Result<Option<Inventory>, String> {
     let origin = platform::origin();
@@ -234,7 +233,7 @@ fn Summary(section: Section) -> Element {
 ///
 /// Each notice is a disclosure row labelled by the dependencies it covers, so the collapsed
 /// section reads as an index of the graph and only the licence file itself has to be opened.
-/// Collapsed, not deferred — `details` hides its contents, it does not withhold them — so
+/// Collapsed, not deferred (`details` hides its contents, it does not withhold them), so
 /// find-in-page and a crawler still reach every word of every licence.
 #[component]
 fn Group(licence: Licence) -> Element {
@@ -284,7 +283,7 @@ fn coverage(i18n: Translator, licence: &Licence) -> String {
     crates
 }
 
-/// A length as the plural rule wants it. Saturating rather than `as`: a count that wrapped
+/// A length as the plural rule wants it. Saturating instead of `as`: a count that wrapped
 /// negative would pick the wrong plural form for a reason nobody would ever find.
 fn count(len: usize) -> i64 {
     i64::try_from(len).unwrap_or(i64::MAX)
@@ -296,7 +295,7 @@ mod tests {
 
     /// The shape `xtask notices --json` writes, cut to two notices. Parsing it here is the only
     /// thing holding this file to that one: the generator is in another workspace, so a field
-    /// renamed there fails at this assertion rather than on a reader's screen.
+    /// renamed there fails at this assertion instead of on a reader's screen.
     const SAMPLE: &str = r#"{"sections":[{"slug":"backend","title":"Part 1 of 2","ships_as":"the service binaries","licences":[{"id":"MIT","name":"MIT License","crates":3,"notices":[{"text":"Copyright (c) 2020","crates":[{"name":"hashbrown","version":"0.14.5"},{"name":"hashbrown","version":"0.15.5"},{"name":"serde","version":"1.0.0"}]}]}]}]}"#;
 
     #[test]

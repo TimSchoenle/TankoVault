@@ -53,7 +53,7 @@ impl Args {
 const USAGE: &str =
     "usage: xtask matching-replay --input <decisions.jsonl> [--out <changed.jsonl>]";
 
-/// Replay every row of `args.input` and print the verdict-change table.
+/// Replays every row of `args.input` and prints the verdict-change table.
 ///
 /// # Errors
 /// An unreadable input, a line that is not a decision row (named by line number), or an

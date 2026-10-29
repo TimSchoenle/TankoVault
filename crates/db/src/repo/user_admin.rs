@@ -223,7 +223,7 @@ pub async fn detail<'e, E: PgExecutor<'e>>(exec: E, id: UserId) -> DbResult<User
     row.ok_or(DbError::NotFound)
 }
 
-/// Edit a user's identity on their behalf. `None` leaves a field unchanged.
+/// Edits a user's identity on their behalf. `None` leaves a field unchanged.
 ///
 /// Distinct from [`crate::repo::users::update_profile`] only in intent and audit action, but
 /// deliberately a separate function: the self-service version is reachable by anyone for their

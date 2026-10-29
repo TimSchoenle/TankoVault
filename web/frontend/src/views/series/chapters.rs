@@ -1,4 +1,4 @@
-//! The chapter list — the series page's primary surface.
+//! Owns the chapter list: the series page's primary surface.
 //!
 //! Every read source is collapsed behind one merged open control per chapter: the main half
 //! opens the highest-ranked source, the caret half opens the per-chapter source menu.
@@ -173,13 +173,13 @@ pub(super) fn ChapterSection(
                 }
             }
             if let Some((from, to)) = remaining_range {
-                // Reveals the next slice as it scrolls into view rather than asking for a click:
+                // Reveals the next slice as it scrolls into view instead of asking for a click:
                 // the rest of the list is already in memory, so this is a slice, not a fetch.
                 //
                 // Keyed on what is shown so the node is *replaced* on every reveal. An
                 // `IntersectionObserver` reports crossings, not states, so a footer that stayed
-                // in view — a slice shorter than the viewport, which is what the last one always
-                // is — would never fire a second time and the list would stop halfway.
+                // in view (a slice shorter than the viewport, which is what the last one always
+                // is) would never fire a second time and the list would stop halfway.
                 div {
                     key: "chfoot-{visible}",
                     class: "ik-chfoot",
@@ -203,7 +203,7 @@ pub(super) fn ChapterSection(
 }
 
 /// The resolved open target, stated once above the list: which source the buttons will use and
-/// which one backs it up. Read-only here — the picker lives in each chapter's source menu.
+/// which one backs it up. Read-only here: the picker lives in each chapter's source menu.
 #[component]
 fn OpensOn(sources: Vec<RankedSource>, pinned: Pinned) -> Element {
     let i18n = use_i18n();
@@ -263,7 +263,7 @@ fn GroupRows(
         count,
         &[("from", &chapter_number(lo)), ("to", &chapter_number(hi))],
     );
-    // A lone group of parts is the reading frontier — collapsing it would hide the newest
+    // A lone group of parts is the reading frontier: collapsing it would hide the newest
     // chapter behind a disclosure.
     let show_parts = !hide_parts && (!has_full || *expanded.read());
 
@@ -484,9 +484,9 @@ pub(super) fn OpenControl(
     sources: Vec<RankedSource>,
     pinned: Pinned,
     open_menu: Signal<Option<ChapterKey>>,
-    /// The page's or the row's primary action, rendered filled rather than ghosted.
+    /// The page's or the row's primary action, rendered filled, not ghosted.
     filled: bool,
-    /// Row geometry (smaller type, tighter padding) rather than the hero's.
+    /// Row geometry (smaller type, tighter padding) instead of the hero's.
     compact: bool,
     label: String,
 ) -> Element {
@@ -524,7 +524,7 @@ pub(super) fn OpenControl(
                 onclick: move |_| open_menu.set(None),
             }
         }
-        // The wrapper is what the menu is positioned against — see `.ik-openctl`.
+        // The wrapper is what the menu is positioned against: see `.ik-openctl`.
         div { class: "{anchor}",
             div { class: "{class}",
                 a {

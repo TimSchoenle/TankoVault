@@ -1,9 +1,9 @@
-//! "Why is this taking so long?", answered from the run's own timing breakdown.
+//! Owns "Why is this taking so long?", answered from the run's own timing breakdown.
 //!
 //! Opened per run, on demand: the breakdown is two aggregates and up to a hundred task rows, and
-//! nobody wants it for the runs that are behaving. What it shows, in order, is the verdict — one
-//! sentence naming the cause — then where the time went by stage, then the individual tasks that
-//! cost the most, so the sentence can be checked rather than taken on faith.
+//! nobody wants it for the runs that are behaving. What it shows, in order, is the verdict (one
+//! sentence naming the cause) then where the time went by stage, then the individual tasks that
+//! cost the most, so the sentence can be checked, not taken on faith.
 
 use super::activity::target_label;
 use super::duration_label;

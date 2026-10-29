@@ -1,4 +1,4 @@
-//! Content preferences (§9.4) — the reader's half of the adult-content gate.
+//! Owns the content preferences (§9.4): the reader's half of the adult-content gate.
 //!
 //! Two states, not one switch. Turning the preference on for the first time is a declaration of
 //! age and asks for confirmation; every change after that is an ordinary setting, because the
@@ -81,7 +81,7 @@ pub(crate) fn ContentPanel() -> Element {
 
                 // Shown whether or not the deployment allows it, and *before* the control, so a
                 // reader who cannot understand why their shelf is unchanged has the reason in
-                // front of them rather than concluding the setting failed to save.
+                // front of them instead of concluding the setting failed to save.
                 if !allowed {
                     div { class: "ik-note", {i18n.t("account.content.unavailable")} }
                 }

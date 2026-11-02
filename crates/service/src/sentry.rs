@@ -17,10 +17,12 @@
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use ::sentry::integrations::tracing::{EventFilter, SentryLayer, default_span_filter};
+use ::sentry::integrations::tracing::{BreadcrumbLayer, ErrorLayer, SpanLayer};
 use secrecy::ExposeSecret as _;
 use tankovault_config::{SentryConfig, SentryLevel};
-use tracing::Level;
+use tracing::{Level, Metadata};
+use tracing_subscriber::Layer;
+use tracing_subscriber::filter::{FilterFn, LevelFilter, filter_fn};
 use tracing_subscriber::registry::LookupSpan;
 
 use crate::ServiceError;
@@ -144,12 +146,16 @@ pub(crate) fn init(
     Ok(Some(guard))
 }
 
-/// Returns the `tracing` layer feeding the client, or `None` when Sentry is off.
+/// Returns the `tracing` layers feeding the client, or `None` when Sentry is off.
+///
+/// One layer per sink, each under its own filter: [`SpanLayer`] for spans, [`BreadcrumbLayer`]
+/// for events at `breadcrumb_level` that do not reach `capture_level`, and [`ErrorLayer`] for
+/// events at `capture_level`, which become issues.
 ///
 /// Sits under the subscriber's `EnvFilter`, which is the one surprise worth knowing: a record
-/// `telemetry.log_filter` (or `RUST_LOG`) drops never reaches this layer, so tightening the log
+/// `telemetry.log_filter` (or `RUST_LOG`) drops never reaches these layers, so tightening the log
 /// filter to `warn` silently removes every `info` breadcrumb.
-pub(crate) fn tracing_layer<S>(cfg: &SentryConfig) -> Option<SentryLayer<S>>
+pub(crate) fn tracing_layer<S>(cfg: &SentryConfig) -> Option<impl Layer<S>>
 where
     S: tracing::Subscriber + for<'a> LookupSpan<'a>,
 {
@@ -159,29 +165,37 @@ where
 
     let capture = cfg.capture_level;
     let breadcrumb = cfg.breadcrumb_level;
+    let span_attributes = cfg.span_attributes;
 
-    let mut layer = ::sentry::integrations::tracing::layer()
-        .event_filter(move |metadata| {
-            let level = *metadata.level();
-            if accepts(capture, level) {
-                EventFilter::Event
-            } else if accepts(breadcrumb, level) {
-                EventFilter::Breadcrumb
-            } else {
-                EventFilter::Ignore
-            }
-        })
-        // Not additionally gated on `traces_sample_rate`. Whether a span is *recorded* is the
-        // sampler's decision, and it is the one that can honour an inherited one: a service at
-        // rate `0.0` starts no trace of its own but still continues a trace it was handed,
-        // which is the whole of what makes one reader action readable across nine binaries.
-        // Gating span creation locally would cut that trace at the first such service.
-        .span_filter(default_span_filter);
+    // Not additionally gated on `traces_sample_rate`. Whether a span is *recorded* is the
+    // sampler's decision, and it is the one that can honour an inherited one: a service at
+    // rate `0.0` starts no trace of its own but still continues a trace it was handed,
+    // which is the whole of what makes one reader action readable across nine binaries.
+    // Gating span creation locally would cut that trace at the first such service.
+    let spans = SpanLayer::new().with_filter(SPAN_LEVEL);
 
-    if cfg.span_attributes {
-        layer = layer.enable_span_attributes();
+    let mut breadcrumbs = BreadcrumbLayer::new();
+    let mut errors = ErrorLayer::new();
+    if span_attributes {
+        breadcrumbs = breadcrumbs.enable_span_attributes();
+        errors = errors.enable_span_attributes();
     }
-    Some(layer)
+
+    // Disjoint, so an event becomes an issue or a breadcrumb but never both. Breadcrumbs sit
+    // ahead of errors regardless, the order the SDK documents for a trail to be complete when
+    // the error it leads up to is captured.
+    let breadcrumbs = breadcrumbs.with_filter(event_filter(
+        level_filter(breadcrumb),
+        span_attributes,
+        move |level| is_breadcrumb(capture, breadcrumb, level),
+    ));
+    let errors = errors.with_filter(event_filter(
+        level_filter(capture),
+        span_attributes,
+        move |level| accepts(capture, level),
+    ));
+
+    Some(spans.and_then(breadcrumbs).and_then(errors))
 }
 
 /// Returns the per-request hub and the request-metadata layer, or `None` when Sentry is off.
@@ -264,19 +278,60 @@ where
     ::sentry::SentryFutureExt::bind_hub(fut, ::sentry::Hub::current())
 }
 
+/// The level spans are collected at, matching the SDK's long-standing default.
+const SPAN_LEVEL: LevelFilter = LevelFilter::INFO;
+
+/// Whether an event at `level` becomes a breadcrumb: admitted by `breadcrumb`, and not already an
+/// issue under `capture`.
+fn is_breadcrumb(capture: SentryLevel, breadcrumb: SentryLevel, level: Level) -> bool {
+    accepts(breadcrumb, level) && !accepts(capture, level)
+}
+
+/// The filter for one of the event layers.
+///
+/// `accept` decides events. Spans are admitted only with `span_attributes`, and then only at
+/// [`SPAN_LEVEL`]: an event layer reads attributes off spans it has itself been shown, and only
+/// the span layer records them, so admitting any other span would cost a callback and add
+/// nothing. The level hint keeps the registry from building records no layer wants.
+fn event_filter<F>(
+    events: LevelFilter,
+    span_attributes: bool,
+    accept: F,
+) -> FilterFn<impl Fn(&Metadata<'_>) -> bool>
+where
+    F: Fn(Level) -> bool,
+{
+    filter_fn(move |metadata| {
+        if metadata.is_span() {
+            span_attributes && *metadata.level() <= SPAN_LEVEL
+        } else {
+            accept(*metadata.level())
+        }
+    })
+    .with_max_level_hint(if span_attributes {
+        events.max(SPAN_LEVEL)
+    } else {
+        events
+    })
+}
+
 /// Returns whether a record at `level` is at least as severe as `threshold`.
 ///
 /// `tracing::Level` orders `ERROR` lowest, so "at least as severe" is `<=`.
 fn accepts(threshold: SentryLevel, level: Level) -> bool {
-    let threshold = match threshold {
-        SentryLevel::Off => return false,
-        SentryLevel::Error => Level::ERROR,
-        SentryLevel::Warn => Level::WARN,
-        SentryLevel::Info => Level::INFO,
-        SentryLevel::Debug => Level::DEBUG,
-        SentryLevel::Trace => Level::TRACE,
-    };
-    level <= threshold
+    level <= level_filter(threshold)
+}
+
+/// The subscriber-side spelling of a threshold. [`LevelFilter::OFF`] admits no level.
+fn level_filter(threshold: SentryLevel) -> LevelFilter {
+    match threshold {
+        SentryLevel::Off => LevelFilter::OFF,
+        SentryLevel::Error => LevelFilter::ERROR,
+        SentryLevel::Warn => LevelFilter::WARN,
+        SentryLevel::Info => LevelFilter::INFO,
+        SentryLevel::Debug => LevelFilter::DEBUG,
+        SentryLevel::Trace => LevelFilter::TRACE,
+    }
 }
 
 fn check_rate(name: &str, rate: f32) -> Result<(), ServiceError> {
@@ -300,6 +355,56 @@ fn record_http(options: HttpOptions) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Wired into a subscriber, the layers admit exactly what one of the sinks wants: events at
+    /// the breadcrumb threshold or above, spans at `INFO` or above, and nothing more verbose.
+    #[test]
+    fn the_layers_admit_only_what_a_sink_wants() {
+        use tracing::Level;
+        use tracing_subscriber::layer::SubscriberExt as _;
+
+        // `capture_level = error`, `breadcrumb_level = info`.
+        let config = super::SentryConfig {
+            enabled: true,
+            span_attributes: true,
+            ..super::SentryConfig::default()
+        };
+        let subscriber =
+            tracing_subscriber::registry().with(super::tracing_layer(&config).expect("enabled"));
+
+        tracing::subscriber::with_default(subscriber, || {
+            assert!(tracing::event_enabled!(Level::ERROR));
+            assert!(tracing::event_enabled!(Level::INFO));
+            assert!(!tracing::event_enabled!(Level::DEBUG));
+            assert!(tracing::span_enabled!(Level::INFO));
+            assert!(!tracing::span_enabled!(Level::DEBUG));
+
+            // No client is bound, so these reach every layer and are reported nowhere.
+            let _span = tracing::info_span!("unit", attribute = 1).entered();
+            tracing::info!("a breadcrumb");
+            tracing::error!("an issue");
+        });
+    }
+
+    /// An event is an issue or a breadcrumb, never both: the error layer would otherwise capture
+    /// it with a copy of itself at the end of its own trail.
+    #[test]
+    fn an_event_lands_in_exactly_one_sink() {
+        use super::{SentryLevel, accepts, is_breadcrumb};
+        use tracing::Level;
+
+        let (capture, breadcrumb) = (SentryLevel::Error, SentryLevel::Info);
+        assert!(accepts(capture, Level::ERROR));
+        assert!(!is_breadcrumb(capture, breadcrumb, Level::ERROR));
+        assert!(is_breadcrumb(capture, breadcrumb, Level::WARN));
+        assert!(is_breadcrumb(capture, breadcrumb, Level::INFO));
+        assert!(!is_breadcrumb(capture, breadcrumb, Level::DEBUG));
+
+        // A breadcrumb threshold less verbose than the capture threshold yields no breadcrumbs.
+        for level in [Level::ERROR, Level::WARN, Level::INFO] {
+            assert!(!is_breadcrumb(SentryLevel::Info, SentryLevel::Warn, level));
+        }
+    }
 
     /// A threshold accepts only levels at least as severe as itself.
     ///

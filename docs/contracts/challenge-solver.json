@@ -2,7 +2,7 @@
   "terrace_contract": 1,
   "producer": {
     "name": "terrace-config",
-    "version": "0.17.0",
+    "version": "0.18.1",
     "loader": "figment"
   },
   "app": {
@@ -1049,7 +1049,7 @@
         "default": null,
         "default_value": null,
         "note": null,
-        "required": true,
+        "required": false,
         "secret": false,
         "reserved": false
       },
@@ -1078,7 +1078,7 @@
         "default": null,
         "default_value": null,
         "note": null,
-        "required": true,
+        "required": false,
         "secret": false,
         "reserved": false
       },
@@ -1107,7 +1107,7 @@
         "default": null,
         "default_value": null,
         "note": null,
-        "required": true,
+        "required": false,
         "secret": false,
         "reserved": false
       },
@@ -1136,7 +1136,7 @@
         "default": null,
         "default_value": null,
         "note": null,
-        "required": true,
+        "required": false,
         "secret": false,
         "reserved": false
       },
@@ -1165,7 +1165,7 @@
         "default": null,
         "default_value": null,
         "note": null,
-        "required": true,
+        "required": false,
         "secret": false,
         "reserved": false
       },
@@ -1194,7 +1194,7 @@
         "default": null,
         "default_value": null,
         "note": null,
-        "required": true,
+        "required": false,
         "secret": false,
         "reserved": false
       },

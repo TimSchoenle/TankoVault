@@ -6231,8 +6231,8 @@ dependencies = [
 
 [[package]]
 name = "terrace-config"
-version = "0.17.0"
-source = "git+https://github.com/TimSchoenle/terrace-config?tag=v0.17.0#a6649df17ccaf9e4eb74085234ee927002711aed"
+version = "0.18.1"
+source = "git+https://github.com/TimSchoenle/terrace-config?tag=v0.18.1#da7d54b6290348a9a8e4728286fc3ce54bce6adc"
 dependencies = [
  "figment",
  "notify",
@@ -6249,8 +6249,8 @@ dependencies = [
 
 [[package]]
 name = "terrace-config-macros"
-version = "0.17.0"
-source = "git+https://github.com/TimSchoenle/terrace-config?tag=v0.17.0#a6649df17ccaf9e4eb74085234ee927002711aed"
+version = "0.18.1"
+source = "git+https://github.com/TimSchoenle/terrace-config?tag=v0.18.1#da7d54b6290348a9a8e4728286fc3ce54bce6adc"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6259,8 +6259,8 @@ dependencies = [
 
 [[package]]
 name = "terrace-legal"
-version = "0.3.4"
-source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.4#7fc42063a39395863c81d50e9dbbfc2e71d263d4"
+version = "0.3.7"
+source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.7#e99a40654a549862fc1259de81ad8ae78ab4365f"
 dependencies = [
  "base64 0.23.1",
  "serde",
@@ -6273,8 +6273,8 @@ dependencies = [
 
 [[package]]
 name = "terrace-legal-axum"
-version = "0.3.4"
-source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.4#7fc42063a39395863c81d50e9dbbfc2e71d263d4"
+version = "0.3.7"
+source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.7#e99a40654a549862fc1259de81ad8ae78ab4365f"
 dependencies = [
  "axum",
  "http",
@@ -6286,8 +6286,8 @@ dependencies = [
 
 [[package]]
 name = "terrace-legal-model"
-version = "0.3.4"
-source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.4#7fc42063a39395863c81d50e9dbbfc2e71d263d4"
+version = "0.3.7"
+source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.7#e99a40654a549862fc1259de81ad8ae78ab4365f"
 dependencies = [
  "serde",
  "thiserror 2.0.21",

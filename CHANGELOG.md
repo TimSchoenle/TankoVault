@@ -12,6 +12,22 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [11.1.3](https://github.com/TimSchoenle/TankoVault/compare/v11.1.2...v11.1.3) (2026-11-02)
+
+
+### Bug Fixes
+
+* **config:** stop publishing defaulted sections' keys as required ([#613](https://github.com/TimSchoenle/TankoVault/issues/613)) ([d383e74](https://github.com/TimSchoenle/TankoVault/commit/d383e7423914176c5b04ee7e674bf2aaf6ae59ef))
+
+
+### Dependencies
+
+* **deps:** update debian:13-slim docker digest to f6b08b0 ([#594](https://github.com/TimSchoenle/TankoVault/issues/594)) ([c49e3a7](https://github.com/TimSchoenle/TankoVault/commit/c49e3a7aad7601444839dc31a87083d42c692148))
+* **deps:** update nats:2-alpine docker digest to 823e7f1 ([#595](https://github.com/TimSchoenle/TankoVault/issues/595)) ([c827ab0](https://github.com/TimSchoenle/TankoVault/commit/c827ab081f1d4ddfb15aeafcfef7cf0bdadc47fe))
+* **deps:** update redis:8-alpine docker digest to 21090af ([#597](https://github.com/TimSchoenle/TankoVault/issues/597)) ([447dd03](https://github.com/TimSchoenle/TankoVault/commit/447dd03353f3737bcdff10c78a11c6acc0f444a6))
+* **deps:** update rust crate sentry to v0.49.5 ([#599](https://github.com/TimSchoenle/TankoVault/issues/599)) ([bddd894](https://github.com/TimSchoenle/TankoVault/commit/bddd894ed63a59a7446e161c5b7e6836b9cb5f20))
+* **deps:** update rust docker tag to v1.99 ([#547](https://github.com/TimSchoenle/TankoVault/issues/547)) ([8e5a96a](https://github.com/TimSchoenle/TankoVault/commit/8e5a96a7e0bfd83ace52ad1777110369311a9a14))
+
 ## [11.1.2](https://github.com/TimSchoenle/TankoVault/compare/v11.1.1...v11.1.2) (2026-10-29)
 
 

@@ -432,7 +432,7 @@ jobs:
       - name: BoringSSL build dependencies
         uses: $/.github/actions/boringssl-deps
 
-      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+      - uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
         with:
           tool: cargo-about
 
@@ -510,7 +510,7 @@ jobs:
 
       # The same recipe a developer runs, not a second spelling of it in YAML.
       - name: Install just
-        uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+        uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
         with:
           tool: just
 
@@ -745,7 +745,7 @@ jobs:
       # now exists.
       - name: Commit the fixes
         if: steps.tree.outputs.current == 'true'
-        uses: TimSchoenle/actions/actions/common/commit-changes@495fd50fd4a5ae3d9fb1496c96eada74c6f2529a # tag=actions-common-commit-changes-v3.0.0
+        uses: TimSchoenle/actions/actions/common/commit-changes@dc5b395636dc1954383f11af4062a08814e9b15a # tag=actions-common-commit-changes-v3.0.1
         with:
           commit_message: "style: apply the mechanical fixes (lockfiles, clippy --fix, fmt, regenerated artefacts)"
           token: ${{ steps.generate_token.outputs.token }}
@@ -815,7 +815,7 @@ jobs:
 
       - name: collect the README payload
         id: variables
-        uses: TimSchoenle/actions/actions/common/readme-variables@421289db958b620e2772ba46d11d014bf25a371b # tag=actions-common-readme-variables-v2.1.0
+        uses: TimSchoenle/actions/actions/common/readme-variables@dc5b395636dc1954383f11af4062a08814e9b15a # tag=actions-common-readme-variables-v2.1.1
         with:
           branch: ${{ github.event.repository.default_branch }}
           extra: ${{ steps.stack.outputs.json }}
@@ -823,7 +823,7 @@ jobs:
       # The same pin `ci.yml`'s `readme` job checks the file with, so the render committed here
       # and the render that gate compares against are the same renderer.
       - name: render README.md
-        uses: TimSchoenle/actions/actions/common/render-template@495fd50fd4a5ae3d9fb1496c96eada74c6f2529a # tag=actions-common-render-template-v3.0.0
+        uses: TimSchoenle/actions/actions/common/render-template@dc5b395636dc1954383f11af4062a08814e9b15a # tag=actions-common-render-template-v3.0.1
         with:
           template: .github/templates/README.md.hbs
           output: README.md
@@ -833,7 +833,7 @@ jobs:
       # reaches the patch. Uploaded even when empty; `has_changes` is what gates `readme-commit`.
       - name: package the render as a patch
         id: patch
-        uses: TimSchoenle/actions/actions/common/create-patch@bbc2c5e2a0f9345cb2e84946846736f047a6eae3 # tag=actions-common-create-patch-v1.1.0
+        uses: TimSchoenle/actions/actions/common/create-patch@dc5b395636dc1954383f11af4062a08814e9b15a # tag=actions-common-create-patch-v1.1.1
         with:
           artifact_name: readme-render
           paths: README.md
@@ -892,7 +892,7 @@ jobs:
       # that moved it runs this workflow again.
       - name: commit README.md
         id: render
-        uses: TimSchoenle/actions/actions/common/commit-patch@bbc2c5e2a0f9345cb2e84946846736f047a6eae3 # tag=actions-common-commit-patch-v1.1.0
+        uses: TimSchoenle/actions/actions/common/commit-patch@dc5b395636dc1954383f11af4062a08814e9b15a # tag=actions-common-commit-patch-v1.1.1
         with:
           token: ${{ steps.generate_token.outputs.token }}
           artifact_name: readme-render

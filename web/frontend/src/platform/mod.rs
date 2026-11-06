@@ -83,9 +83,10 @@ pub(crate) use desktop::{
 /// desktop app may not, because the second copy shares the first one's credential entry and the
 /// rotation family behind it. `instance` says what that costs and why the lock is an OS handle.
 #[cfg(feature = "desktop")]
-pub(crate) use instance::{
-    acquire_instance_lock, request_activation, take_activation_request, try_acquire_instance_lock,
-};
+pub(crate) use instance::{acquire_instance_lock, request_activation, take_activation_request};
+/// Only the Windows update relauncher takes the lock without requesting activation.
+#[cfg(all(feature = "desktop", windows))]
+pub(crate) use instance::try_acquire_instance_lock;
 
 /// Web-only surface: the router's history provider, handed to the renderer in `main`.
 ///

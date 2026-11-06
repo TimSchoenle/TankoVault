@@ -12,6 +12,19 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [11.1.4](https://github.com/TimSchoenle/TankoVault/compare/v11.1.3...v11.1.4) (2026-11-06)
+
+
+### Bug Fixes
+
+* **console:** gate the instance lock retry re-export on windows ([#618](https://github.com/TimSchoenle/TankoVault/issues/618)) ([7ef548c](https://github.com/TimSchoenle/TankoVault/commit/7ef548c250f92bd96373e7a1a31d9076129eee14))
+* **console:** restart the desktop app after a windows update installs ([#617](https://github.com/TimSchoenle/TankoVault/issues/617)) ([101f53a](https://github.com/TimSchoenle/TankoVault/commit/101f53a5a42d23dfb5c61f38d91598860aa3dd48))
+
+
+### Dependencies
+
+* **deps:** update lukemathwalker/cargo-chef:latest-rust-1.99.1-alpine docker digest to 000cac9 ([#614](https://github.com/TimSchoenle/TankoVault/issues/614)) ([15358ce](https://github.com/TimSchoenle/TankoVault/commit/15358cebc8140641057ac6de5e62f02c82552c8e))
+
 ## [11.1.3](https://github.com/TimSchoenle/TankoVault/compare/v11.1.2...v11.1.3) (2026-11-02)
 
 

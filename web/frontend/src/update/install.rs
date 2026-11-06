@@ -512,8 +512,14 @@ fn restart_command(target: &Path) -> std::process::Command {
 )]
 const INSTALL_WAIT_BUDGET: Duration = Duration::from_secs(30);
 const RESTART_WAIT_BUDGET: Duration = Duration::from_secs(30);
+/// Long enough for an installer that is genuinely working (an elevation prompt the reader has
+/// not answered yet, a slow disk), short enough that one which never answers is not permanent.
+/// See [`run_installer`] for what the bound protects.
+#[cfg(windows)]
+const INSTALLER_WAIT_BUDGET: Duration = Duration::from_mins(10);
 const WAIT_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
+/// Blocks this thread; the relauncher's only way to wait.
 #[cfg(windows)]
 fn pause(duration: Duration) {
     #[expect(
@@ -584,6 +590,10 @@ fn relaunch_sequence<L>(
         );
     }
     install();
+    // Unconditional, including after an install that failed: `restart` starts the app a few
+    // lines below, and an app that still finds a staged copy hands off to a relauncher again.
+    // Keeping it to allow a retry would be that loop, with a notification each time round; the
+    // update is re-discovered by the next check instead.
     clear();
     drop(instance_lock);
     // Started whether or not the install worked. The app is either the new version or the old
@@ -591,6 +601,13 @@ fn relaunch_sequence<L>(
     restart();
 }
 
+/// Runs the staged installer and waits for it, within a budget.
+///
+/// The budget is the point: this process holds the instance lock while the installer runs, so a
+/// plain `wait` on an installer that never exits would hold that lock for the life of the
+/// machine's session, and every later launch would exit silently against a lock nobody is ever
+/// going to release. Giving up on the wait does not kill the installer; it only stops this
+/// process from standing in front of the app for ever.
 #[cfg(windows)]
 fn run_installer(plan: &Plan) {
     let Some(mut command) = installer_command(plan) else {
@@ -604,15 +621,27 @@ fn run_installer(plan: &Plan) {
             return;
         }
     };
-    match child.wait() {
-        Ok(status) if status.success() => {
+    let exited = wait_until(
+        INSTALLER_WAIT_BUDGET,
+        WAIT_POLL_INTERVAL,
+        || child.try_wait().transpose(),
+        pause,
+    );
+    match exited {
+        Some(Ok(status)) if status.success() => {
             tracing::info!(?status, "update installer exited successfully");
         }
-        Ok(status) => tracing::warn!(?status, "update installer exited unsuccessfully"),
-        Err(error) => tracing::warn!(?error, "could not wait for update installer"),
+        Some(Ok(status)) => tracing::warn!(?status, "update installer exited unsuccessfully"),
+        Some(Err(error)) => tracing::warn!(?error, "could not wait for update installer"),
+        None => tracing::error!(
+            budget = ?INSTALLER_WAIT_BUDGET,
+            "the update installer has not exited within its budget; leaving it running and \
+             releasing the instance lock so the app can be started again"
+        ),
     }
 }
 
+/// Starts `target` again, retrying within [`RESTART_WAIT_BUDGET`]. `true` if a process started.
 #[cfg_attr(
     all(not(windows), not(test)),
     expect(
@@ -634,6 +663,7 @@ fn restart_with(
     .is_some()
 }
 
+/// Starts the installed app again, telling the reader if it could not be started at all.
 #[cfg(windows)]
 fn restart(target: &Path) {
     let mut last_error = None;
@@ -898,6 +928,28 @@ mod tests {
         assert_eq!(timed_out_probes, 0);
     }
 
+    /// The budget has to be spent and then stop. A probe that never succeeds is the only case
+    /// that distinguishes "waited the whole budget" from "retried for ever": the relauncher runs
+    /// with no window, so an unbounded retry here is an app that silently never comes back.
+    #[test]
+    fn a_probe_that_never_succeeds_spends_the_budget_exactly_once() {
+        let mut probes = 0;
+        let mut slept = Duration::ZERO;
+        let result = wait_until(
+            Duration::from_millis(25),
+            Duration::from_millis(5),
+            || {
+                probes += 1;
+                assert!(probes <= 5, "retry within the budget, not for ever");
+                None::<()>
+            },
+            |duration| slept += duration,
+        );
+        assert!(result.is_none());
+        assert_eq!(probes, 4, "probe after every wait but the one that ends it");
+        assert_eq!(slept, Duration::from_millis(25), "spend the whole budget");
+    }
+
     /// A major upgrade removes and recreates the executable, so the first spawn can fail even
     /// after the installer exits; discarding that one failure left the reader with no window.
     #[test]
@@ -964,6 +1016,47 @@ mod tests {
         assert_eq!(
             *log.borrow(),
             ["lock", "install", "clear", "unlock", "restart"]
+        );
+    }
+
+    /// The lock is almost never free on the first probe: the app that handed off to this process
+    /// is still exiting. A single-attempt regression would pass the test above and install over
+    /// an executable the old app still owns, which is the bug the whole sequence exists for.
+    #[test]
+    fn the_relauncher_installs_only_once_a_contended_lock_comes_free() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        struct Token(Rc<RefCell<Vec<&'static str>>>);
+        impl Drop for Token {
+            fn drop(&mut self) {
+                self.0.borrow_mut().push("unlock");
+            }
+        }
+
+        let log = Rc::new(RefCell::new(Vec::new()));
+        let mut probes = 0;
+        relaunch_sequence(
+            Path::new("installed/tankovault.exe"),
+            || {
+                probes += 1;
+                if probes < 3 {
+                    return None;
+                }
+                log.borrow_mut().push("lock");
+                Some(Token(Rc::clone(&log)))
+            },
+            |_| {},
+            || log.borrow_mut().push("install"),
+            || log.borrow_mut().push("clear"),
+            || log.borrow_mut().push("restart"),
+        );
+
+        assert_eq!(probes, 3, "keep probing until the old app lets go");
+        assert_eq!(
+            *log.borrow(),
+            ["lock", "install", "clear", "unlock", "restart"],
+            "install only after the lock is held"
         );
     }
 

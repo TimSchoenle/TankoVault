@@ -54,6 +54,22 @@ enum Outcome {
 }
 
 pub(crate) fn acquire_instance_lock() -> Option<InstanceLock> {
+    acquire_lock()
+}
+
+/// Tries the single-instance lock once without requesting activation on contention.
+///
+/// Unavailable is not contention: when there is no usable config directory the relauncher must
+/// proceed, just as a normal start does.
+#[cfg_attr(
+    not(windows),
+    expect(dead_code, reason = "used by the Windows-only update relauncher")
+)]
+pub(crate) fn try_acquire_instance_lock() -> Option<InstanceLock> {
+    acquire_lock()
+}
+
+fn acquire_lock() -> Option<InstanceLock> {
     match lock_path().map_or(Outcome::Unavailable, |path| imp::acquire(&path)) {
         Outcome::Held(lock) => Some(InstanceLock(Some(lock))),
         Outcome::Unavailable => {

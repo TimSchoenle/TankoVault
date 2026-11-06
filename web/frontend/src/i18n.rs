@@ -397,6 +397,8 @@ mod tests {
         for key in [
             "settings.update.notify.applyingTitle",
             "settings.update.notify.applying",
+            "settings.update.notify.restartFailedTitle",
+            "settings.update.notify.restartFailed",
         ] {
             let message = translate_offline(key, &[("version", "2.1.0")]);
             assert!(

@@ -477,6 +477,8 @@
         "applyingTitle": "{brand} wird aktualisiert",
         "available": "Version {version} kann heruntergeladen werden.",
         "availableTitle": "{brand}-Aktualisierung verfügbar",
+        "restartFailed": "{brand} konnte nach der Aktualisierung nicht erneut geöffnet werden. Starte die App erneut vom installierten Speicherort.",
+        "restartFailedTitle": "{brand} konnte nicht neu gestartet werden",
         "staged": "Version {version} wird beim nächsten Start von {brand} installiert.",
         "stagedTitle": "{brand}-Aktualisierung bereit"
       },

@@ -477,6 +477,8 @@
         "applyingTitle": "{brand} is updating",
         "available": "Version {version} is ready to download.",
         "availableTitle": "{brand} update available",
+        "restartFailed": "{brand} could not reopen after updating. Start it again from its installed location.",
+        "restartFailedTitle": "{brand} could not restart",
         "staged": "Version {version} installs the next time you start {brand}.",
         "stagedTitle": "{brand} update ready"
       },

@@ -24,6 +24,7 @@ use std::convert::Infallible;
 use std::fs;
 use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 /// The directory staged updates live in, beside `settings.json`.
 const STAGING_DIR: &str = "updates";
@@ -452,6 +453,82 @@ pub(crate) fn run_as_relauncher() -> bool {
     }
 }
 
+/// Waits in bounded intervals before checking `ready`, so the process being replaced gets time to
+/// exit before the first probe. The injected sleeper keeps the timing deterministic in tests.
+#[cfg_attr(
+    all(not(windows), not(test)),
+    expect(
+        dead_code,
+        reason = "compiled everywhere so its timing is tested on the Linux runner"
+    )
+)]
+fn wait_until<T>(
+    budget: Duration,
+    poll: Duration,
+    mut ready: impl FnMut() -> Option<T>,
+    mut sleep: impl FnMut(Duration),
+) -> Option<T> {
+    if poll.is_zero() {
+        return None;
+    }
+
+    let mut remaining = budget;
+    while !remaining.is_zero() {
+        let interval = poll.min(remaining);
+        sleep(interval);
+        remaining -= interval;
+        if remaining.is_zero() {
+            return None;
+        }
+        if let Some(value) = ready() {
+            return Some(value);
+        }
+    }
+    None
+}
+
+/// Builds the process command from the installed executable's directory, not the staging copy's.
+#[cfg_attr(
+    all(not(windows), not(test)),
+    expect(
+        dead_code,
+        reason = "compiled everywhere so its working directory is tested on Linux"
+    )
+)]
+fn restart_command(target: &Path) -> std::process::Command {
+    let mut command = std::process::Command::new(target);
+    if let Some(directory) = target
+        .parent()
+        .filter(|directory| !directory.as_os_str().is_empty())
+    {
+        command.current_dir(directory);
+    }
+    command
+}
+
+#[cfg_attr(
+    all(not(windows), not(test)),
+    expect(dead_code, reason = "used by the Windows-only update relauncher")
+)]
+const INSTALL_WAIT_BUDGET: Duration = Duration::from_secs(30);
+const RESTART_WAIT_BUDGET: Duration = Duration::from_secs(30);
+/// Long enough for an installer that is genuinely working (an elevation prompt the reader has
+/// not answered yet, a slow disk), short enough that one which never answers is not permanent.
+/// See [`run_installer`] for what the bound protects.
+#[cfg(windows)]
+const INSTALLER_WAIT_BUDGET: Duration = Duration::from_mins(10);
+const WAIT_POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+/// Blocks this thread; the relauncher's only way to wait.
+#[cfg(windows)]
+fn pause(duration: Duration) {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the Windows relauncher has no event loop to wait on"
+    )]
+    std::thread::sleep(duration);
+}
+
 /// Never the relauncher: the `AppImage` path replaces its own image and `exec`s it, so the
 /// process that comes back *is* the new version and there is nothing to wait for.
 #[cfg(unix)]
@@ -471,20 +548,143 @@ pub(crate) fn run_as_relauncher() -> bool {
 /// being able to start a process as the reader, which is already enough to start any other.
 #[cfg(windows)]
 fn relaunch_after_install(target: &Path) {
-    if let Ok(plan) = plan(flavour_of(target)) {
-        if let Some(mut command) = installer_command(&plan) {
-            if let Ok(mut child) = command.spawn() {
-                let _ = child.wait();
-            }
-        }
+    relaunch_sequence(
+        target,
+        crate::platform::try_acquire_instance_lock,
+        pause,
+        || match plan(flavour_of(target)) {
+            Ok(plan) => run_installer(&plan),
+            Err(error) => tracing::warn!(?error, "staged update could not be installed"),
+        },
+        clear,
+        || restart(target),
+    );
+}
+
+/// The relauncher's ordering, with every effect injected so the order itself can be tested.
+///
+/// The order is the fix and each step depends on the one before it: the installer cannot copy
+/// over an executable the app still holds open, the staged copy has to be gone before anything
+/// starts again so the new process finds nothing to hand off a second time, and the lock has to
+/// be released before the restart or the app it starts sees itself as a second instance.
+#[cfg_attr(
+    all(not(windows), not(test)),
+    expect(
+        dead_code,
+        reason = "compiled everywhere so the ordering is tested on the Linux runner"
+    )
+)]
+fn relaunch_sequence<L>(
+    target: &Path,
+    acquire: impl FnMut() -> Option<L>,
+    sleep: impl FnMut(Duration),
+    install: impl FnOnce(),
+    clear: impl FnOnce(),
+    restart: impl FnOnce(),
+) {
+    let instance_lock = wait_until(INSTALL_WAIT_BUDGET, WAIT_POLL_INTERVAL, acquire, sleep);
+    if instance_lock.is_none() {
+        tracing::warn!(
+            ?target,
+            "timed out waiting for the running app to exit; proceeding with update"
+        );
     }
-    // Before the app is started, so its own `apply_staged` finds nothing to retry: whatever the
-    // installer made of it, this staged copy has had its one attempt. Removing the directory
-    // cannot succeed while this process runs out of it; the next `stage` clears the remains.
+    install();
+    // Unconditional, including after an install that failed: `restart` starts the app a few
+    // lines below, and an app that still finds a staged copy hands off to a relauncher again.
+    // Keeping it to allow a retry would be that loop, with a notification each time round; the
+    // update is re-discovered by the next check instead.
     clear();
+    drop(instance_lock);
     // Started whether or not the install worked. The app is either the new version or the old
     // one, and both are better than the reader being left with nothing after a double-click.
-    let _ = std::process::Command::new(target).spawn();
+    restart();
+}
+
+/// Runs the staged installer and waits for it, within a budget.
+///
+/// The budget is the point: this process holds the instance lock while the installer runs, so a
+/// plain `wait` on an installer that never exits would hold that lock for the life of the
+/// machine's session, and every later launch would exit silently against a lock nobody is ever
+/// going to release. Giving up on the wait does not kill the installer; it only stops this
+/// process from standing in front of the app for ever.
+#[cfg(windows)]
+fn run_installer(plan: &Plan) {
+    let Some(mut command) = installer_command(plan) else {
+        tracing::warn!(flavour = ?plan.flavour, "no installer command for staged update");
+        return;
+    };
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            tracing::warn!(?error, "could not start update installer");
+            return;
+        }
+    };
+    let exited = wait_until(
+        INSTALLER_WAIT_BUDGET,
+        WAIT_POLL_INTERVAL,
+        || child.try_wait().transpose(),
+        pause,
+    );
+    match exited {
+        Some(Ok(status)) if status.success() => {
+            tracing::info!(?status, "update installer exited successfully");
+        }
+        Some(Ok(status)) => tracing::warn!(?status, "update installer exited unsuccessfully"),
+        Some(Err(error)) => tracing::warn!(?error, "could not wait for update installer"),
+        None => tracing::error!(
+            budget = ?INSTALLER_WAIT_BUDGET,
+            "the update installer has not exited within its budget; leaving it running and \
+             releasing the instance lock so the app can be started again"
+        ),
+    }
+}
+
+/// Starts `target` again, retrying within [`RESTART_WAIT_BUDGET`]. `true` if a process started.
+#[cfg_attr(
+    all(not(windows), not(test)),
+    expect(
+        dead_code,
+        reason = "compiled everywhere so restart retries are tested on Linux"
+    )
+)]
+fn restart_with(
+    target: &Path,
+    mut spawn: impl FnMut(&Path) -> bool,
+    sleep: impl FnMut(Duration),
+) -> bool {
+    wait_until(
+        RESTART_WAIT_BUDGET,
+        WAIT_POLL_INTERVAL,
+        || spawn(target).then_some(()),
+        sleep,
+    )
+    .is_some()
+}
+
+/// Starts the installed app again, telling the reader if it could not be started at all.
+#[cfg(windows)]
+fn restart(target: &Path) {
+    let mut last_error = None;
+    let started = restart_with(
+        target,
+        |path| match restart_command(path).spawn() {
+            Ok(_) => true,
+            Err(error) => {
+                last_error = Some(error);
+                false
+            }
+        },
+        pause,
+    );
+    if !started {
+        tracing::error!(?target, ?last_error, "could not restart app after update");
+        crate::platform::notify_now(
+            &crate::i18n::translate_offline("settings.update.notify.restartFailedTitle", &[]),
+            &crate::i18n::translate_offline("settings.update.notify.restartFailed", &[]),
+        );
+    }
 }
 
 /// Re-verifies everything about the staged update and decides what to run.
@@ -685,6 +885,190 @@ mod tests {
 
     fn windows(exe: &str) -> Flavour {
         classify_windows(Path::new(exe), Some(&local_app_data()), &program_files())
+    }
+
+    /// The relauncher used to launch an installer immediately, while the app still owned its
+    /// executable. It now gives that process an exit window, probes only within the budget, and
+    /// stops as soon as the lock is free.
+    #[test]
+    fn the_relauncher_waits_for_exit_and_stops_at_its_budget() {
+        let mut probes = 0;
+        let mut sleeps = Vec::new();
+        let result = wait_until(
+            Duration::from_millis(25),
+            Duration::from_millis(5),
+            || {
+                probes += 1;
+                Some(())
+            },
+            |duration| sleeps.push(duration),
+        );
+        assert!(result.is_some());
+        assert_eq!(probes, 1, "stop polling as soon as the old app exits");
+        assert_eq!(
+            sleeps,
+            [Duration::from_millis(5)],
+            "wait before the first probe"
+        );
+
+        let mut timed_out_probes = 0;
+        let result = wait_until(
+            Duration::from_millis(5),
+            Duration::from_millis(5),
+            || {
+                timed_out_probes += 1;
+                Some(())
+            },
+            |_| {},
+        );
+        assert!(
+            result.is_none(),
+            "do not probe after the full budget expires"
+        );
+        assert_eq!(timed_out_probes, 0);
+    }
+
+    /// The budget has to be spent and then stop. A probe that never succeeds is the only case
+    /// that distinguishes "waited the whole budget" from "retried for ever": the relauncher runs
+    /// with no window, so an unbounded retry here is an app that silently never comes back.
+    #[test]
+    fn a_probe_that_never_succeeds_spends_the_budget_exactly_once() {
+        let mut probes = 0;
+        let mut slept = Duration::ZERO;
+        let result = wait_until(
+            Duration::from_millis(25),
+            Duration::from_millis(5),
+            || {
+                probes += 1;
+                assert!(probes <= 5, "retry within the budget, not for ever");
+                None::<()>
+            },
+            |duration| slept += duration,
+        );
+        assert!(result.is_none());
+        assert_eq!(probes, 4, "probe after every wait but the one that ends it");
+        assert_eq!(slept, Duration::from_millis(25), "spend the whole budget");
+    }
+
+    /// A major upgrade removes and recreates the executable, so the first spawn can fail even
+    /// after the installer exits; discarding that one failure left the reader with no window.
+    #[test]
+    fn restart_retries_until_the_installed_executable_exists() {
+        use std::cell::Cell;
+
+        let target = PathBuf::from("installed/tankovault.exe");
+        let exists = Cell::new(false);
+        let mut sleeps = 0;
+        let mut attempts = 0;
+        let started = restart_with(
+            &target,
+            |_| {
+                attempts += 1;
+                exists.get()
+            },
+            |_| {
+                sleeps += 1;
+                if sleeps == 2 {
+                    exists.set(true);
+                }
+            },
+        );
+        assert!(started);
+        assert_eq!(
+            attempts, 2,
+            "retry the failed spawn after the file is recreated"
+        );
+    }
+
+    /// The relauncher used to run the installer while the app still owned its executable, and
+    /// started the app again without ever having held the lock. The order is the fix: wait for
+    /// the lock, install under it, clear the staged copy, release the lock, then restart.
+    #[test]
+    fn the_relauncher_installs_under_the_lock_and_releases_it_before_restarting() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        struct Token(Rc<RefCell<Vec<&'static str>>>);
+        impl Drop for Token {
+            fn drop(&mut self) {
+                self.0.borrow_mut().push("unlock");
+            }
+        }
+
+        let log = Rc::new(RefCell::new(Vec::new()));
+        let mut taken = false;
+        relaunch_sequence(
+            Path::new("installed/tankovault.exe"),
+            || {
+                if taken {
+                    return None;
+                }
+                taken = true;
+                log.borrow_mut().push("lock");
+                Some(Token(Rc::clone(&log)))
+            },
+            |_| {},
+            || log.borrow_mut().push("install"),
+            || log.borrow_mut().push("clear"),
+            || log.borrow_mut().push("restart"),
+        );
+
+        assert_eq!(
+            *log.borrow(),
+            ["lock", "install", "clear", "unlock", "restart"]
+        );
+    }
+
+    /// The lock is almost never free on the first probe: the app that handed off to this process
+    /// is still exiting. A single-attempt regression would pass the test above and install over
+    /// an executable the old app still owns, which is the bug the whole sequence exists for.
+    #[test]
+    fn the_relauncher_installs_only_once_a_contended_lock_comes_free() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        struct Token(Rc<RefCell<Vec<&'static str>>>);
+        impl Drop for Token {
+            fn drop(&mut self) {
+                self.0.borrow_mut().push("unlock");
+            }
+        }
+
+        let log = Rc::new(RefCell::new(Vec::new()));
+        let mut probes = 0;
+        relaunch_sequence(
+            Path::new("installed/tankovault.exe"),
+            || {
+                probes += 1;
+                if probes < 3 {
+                    return None;
+                }
+                log.borrow_mut().push("lock");
+                Some(Token(Rc::clone(&log)))
+            },
+            |_| {},
+            || log.borrow_mut().push("install"),
+            || log.borrow_mut().push("clear"),
+            || log.borrow_mut().push("restart"),
+        );
+
+        assert_eq!(probes, 3, "keep probing until the old app lets go");
+        assert_eq!(
+            *log.borrow(),
+            ["lock", "install", "clear", "unlock", "restart"],
+            "install only after the lock is held"
+        );
+    }
+
+    /// The relauncher runs from the updates directory, but the restarted app must resolve its
+    /// settings and relative resources from the directory the installer produced.
+    #[test]
+    fn restart_runs_from_the_installed_executable_directory() {
+        let target = std::env::temp_dir()
+            .join("tankovault-installed")
+            .join("tankovault.exe");
+        let command = restart_command(&target);
+        assert_eq!(command.get_current_dir(), target.parent());
     }
 
     /// The two Windows installers are told apart by where they land, and handing the wrong one to

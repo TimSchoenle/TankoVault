@@ -84,6 +84,7 @@ pub(crate) use desktop::{
 /// rotation family behind it. `instance` says what that costs and why the lock is an OS handle.
 #[cfg(feature = "desktop")]
 pub(crate) use instance::{acquire_instance_lock, request_activation, take_activation_request};
+
 /// Only the Windows update relauncher takes the lock without requesting activation.
 #[cfg(all(feature = "desktop", windows))]
 pub(crate) use instance::try_acquire_instance_lock;

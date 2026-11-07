@@ -5,15 +5,20 @@ name: Security
 # credentials persisted into `.git/config`, and `${{ }}` interpolated into a `run:` block, which is
 # a shell injection, not a template.
 #
-# `pedantic` on purpose: the default persona reports only what is provably exploitable today,
-# pedantic reports the shape that becomes exploitable after one careless edit.
+# jactionlint keeps every check of actionlint and has a rule for every zizmor audit. It runs
+# online, so it also asks GitHub about the actions in use (impostor commits, vulnerable versions,
+# moved tags, archived repositories); strict-exit fails it on findings of every level. It uploads
+# its SARIF to code scanning under the category `jactionlint`. `pedantic` on purpose: a narrower
+# profile reports only what is provably exploitable today, pedantic reports the shape that becomes
+# exploitable after one careless edit. `.github/jactionlint.yaml` turns off the rules this
+# repository does not want and records the accepted findings.
 
 on:
   push:
     branches: [main]
   pull_request:
   schedule:
-    # Weekly, alongside CI's full run: zizmor's audit set grows between releases.
+    # Weekly, alongside CI's full run: advisories published since the last change are reported.
     - cron: "0 4 * * 1"
   workflow_dispatch:
 
@@ -21,14 +26,14 @@ on:
 permissions: {}
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  zizmor:
-    name: zizmor
+  action-lint:
+    name: Action Lint
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: read # to check out the workflows
       security-events: write # to upload the SARIF findings to code scanning
@@ -43,5 +48,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Run zizmor
-        uses: TimSchoenle/actions/actions/security/zizmor@dc5b395636dc1954383f11af4062a08814e9b15a # tag=actions-security-zizmor-v2.0.1
+      - name: Run jactionlint
+        uses: TimSchoenle/actions/actions/security/jactionlint@e2799424abd778c41e7f6d1547fd402386ef398e # tag=actions-security-jactionlint-v1.1.0
+        with:
+          online: 'true'
+          strict-exit: 'true'

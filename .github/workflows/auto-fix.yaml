@@ -575,6 +575,10 @@ jobs:
   # token at all.
   commit:
     name: commit the mechanical fixes
+    # The maintenance app's secrets belong in the ci environment.
+    environment:
+      name: ci
+      deployment: false
     runs-on: ubuntu-latest
     needs: [fix]
     timeout-minutes: 10
@@ -726,9 +730,9 @@ jobs:
         if: steps.tree.outputs.current == 'true'
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          app-id: ${{ secrets.ACTIONS_MAINTENANCE_APP_ID }}
+          client-id: ${{ secrets.ACTIONS_MAINTENANCE_APP_ID }}
           private-key: ${{ secrets.ACTIONS_MAINTENANCE_PRIVATE_KEY }}
-          # Narrowed to the one permission this job uses (zizmor `github-app`). By default the
+          # Narrowed to the one permission this job uses (jactionlint `github-app`). By default the
           # minted token inherits *every* permission the app's installation holds. It commits
           # files to the PR branch, and `contents: write` is that and nothing else.
           permission-contents: write
@@ -759,14 +763,14 @@ jobs:
   # executes nothing from the tree. The hand-off is a `create-patch` artefact scoped to
   # `README.md`, and `readme-commit` refuses any other path.
   #
-  # `needs: [changes, fix, commit]` is **ordering, not a dependency**. This pair and `commit` both
-  # write to the pull request's branch, and the commit actions pass the head they read as
-  # `expectedHeadOid`, so two of them writing at once means one fails on a moved parent: a red
-  # gate whose cause is a race nobody can see in the diff. Running them in series costs a minute
-  # on the pull requests where both have something to do, and there is nothing to reason about
-  # afterwards. It is also why this pair are jobs and not a second workflow: `repo-lint`'s
-  # `concurrency-groups-hold-one-workflow` would refuse the second workflow, for the reason the
-  # note at the top of this file gives.
+  # `needs: [changes, commit]` is **ordering, not a dependency** (`commit` already waits for
+  # `fix`). This pair and `commit` both write to the pull request's branch, and the commit
+  # actions pass the head they read as `expectedHeadOid`, so two of them writing at once means one
+  # fails on a moved parent: a red gate whose cause is a race nobody can see in the diff. Running
+  # them in series costs a minute on the pull requests where both have something to do, and there
+  # is nothing to reason about afterwards. It is also why this pair are jobs and not a second
+  # workflow: `repo-lint`'s `concurrency-groups-hold-one-workflow` would refuse the second
+  # workflow, for the reason the note at the top of this file gives.
   #
   # `!failure()`, not `success()`: `fix` skips on a pull request with no Rust in it, and `commit`
   # whenever there is nothing to commit, and a README that changed on such a branch is exactly the
@@ -776,7 +780,7 @@ jobs:
     name: render the README
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [changes, fix, commit]
+    needs: [changes, commit]
     # Forks get no app secrets, so there would be no token to commit with. `ci.yml`'s `readme`
     # job is what covers them: it renders in check mode and fails on a stale file.
     if: ${{ !failure() && !cancelled() && needs.changes.outputs.readme == 'true' && github.event.pull_request.head.repo.full_name == github.repository }}
@@ -847,6 +851,10 @@ jobs:
   # mints no token and makes no API call.
   readme-commit:
     name: commit the README
+    # The maintenance app's secrets belong in the ci environment.
+    environment:
+      name: ci
+      deployment: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [readme]
@@ -881,7 +889,7 @@ jobs:
         id: generate_token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          app-id: ${{ secrets.ACTIONS_MAINTENANCE_APP_ID }}
+          client-id: ${{ secrets.ACTIONS_MAINTENANCE_APP_ID }}
           private-key: ${{ secrets.ACTIONS_MAINTENANCE_PRIVATE_KEY }}
           permission-contents: write
 

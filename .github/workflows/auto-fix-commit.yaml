@@ -30,7 +30,8 @@ permissions: {}
 
 jobs:
   # Holds no secret and no environment, and only reads the patch's size; nothing in the artifact is
-  # executed. `fix` uploads its patch only when it changed something, so no artifact means nothing to commit.
+  # executed. `fix` uploads its patch only when it changed something, so no artifact means nothing
+  # to commit.
   find-fixes:
     name: find the fixes
     # A finished pull_request run, not a cancelled one: the gate fails the run exactly when there is
@@ -230,6 +231,30 @@ jobs:
           git apply "$PATCH"
           git status --short
 
+      # commit-changes guards the branch head it reads itself, not the one the fixes were checked
+      # against. Checked again here, before the token is minted, so a push that landed while the
+      # patch was being checked is left alone: its own run commits instead. The window that remains
+      # is the seconds between this step and the commit action's own read.
+      - name: check the branch still points at the fixed head
+        id: still
+        if: steps.tree.outputs.current == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ steps.tree.outputs.head }}
+        run: |
+          set -euo pipefail
+          # Each segment percent-encoded: a `#`, `%` or `?` in the name cannot cut the path short.
+          ref="$(jq -rn --arg b "$BRANCH" '$b | split("/") | map(@uri) | join("/")')"
+          tip="$(gh api "repos/${REPOSITORY}/git/ref/heads/${ref}" --jq '.object.sha')"
+          if [ "$tip" != "$HEAD_SHA" ]; then
+            echo "::notice::the branch moved while the fixes were checked; the run queued for the new head commits instead"
+            echo "current=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          fi
+
       # A GitHub App token, not `GITHUB_TOKEN`: a push made with the default token does not trigger
       # workflows, so the fixes would land without re-running the checks that wanted them,
       # leaving the pull request red on a problem that has already been solved.
@@ -242,7 +267,7 @@ jobs:
       # action as an input, never into the `origin` URL or anywhere else in `.git/config`.
       - name: Generate Bot Token
         id: generate_token
-        if: steps.tree.outputs.current == 'true'
+        if: steps.still.outputs.current == 'true'
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ secrets.ACTIONS_MAINTENANCE_APP_ID }}
@@ -262,28 +287,6 @@ jobs:
       # loudly instead of being silently overwritten. Losing that race is self-healing: the push
       # that won it is itself a `synchronize` event, so `auto-fix` runs again on the head that now
       # exists.
-      # commit-changes guards the branch head it reads itself, not the one the fixes were checked
-      # against. Checked again here, right before the write, so a push that landed while the patch
-      # was being checked is left alone: its own run commits instead. The window that remains is
-      # the few seconds between this step and the commit action's own read.
-      - name: check the branch still points at the fixed head
-        id: still
-        if: steps.tree.outputs.current == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-          BRANCH: ${{ github.event.workflow_run.head_branch }}
-          HEAD_SHA: ${{ steps.tree.outputs.head }}
-        run: |
-          set -euo pipefail
-          tip="$(gh api "repos/${REPOSITORY}/git/ref/heads/${BRANCH}" --jq '.object.sha')"
-          if [ "$tip" != "$HEAD_SHA" ]; then
-            echo "::notice::the branch moved while the fixes were checked; the run queued for the new head commits instead"
-            echo "current=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "current=true" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Commit the fixes
         if: steps.still.outputs.current == 'true'
         uses: TimSchoenle/actions/actions/common/commit-changes@dc5b395636dc1954383f11af4062a08814e9b15a # tag=actions-common-commit-changes-v3.0.1
@@ -294,7 +297,8 @@ jobs:
           file_pattern: ${{ env.FIX_PATHS }}
 
   # Holds no secret and no environment, and only reads the patch's size; nothing in the artifact is
-  # executed. `readme` uploads its patch even when empty, and not at all when it was skipped; both mean nothing to commit.
+  # executed. `readme` uploads its patch even when empty, and not at all when it was skipped; both
+  # mean nothing to commit.
   find-readme:
     name: find the README render
     # A finished pull_request run, not a cancelled one: the gate fails the run exactly when there is
@@ -368,7 +372,7 @@ jobs:
     if: ${{ !failure() && !cancelled() && needs.find-readme.outputs.has_changes == 'true' }}
     permissions:
       actions: read # to download the patch from the pull_request run
-      contents: read # to fetch the commit the patch applies to; the write happens with the App token below
+      contents: read # to fetch the commit the patch applies to; the App token below writes
     steps:
       # `audit`, not `block`, for the reason `commit` gives: the artefact service hands out storage
       # URLs whose hosts are not a documented fixed list. Nothing in this job runs third-party code

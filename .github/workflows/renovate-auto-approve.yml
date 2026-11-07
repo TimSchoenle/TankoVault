@@ -23,6 +23,7 @@ jobs:
   auto-approve-renovate:
     name: Auto Approve Renovate
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       pull-requests: write # to read the bot's PRs and their commits, and to approve them
     steps:

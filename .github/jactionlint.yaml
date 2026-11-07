@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/jdx/jactionlint/v2.5.0/schema/jactionlint-config.json
+#
+# Read by the "Action Lint" jobs in .github/workflows/security.yml, which run the shared
+# TimSchoenle/actions/actions/security/jactionlint action, and by a local `jactionlint` run. The
+# action passes --profile=pedantic itself; the key below gives a local run the same profile.
+#
+# The pedantic profile is the counterpart of the zizmor pedantic persona this repository ran before,
+# so no zizmor audit is lost. The rules turned off below are style and policy rules of jactionlint
+# that zizmor never had.
+profile: pedantic
+
+rules:
+  # Every step inherits bash from the runner's default; naming it on each step adds noise without
+  # changing what runs.
+  require-shell: off
+  # `if: steps.x.outputs.y == 'true'` is valid syntax, and the workflows write conditions both ways.
+  require-expression-wrapping: off
+  # The workflows deliberately track ubuntu-latest, so image moves arrive without a commit per job.
+  mutable-runner-label: off
+  # zizmor no longer runs, so a `# zizmor: ignore[...]` comment that suppresses nothing is stale.
+  unused-ignore:
+    zizmor: true
+
+# dtolnay/rust-toolchain keeps its inline `# zizmor: ignore[superfluous-actions,stale-action-refs]`
+# on every step that uses it; jactionlint honours those comments, so a new use of anything else in
+# those files is still judged. The reasoning for both lives here, not on every copy of the line:
+#
+# `superfluous-actions`: declined, not worked around. The toolchain version is a job input read
+# from `rust-toolchain.toml` by the `changes` job, so the number has one home; replacing the action
+# would re-derive `default`, `component add` and `target add` in shell across eight jobs. It also
+# sets `RUSTUP_TOOLCHAIN` and logs the resolved version, which is what makes "which compiler ran
+# this" answerable afterwards. In `auto-fix.yaml` the pinned toolchain is load-bearing, not
+# incidental: that job runs `clippy --fix` and formats the generated client, so the clippy and
+# rustfmt it uses must be the ones `fmt + clippy` will then judge the result with. In
+# `release-please.yaml` the `plan` job builds `xtask release-plan`, which decides which images the
+# release publishes. All three share one pin so there is one number to review.
+#
+# `stale-action-refs` (an online check): pinned to a `master` commit deliberately. The only release
+# tag, `v1`, predates the toolchains this workspace builds with. Still an immutable pin, and
+# `renovate.json` disables automatic updates so a bump is a decision.
+
+ignores:
+  - rule: continue-on-error
+    file: .github/workflows/ci.yml
+    job: mutants
+    reason: mutation testing is advisory; survivors are triage work, not a gate

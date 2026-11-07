@@ -472,7 +472,7 @@ something real: `xtask` reaches the API crate, so building it compiles most of t
 cold on every release: minutes, in front of everything else. A `Swatinem/rust-cache` would remove
 that and would also make a writable cache an input to the job that decides what a signed release
 publishes, in the one workflow holding `packages: write` and `id-token: write`. That is the
-cache-poisoning class zizmor audits for, and it is not worth those minutes. The job drops debug
+cache-poisoning class jactionlint audits for, and it is not worth those minutes. The job drops debug
 info and incremental compilation instead (`CARGO_PROFILE_DEV_DEBUG: none`, `CARGO_INCREMENTAL: 0`),
 which is most of a dev-profile build's cost and none of its meaning for a program that prints three
 lines and exits.

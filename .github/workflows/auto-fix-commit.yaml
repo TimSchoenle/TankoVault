@@ -67,7 +67,7 @@ jobs:
           PATCH_FILE: fixes.patch
         run: |
           set -euo pipefail
-          count="$(gh api "repos/${REPOSITORY}/actions/runs/${RUN_ID}/artifacts?name=${ARTIFACT}" --jq '.total_count')"
+          count="$(gh api "repos/${REPOSITORY}/actions/runs/${RUN_ID}/artifacts?name=${ARTIFACT}" --jq '[.artifacts[] | select(.expired | not)] | length')"
           if [ "${count}" = "0" ]; then
             echo "The run uploaded no ${ARTIFACT} artifact: there is nothing to commit."
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
@@ -304,7 +304,7 @@ jobs:
           PATCH_FILE: changes.patch
         run: |
           set -euo pipefail
-          count="$(gh api "repos/${REPOSITORY}/actions/runs/${RUN_ID}/artifacts?name=${ARTIFACT}" --jq '.total_count')"
+          count="$(gh api "repos/${REPOSITORY}/actions/runs/${RUN_ID}/artifacts?name=${ARTIFACT}" --jq '[.artifacts[] | select(.expired | not)] | length')"
           if [ "${count}" = "0" ]; then
             echo "The run uploaded no ${ARTIFACT} artifact: there is nothing to commit."
             echo "has_changes=false" >> "$GITHUB_OUTPUT"

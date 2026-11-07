@@ -185,9 +185,9 @@ jobs:
         id: generate_token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          client-id: ${{ secrets.RELEASE_BOT_APP_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
-          # Narrowed to what release-please does (zizmor `github-app`): without these, the
+          # Narrowed to what release-please does (jactionlint `github-app`): without these, the
           # minted token inherits every permission the app's installation holds, so any step in
           # this job that could read it would carry the release bot's full authority. The image
           # builds run in separate jobs on fresh runners and never see this token.
@@ -273,7 +273,7 @@ jobs:
           toolchain: ${{ steps.toolchain.outputs.channel }}
 
       # No `Swatinem/rust-cache` here, deliberately: a cache would be a writable input to the job
-      # that decides what a signed release publishes, which is the cache-poisoning class zizmor
+      # that decides what a signed release publishes, which is the cache-poisoning class jactionlint
       # audits for, in the one workflow holding `packages: write` and `id-token: write`.
       #
       # `--no-default-features` (see `xtask/Cargo.toml`'s `full` feature) keeps that posture
@@ -984,6 +984,7 @@ jobs:
         with:
           name: sbom-${{ matrix.bin }}
           path: sbom-${{ matrix.bin }}.spdx.json
+          if-no-files-found: error
           retention-days: 90
 
       - name: install cosign
@@ -1592,8 +1593,8 @@ jobs:
       # The package types are resolved from one `case`, not interpolated from the matrix, for
       # the reason the `build` job resolves its image parameters that way: a `${{ … }}` inside a
       # `run:` block is expanded into the script *before* the shell sees it, so the value is code,
-      # not data, and zizmor flags it (`template-injection`) whether or not the particular value
-      # is under anyone's control. An unknown `os` fails loudly instead of bundling nothing.
+      # not data, and jactionlint flags it (`template-injection`) whether or not the particular
+      # value is under anyone's control. An unknown `os` fails loudly instead of bundling nothing.
       #
       # The flag is repeated per type, not given a comma-separated list, because that is the
       # form verified against `dx bundle`; a bash array so nothing depends on word splitting.
@@ -1895,7 +1896,7 @@ jobs:
         id: generate_token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          client-id: ${{ secrets.RELEASE_BOT_APP_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
           permission-contents: write
 
@@ -2001,7 +2002,7 @@ jobs:
         id: generate_token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          client-id: ${{ secrets.RELEASE_BOT_APP_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
           permission-contents: write
           permission-pull-requests: write

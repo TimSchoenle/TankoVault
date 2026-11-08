@@ -321,35 +321,18 @@ jobs:
           egress-policy: block
           allowed-endpoints: >
             api.github.com:443
+            *.actions.githubusercontent.com:443
             *.blob.core.windows.net:443
 
-      - name: look for a non-empty patch
+      # Validates the patch exactly as commit-patch will, against the head the pull_request run
+      # checked out, and reports whether it holds anything to commit. Nothing in it is executed.
+      - name: find the patch
         id: patch
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
-          ARTIFACT: readme-render
-          PATCH_FILE: changes.patch
-        run: |
-          set -euo pipefail
-          count="$(gh api "repos/${REPOSITORY}/actions/runs/${RUN_ID}/artifacts?name=${ARTIFACT}" --jq '[.artifacts[] | select(.expired | not)] | length')"
-          if [ "${count}" = "0" ]; then
-            echo "The run uploaded no ${ARTIFACT} artifact: there is nothing to commit."
-            echo "has_changes=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          gh run download "${RUN_ID}" --repo "${REPOSITORY}" --name "${ARTIFACT}" --dir "${RUNNER_TEMP}/patch"
-          if [ ! -f "${RUNNER_TEMP}/patch/${PATCH_FILE}" ]; then
-            echo "::error::The ${ARTIFACT} artifact holds no ${PATCH_FILE}; refusing to read it as empty."
-            exit 1
-          fi
-          if [ -s "${RUNNER_TEMP}/patch/${PATCH_FILE}" ]; then
-            echo "has_changes=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "The ${ARTIFACT} patch is empty: nothing changed."
-            echo "has_changes=false" >> "$GITHUB_OUTPUT"
-          fi
+        uses: TimSchoenle/actions/actions/common/find-patch@7b20a67f0b18a6e64c30e5f47c92636729f6ad41 # tag=actions-common-find-patch-v1.1.0
+        with:
+          run_id: ${{ github.event.workflow_run.id }}
+          artifact_name: readme-render
+          expected_head_sha: ${{ github.event.workflow_run.head_sha }}
 
   # Commits what `readme` rendered, and executes nothing from the tree or the artefact. Skipped
   # when the render changed nothing, so an unrelated pull request that merely touched `Cargo.toml`
@@ -407,7 +390,7 @@ jobs:
       # branch that moved since is skipped, and the push that moved it starts a new run.
       - name: commit README.md
         id: render
-        uses: TimSchoenle/actions/actions/common/commit-patch@95d5504ec41c354a35ce0414234107a8eaf921b9 # tag=actions-common-commit-patch-v1.2.0
+        uses: TimSchoenle/actions/actions/common/commit-patch@7b20a67f0b18a6e64c30e5f47c92636729f6ad41 # tag=actions-common-commit-patch-v1.3.0
         with:
           token: ${{ steps.generate_token.outputs.token }}
           run_id: ${{ github.event.workflow_run.id }}

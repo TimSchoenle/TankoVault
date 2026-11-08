@@ -1161,18 +1161,58 @@ jobs:
   # accepts a release nothing reports to, and every regression stops being attributable without a
   # single red job. `xtask repo-lint`'s `sentry-release-name-agrees` is what holds them together.
   #
-  # Both jobs are **opt-in and gated on a repository variable**, not on the secret: the `secrets`
-  # context is not available to a job-level `if:`, so `vars.SENTRY_ORG` and `vars.SENTRY_PROJECT`
-  # are what decides whether this repository reports to Sentry at all. Once they are set, a missing
-  # token fails loudly instead of skipping: a half-configured integration that silently uploads
-  # nothing is the failure this whole design exists to avoid.
+  # Both jobs are **opt-in**: `SENTRY_ORG` and `SENTRY_PROJECT`, `release` environment secrets
+  # beside the token, decide whether this repository reports to Sentry at all. The `secrets`
+  # context is not available to a job-level `if:`, so `sentry-opt-in` reads them inside the
+  # environment and hands on only whether they are set. Once they are, a missing token fails
+  # loudly instead of skipping: a half-configured integration that silently uploads nothing is the
+  # failure this whole design exists to avoid.
   #
-  # Both are also gated on `plan.outputs.any`: a release that rebuilt no image deployed no new
+  # All three are also gated on `plan.outputs.any`: a release that rebuilt no image deployed no new
   # binary, so there is nothing to symbolicate and no version anything will report under.
+  sentry-opt-in:
+    name: sentry opt-in
+    needs: [release-please, plan]
+    if: ${{ !cancelled() && !failure() && needs.release-please.outputs.release_created == 'true' && needs.plan.outputs.any == 'true' }}
+    # Required, not decorative: the two secrets live in the `release` environment, and a job that
+    # omits the environment reads them as empty strings and would opt every release out.
+    environment:
+      name: release
+      deployment: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    outputs:
+      enabled: ${{ steps.opt-in.outputs.enabled }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+
+      # Only `true` or `false` leaves this job, never the values. One of the pair without the
+      # other is a half-configured integration, so it fails instead of reading as opted out.
+      - name: decide whether this release reports to Sentry
+        id: opt-in
+        env:
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+        run: |
+          set -euo pipefail
+          if [ -n "$SENTRY_ORG" ] && [ -n "$SENTRY_PROJECT" ]; then
+            enabled=true
+          elif [ -z "$SENTRY_ORG" ] && [ -z "$SENTRY_PROJECT" ]; then
+            enabled=false
+          else
+            echo "::error::the release environment holds only one of SENTRY_ORG and SENTRY_PROJECT. Add the other, or remove both to opt out of Sentry."
+            exit 1
+          fi
+          echo "enabled=${enabled}" >> "$GITHUB_OUTPUT"
+
   symbols:
     name: sentry debug files (${{ matrix.arch }})
-    needs: [release-please, plan, release-deps]
-    if: ${{ !cancelled() && !failure() && needs.release-please.outputs.release_created == 'true' && needs.plan.outputs.any == 'true' && vars.SENTRY_ORG != '' && vars.SENTRY_PROJECT != '' }}
+    needs: [release-please, plan, release-deps, sentry-opt-in]
+    if: ${{ !cancelled() && !failure() && needs.release-please.outputs.release_created == 'true' && needs.plan.outputs.any == 'true' && needs.sentry-opt-in.outputs.enabled == 'true' }}
     # Required, not decorative: `SENTRY_AUTH_TOKEN` is a `release` environment secret, and a job
     # that omits the environment reads it as an empty string.
     environment:
@@ -1259,16 +1299,16 @@ jobs:
           chmod +x sentry-cli
           sudo mv sentry-cli /usr/local/bin/sentry-cli
 
-      # The variables are what opted this repository in, so a token missing behind them is a
-      # half-configured integration and not a reason to skip: skipping would publish a release
-      # whose issues can never be symbolicated, and say nothing about it anywhere.
+      # SENTRY_ORG and SENTRY_PROJECT are what opted this repository in, so a token missing behind
+      # them is a half-configured integration and not a reason to skip: skipping would publish a
+      # release whose issues can never be symbolicated, and say nothing about it anywhere.
       - name: the Sentry credentials are present
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: |
           set -euo pipefail
           if [ -z "$SENTRY_AUTH_TOKEN" ]; then
-            echo "::error::vars.SENTRY_ORG and vars.SENTRY_PROJECT are set, so this release uploads debug information — but the release environment holds no SENTRY_AUTH_TOKEN. Add it, or clear the variables to opt out."
+            echo "::error::SENTRY_ORG and SENTRY_PROJECT are set, so this release uploads debug information — but the release environment holds no SENTRY_AUTH_TOKEN. Add it, or remove the other two to opt out."
             exit 1
           fi
 
@@ -1282,8 +1322,8 @@ jobs:
       - name: upload the debug information for the published images
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
-          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
           SENTRY_URL: ${{ vars.SENTRY_URL || 'https://sentry.io/' }}
           IMAGES: ${{ needs.plan.outputs.images }}
         run: |
@@ -1304,8 +1344,8 @@ jobs:
 
   sentry-release:
     name: sentry release
-    needs: [release-please, plan, symbols, manifest]
-    if: ${{ !cancelled() && !failure() && needs.release-please.outputs.release_created == 'true' && needs.plan.outputs.any == 'true' && vars.SENTRY_ORG != '' && vars.SENTRY_PROJECT != '' }}
+    needs: [release-please, plan, symbols, manifest, sentry-opt-in]
+    if: ${{ !cancelled() && !failure() && needs.release-please.outputs.release_created == 'true' && needs.plan.outputs.any == 'true' && needs.sentry-opt-in.outputs.enabled == 'true' }}
     environment:
       name: release
       deployment: false
@@ -1345,7 +1385,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "$SENTRY_AUTH_TOKEN" ]; then
-            echo "::error::vars.SENTRY_ORG and vars.SENTRY_PROJECT are set, so this release creates a Sentry release — but the release environment holds no SENTRY_AUTH_TOKEN. Add it, or clear the variables to opt out."
+            echo "::error::SENTRY_ORG and SENTRY_PROJECT are set, so this release creates a Sentry release — but the release environment holds no SENTRY_AUTH_TOKEN. Add it, or remove the other two to opt out."
             exit 1
           fi
 
@@ -1359,8 +1399,8 @@ jobs:
       - name: create and finalise the release
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
-          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
           SENTRY_URL: ${{ vars.SENTRY_URL || 'https://sentry.io/' }}
           RELEASE: tankovault@${{ needs.release-please.outputs.version }}
         run: |

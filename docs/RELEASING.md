@@ -343,9 +343,11 @@ nothing in this repository can create or check. Its absence is reported as a war
 over: the images are already published by then, and suspect commits are not worth failing a
 release for. Symbolication and the release tag are unaffected by it.
 
-**Both jobs are opt-in**, gated on `vars.SENTRY_ORG` and `vars.SENTRY_PROJECT`: repository
-variables, because the `secrets` context is not available to a job-level `if:`. With them unset,
-both jobs skip and the release summary says nothing about Sentry. With them set and no
+**Both jobs are opt-in**, gated on the `SENTRY_ORG` and `SENTRY_PROJECT` secrets of the `release`
+environment. The `secrets` context is not available to a job-level `if:`, so a small `sentry-opt-in`
+job reads them inside the environment and passes on only whether both are set. With both unset,
+both jobs skip and the release summary says nothing about Sentry; with only one of them set,
+`sentry-opt-in` fails. With them set and no
 `SENTRY_AUTH_TOKEN` in the `release` environment, both jobs **fail**: a half-configured
 integration that uploads nothing is the outcome this design exists to prevent.
 
@@ -511,14 +513,14 @@ line is GPL-3.0.
 | `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | `release` environment secret | `plan` (reading the published tag set), image publish |
 | `MINISIGN_SECRET_KEY`, `MINISIGN_PASSWORD` | `release` environment secret | `desktop-release` (signing the desktop manifest) |
 | `SENTRY_AUTH_TOKEN` | `release` environment secret | `symbols`, `sentry-release` |
-| `SENTRY_ORG`, `SENTRY_PROJECT` | repository **variable** | `symbols`, `sentry-release`, and the switch that decides whether they run at all |
+| `SENTRY_ORG`, `SENTRY_PROJECT` | `release` environment secret | `symbols`, `sentry-release`, and `sentry-opt-in`, the switch that decides whether they run at all |
 | `SENTRY_URL` | repository **variable**, optional | self-hosted Sentry; defaults to `https://sentry.io/` |
 
-The Sentry pair are **repository variables and not environment ones**, and that is not a
-preference: the `secrets` context is unavailable to a job-level `if:`, and an environment variable
-is not resolved until the environment is, so neither can gate a job. A repository variable can.
-The credential stays an environment secret alongside the other publishing credentials, and the two
-jobs fail loudly if the variables are set without it. The token needs `project:releases` and
+The Sentry pair are **`release` environment secrets** beside the token, so every Sentry setting
+lives with the other publishing credentials. Neither the `secrets` context nor an environment's
+values are available to a job-level `if:`, so they cannot gate `symbols` and `sentry-release`
+directly; `sentry-opt-in` resolves the environment, reads the pair and hands on a plain
+`enabled` output, which can. The two jobs fail loudly if the pair is set without the token. The token needs `project:releases` and
 `org:read`; `project:write` as well if the Sentry project should be created on first upload.
 
 Every job that reads a **`release` environment** secret names `environment: release` with

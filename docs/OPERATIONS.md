@@ -229,7 +229,7 @@ the release pipeline, not by anything here. Published images are stripped, so th
 build-id of each loaded module and Sentry resolves the frames against debug files the `symbols`
 job uploaded for that build, including a source bundle, so the frame opens on the actual line.
 This happens only for images built by `release-please.yaml`, and only for an organisation that has
-opted in with the `SENTRY_ORG` / `SENTRY_PROJECT` repository variables; a locally built image or a
+opted in with the `SENTRY_ORG` / `SENTRY_PROJECT` `release` environment secrets; a locally built image or a
 private fork that has not will report addresses. [`RELEASING.md`](./RELEASING.md#sentry-debug-information-and-the-release-object)
 has the chain and the credentials.
 

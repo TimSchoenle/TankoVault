@@ -247,7 +247,20 @@ jobs:
           set -euo pipefail
           # Each segment percent-encoded: a `#`, `%` or `?` in the name cannot cut the path short.
           ref="$(jq -rn --arg b "$BRANCH" '$b | split("/") | map(@uri) | join("/")')"
-          tip="$(gh api "repos/${REPOSITORY}/git/ref/heads/${ref}" --jq '.object.sha')"
+          # Up to three tries for a transient API error; if all fail, the step fails and nothing
+          # is committed.
+          tip=""
+          for attempt in 1 2 3; do
+            if tip="$(gh api "repos/${REPOSITORY}/git/ref/heads/${ref}" --jq '.object.sha')"; then
+              break
+            fi
+            tip=""
+            [ "$attempt" -lt 3 ] && sleep $((attempt * 5))
+          done
+          if [ -z "$tip" ]; then
+            echo "::error::could not read the branch tip; refusing to commit without checking it"
+            exit 1
+          fi
           if [ "$tip" != "$HEAD_SHA" ]; then
             echo "::notice::the branch moved while the fixes were checked; the run queued for the new head commits instead"
             echo "current=false" >> "$GITHUB_OUTPUT"
@@ -338,9 +351,10 @@ jobs:
   # when the render changed nothing, so an unrelated pull request that merely touched `Cargo.toml`
   # mints no token and makes no API call.
   #
-  # After `commit`, and `!failure()`, not `success()`: `commit` skips whenever there is nothing to
-  # commit, and a README that changed on such a branch is exactly the branch this job is for. A
-  # *failed* `commit` is different: the branch may be half-fixed. When `commit` did commit, the
+  # After `commit`, when it succeeded or was skipped, not only when it succeeded: `commit` skips
+  # whenever there is nothing to commit, and also when `find-fixes` failed before it, and a README
+  # that changed on such a branch is exactly the branch this job is for. A *failed* or cancelled
+  # `commit` is different: the branch may be half-fixed. When `commit` did commit, the
   # branch has moved past the head `readme` rendered on, `commit-patch` skips, and the run on the
   # new head renders again.
   readme-commit:
@@ -352,7 +366,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [find-readme, commit]
-    if: ${{ !failure() && !cancelled() && needs.find-readme.outputs.has_changes == 'true' }}
+    if: >-
+      ${{ !cancelled() && (needs.commit.result == 'success' || needs.commit.result == 'skipped') &&
+      needs.find-readme.outputs.has_changes == 'true' }}
     permissions:
       actions: read # to download the patch from the pull_request run
       contents: read # to fetch the commit the patch applies to; the App token below writes

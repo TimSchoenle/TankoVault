@@ -382,12 +382,12 @@ jobs:
           egress-policy: audit
 
       # Only git's objects are needed: `commit-patch` applies the patch on top of this commit with
-      # git plumbing and fails if the checkout is anywhere else. Nothing in it is executed.
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # git plumbing and fails if HEAD is anywhere else. The commit is fetched without a checkout,
+      # so none of the branch's files are on disk in the job that holds the App key.
+      - name: Fetch The Head
+        uses: TimSchoenle/actions/actions/common/fetch-head@3f47ad15da6762f9e07c5e6c70df81f37ddf2454 # tag=actions-common-fetch-head-v1.1.0
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
-          persist-credentials: false
+          sha: ${{ github.event.workflow_run.head_sha }}
 
       # An App installation token for the same two reasons `commit` uses one: the commit is
       # verified, and, unlike one made with `GITHUB_TOKEN`, it re-triggers the checks on the

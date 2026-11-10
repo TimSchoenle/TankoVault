@@ -41,6 +41,12 @@
       "allowedVersions": "<0.28.0"
     },
     {
+      "description": "The webauthn crates are released together from one upstream repository and exact-pinned to the same version: the API (`webauthn-rs`) and the frontend (`webauthn-rs-proto`, `webauthn-authenticator-rs`) exchange `webauthn-rs-proto` types over the wire, so a split bump lets server and client disagree on the ceremony payloads. Grouped so both workspaces move in one pull request.",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["webauthn-rs", "webauthn-rs-proto", "webauthn-authenticator-rs"],
+      "groupName": "webauthn"
+    },
+    {
       "description": "Postgres majors need the committed `.sqlx` cache re-verified byte-identical before the `sqlx` job's result means anything — needs a human.",
       "matchPackageNames": ["postgres"],
       "matchUpdateTypes": ["major"],

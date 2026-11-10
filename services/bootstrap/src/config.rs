@@ -5,12 +5,12 @@
 //! type the binary deserialises, or it is a claim about something else.
 
 use secrecy::SecretString;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tankovault_config::DatabaseConfig;
 use terrace_config::schema::Describe;
 
 /// Top-level bootstrap config.
-#[derive(Debug, Deserialize, Describe)]
+#[derive(Debug, Deserialize, Serialize, Describe)]
 pub struct Config {
     /// The database the schema is applied to and the first administrator is written into.
     #[config(nested)]
@@ -28,13 +28,14 @@ pub struct Config {
     /// No default, unlike `xtask seed`: a published image must not be able to create an account
     /// whose password is written down in this repository.
     #[config(secret)]
+    #[serde(skip_serializing)]
     pub seed_admin_password: Option<SecretString>,
 }
 
 /// The one `auth` key this binary needs. Deliberately not
 /// [`tankovault_api::config::AuthConfig`](../../api/src/config.rs), which requires the JWT
 /// secret a migration job has no business holding.
-#[derive(Debug, Default, Deserialize, Describe)]
+#[derive(Debug, Default, Deserialize, Serialize, Describe)]
 pub struct AuthConfig {
     /// Server-side password pepper: mixed into every argon2id hash so a leak alone can't be
     /// brute-forced offline. Empty (default) is un-peppered and offers no such protection;
@@ -47,6 +48,7 @@ pub struct AuthConfig {
     // consumer merging two images that read one key requires the descriptions to agree, so the
     // rationale for the duplication must not itself become part of the description.
     #[config(secret)]
+    #[serde(skip_serializing)]
     pub password_pepper: Option<SecretString>,
 }
 

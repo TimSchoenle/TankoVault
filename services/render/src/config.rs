@@ -5,11 +5,11 @@
 //! for this image: the contract has to be generated from the very type the binary deserialises, or
 //! it is a claim about something else.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use terrace_config::schema::Describe;
 
 /// Top-level render-service config.
-#[derive(Debug, Deserialize, Describe)]
+#[derive(Debug, Deserialize, Serialize, Describe)]
 pub struct Config {
     /// Listen address for `/v1/render`, `/v1/solve` and the probes. Internal-tier only.
     #[serde(default = "default_bind")]
@@ -48,7 +48,7 @@ fn default_bind() -> String {
 }
 
 /// Headless-browser and rendering knobs.
-#[derive(Debug, Clone, Deserialize, Describe)]
+#[derive(Debug, Clone, Deserialize, Serialize, Describe)]
 pub struct RenderConfig {
     /// Explicit Chrome/Chromium executable path. When `None`, `chromiumoxide` auto-detects.
     #[serde(default)]

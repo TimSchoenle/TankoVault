@@ -4,11 +4,11 @@
 //! `config-contract` describes for this image: the contract has to be generated from the very
 //! type the binary deserialises, or it is a claim about something else.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use terrace_config::schema::Describe;
 
 /// Top-level control-plane config.
-#[derive(Debug, Deserialize, Describe)]
+#[derive(Debug, Deserialize, Serialize, Describe)]
 pub struct Config {
     /// Where the catalogue lives, and how many connections this service may hold open.
     #[config(nested)]
@@ -69,7 +69,7 @@ fn default_bind() -> String {
 ///
 /// Every interval is in seconds and every one of them accepts `0`, which disables that sweep
 /// and only that sweep.
-#[derive(Debug, Clone, Deserialize, Describe)]
+#[derive(Debug, Clone, Deserialize, Serialize, Describe)]
 pub struct SchedulerConfig {
     /// Seconds between fast-scan sweeps of all active providers. 0 disables.
     #[serde(default = "default_fast_interval")]

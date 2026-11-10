@@ -10,7 +10,7 @@
 //! installer wrote, since a change under a running install strands saved credentials and silences
 //! toasts. They live in `web/frontend/src/platform/`.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use terrace_config::schema::Describe;
 
 /// The name a stock deployment answers to.
@@ -24,7 +24,7 @@ const DEFAULT_WORDMARK_ACCENT: &str = "Vault";
 ///
 /// Every field defaults, so an absent `[branding]` section is valid and reproduces the shipped
 /// identity exactly.
-#[derive(Debug, Clone, Deserialize, Describe)]
+#[derive(Debug, Clone, Deserialize, Serialize, Describe)]
 #[serde(default)]
 pub struct BrandingConfig {
     /// The product name as prose uses it: email subjects and bodies, page titles, the
@@ -53,7 +53,7 @@ pub struct BrandingConfig {
 }
 
 /// The two halves of the wordmark.
-#[derive(Debug, Clone, Default, Deserialize, Describe)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, Describe)]
 #[serde(default)]
 pub struct WordmarkConfig {
     /// The part drawn in the body colour.
@@ -63,7 +63,7 @@ pub struct WordmarkConfig {
 }
 
 /// The footer's copyright line.
-#[derive(Debug, Clone, Deserialize, Describe)]
+#[derive(Debug, Clone, Deserialize, Serialize, Describe)]
 #[serde(default)]
 pub struct CopyrightConfig {
     /// Who holds it.
@@ -76,7 +76,7 @@ pub struct CopyrightConfig {
 }
 
 /// The licence label, and where its text lives.
-#[derive(Debug, Clone, Deserialize, Describe)]
+#[derive(Debug, Clone, Deserialize, Serialize, Describe)]
 #[serde(default)]
 pub struct LicenceConfig {
     /// What the footer prints.

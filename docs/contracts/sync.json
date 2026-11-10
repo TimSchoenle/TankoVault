@@ -89,8 +89,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "16",
+        "default_value": 16,
         "note": null,
         "required": false,
         "secret": false,
@@ -117,8 +117,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "10",
+        "default_value": 10,
         "note": null,
         "required": false,
         "secret": false,
@@ -163,8 +163,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "info",
+        "default_value": "info",
         "note": null,
         "required": false,
         "secret": false,
@@ -190,8 +190,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "false",
+        "default_value": false,
         "note": null,
         "required": false,
         "secret": false,
@@ -217,8 +217,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "false",
+        "default_value": false,
         "note": null,
         "required": false,
         "secret": false,
@@ -334,8 +334,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "1",
+        "default_value": 1.0,
         "note": null,
         "required": false,
         "secret": false,
@@ -359,8 +359,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "0",
+        "default_value": 0.0,
         "note": null,
         "required": false,
         "secret": false,
@@ -401,8 +401,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "error",
+        "default_value": "error",
         "note": null,
         "required": false,
         "secret": false,
@@ -443,8 +443,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "info",
+        "default_value": "info",
         "note": null,
         "required": false,
         "secret": false,
@@ -471,8 +471,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "100",
+        "default_value": 100,
         "note": null,
         "required": false,
         "secret": false,
@@ -498,8 +498,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "true",
+        "default_value": true,
         "note": null,
         "required": false,
         "secret": false,
@@ -525,8 +525,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "false",
+        "default_value": false,
         "note": null,
         "required": false,
         "secret": false,
@@ -552,8 +552,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "true",
+        "default_value": true,
         "note": null,
         "required": false,
         "secret": false,
@@ -579,8 +579,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "false",
+        "default_value": false,
         "note": null,
         "required": false,
         "secret": false,
@@ -607,8 +607,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "2",
+        "default_value": 2,
         "note": null,
         "required": false,
         "secret": false,
@@ -634,8 +634,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "false",
+        "default_value": false,
         "note": null,
         "required": false,
         "secret": false,
@@ -749,8 +749,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "https://graphql.anilist.co",
+        "default_value": "https://graphql.anilist.co",
         "note": null,
         "required": false,
         "secret": false,
@@ -772,8 +772,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "https://anilist.co/api/v2/oauth",
+        "default_value": "https://anilist.co/api/v2/oauth",
         "note": null,
         "required": false,
         "secret": false,
@@ -810,8 +810,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "newest_wins",
+        "default_value": "newest_wins",
         "note": null,
         "required": false,
         "secret": false,
@@ -838,8 +838,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "700",
+        "default_value": 700,
         "note": null,
         "required": false,
         "secret": false,
@@ -872,8 +872,11 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "[anilist, adapter]",
+        "default_value": [
+          "anilist",
+          "adapter"
+        ],
         "note": null,
         "required": false,
         "secret": false,
@@ -906,8 +909,11 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "[anilist, adapter]",
+        "default_value": [
+          "anilist",
+          "adapter"
+        ],
         "note": null,
         "required": false,
         "secret": false,
@@ -940,8 +946,11 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "[anilist, adapter]",
+        "default_value": [
+          "anilist",
+          "adapter"
+        ],
         "note": null,
         "required": false,
         "secret": false,
@@ -974,8 +983,11 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "[anilist, adapter]",
+        "default_value": [
+          "anilist",
+          "adapter"
+        ],
         "note": null,
         "required": false,
         "secret": false,
@@ -1008,8 +1020,11 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "[anilist, adapter]",
+        "default_value": [
+          "anilist",
+          "adapter"
+        ],
         "note": null,
         "required": false,
         "secret": false,
@@ -1042,8 +1057,11 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "[anilist, adapter]",
+        "default_value": [
+          "anilist",
+          "adapter"
+        ],
         "note": null,
         "required": false,
         "secret": false,
@@ -1076,8 +1094,11 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "[anilist, adapter]",
+        "default_value": [
+          "anilist",
+          "adapter"
+        ],
         "note": null,
         "required": false,
         "secret": false,
@@ -1103,8 +1124,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "true",
+        "default_value": true,
         "note": null,
         "required": false,
         "secret": false,
@@ -1133,8 +1154,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "[]",
+        "default_value": [],
         "note": null,
         "required": false,
         "secret": false,
@@ -1160,8 +1181,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "true",
+        "default_value": true,
         "note": null,
         "required": false,
         "secret": false,
@@ -1188,8 +1209,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "3600",
+        "default_value": 3600,
         "note": null,
         "required": false,
         "secret": false,
@@ -1215,8 +1236,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "200",
+        "default_value": 200,
         "note": null,
         "required": false,
         "secret": false,
@@ -1243,8 +1264,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "2000",
+        "default_value": 2000,
         "note": null,
         "required": false,
         "secret": false,
@@ -1266,8 +1287,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "0.0.0.0:8083",
+        "default_value": "0.0.0.0:8083",
         "note": null,
         "required": false,
         "secret": false,
@@ -1294,8 +1315,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "900",
+        "default_value": 900,
         "note": null,
         "required": false,
         "secret": false,
@@ -1324,8 +1345,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "[]",
+        "default_value": [],
         "note": null,
         "required": false,
         "secret": false,
@@ -1351,8 +1372,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "false",
+        "default_value": false,
         "note": null,
         "required": false,
         "secret": false,
@@ -1379,8 +1400,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "0",
+        "default_value": 0,
         "note": null,
         "required": false,
         "secret": false,
@@ -1407,8 +1428,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "1048576",
+        "default_value": 1048576,
         "note": null,
         "required": false,
         "secret": false,
@@ -1435,8 +1456,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "30",
+        "default_value": 30,
         "note": null,
         "required": false,
         "secret": false,
@@ -1462,8 +1483,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "false",
+        "default_value": false,
         "note": null,
         "required": false,
         "secret": false,
@@ -1490,8 +1511,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "63072000",
+        "default_value": 63072000,
         "note": null,
         "required": false,
         "secret": false,
@@ -1517,8 +1538,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "true",
+        "default_value": true,
         "note": null,
         "required": false,
         "secret": false,
@@ -1544,8 +1565,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "false",
+        "default_value": false,
         "note": null,
         "required": false,
         "secret": false,
@@ -1571,8 +1592,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "true",
+        "default_value": true,
         "note": null,
         "required": false,
         "secret": false,
@@ -1598,8 +1619,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "true",
+        "default_value": true,
         "note": null,
         "required": false,
         "secret": false,
@@ -1632,8 +1653,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "memory",
+        "default_value": "memory",
         "note": null,
         "required": false,
         "secret": false,
@@ -1661,8 +1682,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "300",
+        "default_value": 300,
         "note": null,
         "required": false,
         "secret": false,
@@ -1690,8 +1711,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "60",
+        "default_value": 60,
         "note": null,
         "required": false,
         "secret": false,
@@ -1719,8 +1740,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "10",
+        "default_value": 10,
         "note": null,
         "required": false,
         "secret": false,
@@ -1748,8 +1769,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "5",
+        "default_value": 5,
         "note": null,
         "required": false,
         "secret": false,
@@ -1777,8 +1798,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "30",
+        "default_value": 30,
         "note": null,
         "required": false,
         "secret": false,
@@ -1806,8 +1827,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "10",
+        "default_value": 10,
         "note": null,
         "required": false,
         "secret": false,
@@ -1833,8 +1854,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "false",
+        "default_value": false,
         "note": null,
         "required": false,
         "secret": false,
@@ -1860,8 +1881,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "true",
+        "default_value": true,
         "note": null,
         "required": false,
         "secret": false,
@@ -1883,8 +1904,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "/metrics",
+        "default_value": "/metrics",
         "note": null,
         "required": false,
         "secret": false,
@@ -1906,8 +1927,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "0.0.0.0:9090",
+        "default_value": "0.0.0.0:9090",
         "note": null,
         "required": false,
         "secret": false,
@@ -1933,8 +1954,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "true",
+        "default_value": true,
         "note": null,
         "required": false,
         "secret": false,
@@ -1961,8 +1982,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "15",
+        "default_value": 15,
         "note": null,
         "required": false,
         "secret": false,
@@ -1997,8 +2018,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "token",
+        "default_value": "token",
         "note": null,
         "required": false,
         "secret": false,
@@ -2085,8 +2106,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "{  }",
+        "default_value": {},
         "note": null,
         "required": false,
         "secret": false,
@@ -2177,8 +2198,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "0.0.0.0:9091",
+        "default_value": "0.0.0.0:9091",
         "note": null,
         "required": false,
         "secret": false,
@@ -2223,8 +2244,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "0.85",
+        "default_value": 0.85,
         "note": null,
         "required": false,
         "secret": false,
@@ -2246,8 +2267,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "0.6",
+        "default_value": 0.6,
         "note": null,
         "required": false,
         "secret": false,
@@ -2269,8 +2290,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "0.97",
+        "default_value": 0.97,
         "note": null,
         "required": false,
         "secret": false,
@@ -2296,8 +2317,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "10",
+        "default_value": 10,
         "note": null,
         "required": false,
         "secret": false,
@@ -2323,8 +2344,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "true",
+        "default_value": true,
         "note": null,
         "required": false,
         "secret": false,
@@ -2350,8 +2371,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "true",
+        "default_value": true,
         "note": null,
         "required": false,
         "secret": false,
@@ -2377,8 +2398,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "true",
+        "default_value": true,
         "note": null,
         "required": false,
         "secret": false,
@@ -2404,8 +2425,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "true",
+        "default_value": true,
         "note": null,
         "required": false,
         "secret": false,
@@ -2430,6 +2451,7 @@
             "writeOnly": true
           },
           "default_conflict_policy": {
+            "default": "newest_wins",
             "description": "Which side wins a two-sided change for a reader who has expressed no preference. Each\nreader may override it on their own link.",
             "enum": [
               "local_wins",
@@ -2440,15 +2462,18 @@
             "type": "string"
           },
           "graphql_url": {
+            "default": "https://graphql.anilist.co",
             "description": "The `GraphQL` endpoint every read and write goes to. Overridable so a test can point\nit at a stub.",
             "type": "string"
           },
           "min_request_interval_ms": {
+            "default": 700,
             "description": "Shortest gap between two requests to `AniList`, in milliseconds. It paces this\ndeployment's whole traffic, not one reader's: `AniList` rate-limits per application.",
             "minimum": 0,
             "type": "integer"
           },
           "oauth_base": {
+            "default": "https://anilist.co/api/v2/oauth",
             "description": "Base URL the `authorize` and `token` paths hang off.",
             "type": "string"
           },
@@ -2465,6 +2490,7 @@
         "type": "object"
       },
       "bind_addr": {
+        "default": "0.0.0.0:8083",
         "description": "Listen address for the internally-authenticated sync contract and the probes. Not a\npublic listener; the API proxies `/v1/me/sync/*` to it.",
         "type": "string"
       },
@@ -2472,11 +2498,13 @@
         "additionalProperties": false,
         "properties": {
           "acquire_timeout_secs": {
+            "default": 10,
             "description": "How long a caller waits for a pooled connection before failing, in seconds.",
             "minimum": 0,
             "type": "integer"
           },
           "max_connections": {
+            "default": 16,
             "description": "Upper bound on the connection pool.",
             "maximum": 4294967295,
             "minimum": 0,
@@ -2494,6 +2522,7 @@
         "additionalProperties": false,
         "properties": {
           "refresh_secs": {
+            "default": 15,
             "description": "Seconds between refreshes of a service's cached flag snapshot. It is how long a change\ntakes to reach the other replicas; the replica that served the change applies it at once.",
             "minimum": 0,
             "type": "integer"
@@ -2520,6 +2549,7 @@
             "type": "object"
           },
           "identity": {
+            "default": "token",
             "description": "How callers are identified.",
             "enum": [
               "off",
@@ -2544,6 +2574,7 @@
               },
               "type": "object"
             },
+            "default": {},
             "description": "Which services may call this one, keyed by caller name.",
             "type": "object"
           },
@@ -2563,6 +2594,7 @@
                 "type": "string"
               },
               "probe_listen": {
+                "default": "0.0.0.0:9091",
                 "description": "Address the credential-free `/health` and `/ready` probes bind to, in **plaintext**, on\ntheir own listener (default `0.0.0.0:9091`). Read under `mtls` only.\n\nAn orchestrator probe presents no client certificate, so on the mTLS port its plain `GET`\ngets a TLS alert and the replica is restarted as unhealthy. Set it to `null`, which drops\nthe listener, only where the prober can present a certificate.",
                 "type": "string"
               }
@@ -2581,34 +2613,42 @@
         "additionalProperties": false,
         "properties": {
           "auto_merge": {
+            "default": 0.9700000286102295,
             "description": "At or above this score, and only when a primary identity rule fired, the duplicate sweep\nmay merge two existing series without an operator. A corroborated alias is eligible from\n[`Self::low`] up, whatever this is set to, because its corroboration, not its score, is the\nevidence. Either way an edition conflict, or a numeric conflict with its guard enabled,\nreports the pair distinct, and an external-id or live-timing veto or any other enabled\nmerge guard holds it for review.\n[`Self::high`] files an incoming source; this deletes a series that already exists.\n`tankovault_matcher::adjudicate` defines the identity rules, vetoes and guards.",
             "type": "number"
           },
           "block_auto_merge_on_author_conflict": {
+            "default": true,
             "description": "Both series name authors and share none: a remake, a spin-off, or an unrelated work with\nthe same title. Off costs nothing on a catalogue whose providers rarely publish credits,\nbecause the signal cannot fire without credits on both sides.",
             "type": "boolean"
           },
           "block_auto_merge_on_numeric_conflict": {
+            "default": true,
             "description": "Titles carrying different numbers (`Overlord` against `Overlord 2`) are reported as\ndistinct works. Switching this off makes a sequel merge-eligible on title similarity\nalone, and no other rule tells a sequel from its predecessor.",
             "type": "boolean"
           },
           "block_auto_merge_on_type_conflict": {
+            "default": true,
             "description": "Both series declare a medium and they disagree (manga against manhwa). Worth switching\noff on a deployment whose providers guess the medium from the site they scraped it from.",
             "type": "boolean"
           },
           "block_auto_merge_on_year_conflict": {
+            "default": true,
             "description": "Release years three or more years apart, as with re-serialisations and remakes that share\nan exact title. The year never moves a score, so this guard is the only way it holds a\npair back.",
             "type": "boolean"
           },
           "candidate_limit": {
+            "default": 10,
             "description": "How many trigram candidates to score per query title. A higher value widens the index scan.",
             "type": "integer"
           },
           "high": {
+            "default": 0.8500000238418579,
             "description": "At or above this score, and only when the incoming title is the series' own title under\nan identity rule, the worker attaches to the existing series outright. External sync maps\na remote entry on the score alone.",
             "type": "number"
           },
           "low": {
+            "default": 0.6000000238418579,
             "description": "At or above this score, a title that did not attach creates the series and flags the pair\nfor operator review.",
             "type": "number"
           }
@@ -2619,19 +2659,23 @@
         "additionalProperties": false,
         "properties": {
           "enrich_batch": {
+            "default": 200,
             "description": "Series fetched per DB page during a sweep.",
             "type": "integer"
           },
           "enrich_enabled": {
+            "default": true,
             "description": "Whether the background enrichment worker runs. On by default.",
             "type": "boolean"
           },
           "enrich_interval_secs": {
+            "default": 3600,
             "description": "Seconds between enrichment sweeps.",
             "minimum": 0,
             "type": "integer"
           },
           "enrich_max_series": {
+            "default": 2000,
             "description": "Upper bound on series processed per sweep (paces `AniList`'s rate limit).",
             "minimum": 0,
             "type": "integer"
@@ -2640,6 +2684,10 @@
             "additionalProperties": false,
             "properties": {
               "content_type": {
+                "default": [
+                  "anilist",
+                  "adapter"
+                ],
                 "description": "Priority order for the medium/origin classification.",
                 "items": {
                   "enum": [
@@ -2651,6 +2699,10 @@
                 "type": "array"
               },
               "cover": {
+                "default": [
+                  "anilist",
+                  "adapter"
+                ],
                 "description": "Priority order for the cover image URL.",
                 "items": {
                   "enum": [
@@ -2662,6 +2714,10 @@
                 "type": "array"
               },
               "default": {
+                "default": [
+                  "anilist",
+                  "adapter"
+                ],
                 "description": "Fallback order for any field whose list was explicitly emptied.",
                 "items": {
                   "enum": [
@@ -2673,6 +2729,10 @@
                 "type": "array"
               },
               "description": {
+                "default": [
+                  "anilist",
+                  "adapter"
+                ],
                 "description": "Priority order for the long-form series description.",
                 "items": {
                   "enum": [
@@ -2684,6 +2744,10 @@
                 "type": "array"
               },
               "release_year": {
+                "default": [
+                  "anilist",
+                  "adapter"
+                ],
                 "description": "Priority order for the year of first publication.",
                 "items": {
                   "enum": [
@@ -2695,6 +2759,10 @@
                 "type": "array"
               },
               "status": {
+                "default": [
+                  "anilist",
+                  "adapter"
+                ],
                 "description": "Priority order for the publication status.",
                 "items": {
                   "enum": [
@@ -2706,6 +2774,10 @@
                 "type": "array"
               },
               "title": {
+                "default": [
+                  "anilist",
+                  "adapter"
+                ],
                 "description": "Priority order for the canonical/display title.",
                 "items": {
                   "enum": [
@@ -2723,6 +2795,7 @@
             "additionalProperties": false,
             "properties": {
               "blocklist": {
+                "default": [],
                 "description": "Additional refused terms, matched on their slug: `N/A`, `n/a` and `n-a` are one entry.",
                 "items": {
                   "type": "string"
@@ -2730,6 +2803,7 @@
                 "type": "array"
               },
               "use_defaults": {
+                "default": true,
                 "description": "Whether the shipped [`tankovault_domain::DEFAULT_BLOCKED_TERMS`] apply.\n\nTurn it off for a catalogue that uses one of them as a genre. Turning it off stops the\nrefusal from the next scan on and leaves stored tags and credits as they are.",
                 "type": "boolean"
               }
@@ -2743,18 +2817,22 @@
         "additionalProperties": false,
         "properties": {
           "enabled": {
+            "default": true,
             "description": "Install the Prometheus recorder and serve the scrape endpoint. When `false` the\nscrape route answers `404` and no measurements are retained.",
             "type": "boolean"
           },
           "http_requests": {
+            "default": true,
             "description": "Also record per-request HTTP metrics. The request histogram is the expensive,\nhigh-cardinality part, so it has its own switch.",
             "type": "boolean"
           },
           "listen": {
+            "default": "0.0.0.0:9090",
             "description": "Address the scrape endpoint binds on its **own** listener, apart from the service's\npublic port (default `0.0.0.0:9090`). `null` serves it on the primary port.",
             "type": "string"
           },
           "route": {
+            "default": "/metrics",
             "description": "Path the scrape endpoint is mounted at.",
             "type": "string"
           }
@@ -2768,12 +2846,14 @@
             "additionalProperties": false,
             "properties": {
               "burst": {
+                "default": 5,
                 "description": "The most requests a client may spend back-to-back.",
                 "maximum": 4294967295,
                 "minimum": 0,
                 "type": "integer"
               },
               "per_minute": {
+                "default": 10,
                 "description": "Sustained requests allowed per minute per client key, which is the bucket's refill rate.",
                 "maximum": 4294967295,
                 "minimum": 0,
@@ -2783,6 +2863,7 @@
             "type": "object"
           },
           "backend": {
+            "default": "memory",
             "description": "Where the counters live.",
             "enum": [
               "memory",
@@ -2791,6 +2872,7 @@
             "type": "string"
           },
           "enabled": {
+            "default": true,
             "description": "Enforce limits. When `false` the layer is not mounted and costs nothing per request.",
             "type": "boolean"
           },
@@ -2798,12 +2880,14 @@
             "additionalProperties": false,
             "properties": {
               "burst": {
+                "default": 10,
                 "description": "The most requests a client may spend back-to-back.",
                 "maximum": 4294967295,
                 "minimum": 0,
                 "type": "integer"
               },
               "per_minute": {
+                "default": 30,
                 "description": "Sustained requests allowed per minute per client key, which is the bucket's refill rate.",
                 "maximum": 4294967295,
                 "minimum": 0,
@@ -2816,12 +2900,14 @@
             "additionalProperties": false,
             "properties": {
               "burst": {
+                "default": 60,
                 "description": "The most requests a client may spend back-to-back.",
                 "maximum": 4294967295,
                 "minimum": 0,
                 "type": "integer"
               },
               "per_minute": {
+                "default": 300,
                 "description": "Sustained requests allowed per minute per client key, which is the bucket's refill rate.",
                 "maximum": 4294967295,
                 "minimum": 0,
@@ -2831,6 +2917,7 @@
             "type": "object"
           },
           "trust_forwarded_for": {
+            "default": false,
             "description": "Take the client key from `X-Forwarded-For` or `X-Real-IP`. Enable it **only behind a\nreverse proxy that overwrites both**; otherwise any client forges a fresh key and bypasses\nthe limiter.",
             "type": "boolean"
           }
@@ -2838,6 +2925,7 @@
         "type": "object"
       },
       "reconcile_interval_secs": {
+        "default": 900,
         "description": "Interval (seconds) between scheduled reconciliation ticks. `0` disables the loop.",
         "minimum": 0,
         "type": "integer"
@@ -2849,10 +2937,12 @@
             "additionalProperties": false,
             "properties": {
               "allow_credentials": {
+                "default": false,
                 "description": "Allow credentialed cross-origin requests, carrying cookies or `Authorization`. Cannot be\ncombined with a wildcard origin.",
                 "type": "boolean"
               },
               "allowed_origins": {
+                "default": [],
                 "description": "Exact origins allowed, such as `https://app.example.com`. Empty disables CORS.",
                 "items": {
                   "type": "string"
@@ -2860,6 +2950,7 @@
                 "type": "array"
               },
               "max_age_secs": {
+                "default": 0,
                 "description": "`Access-Control-Max-Age`, in seconds.",
                 "minimum": 0,
                 "type": "integer"
@@ -2868,33 +2959,40 @@
             "type": "object"
           },
           "expose_api_docs": {
+            "default": true,
             "description": "Serve the browsable API docs (`/scalar`) and the `OpenAPI` document.\n\nOff by default in production and on elsewhere. Left on in production, it gives an\nattacker every `/v1/admin/*` path, the permission vocabulary and the exact request bodies\nwithout a failed probe.",
             "type": "boolean"
           },
           "hsts": {
+            "default": false,
             "description": "Emit `Strict-Transport-Security`. Browsers ignore it over plain HTTP.",
             "type": "boolean"
           },
           "hsts_max_age_secs": {
+            "default": 63072000,
             "description": "`max-age` for the HSTS header, in seconds. The default is two years, the preload minimum.",
             "minimum": 0,
             "type": "integer"
           },
           "max_body_bytes": {
+            "default": 1048576,
             "description": "Reject request bodies larger than this, in bytes, before they are buffered.",
             "minimum": 0,
             "type": "integer"
           },
           "request_timeout_secs": {
+            "default": 30,
             "description": "Abort a request that has not produced a response within this many seconds.",
             "minimum": 0,
             "type": "integer"
           },
           "security_headers": {
+            "default": true,
             "description": "Send the baseline set of hardening headers (`X-Content-Type-Options`,\n`X-Frame-Options`, `Referrer-Policy`, `Cross-Origin-Resource-Policy`).",
             "type": "boolean"
           },
           "trust_request_id": {
+            "default": false,
             "description": "Accept an inbound `X-Request-Id` instead of minting one. Enable it only behind a trusted\nproxy, since a client-supplied id can poison log correlation.",
             "type": "boolean"
           }
@@ -2905,10 +3003,12 @@
         "additionalProperties": false,
         "properties": {
           "json_logs": {
+            "default": false,
             "description": "Emit structured JSON logs, for production, in place of the human-readable format.",
             "type": "boolean"
           },
           "log_filter": {
+            "default": "info",
             "description": "`tracing` filter directives, such as `info,tankovault=debug`. `RUST_LOG` wins when set.",
             "type": "string"
           },
@@ -2916,10 +3016,12 @@
             "additionalProperties": false,
             "properties": {
               "attach_stacktraces": {
+                "default": true,
                 "description": "Attach a stack trace to events that carry none of their own.",
                 "type": "boolean"
               },
               "breadcrumb_level": {
+                "default": "info",
                 "description": "Least severe `tracing` level kept as a **breadcrumb**, the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead.",
                 "enum": [
                   "off",
@@ -2932,6 +3034,7 @@
                 "type": "string"
               },
               "capture_level": {
+                "default": "error",
                 "description": "Least severe `tracing` level reported as a Sentry **issue**.",
                 "enum": [
                   "off",
@@ -2944,6 +3047,7 @@
                 "type": "string"
               },
               "debug": {
+                "default": false,
                 "description": "Print the SDK's own diagnostics to stderr, to prove a DSN works.",
                 "type": "boolean"
               },
@@ -2953,6 +3057,7 @@
                 "writeOnly": true
               },
               "enabled": {
+                "default": false,
                 "description": "Initialise the Sentry client. `false` installs no client, no panic hook and no layer,\nso every other key here is inert and nothing is sent anywhere.",
                 "type": "boolean"
               },
@@ -2961,10 +3066,12 @@
                 "type": "string"
               },
               "http_transactions": {
+                "default": true,
                 "description": "Record one Sentry transaction per request through the shared HTTP stack, named by the\nmatched route, so an id in the path does not become a transaction name.\n\n[`Self::traces_sample_rate`] decides whether a transaction is kept. Off, the HTTP layer\nstarts no transactions; a broker delivery still starts one through the `tracing` layer.",
                 "type": "boolean"
               },
               "max_breadcrumbs": {
+                "default": 100,
                 "description": "How many breadcrumbs one event carries.",
                 "minimum": 0,
                 "type": "integer"
@@ -2974,12 +3081,14 @@
                 "type": "string"
               },
               "sample_rate": {
+                "default": 1.0,
                 "description": "Fraction of captured events sent, `0.0`-`1.0`, decided at random per event. A lower rate\nundercounts every issue and can miss a rare one entirely, so leave it at `1.0` unless\nquota forces it lower.",
                 "maximum": 1.0,
                 "minimum": 0.0,
                 "type": "number"
               },
               "send_default_pii": {
+                "default": false,
                 "description": "Send personally identifying data with every event: the client IP, the full request\nheader set (`Authorization` and `Cookie` included) and the resolved user.\n\n**Off, and worth leaving off.** A crash report does not need a reader's IP address or\nsession cookie, and Sentry is a third party under the deployment's data policy. On, it\nalso stops `sentry-tower` redacting sensitive headers in the HTTP middleware.",
                 "type": "boolean"
               },
@@ -2988,15 +3097,18 @@
                 "type": "string"
               },
               "shutdown_timeout_secs": {
+                "default": 2,
                 "description": "How long process exit waits for queued events to drain.",
                 "minimum": 0,
                 "type": "integer"
               },
               "span_attributes": {
+                "default": false,
                 "description": "Copy `tracing` span fields onto the Sentry span as attributes. Off by default, because span\nfields carry ids and user-supplied titles and a transaction is kept longer than a log line.",
                 "type": "boolean"
               },
               "traces_sample_rate": {
+                "default": 0.0,
                 "description": "Fraction of traces this service **starts** that are recorded, `0.0`-`1.0`.\n\n`0.0`, the default, starts none. The service still continues a trace that arrives already\nsampled on a request or a broker message. Set the same rate on every service, since the\nservice that starts a trace decides whether it exists; `0.05`-`0.2` is an ordinary\nproduction figure.",
                 "maximum": 1.0,
                 "minimum": 0.0,

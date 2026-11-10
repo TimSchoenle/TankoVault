@@ -5859,6 +5859,7 @@ dependencies = [
 name = "tankovault-config-contract"
 version = "11.1.4"
 dependencies = [
+ "serde",
  "serde_json",
  "tankovault-api",
  "tankovault-bootstrap",

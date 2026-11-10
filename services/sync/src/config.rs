@@ -5,7 +5,7 @@
 //! type the binary deserialises, or it is a claim about something else.
 
 use secrecy::SecretString;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tankovault_config::{DatabaseConfig, TelemetryConfig};
 use tankovault_contracts::sync::ConflictPolicy;
 use tankovault_domain::MetadataPriority;
@@ -17,7 +17,7 @@ pub const DEFAULT_GRAPHQL_URL: &str = "https://graphql.anilist.co";
 pub const DEFAULT_OAUTH_BASE: &str = "https://anilist.co/api/v2/oauth";
 
 /// Top-level sync config.
-#[derive(Debug, Deserialize, Describe)]
+#[derive(Debug, Deserialize, Serialize, Describe)]
 pub struct Config {
     /// Where the catalogue lives, and how many connections this service may hold open.
     #[config(nested)]
@@ -72,7 +72,7 @@ pub struct Config {
 /// Metadata-priority and tokenless enrichment-worker settings.
 // `Clone` because the config lives behind an `Arc` shared with the reload supervisor and
 // so cannot be moved out of.
-#[derive(Debug, Clone, Deserialize, Describe)]
+#[derive(Debug, Clone, Deserialize, Serialize, Describe)]
 pub struct MetadataConfig {
     /// Per-field source authority order (default: `AniList` before the adapters).
     // `nested`, through `tankovault-domain`'s `schema` feature: the same subtree
@@ -104,7 +104,7 @@ pub struct MetadataConfig {
 }
 
 /// The `AniList` application this deployment syncs through, and how hard it may push.
-#[derive(Debug, Clone, Deserialize, Describe)]
+#[derive(Debug, Clone, Deserialize, Serialize, Describe)]
 pub struct AniListConfig {
     /// The `OAuth2` client id, from the application `AniList` issued. Accepted as a number
     /// too, because the environment provider infers one.
@@ -112,6 +112,7 @@ pub struct AniListConfig {
     pub client_id: String,
     /// The `OAuth2` client secret; lets anyone mint tokens as this app.
     #[config(secret)]
+    #[serde(skip_serializing)]
     pub client_secret: SecretString,
     /// Where `AniList` returns the reader after they authorise. Registered on the `AniList`
     /// application, and refused if the two disagree by a single character.
@@ -119,6 +120,7 @@ pub struct AniListConfig {
     /// Base64 32-byte data-encryption key for tokens at rest, which opens every user's stored
     /// `AniList` access and refresh token.
     #[config(secret)]
+    #[serde(skip_serializing)]
     pub token_encryption_key: SecretString,
     /// The `GraphQL` endpoint every read and write goes to. Overridable so a test can point
     /// it at a stub.
@@ -150,7 +152,7 @@ pub struct AniListConfig {
 /// contract. `ConflictPolicy` deserialises through serde's own derive (no `try_from`, no
 /// `from`), so this renamed variant list *is* the accepted set. Nothing deserialises through
 /// the mirror; the field keeps `ConflictPolicy`'s own `Deserialize`.
-#[derive(Deserialize, Describe)]
+#[derive(Deserialize, Serialize, Describe)]
 #[serde(remote = "ConflictPolicy", rename_all = "snake_case")]
 #[expect(
     dead_code,

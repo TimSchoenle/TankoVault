@@ -5,11 +5,11 @@
 //! type the binary deserialises, or it is a claim about something else.
 
 use secrecy::SecretString;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use terrace_config::schema::Describe;
 
 /// Top-level notifier config.
-#[derive(Debug, Deserialize, Describe)]
+#[derive(Debug, Deserialize, Serialize, Describe)]
 pub struct Config {
     /// Where the catalogue lives, and how many connections this service may hold open.
     #[config(nested)]
@@ -60,13 +60,14 @@ fn default_bind() -> String {
 
 /// Operator-configured external channel endpoints. All optional; a channel is only
 /// constructed when its URL is present and non-empty.
-#[derive(Debug, Deserialize, Describe)]
+#[derive(Debug, Deserialize, Serialize, Describe)]
 pub struct ChannelsConfig {
     /// A Discord "Incoming Webhook" URL. Receives the Discord message and embed shape.
     ///
     /// A [`SecretString`], not a URL: Discord's form embeds the token in the path
     /// (`https://discord.com/api/webhooks/{id}/{token}`), and this struct derives `Debug`.
     #[config(secret)]
+    #[serde(skip_serializing)]
     #[serde(default)]
     pub discord_webhook_url: Option<SecretString>,
     /// A generic HTTP endpoint. Receives the notifier's JSON webhook payload as a `POST` body.
@@ -74,6 +75,7 @@ pub struct ChannelsConfig {
     /// Wrapped for the same reason as [`Self::discord_webhook_url`]: an embedded token in the
     /// path or query is the ordinary way these endpoints authenticate.
     #[config(secret)]
+    #[serde(skip_serializing)]
     #[serde(default)]
     pub webhook_url: Option<SecretString>,
     /// Recipients of a new-chapter alert email. Empty disables the email channel.

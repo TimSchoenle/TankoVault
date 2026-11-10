@@ -1,6 +1,6 @@
 //! The confidence policy that decides whether two titles are the same series.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tankovault_domain::matching::{Candidate, Canonicaliser, Decision, Query};
 
 /// The confidence policy that decides whether two titles are the same series
@@ -61,7 +61,7 @@ use tankovault_domain::matching::{Candidate, Canonicaliser, Decision, Query};
 /// // No candidates is the same answer as no good candidate.
 /// assert_eq!(policy.canonicalise(&query, &[]), Decision::Create);
 /// ```
-#[derive(Debug, Clone, Deserialize, terrace_config::schema::Describe)]
+#[derive(Debug, Clone, Deserialize, Serialize, terrace_config::schema::Describe)]
 #[expect(
     clippy::struct_excessive_bools,
     reason = "each bool is one configuration key with its own environment variable, so an \

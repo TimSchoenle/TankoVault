@@ -1,16 +1,17 @@
 //! `PostgreSQL` connection settings.
 
 use secrecy::SecretString;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use terrace_config::schema::Describe;
 
 /// `PostgreSQL` connection settings.
-#[derive(Debug, Clone, Deserialize, Describe)]
+#[derive(Debug, Clone, Deserialize, Serialize, Describe)]
 pub struct DatabaseConfig {
     /// The connection URL, such as `postgres://user:pass@host:5432/tankovault`.
     // A `SecretString` because the URL carries the password and this struct's `Debug` is nested in
     // state that is logged with `?`.
     #[config(secret)]
+    #[serde(skip_serializing)]
     pub url: SecretString,
     /// Upper bound on the connection pool.
     #[serde(default = "DatabaseConfig::default_max_connections")]

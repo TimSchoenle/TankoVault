@@ -1,13 +1,13 @@
 //! Prometheus metrics facility.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use terrace_config::schema::Describe;
 
 /// Prometheus metrics facility.
 ///
 /// [`Self::enabled`] decides whether the recorder is installed at all; without it every
 /// `metrics::counter!` call does nothing.
-#[derive(Debug, Clone, Deserialize, Describe)]
+#[derive(Debug, Clone, Deserialize, Serialize, Describe)]
 pub struct MetricsConfig {
     /// Install the Prometheus recorder and serve the scrape endpoint. When `false` the
     /// scrape route answers `404` and no measurements are retained.

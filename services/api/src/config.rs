@@ -31,7 +31,7 @@ pub(crate) fn published_schema_with(
 }
 
 /// Top-level API config.
-#[derive(Debug, serde::Deserialize, Describe)]
+#[derive(Debug, serde::Deserialize, serde::Serialize, Describe)]
 pub struct Config {
     /// Where the catalogue lives, and how many connections this service may hold open.
     #[config(nested)]
@@ -125,18 +125,20 @@ pub struct Config {
 }
 
 /// Everything the API needs to issue a credential and to recognise one it issued.
-#[derive(Debug, serde::Deserialize, Describe)]
+#[derive(Debug, serde::Deserialize, serde::Serialize, Describe)]
 pub struct AuthConfig {
     /// HS256 signing key for access tokens; wrapped in `SecretString` so a `tracing::debug!(?cfg)`
     /// on this Debug-deriving, nested struct can't publish the key that authenticates every
     /// session.
     #[config(secret)]
+    #[serde(skip_serializing)]
     pub jwt_secret: SecretString,
     /// Server-side password pepper: mixed into every argon2id hash so a leak alone can't be
     /// brute-forced offline. Empty (default) is un-peppered and offers no such protection;
     /// once configured it must stay stable or passwords stop verifying.
     #[serde(default)]
     #[config(secret)]
+    #[serde(skip_serializing)]
     pub password_pepper: SecretString,
     /// How long an access token stays valid. Short, because nothing revokes one before it
     /// expires; the refresh token is the revocable half.
@@ -179,6 +181,7 @@ pub struct AuthConfig {
     /// recovery codes are unaffected, since neither stores a symmetric secret.
     #[serde(default)]
     #[config(secret)]
+    #[serde(skip_serializing)]
     pub mfa_encryption_key: Option<SecretString>,
     /// The issuer name an authenticator app files the entry under. Defaults to
     /// [`Self::webauthn_rp_name`], then to the product name: one label for both prompts.
@@ -204,7 +207,7 @@ pub struct AuthConfig {
 /// will read, and without a ceiling it keeps its pooled connection busy after the request has
 /// already answered `408`. Each ceiling is fixed per connection, which is why admin routes draw
 /// from a separate pool.
-#[derive(Debug, Clone, Copy, serde::Deserialize, Describe)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, Describe)]
 pub struct StatementTimeoutsConfig {
     /// Seconds one statement may run on every non-admin route: `/v1/me`, the public catalogue and
     /// sign-in. `0` removes the ceiling.

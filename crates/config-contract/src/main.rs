@@ -21,7 +21,8 @@
 //! [`terrace_config::schema::cli::Cli`], shared by every repository that has a generator.
 //!
 //! What is this repository's own is the table of services below, the [`App`] identity built from
-//! a service name, and the [`External`] surface no derive can see.
+//! a service name, the [`External`] surface no derive can see, and the defaults observed from each
+//! root's deserialiser ([`observed`]).
 //!
 //! # One binary, one contract
 //!
@@ -37,12 +38,6 @@
 //!
 //! # What this document does not carry
 //!
-//! **Compiled-in default values.** [`Schema::with_defaults_from`] reads them off a serialised
-//! value, which needs `Serialize` on every config struct in the workspace. The ones holding a
-//! `SecretString` cannot have it, because `SecretString` does not implement it. Every other column
-//! the derive can see is published, `required` included. What an operator gets when they omit a
-//! key is in `docs/CONFIGURATION.md`.
-//!
 //! **The image's own `ENV` block.** `frontend` and `render` bake three configuration keys into
 //! their images (`TANKOVAULT_FRONTEND__STATIC_DIR`, `TANKOVAULT_RENDER__CHROME_PATH`,
 //! `TANKOVAULT_RENDER__NO_SANDBOX`), and no derive can see a Dockerfile. Those keys are in the
@@ -51,8 +46,8 @@
 //! **A JSON Schema `$id`.** `--format json-schema` renders, and renders without one: an `$id` is
 //! a URL under this repository that an editor will try to *resolve*, and nine of them would have
 //! to be nine published files. A wrong `$id` is worse than none.
-//!
-//! [`Schema::with_defaults_from`]: terrace_config::schema::Schema::with_defaults_from
+
+mod observed;
 
 use std::process::ExitCode;
 
@@ -80,8 +75,12 @@ macro_rules! services {
             }
         }
     };
-    (@schema $root:path => $build:path) => { $build() };
-    (@schema $root:path) => { Ok(tankovault_config::terrace().schema::<$root>()) };
+    (@schema $root:path => $build:path) => {
+        $build().and_then(observed::with_observed_defaults::<$root>)
+    };
+    (@schema $root:path) => {
+        observed::with_observed_defaults::<$root>(tankovault_config::terrace().schema::<$root>())
+    };
 }
 
 services! {

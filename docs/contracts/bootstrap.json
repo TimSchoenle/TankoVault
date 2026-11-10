@@ -89,8 +89,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "16",
+        "default_value": 16,
         "note": null,
         "required": false,
         "secret": false,
@@ -117,8 +117,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "10",
+        "default_value": 10,
         "note": null,
         "required": false,
         "secret": false,
@@ -163,8 +163,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "admin@tankovault.local",
+        "default_value": "admin@tankovault.local",
         "note": null,
         "required": false,
         "secret": false,
@@ -186,8 +186,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "admin",
+        "default_value": "admin",
         "note": null,
         "required": false,
         "secret": false,
@@ -237,11 +237,13 @@
         "additionalProperties": false,
         "properties": {
           "acquire_timeout_secs": {
+            "default": 10,
             "description": "How long a caller waits for a pooled connection before failing, in seconds.",
             "minimum": 0,
             "type": "integer"
           },
           "max_connections": {
+            "default": 16,
             "description": "Upper bound on the connection pool.",
             "maximum": 4294967295,
             "minimum": 0,
@@ -256,6 +258,7 @@
         "type": "object"
       },
       "seed_admin_email": {
+        "default": "admin@tankovault.local",
         "description": "Address of the account to seed. An account already holding it is left untouched.",
         "type": "string"
       },
@@ -265,6 +268,7 @@
         "writeOnly": true
       },
       "seed_admin_username": {
+        "default": "admin",
         "description": "Name of the account to seed. An account already holding it is left untouched.",
         "type": "string"
       }

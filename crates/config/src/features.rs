@@ -1,12 +1,12 @@
 //! How a service refreshes its runtime feature flags.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use terrace_config::schema::Describe;
 
 /// How a service refreshes its runtime feature flags (`tankovault_domain::Feature`).
 ///
 /// The flag values are set at runtime from the control plane, not in configuration.
-#[derive(Debug, Clone, Deserialize, Describe)]
+#[derive(Debug, Clone, Deserialize, Serialize, Describe)]
 pub struct FeaturesConfig {
     /// Seconds between refreshes of a service's cached flag snapshot. It is how long a change
     /// takes to reach the other replicas; the replica that served the change applies it at once.

@@ -1,13 +1,13 @@
 //! Sentry error reporting and performance tracing, per service.
 
 use secrecy::SecretString;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use terrace_config::schema::Describe;
 
 /// How much of the `tracing` stream one Sentry sink takes.
 ///
 /// A threshold names the least severe record it accepts, so `warn` takes `error` and `warn`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Describe)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize, Describe)]
 #[serde(rename_all = "lowercase")]
 pub enum SentryLevel {
     /// Take nothing.
@@ -30,7 +30,7 @@ pub enum SentryLevel {
 /// Off by default, and in every published compose file, because a DSN is an egress destination
 /// for whatever a log line carries. When [`Self::enabled`] is set, the service refuses to boot
 /// without a usable [`Self::dsn`].
-#[derive(Debug, Clone, Deserialize, Describe)]
+#[derive(Debug, Clone, Deserialize, Serialize, Describe)]
 #[expect(
     clippy::struct_excessive_bools,
     reason = "independent operator toggles, one per TANKOVAULT_TELEMETRY__SENTRY__* variable"
@@ -46,6 +46,7 @@ pub struct SentryConfig {
     // A `SecretString` because the embedded key is a bearer credential for the project's ingest
     // endpoint, and `TelemetryConfig` is logged with `?`.
     #[config(secret)]
+    #[serde(skip_serializing)]
     #[serde(default)]
     pub dsn: Option<SecretString>,
     /// Environment tag on every event. Defaults to `production` under

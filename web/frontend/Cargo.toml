@@ -254,7 +254,7 @@ uuid = { version = "1", features = ["js"] }
 # `win10` alone, deliberately: the `ctap2`/`usb` backends would add a HID stack and its
 # dependencies for hardware keys, which is a separate feature with a separate decision behind it.
 [target.'cfg(windows)'.dependencies]
-webauthn-authenticator-rs = { version = "=0.6.1-dev", features = [
+webauthn-authenticator-rs = { version = "=0.6.2", features = [
     "win10",
 ], optional = true }
 # The `HKCU\…\Run` value behind `platform::set_autostart`, which the NSIS installer's "start when

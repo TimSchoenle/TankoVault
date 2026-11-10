@@ -40,10 +40,10 @@ ignore = [
     "RUSTSEC-2026-0391",
     "RUSTSEC-2026-0398",
     "RUSTSEC-2026-0403",
-    # RUSTSEC-2026-0459: the C SQLite bundled by `libsqlite3-sys` 0.37. It is in `Cargo.lock` only
-    # because `sqlx`'s weak `sqlx-sqlite?/…` features make `cargo` record it; the workspace never
-    # enables `sqlite`, so no build compiles or links it (`cargo tree -i sqlx-sqlite` is empty).
-    # `cargo-deny` resolves features and does not report it, so its `deny.toml` carries no entry.
-    # Reviewed 2026-11-10; re-review if any crate enables a `sqlx` `sqlite` feature.
+    # RUSTSEC-2026-0440: `astral-tokio-tar` is unmaintained; reached only through `testcontainers` in
+    # the test-support crates. See `deny.toml` for the review.
+    "RUSTSEC-2026-0440",
+    # RUSTSEC-2026-0459: `libsqlite3-sys` is recorded in `Cargo.lock` through `sqlx`'s weak features
+    # but never compiled; no crate enables `sqlite`. See `deny.toml` for the review.
     "RUSTSEC-2026-0459",
 ]

@@ -39,6 +39,14 @@ ignore = [
     # `testcontainers`, a dev-dependency of the Docker-gated test-support crates; no service binary
     # or image links it. Reviewed 2026-11-10; re-review when `testcontainers` replaces it.
     "RUSTSEC-2026-0440",
+
+    # RUSTSEC-2026-0459: the C SQLite bundled by `libsqlite3-sys` 0.37. It is in `Cargo.lock` only
+    # because `sqlx`'s weak `sqlx-sqlite?/…` features make `cargo` record it; the workspace never
+    # enables `sqlite`, so no build compiles or links it (`cargo tree -i sqlx-sqlite` is empty), and
+    # cargo-deny, which resolves features, does not report it. Listed so `.cargo/audit.toml`, whose
+    # lockfile scan does report it, agrees with this file. Reviewed 2026-11-10; re-review if any
+    # crate enables a `sqlx` `sqlite` feature.
+    "RUSTSEC-2026-0459",
 ]
 
 [licenses]

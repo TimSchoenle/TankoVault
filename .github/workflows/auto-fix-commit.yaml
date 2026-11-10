@@ -385,7 +385,7 @@ jobs:
       # git plumbing and fails if HEAD is anywhere else. The commit is fetched without a checkout,
       # so none of the branch's files are on disk in the job that holds the App key.
       - name: Fetch The Head
-        uses: TimSchoenle/actions/actions/common/fetch-head@3f47ad15da6762f9e07c5e6c70df81f37ddf2454 # tag=actions-common-fetch-head-v1.1.0
+        uses: TimSchoenle/actions/actions/common/fetch-head@6a49261c7bbd756b4ceca9b1c168dfc7dc095e64 # tag=actions-common-fetch-head-v2.0.0
         with:
           sha: ${{ github.event.workflow_run.head_sha }}
 

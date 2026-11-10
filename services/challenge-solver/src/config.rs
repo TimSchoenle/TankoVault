@@ -4,12 +4,12 @@
 //! `config-contract` describes for this image: the contract has to be generated from the very
 //! type the binary deserialises, or it is a claim about something else.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tankovault_config::TelemetryConfig;
 use terrace_config::schema::Describe;
 
 /// Top-level challenge-solver config.
-#[derive(Debug, Deserialize, Describe)]
+#[derive(Debug, Deserialize, Serialize, Describe)]
 pub struct Config {
     /// Listen address for `/v1/solve` and the probes. Internal-tier only.
     #[serde(default = "default_bind")]
@@ -46,7 +46,7 @@ fn default_bind() -> String {
 }
 
 /// Which back-end solves an interstitial, and how long it is given.
-#[derive(Debug, Deserialize, Describe)]
+#[derive(Debug, Deserialize, Serialize, Describe)]
 pub struct SolverBackendConfig {
     /// Back-end selector; only `trawl` is wired today.
     #[serde(default = "default_backend")]

@@ -21,6 +21,11 @@ tankovault-config = { workspace = true }
 # costs no dependency `schema` did not already pull, which is why nothing else in the workspace
 # has to ask for it.
 terrace-config = { workspace = true, features = ["schema-cli"] }
+# The bounds `observed` puts on a root to read its defaults: deserialised from a document holding
+# only its required keys, then serialised for `Schema::with_defaults_from`.
+serde = { workspace = true }
+# A required key's constraint is JSON, and `observed` reads its `type`.
+serde_json = { workspace = true }
 
 # One dependency per published image, because a contract is a claim about *one* binary. The
 # alternative, describing the union of every root, would have `api`'s document assert that the
@@ -35,11 +40,6 @@ tankovault-notifier = { workspace = true }
 tankovault-render = { workspace = true }
 tankovault-sync = { workspace = true }
 tankovault-worker = { workspace = true }
-
-[dev-dependencies]
-# The tests read the rendered document, not a second `Contract` built beside it, so that a
-# generator whose output drifted from what it asserts cannot pass. That needs a JSON reader.
-serde_json = { workspace = true }
 
 [lints]
 workspace = true

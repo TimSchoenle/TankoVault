@@ -6,7 +6,7 @@
 //! reads would publish keys that decide nothing in its process. Every key is declared once and
 //! composed into the views that need it.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tankovault_domain::{MetadataPriority, TermBlocklist};
 use terrace_config::schema::Describe;
 
@@ -25,7 +25,7 @@ use terrace_config::schema::Describe;
 /// assert!(config.term_blocklist().blocks("Updating"));
 /// assert!(!config.term_blocklist().blocks("Romance"));
 /// ```
-#[derive(Debug, Clone, Default, Deserialize, Describe)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, Describe)]
 pub struct MetadataPriorityConfig {
     /// Per-field source authority order (default: `AniList` before the adapters).
     // `nested` needs `Describe` on a `tankovault-domain` type. That crate also compiles for
@@ -55,7 +55,7 @@ impl MetadataPriorityConfig {
 /// The API is the only reader. It writes no metadata, so `metadata.priority` decides nothing in
 /// its process, and it reads the vocabulary guard only to learn which genres put a series behind
 /// the gate.
-#[derive(Debug, Clone, Default, Deserialize, Describe)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, Describe)]
 pub struct MetadataReadConfig {
     /// The adult classifier, shared with the worker so the genres the public tag facet withholds
     /// are exactly the ones that put a series behind the gate.
@@ -68,7 +68,7 @@ pub struct MetadataReadConfig {
 ///
 /// The half of `metadata.tags` the read side needs. [`TagIntakeConfig`] flattens it back in, so
 /// `metadata.tags.adult_tags` has one declaration.
-#[derive(Debug, Clone, Default, Deserialize, Describe)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, Describe)]
 pub struct AdultTagConfig {
     /// Additional genre chips that classify a series as adult, matched on their slug.
     ///
@@ -93,7 +93,7 @@ impl AdultTagConfig {
 /// The shipped defaults are the terms no catalogue wants, such as a scrape template's own field
 /// labels. The extra list is what the operator's providers emit. The extra list adds to the
 /// defaults, so an operator adding one term keeps the rest.
-#[derive(Debug, Clone, Deserialize, Describe)]
+#[derive(Debug, Clone, Deserialize, Serialize, Describe)]
 pub struct TermBlocklistConfig {
     /// Whether the shipped [`tankovault_domain::DEFAULT_BLOCKED_TERMS`] apply.
     ///
@@ -138,7 +138,7 @@ impl TermBlocklistConfig {
 /// The worker refuses vocabulary at intake and classifies what survives, so it reads every key
 /// here. The halves are flattened, so the paths stay `metadata.tags.blocklist` and
 /// `metadata.tags.adult_tags` for every service.
-#[derive(Debug, Clone, Default, Deserialize, Describe)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, Describe)]
 pub struct TagIntakeConfig {
     /// What intake refuses.
     #[config(nested)]

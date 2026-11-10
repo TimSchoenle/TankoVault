@@ -2,25 +2,27 @@
 
 use crate::ConfigError;
 use secrecy::SecretString;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use terrace_config::schema::Describe;
 
 /// Redis connection settings (cache, rate-limit counters, locks, solved sessions).
-#[derive(Debug, Clone, Deserialize, Describe)]
+#[derive(Debug, Clone, Deserialize, Serialize, Describe)]
 pub struct RedisConfig {
     /// The connection URL, such as `redis://redis:6379` or `redis://:password@host`.
     // A `SecretString` because the URL may carry a password.
     #[config(secret)]
+    #[serde(skip_serializing)]
     pub url: SecretString,
 }
 
 /// NATS `JetStream` connection settings.
-#[derive(Debug, Clone, Deserialize, Describe)]
+#[derive(Debug, Clone, Deserialize, Serialize, Describe)]
 pub struct NatsConfig {
     /// The connection URL, such as `nats://nats:4222` or `nats://user:pass@host`.
     // A `SecretString` because the URL may carry a password.
     #[config(secret)]
+    #[serde(skip_serializing)]
     pub url: SecretString,
     /// Longest the events stream keeps an event no consumer has acked, in seconds.
     #[serde(default = "NatsConfig::default_events_max_age_secs")]

@@ -4,12 +4,12 @@
 //! `config-contract` describes for this image: the contract has to be generated from the very
 //! type the binary deserialises, or it is a claim about something else.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tankovault_config::{DatabaseConfig, NatsConfig, TelemetryConfig};
 use terrace_config::schema::Describe;
 
 /// Top-level worker config.
-#[derive(Debug, Deserialize, Describe)]
+#[derive(Debug, Deserialize, Serialize, Describe)]
 pub struct Config {
     /// Where the catalogue lives, and how many connections this service may hold open.
     #[config(nested)]
@@ -72,7 +72,7 @@ fn default_bind() -> String {
 }
 
 /// The crawl loop's own knobs.
-#[derive(Debug, Deserialize, Describe)]
+#[derive(Debug, Deserialize, Serialize, Describe)]
 pub struct WorkerConfig {
     /// Base origin of `challenge-solver`, no trailing slash. A provider that never serves an
     /// interstitial is crawled whether or not this endpoint answers.

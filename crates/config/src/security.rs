@@ -1,13 +1,13 @@
 //! Edge hardening applied by the shared middleware stack.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use terrace_config::schema::Describe;
 
 use crate::cors::CorsConfig;
 use crate::loader::is_production;
 
 /// Edge hardening applied by the shared middleware stack.
-#[derive(Debug, Clone, Deserialize, Describe)]
+#[derive(Debug, Clone, Deserialize, Serialize, Describe)]
 #[expect(
     clippy::struct_excessive_bools,
     reason = "independent operator toggles, one per TANKOVAULT_SECURITY__* variable"

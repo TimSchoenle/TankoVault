@@ -8,7 +8,7 @@
 //! Nothing here is a trust anchor. The client verifies every release against a signing key
 //! compiled into it, whatever repository a server names (`web/frontend/src/update/discover.rs`).
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use terrace_config::schema::Describe;
 
 /// The repository a stock deployment's client updates itself from.
@@ -18,7 +18,7 @@ const DEFAULT_RELEASE_REPO: &str = "TimSchoenle/TankoVault";
 ///
 /// Every field defaults, so an absent `[client]` section is valid and publishes the upstream
 /// channel with this build's own version as the ceiling.
-#[derive(Debug, Clone, Deserialize, Describe)]
+#[derive(Debug, Clone, Deserialize, Serialize, Describe)]
 #[serde(default)]
 pub struct ClientConfig {
     /// The GitHub repository, as `owner/name`, that the native client reads its releases from.

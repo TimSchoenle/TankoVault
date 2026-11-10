@@ -4,12 +4,12 @@
 //! `config-contract` describes for this image: the contract has to be generated from the very
 //! type the binary deserialises, or it is a claim about something else.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tankovault_config::{BrandingConfig, MetricsConfig, TelemetryConfig};
 use terrace_config::schema::Describe;
 
 /// Top-level frontend config.
-#[derive(Debug, Deserialize, Describe)]
+#[derive(Debug, Deserialize, Serialize, Describe)]
 pub struct Config {
     /// The public listener, serving both the SPA bundle and the `/v1/*` proxy.
     #[serde(default = "default_bind")]
@@ -41,7 +41,7 @@ fn default_bind() -> String {
 }
 
 /// Where the bundle is read from, where `/v1/*` is forwarded, and what this hop accepts.
-#[derive(Debug, Clone, Deserialize, Describe)]
+#[derive(Debug, Clone, Deserialize, Serialize, Describe)]
 pub struct FrontendConfig {
     /// Directory the built SPA bundle is served from. Baked into the image at `/srv/www`.
     #[serde(default = "FrontendConfig::default_static_dir")]
@@ -88,7 +88,7 @@ pub struct FrontendConfig {
 ///
 /// Both default off, and both stay off for a deployment that is not behind Cloudflare: each one
 /// admits something the policy otherwise refuses, and an unused concession is only a weakness.
-#[derive(Debug, Clone, Default, Deserialize, Describe)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, Describe)]
 pub struct CloudflareConfig {
     /// Sends a freshly minted `'nonce-…'` in `script-src` on every response.
     ///

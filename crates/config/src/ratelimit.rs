@@ -1,10 +1,10 @@
 //! Inbound request rate limiting for a service's HTTP edge.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use terrace_config::schema::Describe;
 
 /// Where rate-limit counters live.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Describe)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize, Describe)]
 #[serde(rename_all = "lowercase")]
 pub enum RateLimitBackend {
     /// Process-local counters. Behind a load balancer the effective limit multiplies by the
@@ -18,7 +18,7 @@ pub enum RateLimitBackend {
 
 /// A token-bucket policy: a sustained refill rate ([`Self::per_minute`]) and a bucket depth
 /// ([`Self::burst`]). A burst below the sustained rate is normal.
-#[derive(Debug, Clone, Copy, Deserialize, Describe)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Describe)]
 pub struct RateLimitPolicy {
     /// Sustained requests allowed per minute per client key, which is the bucket's refill rate.
     pub per_minute: u32,
@@ -43,7 +43,7 @@ impl RateLimitPolicy {
 /// Inbound request rate limiting for a service's HTTP edge.
 ///
 /// The outbound pacing of requests to providers is `tankovault_domain::pacing`.
-#[derive(Debug, Clone, Deserialize, Describe)]
+#[derive(Debug, Clone, Deserialize, Serialize, Describe)]
 pub struct RateLimitConfig {
     /// Enforce limits. When `false` the layer is not mounted and costs nothing per request.
     #[serde(default = "crate::default_true")]

@@ -784,12 +784,17 @@ with the flags already right. Everything else `terrace-config` renders (`json`, 
 [`terrace_config::schema::cli::Cli`](https://github.com/TimSchoenle/terrace-config) and only
 `--service` is this repository's own.
 
-Two things it deliberately does not carry. **Compiled-in default values**, because reading them
-needs `Serialize` on every config struct including the ones holding a `SecretString`; `required`
-and the type constraints are published, and `docs/CONFIGURATION.md` still says what an omitted key
-resolves to. And **the image's own `ENV` block**: `frontend` and `render` bake three keys into
-their images and no derive can see a Dockerfile, so those keys are in the document as keys and the
-fact that the image supplies them is not.
+**Compiled-in defaults are published.** Every config type derives `Serialize` beside `Describe`,
+with each secret field `#[serde(skip_serializing)]` (a `SecretString` cannot be serialised, so a
+secret field without it fails to compile). `crates/config-contract/src/observed.rs` deserialises
+each root from a document holding only its required keys, so every other field takes the default
+serde gives it at boot, and publishes those values as each key's `default`. An `Option` section is
+observed a second time with the section present. A chart's `values.yaml` and README name these
+defaults, so a new key's default reaches operators without anyone copying it.
+
+One thing it deliberately does not carry: **the image's own `ENV` block**. `frontend` and `render`
+bake three keys into their images and no derive can see a Dockerfile, so those keys are in the
+document as keys and the fact that the image supplies them is not.
 
 ### 9.2 Where it lands on the image, and what checks it
 

@@ -16,11 +16,15 @@ use serde::Deserialize;
 /// of a typo read as deliberate de-prioritisation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
 #[serde(rename_all = "lowercase")]
-// `schema` on reports these two spellings as the values a `metadata.priority` list accepts.
+// `schema` on reports these two spellings as the values a `metadata.priority` list accepts, and
+// serialises the default order into the published contract.
 // Sound because the `Deserialize` above is serde's own derive: no `try_from`, no `from` and no
 // `FromStr`, so the wire form *is* the renamed variant list and the schema cannot come to
 // disagree with the loader.
-#[cfg_attr(feature = "schema", derive(terrace_config::schema::Describe))]
+#[cfg_attr(
+    feature = "schema",
+    derive(serde::Serialize, terrace_config::schema::Describe)
+)]
 // `sqlx` on maps this to the `metadata_source` Postgres enum the provenance columns are
 // declared as; off (the WASM frontend) keeps this crate free of the native sqlx stack.
 #[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
@@ -120,7 +124,10 @@ impl MetadataValue for i32 {
 // to stand in for it. Gated so the WASM frontend, which reaches this crate through
 // `crates/api-client`, links none of terrace-config.
 #[derive(Debug, Clone, Deserialize)]
-#[cfg_attr(feature = "schema", derive(terrace_config::schema::Describe))]
+#[cfg_attr(
+    feature = "schema",
+    derive(serde::Serialize, terrace_config::schema::Describe)
+)]
 pub struct MetadataPriority {
     /// Priority order for the long-form series description.
     #[cfg_attr(feature = "schema", config(element_values))]

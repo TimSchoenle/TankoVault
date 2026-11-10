@@ -60,8 +60,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "0.0.0.0:3000",
+        "default_value": "0.0.0.0:3000",
         "note": null,
         "required": false,
         "secret": false,
@@ -106,8 +106,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "info",
+        "default_value": "info",
         "note": null,
         "required": false,
         "secret": false,
@@ -133,8 +133,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "false",
+        "default_value": false,
         "note": null,
         "required": false,
         "secret": false,
@@ -160,8 +160,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "false",
+        "default_value": false,
         "note": null,
         "required": false,
         "secret": false,
@@ -277,8 +277,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "1",
+        "default_value": 1.0,
         "note": null,
         "required": false,
         "secret": false,
@@ -302,8 +302,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "0",
+        "default_value": 0.0,
         "note": null,
         "required": false,
         "secret": false,
@@ -344,8 +344,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "error",
+        "default_value": "error",
         "note": null,
         "required": false,
         "secret": false,
@@ -386,8 +386,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "info",
+        "default_value": "info",
         "note": null,
         "required": false,
         "secret": false,
@@ -414,8 +414,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "100",
+        "default_value": 100,
         "note": null,
         "required": false,
         "secret": false,
@@ -441,8 +441,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "true",
+        "default_value": true,
         "note": null,
         "required": false,
         "secret": false,
@@ -468,8 +468,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "false",
+        "default_value": false,
         "note": null,
         "required": false,
         "secret": false,
@@ -495,8 +495,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "true",
+        "default_value": true,
         "note": null,
         "required": false,
         "secret": false,
@@ -522,8 +522,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "false",
+        "default_value": false,
         "note": null,
         "required": false,
         "secret": false,
@@ -550,8 +550,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "2",
+        "default_value": 2,
         "note": null,
         "required": false,
         "secret": false,
@@ -577,8 +577,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "false",
+        "default_value": false,
         "note": null,
         "required": false,
         "secret": false,
@@ -600,8 +600,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "/srv/www",
+        "default_value": "/srv/www",
         "note": null,
         "required": false,
         "secret": false,
@@ -623,8 +623,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "/THIRD-PARTY-NOTICES",
+        "default_value": "/THIRD-PARTY-NOTICES",
         "note": null,
         "required": false,
         "secret": false,
@@ -646,8 +646,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "/THIRD-PARTY-NOTICES.json",
+        "default_value": "/THIRD-PARTY-NOTICES.json",
         "note": null,
         "required": false,
         "secret": false,
@@ -669,8 +669,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "http://api:8080",
+        "default_value": "http://api:8080",
         "note": null,
         "required": false,
         "secret": false,
@@ -697,8 +697,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "10485760",
+        "default_value": 10485760,
         "note": null,
         "required": false,
         "secret": false,
@@ -725,8 +725,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "10",
+        "default_value": 10,
         "note": null,
         "required": false,
         "secret": false,
@@ -752,8 +752,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "false",
+        "default_value": false,
         "note": null,
         "required": false,
         "secret": false,
@@ -779,8 +779,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "false",
+        "default_value": false,
         "note": null,
         "required": false,
         "secret": false,
@@ -806,8 +806,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "true",
+        "default_value": true,
         "note": null,
         "required": false,
         "secret": false,
@@ -829,8 +829,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "/metrics",
+        "default_value": "/metrics",
         "note": null,
         "required": false,
         "secret": false,
@@ -852,8 +852,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "0.0.0.0:9090",
+        "default_value": "0.0.0.0:9090",
         "note": null,
         "required": false,
         "secret": false,
@@ -879,8 +879,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "true",
+        "default_value": true,
         "note": null,
         "required": false,
         "secret": false,
@@ -902,8 +902,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "TankoVault",
+        "default_value": "TankoVault",
         "note": null,
         "required": false,
         "secret": false,
@@ -994,8 +994,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "Tim Schönle",
+        "default_value": "Tim Schönle",
         "note": null,
         "required": false,
         "secret": false,
@@ -1063,8 +1063,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "PolyForm Noncommercial 1.0.0",
+        "default_value": "PolyForm Noncommercial 1.0.0",
         "note": null,
         "required": false,
         "secret": false,
@@ -1109,8 +1109,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "https://github.com/TimSchoenle/TankoVault",
+        "default_value": "https://github.com/TimSchoenle/TankoVault",
         "note": null,
         "required": false,
         "secret": false,
@@ -1132,8 +1132,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
+        "default": "https://github.com/TimSchoenle/TankoVault/releases/latest",
+        "default_value": "https://github.com/TimSchoenle/TankoVault/releases/latest",
         "note": null,
         "required": false,
         "secret": false,
@@ -1169,6 +1169,7 @@
     "additionalProperties": false,
     "properties": {
       "bind_addr": {
+        "default": "0.0.0.0:3000",
         "description": "The public listener, serving both the SPA bundle and the `/v1/*` proxy.",
         "type": "string"
       },
@@ -1183,6 +1184,7 @@
             "additionalProperties": false,
             "properties": {
               "holder": {
+                "default": "Tim Schönle",
                 "description": "Who holds it.",
                 "type": "string"
               },
@@ -1201,6 +1203,7 @@
             "additionalProperties": false,
             "properties": {
               "name": {
+                "default": "PolyForm Noncommercial 1.0.0",
                 "description": "What the footer prints.",
                 "type": "string"
               },
@@ -1212,14 +1215,17 @@
             "type": "object"
           },
           "name": {
+            "default": "TankoVault",
             "description": "The product name as prose uses it: email subjects and bodies, page titles, the\nauthenticator prompt and the desktop connect screen.",
             "type": "string"
           },
           "project_url": {
+            "default": "https://github.com/TimSchoenle/TankoVault",
             "description": "Where the project lives, linked from the footer and the desktop About tab.",
             "type": "string"
           },
           "releases_url": {
+            "default": "https://github.com/TimSchoenle/TankoVault/releases/latest",
             "description": "Where a reader downloads the native client.",
             "type": "string"
           },
@@ -1248,6 +1254,7 @@
         "additionalProperties": false,
         "properties": {
           "api_upstream": {
+            "default": "http://api:8080",
             "description": "Base origin the `/v1/*` proxy targets, e.g. `http://api:8080`. No trailing slash.",
             "type": "string"
           },
@@ -1255,10 +1262,12 @@
             "additionalProperties": false,
             "properties": {
               "script_nonce": {
+                "default": false,
                 "description": "Sends a freshly minted `'nonce-…'` in `script-src` on every response.\n\nCloudflare's bot products (Bot Fight Mode, JavaScript Detections, the challenge platform)\ninject an inline `<script>` into the served HTML at the edge, after this service has\nhashed the shell, so `script-src` refuses it and the detection silently never runs.\nCloudflare's documented answer is a nonce: it parses the `Content-Security-Policy`\n*response header* and copies the nonce onto what it injects. That is why nothing is\nstamped into the shell here: the header is the whole contract, and the shell's own\ninline scripts keep running by hash either way.\n\nThe concession is real but narrow: an injected script that can already run could read\nthis header back off a same-origin fetch and admit further inline script. It cannot\nforge one ahead of time (128 CSPRNG bits, minted per response), and it still cannot\nreach `'unsafe-eval'` or an off-origin host. Load-bearing for that: the shell is never\nserved from a stored copy, which is why it is `Cache-Control: no-store` with no validator\nand not `no-cache`; see `FixedResponse::shell` in `main.rs`. A stored shell would pin\none nonce across every reader for the lifetime of the entry, which is `'unsafe-inline'`\nwith extra steps.",
                 "type": "boolean"
               },
               "turnstile": {
+                "default": false,
                 "description": "Admit `https://challenges.cloudflare.com` in `script-src` and `frame-src`, for an\nembedded Turnstile widget.\n\nOnly for a widget rendered *in* a page this service serves; a managed-challenge\ninterstitial is a Cloudflare-served document carrying its own policy, and needs nothing\nhere. The origin is Turnstile's only host and `'self'` can never cover it.",
                 "type": "boolean"
               }
@@ -1266,24 +1275,29 @@
             "type": "object"
           },
           "connect_timeout_secs": {
+            "default": 10,
             "description": "Connection-establishment timeout for the upstream, not a whole-request timeout, since\nan SSE stream stays open indefinitely.",
             "minimum": 0,
             "type": "integer"
           },
           "max_body_bytes": {
+            "default": 10485760,
             "description": "Largest request body accepted on this hop.\n\nEnforced twice: the shared stack's `DefaultBodyLimit` rejects it before buffering (see\n`stack_security` in `main.rs`), and the proxy handler passes the same number to\n`to_bytes` so the two cannot drift.",
             "minimum": 0,
             "type": "integer"
           },
           "notices_json_path": {
+            "default": "/THIRD-PARTY-NOTICES.json",
             "description": "The same notices as the structured inventory the `/licenses` screen renders, served at\n`/third-party-notices.json`.\n\nWritten into the image by `xtask notices --json` during the build instead of committed:\nit is a second representation of the document above, and the two come out of one merge, so\ncommitting it would double the repository's generated weight for a drift gate the\nplain-text `--check` already provides. A deployment whose image predates it, or a\ndeveloper who has not run the command, serves nothing here and the screen says so.",
             "type": "string"
           },
           "notices_path": {
+            "default": "/THIRD-PARTY-NOTICES",
             "description": "The generated third-party licence notices, served at `/third-party-notices`.\n\nPoints at the image's own copy (`/THIRD-PARTY-NOTICES`, beside `/LICENSE`) instead of a\nsecond one inside the bundle: it is 300-odd KB, and two copies is the arrangement where\none of them goes stale. Configurable because the path only exists inside the image: a\ndeveloper running `dx serve` and the tests point it at their own checkout.",
             "type": "string"
           },
           "static_dir": {
+            "default": "/srv/www",
             "description": "Directory the built SPA bundle is served from. Baked into the image at `/srv/www`.",
             "type": "string"
           }
@@ -1294,18 +1308,22 @@
         "additionalProperties": false,
         "properties": {
           "enabled": {
+            "default": true,
             "description": "Install the Prometheus recorder and serve the scrape endpoint. When `false` the\nscrape route answers `404` and no measurements are retained.",
             "type": "boolean"
           },
           "http_requests": {
+            "default": true,
             "description": "Also record per-request HTTP metrics. The request histogram is the expensive,\nhigh-cardinality part, so it has its own switch.",
             "type": "boolean"
           },
           "listen": {
+            "default": "0.0.0.0:9090",
             "description": "Address the scrape endpoint binds on its **own** listener, apart from the service's\npublic port (default `0.0.0.0:9090`). `null` serves it on the primary port.",
             "type": "string"
           },
           "route": {
+            "default": "/metrics",
             "description": "Path the scrape endpoint is mounted at.",
             "type": "string"
           }
@@ -1316,10 +1334,12 @@
         "additionalProperties": false,
         "properties": {
           "json_logs": {
+            "default": false,
             "description": "Emit structured JSON logs, for production, in place of the human-readable format.",
             "type": "boolean"
           },
           "log_filter": {
+            "default": "info",
             "description": "`tracing` filter directives, such as `info,tankovault=debug`. `RUST_LOG` wins when set.",
             "type": "string"
           },
@@ -1327,10 +1347,12 @@
             "additionalProperties": false,
             "properties": {
               "attach_stacktraces": {
+                "default": true,
                 "description": "Attach a stack trace to events that carry none of their own.",
                 "type": "boolean"
               },
               "breadcrumb_level": {
+                "default": "info",
                 "description": "Least severe `tracing` level kept as a **breadcrumb**, the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead.",
                 "enum": [
                   "off",
@@ -1343,6 +1365,7 @@
                 "type": "string"
               },
               "capture_level": {
+                "default": "error",
                 "description": "Least severe `tracing` level reported as a Sentry **issue**.",
                 "enum": [
                   "off",
@@ -1355,6 +1378,7 @@
                 "type": "string"
               },
               "debug": {
+                "default": false,
                 "description": "Print the SDK's own diagnostics to stderr, to prove a DSN works.",
                 "type": "boolean"
               },
@@ -1364,6 +1388,7 @@
                 "writeOnly": true
               },
               "enabled": {
+                "default": false,
                 "description": "Initialise the Sentry client. `false` installs no client, no panic hook and no layer,\nso every other key here is inert and nothing is sent anywhere.",
                 "type": "boolean"
               },
@@ -1372,10 +1397,12 @@
                 "type": "string"
               },
               "http_transactions": {
+                "default": true,
                 "description": "Record one Sentry transaction per request through the shared HTTP stack, named by the\nmatched route, so an id in the path does not become a transaction name.\n\n[`Self::traces_sample_rate`] decides whether a transaction is kept. Off, the HTTP layer\nstarts no transactions; a broker delivery still starts one through the `tracing` layer.",
                 "type": "boolean"
               },
               "max_breadcrumbs": {
+                "default": 100,
                 "description": "How many breadcrumbs one event carries.",
                 "minimum": 0,
                 "type": "integer"
@@ -1385,12 +1412,14 @@
                 "type": "string"
               },
               "sample_rate": {
+                "default": 1.0,
                 "description": "Fraction of captured events sent, `0.0`-`1.0`, decided at random per event. A lower rate\nundercounts every issue and can miss a rare one entirely, so leave it at `1.0` unless\nquota forces it lower.",
                 "maximum": 1.0,
                 "minimum": 0.0,
                 "type": "number"
               },
               "send_default_pii": {
+                "default": false,
                 "description": "Send personally identifying data with every event: the client IP, the full request\nheader set (`Authorization` and `Cookie` included) and the resolved user.\n\n**Off, and worth leaving off.** A crash report does not need a reader's IP address or\nsession cookie, and Sentry is a third party under the deployment's data policy. On, it\nalso stops `sentry-tower` redacting sensitive headers in the HTTP middleware.",
                 "type": "boolean"
               },
@@ -1399,15 +1428,18 @@
                 "type": "string"
               },
               "shutdown_timeout_secs": {
+                "default": 2,
                 "description": "How long process exit waits for queued events to drain.",
                 "minimum": 0,
                 "type": "integer"
               },
               "span_attributes": {
+                "default": false,
                 "description": "Copy `tracing` span fields onto the Sentry span as attributes. Off by default, because span\nfields carry ids and user-supplied titles and a transaction is kept longer than a log line.",
                 "type": "boolean"
               },
               "traces_sample_rate": {
+                "default": 0.0,
                 "description": "Fraction of traces this service **starts** that are recorded, `0.0`-`1.0`.\n\n`0.0`, the default, starts none. The service still continues a trace that arrives already\nsampled on a request or a broker message. Set the same rate on every service, since the\nservice that starts a trace decides whether it exists; `0.05`-`0.2` is an ordinary\nproduction figure.",
                 "maximum": 1.0,
                 "minimum": 0.0,

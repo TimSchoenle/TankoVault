@@ -1,6 +1,6 @@
 //! Cross-origin resource sharing.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use terrace_config::schema::Describe;
 
 /// Cross-origin resource sharing.
@@ -8,7 +8,7 @@ use terrace_config::schema::Describe;
 /// The default is an **empty allowlist**, which adds no CORS layer: browsers withhold every
 /// cross-origin response from the page that asked, but a simple request still reaches its
 /// handler, so this is not a request filter. A split-origin deployment names its origins.
-#[derive(Debug, Clone, Default, Deserialize, Describe)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, Describe)]
 pub struct CorsConfig {
     /// Exact origins allowed, such as `https://app.example.com`. Empty disables CORS.
     #[serde(default)]

@@ -1,12 +1,12 @@
 //! Observability settings shared by every service.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use terrace_config::schema::Describe;
 
 use crate::sentry::SentryConfig;
 
 /// Observability settings shared by every service.
-#[derive(Debug, Clone, Deserialize, Describe)]
+#[derive(Debug, Clone, Deserialize, Serialize, Describe)]
 pub struct TelemetryConfig {
     /// Service name reported in traces and metrics.
     pub service_name: String,

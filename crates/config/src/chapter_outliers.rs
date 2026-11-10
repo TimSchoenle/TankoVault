@@ -1,7 +1,7 @@
 //! Operator control over which scraped chapter numbers ingest refuses.
 
 use crate::ConfigError;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tankovault_domain::chapter_outliers::OutlierPolicy;
 use terrace_config::schema::Describe;
 
@@ -27,7 +27,7 @@ use terrace_config::schema::Describe;
 /// let off = ChapterOutlierConfig { enabled: false, ..ChapterOutlierConfig::default() };
 /// assert!(implausible_indices(&listing, &off.policy()).is_empty());
 /// ```
-#[derive(Debug, Clone, Deserialize, Describe)]
+#[derive(Debug, Clone, Deserialize, Serialize, Describe)]
 pub struct ChapterOutlierConfig {
     /// Whether a scan rejects anything at all.
     ///

@@ -34,6 +34,11 @@ ignore = [
     "RUSTSEC-2026-0391",
     "RUSTSEC-2026-0398",
     "RUSTSEC-2026-0403",
+
+    # RUSTSEC-2026-0440: `astral-tokio-tar` is unmaintained, no fixed release. Reached only through
+    # `testcontainers`, a dev-dependency of the Docker-gated test-support crates; no service binary
+    # or image links it. Reviewed 2026-11-10; re-review when `testcontainers` replaces it.
+    "RUSTSEC-2026-0440",
 ]
 
 [licenses]
@@ -125,8 +130,6 @@ skip = [
     { crate = "socket2" },
     { crate = "syn" },
     { crate = "r-efi" },
-    # TLS root stores: `webpki-roots` majors, pulled by different clients.
-    { crate = "webpki-roots" },
     # `tower-http` 0.6 arrives transitively; ours is pinned at 0.7.
     { crate = "tower-http" },
     # Compression backends split by the 2026-09 lock refresh; both newer copies arrive through

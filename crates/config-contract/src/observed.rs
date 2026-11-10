@@ -88,6 +88,65 @@ where
     Ok(published)
 }
 
+/// Every key whose value differs between its table being absent and present but empty.
+///
+/// The two are the two ways an operator leaves a key unset, and serde reaches them by different
+/// routes: an absent `#[serde(default)]` table is the type's `Default`, while a present one fills
+/// each omitted field from its own `#[serde(default = "…")]`. A derived `Default` ignores those
+/// functions, so the same key boots with two values and the contract can publish only one.
+/// Returns `table.key: absent vs present` for each divergence.
+#[cfg(test)]
+pub(crate) fn absent_present_divergences<T>(schema: &Schema) -> Result<Vec<String>, Error>
+where
+    T: DeserializeOwned + Serialize,
+{
+    let minimal = supplying(
+        schema
+            .keys
+            .iter()
+            .filter(|key| key.required)
+            .map(|key| key.path.as_str()),
+    );
+    let absent =
+        Value::serialize(&minimal.clone().extract::<T>().map_err(Box::new)?).map_err(Box::new)?;
+
+    let tables: BTreeSet<String> = schema
+        .keys
+        .iter()
+        .flat_map(|key| {
+            let segments: Vec<&str> = key.path.split('.').collect();
+            (1..segments.len()).map(move |depth| segments[..depth].join("."))
+        })
+        .collect();
+
+    let mut found = Vec::new();
+    for table in tables {
+        let empty = terrace_config::figment::value::Dict::new();
+        // A table that cannot be present without keys of its own has no "present but empty" form.
+        let Ok(root) = minimal
+            .clone()
+            .merge(Serialized::default(&table, empty))
+            .extract::<T>()
+        else {
+            continue;
+        };
+        let present = Value::serialize(&root).map_err(Box::new)?;
+        for key in schema
+            .keys
+            .iter()
+            .filter(|key| within(&key.path, &table) && !key.required)
+        {
+            let (a, p) = (absent.find_ref(&key.path), present.find_ref(&key.path));
+            if a != p {
+                found.push(format!("{}: absent {a:?} vs present {p:?}", key.path));
+            }
+        }
+    }
+    found.sort();
+    found.dedup();
+    Ok(found)
+}
+
 /// A figment supplying [`PLACEHOLDER`] at each path.
 fn supplying<'a>(paths: impl IntoIterator<Item = &'a str>) -> Figment {
     paths.into_iter().fold(Figment::new(), |figment, path| {
@@ -96,6 +155,9 @@ fn supplying<'a>(paths: impl IntoIterator<Item = &'a str>) -> Figment {
 }
 
 /// The shallowest tables holding a key with no default that the observed root left out entirely.
+///
+/// One level deep: an `Option` section nested inside another `Option` section stays unobserved,
+/// because absence is read from the first pass only. No config root has that shape.
 fn absent_sections(schema: &Schema, observed: &Value) -> BTreeSet<String> {
     let mut sections = BTreeSet::new();
     for key in schema

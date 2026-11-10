@@ -25,7 +25,7 @@ pub enum EmailSecurity {
 /// The relay is either [`Self::url`], which wins when set, or the explicit host, port,
 /// credential and security fields. Mail is sent only when a relay and [`Self::from`] are both
 /// present; otherwise the mailer discards every message.
-#[derive(Debug, Clone, Default, Deserialize, Serialize, Describe)]
+#[derive(Debug, Clone, Deserialize, Serialize, Describe)]
 pub struct EmailConfig {
     /// Full lettre relay URL. When set, it wins over the explicit fields below.
     // A `SecretString` because the documented form embeds the mailbox password.
@@ -69,6 +69,25 @@ pub struct EmailConfig {
     /// Per-message send timeout, in seconds.
     #[serde(default = "EmailConfig::default_timeout_secs")]
     pub timeout_secs: u64,
+}
+
+// By hand, not derived: a derived `Default` ignores `#[serde(default = "…")]`, so an absent
+// `[email]` and one omitting the two keys would boot with an empty origin and a 0 s timeout.
+impl Default for EmailConfig {
+    fn default() -> Self {
+        Self {
+            url: None,
+            host: None,
+            port: None,
+            username: None,
+            password: None,
+            security: EmailSecurity::default(),
+            from: None,
+            envelope_from: None,
+            base_url: Self::default_base_url(),
+            timeout_secs: Self::default_timeout_secs(),
+        }
+    }
 }
 
 impl EmailConfig {

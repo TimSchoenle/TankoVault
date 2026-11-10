@@ -1427,8 +1427,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": "0",
-        "default_value": 0,
+        "default": "3600",
+        "default_value": 3600,
         "note": null,
         "required": false,
         "secret": false,
@@ -2923,7 +2923,7 @@
                 "type": "array"
               },
               "max_age_secs": {
-                "default": 0,
+                "default": 3600,
                 "description": "`Access-Control-Max-Age`, in seconds.",
                 "minimum": 0,
                 "type": "integer"

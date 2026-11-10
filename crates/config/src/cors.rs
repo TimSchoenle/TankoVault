@@ -8,7 +8,7 @@ use terrace_config::schema::Describe;
 /// The default is an **empty allowlist**, which adds no CORS layer: browsers withhold every
 /// cross-origin response from the page that asked, but a simple request still reaches its
 /// handler, so this is not a request filter. A split-origin deployment names its origins.
-#[derive(Debug, Clone, Default, Deserialize, Serialize, Describe)]
+#[derive(Debug, Clone, Deserialize, Serialize, Describe)]
 pub struct CorsConfig {
     /// Exact origins allowed, such as `https://app.example.com`. Empty disables CORS.
     #[serde(default)]
@@ -20,6 +20,18 @@ pub struct CorsConfig {
     /// `Access-Control-Max-Age`, in seconds.
     #[serde(default = "CorsConfig::default_max_age_secs")]
     pub max_age_secs: u64,
+}
+
+// By hand, not derived: a derived `Default` ignores `#[serde(default = "…")]`, so an absent
+// `[security.cors]` and one omitting `max_age_secs` would boot with 0 and 3600.
+impl Default for CorsConfig {
+    fn default() -> Self {
+        Self {
+            allowed_origins: Vec::new(),
+            allow_credentials: false,
+            max_age_secs: Self::default_max_age_secs(),
+        }
+    }
 }
 
 impl CorsConfig {

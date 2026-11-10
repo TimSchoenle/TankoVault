@@ -1434,8 +1434,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": "\"\"",
-        "default_value": "",
+        "default": "http://localhost:8080",
+        "default_value": "http://localhost:8080",
         "note": null,
         "required": false,
         "secret": false,
@@ -1462,8 +1462,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": "0",
-        "default_value": 0,
+        "default": "15",
+        "default_value": 15,
         "note": null,
         "required": false,
         "secret": false,
@@ -1547,8 +1547,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": "0",
-        "default_value": 0,
+        "default": "3600",
+        "default_value": 3600,
         "note": null,
         "required": false,
         "secret": false,
@@ -3213,7 +3213,7 @@
         "additionalProperties": false,
         "properties": {
           "base_url": {
-            "default": "",
+            "default": "http://localhost:8080",
             "description": "Public base URL of the web app, for absolute links in email such as the password-reset\nlink. No trailing slash.",
             "type": "string"
           },
@@ -3251,7 +3251,7 @@
             "type": "string"
           },
           "timeout_secs": {
-            "default": 0,
+            "default": 15,
             "description": "Per-message send timeout, in seconds.",
             "minimum": 0,
             "type": "integer"
@@ -3587,7 +3587,7 @@
                 "type": "array"
               },
               "max_age_secs": {
-                "default": 0,
+                "default": 3600,
                 "description": "`Access-Control-Max-Age`, in seconds.",
                 "minimum": 0,
                 "type": "integer"

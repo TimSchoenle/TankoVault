@@ -67,6 +67,17 @@ macro_rules! services {
         /// The names `--service` accepts, in the order `--services` lists them.
         const SERVICES: &[&str] = &[$($name),*];
 
+        /// Returns each key whose default differs between its table absent and present but empty.
+        #[cfg(test)]
+        fn divergences_for(service: &str) -> Option<Result<Vec<String>, terrace_config::Error>> {
+            match service {
+                $($name => Some(observed::absent_present_divergences::<$root>(
+                    &tankovault_config::terrace().schema::<$root>(),
+                )),)*
+                _ => None,
+            }
+        }
+
         /// Returns the schema of one service's root, or `None` for a name that is not a service.
         fn schema_for(service: &str) -> Option<Result<Schema, terrace_config::Error>> {
             match service {
@@ -379,6 +390,21 @@ mod tests {
             declared.sort();
 
             assert_eq!(declared, expected(service), "{service}");
+        }
+    }
+
+    /// `security.cors.max_age_secs` booted with 3600 when `[security.cors]` was written and 0 when it
+    /// was not, and `email.base_url`/`email.timeout_secs` with a localhost origin and 15 s versus an
+    /// empty origin and 0 s: each struct derived `Default`, which ignores its fields'
+    /// `#[serde(default = "…")]`. A contract can publish one default per key, so the two ways of
+    /// leaving a key unset must agree.
+    #[test]
+    fn an_absent_table_and_an_empty_one_give_every_key_the_same_default() {
+        for service in SERVICES {
+            let found = super::divergences_for(service)
+                .unwrap_or_else(|| panic!("{service} has no root"))
+                .unwrap_or_else(|error| panic!("{service}'s root does not load: {error}"));
+            assert!(found.is_empty(), "{service}:\n  {}", found.join("\n  "));
         }
     }
 

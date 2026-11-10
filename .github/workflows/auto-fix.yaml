@@ -648,7 +648,7 @@ jobs:
       # reaches the patch. Uploaded even when empty; an empty patch is what skips `readme-commit`.
       - name: package the render as a patch
         id: patch
-        uses: TimSchoenle/actions/actions/common/create-patch@dc5b395636dc1954383f11af4062a08814e9b15a # tag=actions-common-create-patch-v1.1.1
+        uses: TimSchoenle/actions/actions/common/create-patch@6a49261c7bbd756b4ceca9b1c168dfc7dc095e64 # tag=actions-common-create-patch-v2.0.0
         with:
           artifact_name: readme-render
           paths: README.md

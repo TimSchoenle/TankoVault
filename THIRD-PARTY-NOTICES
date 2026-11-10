@@ -36,13 +36,13 @@ Ships as: the eight service binaries (api, bootstrap, worker, control-plane, not
 
 Licences in this section, by number of crates:
 
-  Apache License 2.0 (Apache-2.0) — 391 crates, 38 distinct notices
+  Apache License 2.0 (Apache-2.0) — 392 crates, 38 distinct notices
   MIT License (MIT) — 118 crates, 73 distinct notices
   Unicode License v3 (Unicode-3.0) — 19 crates, 2 distinct notices
-  BSD 3-Clause "New" or "Revised" License (BSD-3-Clause) — 13 crates, 9 distinct notices
+  BSD 3-Clause "New" or "Revised" License (BSD-3-Clause) — 14 crates, 9 distinct notices
   Mozilla Public License 2.0 (MPL-2.0) — 11 crates, 2 distinct notices
   ISC License (ISC) — 10 crates, 28 distinct notices
-  Community Data License Agreement Permissive 2.0 (CDLA-Permissive-2.0) — 3 crates
+  Community Data License Agreement Permissive 2.0 (CDLA-Permissive-2.0) — 2 crates
   BSD Zero Clause License (0BSD) — 1 crate
   Creative Commons Zero v1.0 Universal (CC0-1.0) — 1 crate
   zlib License (Zlib) — 1 crate
@@ -267,7 +267,7 @@ by the block naming that crate.
   - asn1-rs-impl 0.2.0
   - astral-tokio-tar 0.6.4
   - async-compression 0.4.49
-  - async-nats 0.50.0
+  - async-nats 0.52.0
   - async-trait 0.1.92
   - atomic-waker 1.1.2
   - autocfg 1.5.1
@@ -505,6 +505,7 @@ by the block naming that crate.
   - signal-hook-registry 1.4.8
   - signatory 0.27.1
   - signature 2.2.0
+  - simdutf8 0.1.5
   - siphasher 1.0.4
   - smallvec 1.16.2
   - socket2 0.5.10
@@ -4376,7 +4377,7 @@ SOFTWARE.
 
 Applies to:
 
-  - tokio-websockets 0.10.1
+  - tokio-websockets 0.13.3
 
 Copyright (c) 2021 Jens Reidel
 
@@ -4655,6 +4656,25 @@ BSD 3-Clause "New" or "Revised" License (BSD-3-Clause)
 
 Applies to:
 
+  - alloc-stdlib 0.2.4
+  - aws-lc-sys 0.45.0
+  - curve25519-dalek 4.1.3
+  - sha1_smol 1.0.1
+
+Copyright (c) <year> <owner>. 
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Applies to:
+
   - zstd 0.14.3
   - zstd-safe 7.3.0
   - zstd-safe 8.2.0
@@ -4688,24 +4708,6 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-Applies to:
-
-  - alloc-stdlib 0.2.4
-  - aws-lc-sys 0.45.0
-  - curve25519-dalek 4.1.3
-
-Copyright (c) <year> <owner>. 
-
-Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
-
-1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 Applies to:
 
@@ -6448,7 +6450,6 @@ Community Data License Agreement Permissive 2.0 (CDLA-Permissive-2.0)
 Applies to:
 
   - webpki-root-certs 1.0.11
-  - webpki-roots 0.26.11
   - webpki-roots 1.0.11
 
 # Community Data License Agreement - Permissive - Version 2.0

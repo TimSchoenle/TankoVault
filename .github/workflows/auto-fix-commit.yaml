@@ -406,7 +406,7 @@ jobs:
       # branch that moved since is skipped, and the push that moved it starts a new run.
       - name: commit README.md
         id: render
-        uses: TimSchoenle/actions/actions/common/commit-patch@7b20a67f0b18a6e64c30e5f47c92636729f6ad41 # tag=actions-common-commit-patch-v1.3.0
+        uses: TimSchoenle/actions/actions/common/commit-patch@6a49261c7bbd756b4ceca9b1c168dfc7dc095e64 # tag=actions-common-commit-patch-v2.0.0
         with:
           token: ${{ steps.generate_token.outputs.token }}
           run_id: ${{ github.event.workflow_run.id }}

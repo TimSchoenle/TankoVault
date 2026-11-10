@@ -34,6 +34,19 @@ ignore = [
     "RUSTSEC-2026-0391",
     "RUSTSEC-2026-0398",
     "RUSTSEC-2026-0403",
+
+    # RUSTSEC-2026-0440: `astral-tokio-tar` is unmaintained, no fixed release. Reached only through
+    # `testcontainers`, a dev-dependency of the Docker-gated test-support crates; no service binary
+    # or image links it. Reviewed 2026-11-10; re-review when `testcontainers` replaces it.
+    "RUSTSEC-2026-0440",
+
+    # RUSTSEC-2026-0459: the C SQLite bundled by `libsqlite3-sys` 0.37. It is in `Cargo.lock` only
+    # because `sqlx`'s weak `sqlx-sqlite?/…` features make `cargo` record it; the workspace never
+    # enables `sqlite`, so no build compiles or links it (`cargo tree -i sqlx-sqlite` is empty), and
+    # cargo-deny, which resolves features, does not report it. Listed so `.cargo/audit.toml`, whose
+    # lockfile scan does report it, agrees with this file. Reviewed 2026-11-10; re-review if any
+    # crate enables a `sqlx` `sqlite` feature.
+    "RUSTSEC-2026-0459",
 ]
 
 [licenses]
@@ -125,8 +138,6 @@ skip = [
     { crate = "socket2" },
     { crate = "syn" },
     { crate = "r-efi" },
-    # TLS root stores: `webpki-roots` majors, pulled by different clients.
-    { crate = "webpki-roots" },
     # `tower-http` 0.6 arrives transitively; ours is pinned at 0.7.
     { crate = "tower-http" },
     # Compression backends split by the 2026-09 lock refresh; both newer copies arrive through

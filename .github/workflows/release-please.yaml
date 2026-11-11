@@ -1518,7 +1518,7 @@ jobs:
 
       - name: open the chart update pull request
         id: chart
-        uses: TimSchoenle/actions/actions/helm/update-chart-version@6a49261c7bbd756b4ceca9b1c168dfc7dc095e64 # tag=actions-helm-update-chart-version-v1.7.4
+        uses: TimSchoenle/actions/actions/helm/update-chart-version@0701d3b35ad7e10e3159471c82f4743b67fdc01f # tag=actions-helm-update-chart-version-v1.7.5
         with:
           app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}

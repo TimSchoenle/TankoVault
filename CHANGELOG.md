@@ -12,6 +12,32 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [11.2.0](https://github.com/TimSchoenle/TankoVault/compare/v11.1.4...v11.2.0) (2026-11-11)
+
+
+### Features
+
+* **config:** publish compiled-in defaults in every service contract ([#642](https://github.com/TimSchoenle/TankoVault/issues/642)) ([1d427b9](https://github.com/TimSchoenle/TankoVault/commit/1d427b9cd8dc16fbdbb478953d7fdfb1f6c61e10))
+* **release:** read the Sentry organization and project from the release environment ([#621](https://github.com/TimSchoenle/TankoVault/issues/621)) ([de7ed4f](https://github.com/TimSchoenle/TankoVault/commit/de7ed4fc5c7cb52585ccd0f59672a49c3dff8103))
+
+
+### Build System
+
+* **deps:** clear the stale skip and two advisories that do not apply ([#643](https://github.com/TimSchoenle/TankoVault/issues/643)) ([8b37d7f](https://github.com/TimSchoenle/TankoVault/commit/8b37d7fb724ce891c33a6345c5f15b13ae3169df))
+* **deps:** group webauthn crates in renovate ([#634](https://github.com/TimSchoenle/TankoVault/issues/634)) ([ee904a8](https://github.com/TimSchoenle/TankoVault/commit/ee904a804c03c401d991fe5b9c38f5ab5cd17cdf))
+
+
+### Dependencies
+
+* **deps:** update debian:13-slim docker digest to a72b443 ([#624](https://github.com/TimSchoenle/TankoVault/issues/624)) ([4eae3a1](https://github.com/TimSchoenle/TankoVault/commit/4eae3a1df73c67d7cdcb88a019a28ddcae331dcd))
+* **deps:** update nats:2-alpine docker digest to afae2fd ([#626](https://github.com/TimSchoenle/TankoVault/issues/626)) ([cc54fe1](https://github.com/TimSchoenle/TankoVault/commit/cc54fe15ed589da3aa22ed8087094b477ef64645))
+* **deps:** update redis:8-alpine docker digest to 71885d8 ([#627](https://github.com/TimSchoenle/TankoVault/issues/627)) ([7f9f167](https://github.com/TimSchoenle/TankoVault/commit/7f9f167a490b9d53b95c99517fa66022288fea86))
+* **deps:** update rust crate async-nats to 0.52 ([#600](https://github.com/TimSchoenle/TankoVault/issues/600)) ([48cb722](https://github.com/TimSchoenle/TankoVault/commit/48cb7226edcd0b33f960a29dfe8dc4c8d0820ca2))
+* **deps:** update rust crate flate2 to v1.1.11 ([#636](https://github.com/TimSchoenle/TankoVault/issues/636)) ([8d92aaf](https://github.com/TimSchoenle/TankoVault/commit/8d92aaf121831a7f81c17ba962fa0a6a3f72450c))
+* **deps:** update rust crate uuid to v1.29.1 ([#637](https://github.com/TimSchoenle/TankoVault/issues/637)) ([be759bc](https://github.com/TimSchoenle/TankoVault/commit/be759bc754a01f3769c0513a371fb71d62b8f9b2))
+* **deps:** update rust:1.99.1-bookworm docker digest to e6f2cff ([#546](https://github.com/TimSchoenle/TankoVault/issues/546)) ([29ce4aa](https://github.com/TimSchoenle/TankoVault/commit/29ce4aa346ffa4c3bd35c062148099df140785c2))
+* **deps:** update tailwind toolchain to v4.3.5 ([#638](https://github.com/TimSchoenle/TankoVault/issues/638)) ([e2c6f98](https://github.com/TimSchoenle/TankoVault/commit/e2c6f988c3ac8ee84e4ce36f6fa1de229237a9dc))
+
 ## [11.1.4](https://github.com/TimSchoenle/TankoVault/compare/v11.1.3...v11.1.4) (2026-11-06)
 
 

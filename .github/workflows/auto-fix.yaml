@@ -1,7 +1,7 @@
 name: auto-fix
 
-# The one workflow that fixes a pull request mechanically and commits the result: both
-# lockfiles, clippy's machine-applicable suggestions, `cargo fmt` and the four generated artefacts,
+# The one workflow that fixes a pull request mechanically and commits the result: the
+# three lockfiles, clippy's machine-applicable suggestions, `cargo fmt` and the four generated artefacts,
 # built by one job and committed by another in one commit, and `README.md`, rendered from its
 # template in a job of its own.
 #
@@ -274,22 +274,22 @@ jobs:
       contents: read # to check out the branch and its base
     outputs:
       changed: ${{ steps.patch.outputs.changed }}
-    # What the patch may touch: source, the two lockfiles and the generated artefacts. Must equal
+    # What the patch may touch: source, the three lockfiles and the generated artefacts. Must equal
     # `commit`'s copy in auto-fix-commit.yaml, which is the one that is enforced: a path here that
     # is missing there fails that job instead of being committed. `docs/contracts` is nine
     # artefacts, one per published image, and the one entry that is a *directory of* them, so a
     # service added to `crates/config-contract` is carried back without touching this line. Nothing
-    # else in this job is meant to change (`npm ci` can touch `package-lock.json`), and anything
-    # outside this list that changed is a bug to see in a red gate, not to commit silently.
+    # else in this job is meant to change, and anything outside this list that changed is a bug to
+    # see in a red gate, not to commit silently.
     #
-    # On a `renovate/*` branch the list is the two lockfiles and the generated artefacts alone,
+    # On a `renovate/*` branch the list is the three lockfiles and the generated artefacts alone,
     # the same branch pattern `renovate-auto-approve.yml` approves. Those pull requests are
     # approved without a human and merge on a green gate, so a bot commit there must not be able to
     # carry source: whatever `clippy --fix` or `cargo fmt` would rewrite after a dependency or
     # toolchain bump is left out of the patch, and `fmt + clippy` stays red for a human to look
     # at. A human's branch keeps the full list.
     env:
-      FIX_PATHS: "${{ startsWith(github.head_ref, 'renovate/') && 'Cargo.lock web/frontend/Cargo.lock openapi.json crates/api-client/src/lib.rs THIRD-PARTY-NOTICES docs/contracts web/frontend/assets/main.css' || 'Cargo.lock web/frontend/Cargo.lock crates services xtask fuzz openapi.json THIRD-PARTY-NOTICES docs/contracts web/frontend/src web/frontend/assets/main.css' }}"
+      FIX_PATHS: "${{ startsWith(github.head_ref, 'renovate/') && 'Cargo.lock web/frontend/Cargo.lock web/frontend/package-lock.json openapi.json crates/api-client/src/lib.rs THIRD-PARTY-NOTICES docs/contracts web/frontend/assets/main.css' || 'Cargo.lock web/frontend/Cargo.lock web/frontend/package-lock.json crates services xtask fuzz openapi.json THIRD-PARTY-NOTICES docs/contracts web/frontend/src web/frontend/assets/main.css' }}"
     steps:
       # `audit`, not `block`. This job's egress is rustup, the crates.io index and its CDN, the
       # Actions cache, the runner's apt mirrors, `install-action`'s release downloads, the npm
@@ -530,6 +530,38 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "26"
+
+      # Before `npm ci`, which refuses a lockfile that disagrees with `package.json` and would take
+      # the Tailwind rebuild down with it. Renovate can push exactly that: its npm 12 fails the
+      # lockfile refresh with `EALLOWREMOTE` on any package that bundles dependencies, which
+      # `@tailwindcss/oxide-wasm32-wasi` does since 4.3.4, and it then pushes `package.json` alone.
+      # `--package-lock-only` resolves and rewrites without installing or running anything, and is
+      # byte-identical on a lockfile already in step.
+      #
+      # `--allow-remote=all` because npm 12 defaults it to `none` and reads a bundling package by
+      # its `resolved` tarball URL, which it classes as remote even on the registry host. That
+      # widens what may be resolved, so every `resolved` URL is then held to the npm registry: a
+      # tarball URL anywhere in the result fails here instead of reaching the patch.
+      - name: sync package-lock.json with package.json
+        working-directory: web/frontend
+        run: |
+          set -euo pipefail
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund --allow-remote=all
+          node -e '
+            const { packages } = require("./package-lock.json");
+            const off = Object.entries(packages)
+              .filter(([path, pkg]) => path && pkg.resolved && !pkg.resolved.startsWith("https://registry.npmjs.org/"))
+              .map(([path, pkg]) => path + ": " + pkg.resolved);
+            if (off.length) {
+              console.error("::error::package-lock.json resolves outside the npm registry:\n" + off.join("\n"));
+              process.exit(1);
+            }
+          '
+          if git diff --quiet -- package-lock.json; then
+            echo "package-lock.json already in step with package.json."
+          else
+            git diff --stat -- package-lock.json
+          fi
 
       # `--ignore-scripts`: the only install hook in the lockfile is `@parcel/watcher`'s
       # build-from-source fallback, which the Tailwind CLI needs for `--watch` and not for a

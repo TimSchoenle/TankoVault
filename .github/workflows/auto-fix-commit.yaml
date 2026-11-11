@@ -106,7 +106,7 @@ jobs:
     # Read by the patch check and by the commit action's `file_pattern`, so what is checked and
     # what is committed cannot diverge.
     env:
-      FIX_PATHS: "${{ startsWith(github.event.workflow_run.head_branch, 'renovate/') && 'Cargo.lock web/frontend/Cargo.lock openapi.json crates/api-client/src/lib.rs THIRD-PARTY-NOTICES docs/contracts web/frontend/assets/main.css' || 'Cargo.lock web/frontend/Cargo.lock crates services xtask fuzz openapi.json THIRD-PARTY-NOTICES docs/contracts web/frontend/src web/frontend/assets/main.css' }}"
+      FIX_PATHS: "${{ startsWith(github.event.workflow_run.head_branch, 'renovate/') && 'Cargo.lock web/frontend/Cargo.lock web/frontend/package-lock.json openapi.json crates/api-client/src/lib.rs THIRD-PARTY-NOTICES docs/contracts web/frontend/assets/main.css' || 'Cargo.lock web/frontend/Cargo.lock web/frontend/package-lock.json crates services xtask fuzz openapi.json THIRD-PARTY-NOTICES docs/contracts web/frontend/src web/frontend/assets/main.css' }}"
     steps:
       # `audit`, not `block`: the artefact service hands out storage URLs whose hosts are not a
       # documented fixed list, and a guessed allowlist that misses one drops the commit silently

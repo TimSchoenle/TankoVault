@@ -348,7 +348,7 @@ by the block naming that crate.
   - find-msvc-tools 0.1.14
   - findshlibs 0.10.2
   - flagset 0.4.7
-  - flate2 1.1.10
+  - flate2 1.1.11
   - fnv 1.0.7
   - form_urlencoded 1.2.2
   - futures-timer 3.0.4

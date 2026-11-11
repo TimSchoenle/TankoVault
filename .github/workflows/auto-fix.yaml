@@ -551,7 +551,7 @@ jobs:
             const { packages } = require("./package-lock.json");
             const off = Object.entries(packages)
               .filter(([path, pkg]) => path && pkg.resolved && !pkg.resolved.startsWith("https://registry.npmjs.org/"))
-              .map(([path, pkg]) => `${path}: ${pkg.resolved}`);
+              .map(([path, pkg]) => path + ": " + pkg.resolved);
             if (off.length) {
               console.error("::error::package-lock.json resolves outside the npm registry:\n" + off.join("\n"));
               process.exit(1);

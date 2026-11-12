@@ -36,12 +36,14 @@ jobs:
     name: find the fixes
     # A failed pull_request run only: the gate fails the run whenever there is something to
     # commit, so a successful run has nothing to find and starting a runner for it only lists the
-    # run's artifacts. From a branch of this repository, never the default branch.
+    # run's artifacts. From a branch of this repository, never the default branch, and no branch
+    # named like a full ref, which would pass that comparison.
     if: >-
       github.event.workflow_run.conclusion == 'failure' &&
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
-      github.event.workflow_run.head_branch != github.event.repository.default_branch
+      github.event.workflow_run.head_branch != github.event.repository.default_branch &&
+      !startsWith(github.event.workflow_run.head_branch, 'refs/')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -317,12 +319,14 @@ jobs:
     name: find the README render
     # A failed pull_request run only: the gate fails the run whenever there is something to
     # commit, so a successful run has nothing to find and starting a runner for it only lists the
-    # run's artifacts. From a branch of this repository, never the default branch.
+    # run's artifacts. From a branch of this repository, never the default branch, and no branch
+    # named like a full ref, which would pass that comparison.
     if: >-
       github.event.workflow_run.conclusion == 'failure' &&
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
-      github.event.workflow_run.head_branch != github.event.repository.default_branch
+      github.event.workflow_run.head_branch != github.event.repository.default_branch &&
+      !startsWith(github.event.workflow_run.head_branch, 'refs/')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

@@ -436,7 +436,7 @@ jobs:
       - name: BoringSSL build dependencies
         uses: $/.github/actions/boringssl-deps
 
-      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-about
 
@@ -514,7 +514,7 @@ jobs:
 
       # The same recipe a developer runs, not a second spelling of it in YAML.
       - name: Install just
-        uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: just
 
@@ -680,7 +680,7 @@ jobs:
       # reaches the patch. Uploaded even when empty; an empty patch is what skips `readme-commit`.
       - name: package the render as a patch
         id: patch
-        uses: TimSchoenle/actions/actions/common/create-patch@7c1147cf1e275c068a8484fa9a2dcb38a8b1f92f # tag=actions-common-create-patch-v2.0.1
+        uses: TimSchoenle/actions/actions/common/create-patch@0701d3b35ad7e10e3159471c82f4743b67fdc01f # tag=actions-common-create-patch-v2.0.2
         with:
           artifact_name: readme-render
           paths: README.md

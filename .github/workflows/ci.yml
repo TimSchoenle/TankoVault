@@ -69,6 +69,11 @@ env:
   # Must match the `sqlx` in `Cargo.lock`: a CLI from a different minor writes a query cache the
   # workspace then rejects.
   SQLX_CLI_VERSION: 0.9.0
+  # The Codecov CLI both `upload to Codecov` steps run. `codecov-action` downloads `latest` when
+  # no version is set, so every CLI release would reach this workflow on its first day, past the
+  # minimum release age every other dependency waits out.
+  # renovate: datasource=github-releases depName=codecov/codecov-cli
+  CODECOV_CLI_VERSION: v11.3.2
 
 jobs:
   # Which gates this diff can affect, plus the toolchain and MSRV read from their manifests.
@@ -977,6 +982,7 @@ jobs:
           flags: offline
           use_oidc: true
           fail_ci_if_error: true
+          version: ${{ env.CODECOV_CLI_VERSION }}
 
   # The other half of the ratchet. `coverage` above builds without `--features integration`, so
   # the `crates/db`, `services/api` and `services/sync` integration suites never run there and code
@@ -1075,6 +1081,7 @@ jobs:
           flags: integration
           use_oidc: true
           fail_ci_if_error: true
+          version: ${{ env.CODECOV_CLI_VERSION }}
 
   # What coverage cannot answer: a line executing is not a line anything asserted on. `cargo
   # mutants` rewrites one function body at a time and re-runs the tests; a surviving mutant is a

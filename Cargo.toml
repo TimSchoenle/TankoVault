@@ -371,7 +371,7 @@ percent-encoding = "2.3"
 # `Serialize`, which it must be to survive between the two legs of the protocol in Postgres
 # instead of one replica's memory. The "danger" is storing that state where the *client* can
 # reach it; see `migrations/0022_passkeys.up.sql`.
-webauthn-rs = { version = "=0.6.1-dev", default-features = false, features = [
+webauthn-rs = { version = "=0.6.2", default-features = false, features = [
     "conditional-ui",
     "danger-allow-state-serialisation",
 ] }

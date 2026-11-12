@@ -4983,7 +4983,7 @@ Mozilla Public License Version 2.0
 … continued, for:
 
   - crypto-glue 0.1.15
-  - progenitor-client 0.15.1
+  - progenitor-client 0.16.0
   - progenitor-impl 0.15.1
   - selectors 0.41.0
   - webauthn-attestation-ca 0.6.1-dev
@@ -11042,7 +11042,7 @@ Applies to:
 
   - crypto-glue 0.1.15
   - option-ext 0.2.0
-  - progenitor-client 0.15.1
+  - progenitor-client 0.16.0
   - webauthn-attestation-ca 0.6.1-dev
   - webauthn-authenticator-rs 0.6.1-dev
   - webauthn-rs-core 0.6.1-dev

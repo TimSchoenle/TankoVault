@@ -12,6 +12,16 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [11.2.1](https://github.com/TimSchoenle/TankoVault/compare/v11.2.0...v11.2.1) (2026-11-12)
+
+
+### Dependencies
+
+* **deps:** update rust crate arc-swap to v1.9.4 ([#646](https://github.com/TimSchoenle/TankoVault/issues/646)) ([a81d8f9](https://github.com/TimSchoenle/TankoVault/commit/a81d8f9f40b38b4a29b0144626613f6876507617))
+* **deps:** update rust crate notify-rust to v4.19.0 ([#650](https://github.com/TimSchoenle/TankoVault/issues/650)) ([c3c55e1](https://github.com/TimSchoenle/TankoVault/commit/c3c55e1044ed55bc3c61a95c71db74697be18080))
+* **deps:** update rust crate progenitor-client to v0.16.0 ([#651](https://github.com/TimSchoenle/TankoVault/issues/651)) ([d7887ca](https://github.com/TimSchoenle/TankoVault/commit/d7887ca8a37e31e0d810ba873927dd16296881e3))
+* **deps:** update rust crate uuid to v1.29.2 ([#647](https://github.com/TimSchoenle/TankoVault/issues/647)) ([1a93957](https://github.com/TimSchoenle/TankoVault/commit/1a939571fbb971c9ea2f9f16cf993946d05151e8))
+
 ## [11.2.0](https://github.com/TimSchoenle/TankoVault/compare/v11.1.4...v11.2.0) (2026-11-11)
 
 

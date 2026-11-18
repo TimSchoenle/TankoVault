@@ -50,7 +50,7 @@ dioxus = { version = "0.7", features = ["router"] }
 inkstone-ui = { path = "crates/inkstone-ui" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-gloo-net = { version = "0.7", features = ["http", "json", "eventsource"], optional = true }
+gloo-net = { version = "0.8", features = ["http", "json", "eventsource"], optional = true }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
 progenitor-client = "0.16"
 tankovault-api-client = { path = "../../crates/api-client" }
@@ -161,7 +161,7 @@ directories = { version = "6", optional = true }
 # second opinion about file dialogs, it is a second *copy* of one: extra compilation, an entry
 # on `cargo-deny`'s duplicate budget, and two crates whose licence text the notices document has
 # to carry separately.
-rfd = { version = "0.17", optional = true }
+rfd = { version = "0.18", optional = true }
 # Hands an OAuth consent URL to the reader's own browser, which is where their provider session
 # already is, and where several providers refuse to run a ceremony in a webview at all.
 open = { version = "5", optional = true }

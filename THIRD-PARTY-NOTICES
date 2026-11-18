@@ -335,7 +335,7 @@ by the block naming that crate.
   - dyn-clone 1.0.20
   - either 1.18.0
   - elliptic-curve 0.13.8
-  - email-encoding 0.4.2
+  - email-encoding 0.4.3
   - equivalent 1.0.2
   - errno 0.3.14
   - etcetera 0.11.0
@@ -3889,7 +3889,7 @@ SOFTWARE.
 
 Applies to:
 
-  - lettre 0.11.23
+  - lettre 0.11.24
 
 Copyright (c) 2014-2024 Alexis Mousset <contact@amousset.me>
 Copyright (c) 2019-2025 Paolo Barbolini <paolo@paolo565.org>

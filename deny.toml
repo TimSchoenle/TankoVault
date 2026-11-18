@@ -16,12 +16,11 @@ ignore = [
     "RUSTSEC-2023-0071",
 
     # RUSTSEC-2026-0387: timing variability in `crypto-bigint` 0.5.x, reached only through
-    # `elliptic-curve` 0.13 (`jsonwebtoken`'s `rust_crypto` feature and `webauthn-rs`). The fix is
-    # 0.7.6, which the 0.13 curve crates cannot take, so no compatible release exists. Not
-    # exploitable here: JWTs are HS256-only (see RUSTSEC-2023-0071), and WebAuthn only verifies
-    # assertions against stored public keys, so no secret scalar ever passes through it. Reviewed
-    # 2026-10-26; re-review 2027-01-26, when `elliptic-curve` 0.14 reaches `jsonwebtoken` and
-    # `webauthn-rs`, or if the server ever signs with an EC key.
+    # `elliptic-curve` 0.13 (`jsonwebtoken`'s `rust_crypto` feature; `webauthn-rs` 0.6.2 is on
+    # 0.14). The fix is 0.7.6, which the 0.13 curve crates cannot take, so no compatible release
+    # exists. Not exploitable here: JWTs are HS256-only (see RUSTSEC-2023-0071), so no secret
+    # scalar ever passes through it. Reviewed 2026-10-26; re-review 2027-01-26, when
+    # `elliptic-curve` 0.14 reaches `jsonwebtoken`, or if the server ever signs with an EC key.
     "RUSTSEC-2026-0387",
 
     # RUSTSEC-2026-0391, -0398, -0403: `zstd` 0.13 / `zstd-safe` 7, held there by `wreq-util`
@@ -152,47 +151,42 @@ skip = [
     # under both X.509 cohorts below, whose newest release (0.7) still requires 0.13.
     { crate = "synstructure" },
     # The passkey stack (added 2026-08-01 with `webauthn-rs` 0.6): every entry below is a
-    # second, older copy arriving only through `webauthn-rs-core`.
-    # AEAD cluster: `crypto-glue` pins `aes-gcm 0.10`; `crates/auth` uses 0.11. Collapses when
-    # `crypto-glue` bumps.
-    { crate = "aead" },
-    { crate = "aes" },
-    { crate = "aes-gcm" },
-    { crate = "cipher" },
-    { crate = "ctr" },
-    { crate = "ghash" },
-    { crate = "inout" },
-    { crate = "polyval" },
-    { crate = "universal-hash" },
-    # Password-hashing cluster: `crypto-glue` pins `argon2 0.5`; `crates/auth` uses 0.6. Same
-    # `crypto-glue` bump collapses it.
+    # second copy arriving only through `webauthn-rs-core`.
+    # Password-hashing cluster: `crypto-glue` pins `argon2 0.5`; `crates/auth` uses 0.6.
+    # Collapses when `crypto-glue` bumps.
     { crate = "argon2" },
     { crate = "blake2" },
     { crate = "password-hash" },
-    # `thiserror` 1.x via `webauthn-rs-core`/`x509-parser`/`asn1-rs`/`der-parser`; we're on 2.
+    # `thiserror` 1.x via `webauthn-rs-core`; we're on 2.
     { crate = "thiserror" },
     { crate = "thiserror-impl" },
     # `base64`: three copies: ours (0.23), the wide transitive middle (0.22), and
     # `webauthn-rs-core`/`-proto` (0.21). Nothing on our side pins the older two.
     { crate = "base64" },
-    # `const-oid`: 0.10 via `digest` 0.11, 0.9 via the passkey stack's older RustCrypto cohort.
-    # Same shape as the AEAD cluster; collapses with the same `crypto-glue` bump.
+    # The signature cluster, the reverse of the others: `webauthn-rs` 0.6.2's `crypto-glue` 0.2.2
+    # is on the *newer* curve generation (`elliptic-curve` 0.14, `rsa` 0.10, `signature` 3), and
+    # `jsonwebtoken` 11 (`p256`/`p384` 0.13, `rsa` 0.9, `ed25519-dalek` 2) and `nkeys` under
+    # `async-nats` hold the older one. Collapses when both move to `elliptic-curve` 0.14.
+    { crate = "base16ct" },
+    { crate = "crypto-bigint" },
+    { crate = "ecdsa" },
+    { crate = "elliptic-curve" },
+    { crate = "ff" },
+    { crate = "fiat-crypto" },
+    { crate = "group" },
+    { crate = "p256" },
+    { crate = "p384" },
+    { crate = "pkcs1" },
+    { crate = "primeorder" },
+    { crate = "rfc6979" },
+    { crate = "rsa" },
+    { crate = "signature" },
+    # `const-oid`: 0.10 via `digest` 0.11, 0.9 via `der` 0.7 under the PKCS#8 cluster below.
     { crate = "const-oid" },
-    # The X.509 cluster: `crates/service` reads subject alternative names off a verified peer
-    # certificate with `x509-parser` 0.18, and `webauthn-rs-core` pins 0.16, which drags its own
-    # parser stack (`der-parser` 9, `asn1-rs` 0.6 and `oid-registry` 0.7) alongside ours.
-    # `webauthn-rs` is an exact `=0.6.1-dev` pin, so nothing on our side can move the older copy;
-    # collapses when it takes 0.18.
-    { crate = "x509-parser" },
-    { crate = "der-parser" },
-    { crate = "asn1-rs" },
-    { crate = "asn1-rs-derive" },
-    { crate = "oid-registry" },
     # The PKCS#8 cluster: `crates/service/src/tls.rs` re-encodes a mounted key with the `der` 0.8
-    # generation (`pkcs8` 0.11, `sec1` 0.8), and the 0.7 generation stays behind it under three
-    # roots: `crypto-glue` (the exact `=0.6.1-dev` `webauthn-rs` pin), `jsonwebtoken` 11 (`rsa`
-    # 0.9, `ed25519` 2.2, `p256`/`p384`/`p521` 0.13) and `nkeys` under `async-nats`. None can move
-    # yet; collapses when all three take `der` 0.8.
+    # generation (`pkcs8` 0.11, `sec1` 0.8), and the 0.7 generation stays behind it under two
+    # roots: `jsonwebtoken` 11 (`rsa` 0.9, `ed25519` 2.2, `p256`/`p384`/`p521` 0.13) and `nkeys`
+    # under `async-nats`. Neither can move yet; collapses when both take `der` 0.8.
     { crate = "der" },
     { crate = "pem-rfc7468" },
     { crate = "pkcs8" },

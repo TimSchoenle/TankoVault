@@ -170,12 +170,10 @@ impl SourceAdapter for WebtoonsAdapter {
             let cover_url =
                 extract_first(root, "span.thmb img@src")?.map(|href| absolutize(&resp.url, &href));
 
-            let authors = extract_first(root, "div.author_area")?
-                .map(|raw| {
-                    // The block reads `NAME ... author info`; the trailing label is not a name.
-                    crate::html::split_list(raw.split("author info").next().unwrap_or(&raw))
-                })
-                .unwrap_or_default();
+            let authors = extract_first(root, "div.author_area")?.map_or_default(|raw| {
+                // The block reads `NAME ... author info`; the trailing label is not a name.
+                crate::html::split_list(raw.split("author info").next().unwrap_or(&raw))
+            });
 
             Ok(SeriesMeta {
                 title,

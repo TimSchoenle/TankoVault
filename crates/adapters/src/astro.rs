@@ -285,8 +285,7 @@ impl SourceAdapter for AstroIslandAdapter {
         parse_blocking(resp, move |root, _| {
             let (list_key, _) = flavour.catalog_keys();
             Ok(island_with(root, list_key)
-                .map(|island| AstroIslandAdapter::catalog_items(flavour, &island).0)
-                .unwrap_or_default()
+                .map_or_default(|island| AstroIslandAdapter::catalog_items(flavour, &island).0)
                 .into_iter()
                 .map(|item| LatestUpdate {
                     path: item.path,
@@ -321,13 +320,12 @@ impl SourceAdapter for AstroIslandAdapter {
             let alt_titles = island
                 .get("alternativeTitles")
                 .and_then(Value::as_str)
-                .map(crate::html::split_titles)
-                .unwrap_or_default();
+                .map_or_default(crate::html::split_titles);
 
             let tags = island
                 .get("genres")
                 .and_then(Value::as_array)
-                .map(|rows| {
+                .map_or_default(|rows| {
                     rows.iter()
                         .filter_map(|g| {
                             g.as_str()
@@ -335,8 +333,7 @@ impl SourceAdapter for AstroIslandAdapter {
                                 .or_else(|| first_str(g, &["name"]))
                         })
                         .collect()
-                })
-                .unwrap_or_default();
+                });
 
             let authors = ["author", "artist"]
                 .iter()

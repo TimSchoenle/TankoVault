@@ -88,7 +88,7 @@ pub(in crate::repo_lint) fn the_build_epoch_is_one_constant(
         // Anything naming the epoch outside its one declaration overrides it for that step
         // (`build-args:` and a step `env:` alike), which is the failure the constant exists to
         // prevent.
-        let declared_line = declaration.map(|(line, _)| line).unwrap_or_default();
+        let declared_line = declaration.map_or_default(|(line, _)| line);
         for (index, line) in text.lines().enumerate() {
             if index + 1 == declared_line || is_comment(line) || !line.contains(EPOCH) {
                 continue;

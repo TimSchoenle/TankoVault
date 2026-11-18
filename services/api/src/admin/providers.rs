@@ -550,7 +550,7 @@ pub async fn test_adapter(
     body: Option<Json<TestAdapterRequest>>,
 ) -> ApiResult<Json<serde_json::Value>> {
     user.require(Permission::ProvidersTest).await?;
-    let req = body.map(|b| b.0).unwrap_or_default();
+    let req = body.map_or_default(|b| b.0);
 
     // Proxied to the worker: it already carries the fetch stack, so hosting the dry-run here
     // would double the TLS stack in the API image. Authorization and the audit record stay

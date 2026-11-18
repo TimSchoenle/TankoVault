@@ -45,7 +45,7 @@ fn stat_value(root: ElementRef<'_>, label: &str) -> Option<String> {
     let li_sel = parse_selector("li").ok()?;
     for row in root.select(&row_sel) {
         let mut cells = row.select(&li_sel);
-        let key = cells.next().map(text_of).unwrap_or_default();
+        let key = cells.next().map_or_default(text_of);
         if key.eq_ignore_ascii_case(label) {
             // `text_of` collapses `&nbsp;` to empty, so an unset value filters out here.
             return cells.next().map(text_of).filter(|v| !v.is_empty());
@@ -137,11 +137,7 @@ impl SourceAdapter for DemonicScansAdapter {
                 if !is_comic(&path) {
                     continue;
                 }
-                let title = el
-                    .select(&title_sel)
-                    .next()
-                    .map(text_of)
-                    .unwrap_or_default();
+                let title = el.select(&title_sel).next().map_or_default(text_of);
                 let latest_chapter = el
                     .select(&chapter_sel)
                     .next()
@@ -183,13 +179,9 @@ impl SourceAdapter for DemonicScansAdapter {
             let status =
                 stat_value(root, "Status").map_or(SeriesStatus::Unknown, |s| map_status(&s));
 
-            let alt_titles = stat_value(root, "Alternatives")
-                .map(|v| split_titles(&v))
-                .unwrap_or_default();
+            let alt_titles = stat_value(root, "Alternatives").map_or_default(|v| split_titles(&v));
 
-            let authors = stat_value(root, "Author")
-                .map(|v| split_list(&v))
-                .unwrap_or_default();
+            let authors = stat_value(root, "Author").map_or_default(|v| split_list(&v));
 
             let genre_sel = parse_selector("div.genres-list li")?;
             let tags = root

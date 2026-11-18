@@ -139,14 +139,17 @@ skip = [
     { crate = "r-efi" },
     # `tower-http` 0.6 arrives transitively; ours is pinned at 0.7.
     { crate = "tower-http" },
-    # Compression backends split by the 2026-09 lock refresh; both newer copies arrive through
-    # `async-compression`/`flate2`, and each older one is held by a dependent already at its
-    # latest release. `miniz_oxide` 0.8 is `backtrace` 0.3.76's (under `sentry`), beside
-    # `flate2` 1.1.10's 0.9; `zstd` 0.13/`zstd-safe` 7 are `wreq-util` 3.0.0-rc.14's, beside
-    # `compression-codecs` 0.4.44's 0.14/8. Collapses when `backtrace` and `wreq-util` release.
-    { crate = "miniz_oxide" },
+    # Compression backends split by the lock refreshes: the newer copies arrive through
+    # `async-compression`'s `compression-codecs`, and the older ones are all `wreq-util`
+    # 3.0.0-rc.14's, already its latest release: `zstd` 0.13/`zstd-safe` 7 beside 0.14/8, and
+    # `brotli` 8 (with `brotli-decompressor` 5, `alloc-stdlib` 0.2, `alloc-no-stdlib` 2) beside
+    # `brotli` 9's 6/0.3/3. Collapses when `wreq-util` releases.
     { crate = "zstd" },
     { crate = "zstd-safe" },
+    { crate = "brotli" },
+    { crate = "brotli-decompressor" },
+    { crate = "alloc-stdlib" },
+    { crate = "alloc-no-stdlib" },
     # `synstructure` 0.14 via the ICU stack's `zerofrom-derive` 0.1.8; 0.13 via `asn1-rs-derive`
     # under both X.509 cohorts below, whose newest release (0.7) still requires 0.13.
     { crate = "synstructure" },
@@ -209,6 +212,13 @@ skip = [
     { crate = "windows_x86_64_gnu" },
     { crate = "windows_x86_64_gnullvm" },
     { crate = "windows_x86_64_msvc" },
+    # The `windows-core` support crates, split the same way: `generator` 0.8.12 (under `loom`,
+    # via `metrics-exporter-prometheus`) is on the 0.100 generation, while `chromiumoxide`'s
+    # `windows-registry` 0.6 and `backtrace` hold the 0.2/0.4/0.5 one. Windows-only, unreachable
+    # in the Linux images. Collapses when `chromiumoxide` and `backtrace` move to 0.100.
+    { crate = "windows-link" },
+    { crate = "windows-result" },
+    { crate = "windows-strings" },
 ]
 
 [sources]

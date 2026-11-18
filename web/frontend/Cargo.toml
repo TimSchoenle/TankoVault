@@ -100,13 +100,13 @@ wasm-bindgen-futures = { version = "0.4", optional = true }
 # serialisation as opaque JSON and both ends parse it with this crate. `openapi.json`
 # deliberately does not model them.
 #
-# `=` pins it for the reason the host workspace pins `webauthn-rs`: a `-dev` pre-release, and
-# these two must never disagree about the format on the wire.
+# `=` pins it to the host workspace's `webauthn-rs` version: these two must never disagree about
+# the format on the wire.
 #
 # Not optional, and the `wasm` feature is added by the `web` feature, not here: the challenge
 # and credential *types* cross both builds (the screens are one code path), while only the
 # browser needs the `web-sys` conversions that feature carries.
-webauthn-rs-proto = { version = "=0.6.1-dev" }
+webauthn-rs-proto = { version = "=0.6.2" }
 # Relative-time formatting on the console uses the browser's own ISO-8601 date parser
 # (`crate::platform::web`); the desktop build reads `chrono` instead.
 js-sys = { version = "0.3", optional = true }
@@ -246,7 +246,7 @@ uuid = { version = "1", features = ["js"] }
 # Per-target because the `win10` backend exists on Windows and nowhere else; Linux has no OS
 # passkey provider to reach for and `webauthn::is_available()` stays `false` there.
 #
-# `=0.6.1-dev` is the same pin, from the same release train, as the `webauthn-rs-proto` above and
+# `=0.6.2` is the same pin, from the same release train, as the `webauthn-rs-proto` above and
 # the API's `webauthn-rs`. That is the whole reason this is a dependency instead of hand-written
 # FFI: all three agree about the wire types by construction, so a challenge the API minted is
 # handed to the authenticator and the result handed back without a conversion anyone wrote.
@@ -254,7 +254,7 @@ uuid = { version = "1", features = ["js"] }
 # `win10` alone, deliberately: the `ctap2`/`usb` backends would add a HID stack and its
 # dependencies for hardware keys, which is a separate feature with a separate decision behind it.
 [target.'cfg(windows)'.dependencies]
-webauthn-authenticator-rs = { version = "=0.6.1-dev", features = [
+webauthn-authenticator-rs = { version = "=0.6.2", features = [
     "win10",
 ], optional = true }
 # The `HKCU\…\Run` value behind `platform::set_autostart`, which the NSIS installer's "start when

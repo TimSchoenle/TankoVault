@@ -12,9 +12,7 @@ use tankovault_domain::Feature;
 use tankovault_service::AuditOutcome;
 use utoipa::ToSchema;
 use uuid::Uuid;
-use webauthn_rs::prelude::{
-    DiscoverableAuthentication, DiscoverableKey, Passkey, PublicKeyCredential,
-};
+use webauthn_rs::prelude::{DiscoverableAuthentication, Passkey, PublicKeyCredential};
 
 use super::login::TokenResponse;
 use super::session::issue_session;
@@ -173,24 +171,21 @@ pub async fn passkey_login_finish(
     })?;
 
     // The signature check. Everything above only decided *which* public key to check against.
-    let result = match webauthn.finish_discoverable_authentication(
-        &credential,
-        ceremony,
-        &[DiscoverableKey::from(&passkey)],
-    ) {
-        Ok(result) => result,
-        Err(e) => {
-            record_attempt(
-                &state,
-                &client,
-                record.user_id,
-                &serde_json::json!({ "reason": "assertion_rejected" }),
-                AuditOutcome::Failure,
-            )
-            .await;
-            return Err(verification_failed(&e));
-        }
-    };
+    let result =
+        match webauthn.finish_discoverable_authentication_v2(&credential, ceremony, &passkey) {
+            Ok(result) => result,
+            Err(e) => {
+                record_attempt(
+                    &state,
+                    &client,
+                    record.user_id,
+                    &serde_json::json!({ "reason": "assertion_rejected" }),
+                    AuditOutcome::Failure,
+                )
+                .await;
+                return Err(verification_failed(&e));
+            }
+        };
 
     let user = tankovault_db::repo::users::get(&state.pool, record.user_id).await?;
     ensure_may_sign_in(&state, &client, &user).await?;

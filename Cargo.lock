@@ -4091,9 +4091,9 @@ dependencies = [
 
 [[package]]
 name = "progenitor-impl"
-version = "0.15.1"
+version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d9fbe5a1aa114c6c7c507a30ebeb0b12de383edab951ea27300210a3841917c"
+checksum = "0605947a436e83717c41205dc5c308e845890c424c48d851783ccf04f173bec8"
 dependencies = [
  "heck",
  "http",
@@ -6323,7 +6323,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",

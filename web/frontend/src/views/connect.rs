@@ -162,7 +162,9 @@ fn is_loopback(rest: &str) -> bool {
 pub(crate) async fn probe(origin: &str) -> Result<(), &'static str> {
     use progenitor_client::Error;
 
-    match Client::new(origin).legal_index().send().await {
+    // A client that cannot be built (no TLS backend) cannot reach any server either.
+    let client = Client::new(origin).map_err(|_| "connect.error.unreachable")?;
+    match client.legal_index().send().await {
         Ok(_) => Ok(()),
         // It answered, but not with what this build asked for: a different product, a reverse
         // proxy's error page, or an API too old or too new to talk to.

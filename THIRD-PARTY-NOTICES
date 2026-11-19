@@ -4988,7 +4988,7 @@ Mozilla Public License Version 2.0
 
   - crypto-glue 0.2.2
   - progenitor-client 0.16.0
-  - progenitor-impl 0.15.1
+  - progenitor-impl 0.16.1
   - selectors 0.41.0
   - webauthn-attestation-ca 0.6.2
   - webauthn-rs 0.6.2

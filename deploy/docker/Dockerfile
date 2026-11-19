@@ -290,8 +290,11 @@ RUN --mount=type=cache,id=tankovault-backend-cargo,target=/cargo,sharing=shared 
 FROM scratch AS debug-symbols
 COPY --from=debug-bundler /debug/ /
 
-# `dx` needs glibc (wasm-bindgen/wasm-opt), so this half stays on Debian, not Alpine.
-FROM rust:1.100.0-bookworm@sha256:ade39a710ef85f3506cffcfec3e8a24ba090badef1dff2fb798f71d878833fea AS wasm-chef
+# `dx` needs glibc (wasm-bindgen/wasm-opt), so this half stays on Debian, not Alpine. It runs the
+# prebuilt `wasm-bindgen` release matching web/frontend/Cargo.lock, so this base's glibc must be
+# at least what that release links against: 0.2.130's aarch64 build requires GLIBC_2.38, which
+# bookworm (2.36) lacks, and the failure only surfaces after the full wasm compile.
+FROM rust:1.100.0-trixie@sha256:223cc32ddca8f3ee90c436dbc94b6b5f052ea7f9653c5201e9612f08ad7d21b8 AS wasm-chef
 WORKDIR /app
 # Copied alone, before `rustup target add`: nothing guarantees the base image's toolchain is the
 # exact patch this file pins, so without this order wasm32-unknown-unknown can end up missing.

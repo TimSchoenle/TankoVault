@@ -305,7 +305,7 @@ jobs:
       # exists.
       - name: Commit the fixes
         if: steps.still.outputs.current == 'true'
-        uses: TimSchoenle/actions/actions/common/commit-changes@0b3967d3d992d12aa88da1f8facf412b162d5ab2 # tag=actions-common-commit-changes-v3.1.1
+        uses: TimSchoenle/actions/actions/common/commit-changes@54a4dc05fd351a9bf9e9638fa3ebbc572b5f2d7f # tag=actions-common-commit-changes-v3.1.2
         with:
           commit_message: "style: apply the mechanical fixes (lockfiles, clippy --fix, fmt, regenerated artefacts)"
           token: ${{ steps.generate_token.outputs.token }}
@@ -347,7 +347,7 @@ jobs:
       # checked out, and reports whether it holds anything to commit. Nothing in it is executed.
       - name: find the patch
         id: patch
-        uses: TimSchoenle/actions/actions/common/find-patch@0b3967d3d992d12aa88da1f8facf412b162d5ab2 # tag=actions-common-find-patch-v1.1.5
+        uses: TimSchoenle/actions/actions/common/find-patch@54a4dc05fd351a9bf9e9638fa3ebbc572b5f2d7f # tag=actions-common-find-patch-v1.1.6
         with:
           run_id: ${{ github.event.workflow_run.id }}
           artifact_name: readme-render
@@ -391,7 +391,7 @@ jobs:
       # git plumbing and fails if HEAD is anywhere else. The commit is fetched without a checkout,
       # so none of the branch's files are on disk in the job that holds the App key.
       - name: Fetch The Head
-        uses: TimSchoenle/actions/actions/common/fetch-head@0b3967d3d992d12aa88da1f8facf412b162d5ab2 # tag=actions-common-fetch-head-v2.0.3
+        uses: TimSchoenle/actions/actions/common/fetch-head@54a4dc05fd351a9bf9e9638fa3ebbc572b5f2d7f # tag=actions-common-fetch-head-v2.0.4
         with:
           sha: ${{ github.event.workflow_run.head_sha }}
 
@@ -412,7 +412,7 @@ jobs:
       # branch that moved since is skipped, and the push that moved it starts a new run.
       - name: commit README.md
         id: render
-        uses: TimSchoenle/actions/actions/common/commit-patch@0b3967d3d992d12aa88da1f8facf412b162d5ab2 # tag=actions-common-commit-patch-v3.1.1
+        uses: TimSchoenle/actions/actions/common/commit-patch@54a4dc05fd351a9bf9e9638fa3ebbc572b5f2d7f # tag=actions-common-commit-patch-v3.1.2
         with:
           token: ${{ steps.generate_token.outputs.token }}
           run_id: ${{ github.event.workflow_run.id }}

@@ -98,7 +98,7 @@ async fn test_adapter(
     Path(id): Path<ProviderId>,
     body: Option<Json<TestAdapterRequest>>,
 ) -> Result<Json<serde_json::Value>, DryRunError> {
-    let req = body.map(|b| b.0).unwrap_or_default();
+    let req = body.map_or_default(|b| b.0);
     let provider = tankovault_db::repo::providers::get(&engine.pool, id)
         .await
         .map_err(|e| match e {

@@ -98,13 +98,9 @@ pub(super) fn CreateProviderForm(
     // `403 step_up_required` until a second factor has been presented.
     let gate = use_step_up_gate();
     let cloning = seed.is_some();
-    let mut slug = use_signal(|| seed.as_ref().map(|s| s.slug.clone()).unwrap_or_default());
-    let mut name = use_signal(|| seed.as_ref().map(|s| s.name.clone()).unwrap_or_default());
-    let mut base_url = use_signal(|| {
-        seed.as_ref()
-            .map(|s| s.base_url.clone())
-            .unwrap_or_default()
-    });
+    let mut slug = use_signal(|| seed.as_ref().map_or_default(|s| s.slug.clone()));
+    let mut name = use_signal(|| seed.as_ref().map_or_default(|s| s.name.clone()));
+    let mut base_url = use_signal(|| seed.as_ref().map_or_default(|s| s.base_url.clone()));
     let mut adapter = use_signal(|| {
         seed.as_ref()
             .map_or_else(|| "generic_config".to_owned(), |s| s.adapter.clone())

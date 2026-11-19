@@ -81,12 +81,11 @@ fn cached_queries() -> Vec<CachedQuery> {
                 .collect(),
             params: describe["parameters"]["Left"]
                 .as_array()
-                .map(|ps| {
+                .map_or_default(|ps| {
                     ps.iter()
                         .map(|p| p.as_str().unwrap_or("Custom").to_owned())
                         .collect()
-                })
-                .unwrap_or_default(),
+                }),
         });
     }
     assert!(!queries.is_empty(), "the sqlx cache is empty");

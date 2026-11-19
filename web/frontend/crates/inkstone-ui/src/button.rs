@@ -105,8 +105,8 @@ pub fn Button(
             r#type: r#type.attr(),
             disabled: disabled || busy,
             "aria-busy": if busy { "true" } else { "false" },
-            "aria-pressed": pressed.map(bool_attr).unwrap_or_default(),
-            "aria-expanded": expanded.map(bool_attr).unwrap_or_default(),
+            "aria-pressed": pressed.map_or_default(bool_attr),
+            "aria-expanded": expanded.map_or_default(bool_attr),
             title: title.clone().unwrap_or_default(),
             "aria-label": aria_label.clone().unwrap_or_default(),
             onclick: move |event| {
@@ -189,7 +189,7 @@ pub fn IconButton(
             disabled: disabled || busy,
             title: "{label}",
             "aria-label": "{label}",
-            "aria-pressed": pressed.map(bool_attr).unwrap_or_default(),
+            "aria-pressed": pressed.map_or_default(bool_attr),
             onclick: move |event| {
                 if let Some(handler) = &on_click {
                     handler.call(event);

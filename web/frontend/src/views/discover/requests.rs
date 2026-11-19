@@ -22,8 +22,7 @@ pub(super) fn use_facets(api: Api) -> (Vec<TagFacet>, Vec<PublicProvider>) {
                 .tags()
                 .send()
                 .await
-                .map(ResponseValue::into_inner)
-                .unwrap_or_default()
+                .map_or_default(ResponseValue::into_inner)
         }
     });
     let all_tags: Vec<TagFacet> = tags_res.read_unchecked().clone().unwrap_or_default();
@@ -35,8 +34,7 @@ pub(super) fn use_facets(api: Api) -> (Vec<TagFacet>, Vec<PublicProvider>) {
                 .providers()
                 .send()
                 .await
-                .map(ResponseValue::into_inner)
-                .unwrap_or_default()
+                .map_or_default(ResponseValue::into_inner)
         }
     });
     let all_providers: Vec<PublicProvider> =

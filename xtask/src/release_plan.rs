@@ -364,32 +364,28 @@ fn cargo_metadata(root: &Path) -> anyhow::Result<Vec<Package>> {
             .unwrap_or_default()
             .to_owned();
 
-        let bins = entry["targets"]
-            .as_array()
-            .map(|targets| {
-                targets
-                    .iter()
-                    .filter(|target| {
-                        target["kind"]
-                            .as_array()
-                            .is_some_and(|kinds| kinds.iter().any(|kind| kind == "bin"))
-                    })
-                    .filter_map(|target| target["name"].as_str().map(str::to_owned))
-                    .collect()
-            })
-            .unwrap_or_default();
+        let bins = entry["targets"].as_array().map_or_default(|targets| {
+            targets
+                .iter()
+                .filter(|target| {
+                    target["kind"]
+                        .as_array()
+                        .is_some_and(|kinds| kinds.iter().any(|kind| kind == "bin"))
+                })
+                .filter_map(|target| target["name"].as_str().map(str::to_owned))
+                .collect()
+        });
 
         let deps = entry["dependencies"]
             .as_array()
-            .map(|dependencies| {
+            .map_or_default(|dependencies| {
                 dependencies
                     .iter()
                     .filter(|dependency| dependency["path"].is_string())
                     .filter(|dependency| dependency["kind"].as_str() != Some("dev"))
                     .filter_map(|dependency| dependency["name"].as_str().map(str::to_owned))
                     .collect()
-            })
-            .unwrap_or_default();
+            });
 
         packages.push(Package {
             name,

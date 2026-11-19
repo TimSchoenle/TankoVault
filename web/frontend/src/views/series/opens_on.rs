@@ -36,7 +36,7 @@ pub(super) fn OpensOnSection(
     let Some(leader) = sources.first().cloned() else {
         return rsx! {};
     };
-    let states = entry.map(|e| e.sources).unwrap_or_default();
+    let states = entry.map_or_default(|e| e.sources);
     let is_pinned = pinned.current() == Some(leader.source.id);
     let fallback: Vec<String> = sources
         .iter()

@@ -606,13 +606,12 @@ async fn render(
             let (score, because) = score_of.get(&id).copied().unwrap_or((0.0, None));
             let shared = because
                 .and_then(|seed| Some((vector_of.get(&seed)?, vector_of.get(&id)?)))
-                .map(|(seed_vector, own)| {
+                .map_or_default(|(seed_vector, own)| {
                     tankovault_recsys::shared_features(seed_vector, own, 3)
                         .into_iter()
                         .filter_map(|feature| Some(feature_of.get(&feature)?.value.clone()))
                         .collect()
-                })
-                .unwrap_or_default();
+                });
             let counts = chapters.get(&id);
             Recommendation {
                 id,
@@ -627,8 +626,7 @@ async fn render(
                 blurb: crate::series::blurb(item.series.description.as_deref()),
                 tags: tags
                     .get(&id)
-                    .map(|names| names.iter().take(CARD_TAGS).cloned().collect())
-                    .unwrap_or_default(),
+                    .map_or_default(|names| names.iter().take(CARD_TAGS).cloned().collect()),
                 score,
                 because_series_id: because,
                 because_title: because.and_then(|seed| seed_title_of.get(&seed).cloned()),

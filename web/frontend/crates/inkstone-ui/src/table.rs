@@ -79,7 +79,7 @@ pub fn Table(
                             th {
                                 key: "{column.label}",
                                 class: if column.numeric { skin.class(Part::NumericCell, &[]) } else { String::new() },
-                                style: column.width.map(|width| format!("width:{width};")).unwrap_or_default(),
+                                style: column.width.map_or_default(|width| format!("width:{width};")),
                                 scope: "col",
                                 "{column.label}"
                             }

@@ -86,7 +86,7 @@ impl FlameComicsAdapter {
         ["series", "allSeries", "seriesList"]
             .iter()
             .find_map(|key| props.get(*key).and_then(Value::as_array))
-            .map(|rows| {
+            .map_or_default(|rows| {
                 rows.iter()
                     .filter_map(|row| {
                         let id = row.get("series_id").and_then(Value::as_i64)?;
@@ -97,7 +97,6 @@ impl FlameComicsAdapter {
                     })
                     .collect()
             })
-            .unwrap_or_default()
     }
 }
 
@@ -167,14 +166,13 @@ impl SourceAdapter for FlameComicsAdapter {
                 alt_titles: series
                     .get("altTitles")
                     .and_then(Value::as_str)
-                    .map(crate::html::split_titles)
-                    .unwrap_or_default(),
+                    .map_or_default(crate::html::split_titles),
                 description: first_str(&series, &["description", "synopsis"]),
                 cover_url: first_str(&series, &["cover", "thumbnail"]),
                 tags: series
                     .get("tags")
                     .and_then(Value::as_array)
-                    .map(|rows| {
+                    .map_or_default(|rows| {
                         rows.iter()
                             .filter_map(|t| {
                                 t.as_str()
@@ -182,8 +180,7 @@ impl SourceAdapter for FlameComicsAdapter {
                                     .or_else(|| first_str(t, &["name"]))
                             })
                             .collect()
-                    })
-                    .unwrap_or_default(),
+                    }),
                 authors: ["author", "artist"]
                     .iter()
                     .filter_map(|k| first_str(&series, &[k]))

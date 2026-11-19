@@ -321,7 +321,7 @@ fn extract_text_source(
                     );
                     Some(value.trim().to_owned()).filter(|s| !s.is_empty())
                 };
-                return Ok(raw.map(|v| split_titles(&v)).unwrap_or_default());
+                return Ok(raw.map_or_default(|v| split_titles(&v)));
             }
             Ok(Vec::new())
         }

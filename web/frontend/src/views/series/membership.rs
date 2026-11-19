@@ -167,8 +167,7 @@ pub(super) fn MergedRecordNote(series_id: SeriesId) -> Element {
                 .limit(1_u32)
                 .send()
                 .await
-                .map(ResponseValue::into_inner)
-                .unwrap_or_default()
+                .map_or_default(ResponseValue::into_inner)
         }
     });
 

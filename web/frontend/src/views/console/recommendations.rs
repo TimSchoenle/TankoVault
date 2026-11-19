@@ -322,8 +322,7 @@ fn BuildProgress(stage: String, done: i32, total: i32, started_at: Option<String
     });
     let elapsed = started_at
         .as_deref()
-        .map(|at| rel_time(i18n, Some(at)))
-        .unwrap_or_default();
+        .map_or_default(|at| rel_time(i18n, Some(at)));
 
     // Integer percent, clamped: `stage_total` is read once at the top of a stage and `done`
     // counts up against it, so a catalogue that grew mid-run can overshoot it.

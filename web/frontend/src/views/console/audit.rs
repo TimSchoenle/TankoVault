@@ -92,8 +92,7 @@ pub(super) fn AuditPanel(tick: RefreshTick) -> Element {
                 .audit_actions()
                 .send()
                 .await
-                .map(ResponseValue::into_inner)
-                .unwrap_or_default()
+                .map_or_default(ResponseValue::into_inner)
         }
     });
 

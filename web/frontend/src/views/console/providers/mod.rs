@@ -131,8 +131,7 @@ pub(super) fn ProvidersEntity() -> Element {
                 .list_provider_presets()
                 .send()
                 .await
-                .map(ResponseValue::into_inner)
-                .unwrap_or_default()
+                .map_or_default(ResponseValue::into_inner)
         }
     });
 
@@ -146,8 +145,7 @@ pub(super) fn ProvidersEntity() -> Element {
                 .provider_stats()
                 .send()
                 .await
-                .map(ResponseValue::into_inner)
-                .unwrap_or_default()
+                .map_or_default(ResponseValue::into_inner)
         }
     });
 

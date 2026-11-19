@@ -50,3 +50,9 @@ rust_2018_idioms = { level = "warn", priority = -1 }
 [lints.clippy]
 all = { level = "allow", priority = -1 }
 pedantic = { level = "allow", priority = -1 }
+
+# `tankovault-domain` is named only by the generated `#[doc]` links (`[`tankovault_domain::ScanStage`]`),
+# which rustdoc resolves through this dependency. Cargo sees no code using it and would report it
+# unused; dropping it would turn those links into broken ones instead.
+[lints.cargo]
+unused_dependencies = "allow"

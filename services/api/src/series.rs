@@ -239,8 +239,7 @@ impl SeriesSummary {
                     blurb: blurb(it.series.description.as_deref()),
                     tags: tags
                         .get(&id)
-                        .map(|names| names.iter().take(CARD_TAGS).cloned().collect())
-                        .unwrap_or_default(),
+                        .map_or_default(|names| names.iter().take(CARD_TAGS).cloned().collect()),
                     is_adult: adult.contains(&id),
                 }
             })
@@ -1009,8 +1008,7 @@ pub async fn similar(
             let series_id = item.series.id;
             let shared: Vec<String> = vector_of
                 .get(&series_id)
-                .map(|other| tankovault_recsys::shared_features(&seed_vector, other, 3))
-                .unwrap_or_default()
+                .map_or_default(|other| tankovault_recsys::shared_features(&seed_vector, other, 3))
                 .into_iter()
                 .filter_map(|feature_id| name_of.get(&feature_id).cloned())
                 .collect();

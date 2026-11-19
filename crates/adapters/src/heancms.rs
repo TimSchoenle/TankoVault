@@ -220,8 +220,7 @@ impl SourceAdapter for HeanCmsAdapter {
             alt_titles: detail
                 .alternative_names
                 .as_deref()
-                .map(crate::html::split_titles)
-                .unwrap_or_default(),
+                .map_or_default(crate::html::split_titles),
             description: detail.description.filter(|d| !d.trim().is_empty()),
             cover_url: detail.thumbnail,
             tags: detail.tags.into_iter().map(|t| t.name).collect(),

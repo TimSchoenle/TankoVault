@@ -19,7 +19,7 @@ pub(super) const EMULATION_CHOICES: [(BrowserEmulation, &str); 5] = [
 
 /// The picker's value for a provider's stored emulation; empty is the "no emulation" option.
 pub(super) fn emulation_token(stored: Option<&BrowserEmulation>) -> String {
-    stored.map(ToString::to_string).unwrap_or_default()
+    stored.map_or_default(ToString::to_string)
 }
 
 /// Builds the politeness body from the editor's fields, or the catalogue key of the field that

@@ -538,8 +538,7 @@ impl axum::extract::connect_info::Connected<axum::serve::IncomingStream<'_, TlsL
             .1
             .peer_certificates()
             .and_then(<[CertificateDer<'_>]>::first)
-            .map(dns_sans)
-            .unwrap_or_default();
+            .map_or_default(dns_sans);
 
         Self {
             addr,

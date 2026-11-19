@@ -257,7 +257,7 @@ pub async fn sync_push(
     Path(provider): Path<ProviderSlug>,
     body: Option<Json<SyncOpts>>,
 ) -> ApiResult<Json<PushReport>> {
-    let opts = body.map(|b| b.0).unwrap_or_default();
+    let opts = body.map_or_default(|b| b.0);
     sync_proxy(
         &state,
         &format!("/v1/sync/{provider}/push"),
@@ -288,7 +288,7 @@ pub async fn sync_pull(
     Path(provider): Path<ProviderSlug>,
     body: Option<Json<SyncOpts>>,
 ) -> ApiResult<Json<PullReport>> {
-    let opts = body.map(|b| b.0).unwrap_or_default();
+    let opts = body.map_or_default(|b| b.0);
     sync_proxy(
         &state,
         &format!("/v1/sync/{provider}/pull"),

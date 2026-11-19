@@ -95,7 +95,7 @@ impl Profile {
     /// [`ConfigError::Invalid`] for any other value, so an unrecognised profile stops the boot
     /// instead of meaning development.
     pub fn parse(raw: Option<&str>) -> Result<Self, ConfigError> {
-        let value = raw.map(str::trim).unwrap_or_default().to_ascii_lowercase();
+        let value = raw.map_or_default(str::trim).to_ascii_lowercase();
         match value.as_str() {
             "" | "development" | "dev" => Ok(Self::Development),
             "production" | "prod" => Ok(Self::Production),

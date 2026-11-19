@@ -1071,8 +1071,7 @@ mod tray {
 
         let arch = std::env::consts::ARCH;
         let mut dirs: Vec<PathBuf> = std::env::var_os("LD_LIBRARY_PATH")
-            .map(|value| std::env::split_paths(&value).collect())
-            .unwrap_or_default();
+            .map_or_default(|value| std::env::split_paths(&value).collect());
         dirs.extend(
             [
                 format!("/usr/lib/{arch}-linux-gnu"),

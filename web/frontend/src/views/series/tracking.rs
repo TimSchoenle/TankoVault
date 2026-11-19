@@ -105,8 +105,7 @@ pub(super) fn TrackingCard(
                 .sync_conflicts()
                 .send()
                 .await
-                .map(ResponseValue::into_inner)
-                .unwrap_or_default()
+                .map_or_default(ResponseValue::into_inner)
                 .into_iter()
                 .filter(|c| c.series_id == series_id.0)
                 .collect::<Vec<_>>()
@@ -172,8 +171,7 @@ pub(super) fn TrackingCard(
                     .series_id(series_id.0)
                     .send()
                     .await
-                    .map(ResponseValue::into_inner)
-                    .unwrap_or_default(),
+                    .map_or_default(ResponseValue::into_inner),
             )
         }
     });

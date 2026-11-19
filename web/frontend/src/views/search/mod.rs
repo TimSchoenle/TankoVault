@@ -265,7 +265,7 @@ fn SearchOptions(
                 class: "ik-input",
                 style: "width:auto;",
                 "aria-label": i18n.t("discover.contentType"),
-                value: query.content_type.map(|value| value.token()).unwrap_or_default(),
+                value: query.content_type.map_or_default(|value| value.token()),
                 onchange: {
                     let query = query.clone();
                     move |event: FormEvent| {
@@ -291,7 +291,7 @@ fn SearchOptions(
                 class: "ik-input",
                 style: "width:auto;",
                 "aria-label": i18n.t("discover.status"),
-                value: query.status.map(|value| value.token()).unwrap_or_default(),
+                value: query.status.map_or_default(|value| value.token()),
                 onchange: {
                     let query = query.clone();
                     move |event: FormEvent| {

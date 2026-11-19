@@ -18,7 +18,7 @@
 # musl-tools lacks, so the build is native, not cross. Pinned by digest.
 # The Rust version is written into both `FROM` tags instead of an `ARG`: Renovate cannot rewrite
 # a tag through `${…}`, and its `rust toolchain` group moves both tags with `rust-toolchain.toml`.
-FROM lukemathwalker/cargo-chef:latest-rust-1.99.1-alpine@sha256:000cac9096459ebc31e55e1a99bed090b1ce3511f006b4b101fd2d4f4bcb4d1e AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1.100.0-alpine@sha256:3dc65f92f830cadaa78d29ddcc8e23a22c5d6785f7758afdf50eba4e88238966 AS chef
 WORKDIR /app
 # Copied alone, first, exactly as `wasm-chef` does below and for a sharper version of the same
 # reason: nothing guarantees the base image's toolchain is the exact patch this file pins. If it
@@ -291,7 +291,7 @@ FROM scratch AS debug-symbols
 COPY --from=debug-bundler /debug/ /
 
 # `dx` needs glibc (wasm-bindgen/wasm-opt), so this half stays on Debian, not Alpine.
-FROM rust:1.99.1-bookworm@sha256:e6f2cff35d0f309acf8433b4f05878ed77092602c5065cc81801177da0bb3a9c AS wasm-chef
+FROM rust:1.100.0-bookworm@sha256:ade39a710ef85f3506cffcfec3e8a24ba090badef1dff2fb798f71d878833fea AS wasm-chef
 WORKDIR /app
 # Copied alone, before `rustup target add`: nothing guarantees the base image's toolchain is the
 # exact patch this file pins, so without this order wasm32-unknown-unknown can end up missing.

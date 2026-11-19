@@ -702,7 +702,7 @@ pub(super) fn SeriesMiniCard(series_id: SeriesId) -> Element {
 
     async_block(&res, reload, 120, |d| {
         let d = d.clone();
-        let year = d.release_year.map(|y| y.to_string()).unwrap_or_default();
+        let year = d.release_year.map_or_default(|y| y.to_string());
         let tags: Vec<String> = d.tags.iter().take(6).map(|t| t.name.clone()).collect();
         rsx! {
             div { class: "ik-card", style: "padding:10px;",

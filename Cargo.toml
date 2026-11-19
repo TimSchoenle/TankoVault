@@ -57,7 +57,7 @@ license = "PolyForm-Noncommercial-1.0.0"
 # preset from TimSchoenle/actions) moves it with `channel` in rust-toolchain.toml and the Dockerfile
 # `FROM` tags. The `msrv` CI job builds on it, and it must never drop below what the dependencies
 # need: `sqlx 0.9` alone requires 1.94.0.
-rust-version = "1.99"
+rust-version = "1.100"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
@@ -105,6 +105,11 @@ doc_include_without_cfg = "warn"
 # `clippy::missing_docs_in_private_items` is deliberately absent; see the `missing_docs` note in
 # `[workspace.lints.rust]`.
 
+[workspace.lints.cargo]
+# `description` and `license` above describe the repository, not a crate: the README and the
+# GitHub description are generated from them, and no member inherits either.
+unused_workspace_package_fields = "allow"
+
 # A broken intra-doc link renders as literal `[`Foo`]` text, invisible to anyone reading the
 # source. `crates/api-client` is exempt by construction (its own `[lints]` table): the
 # generated code carries OpenAPI descriptions' `[`…`]` spans that can't resolve.
@@ -142,9 +147,6 @@ tankovault-notifier = { path = "services/notifier" }
 tankovault-render = { path = "services/render" }
 tankovault-sync = { path = "services/sync" }
 tankovault-worker = { path = "services/worker" }
-# No member uses it (`web/frontend` is excluded and uses its own path dep); it stays as the one
-# place the crate is named, for a future host-side consumer.
-tankovault-api-client = { path = "crates/api-client" }
 
 # --- OpenAPI: schema derivation from handlers and browsable API docs ---
 # `progenitor-impl` (xtask) emits code against `progenitor-client`'s (crates/api-client)

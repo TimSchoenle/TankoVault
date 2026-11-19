@@ -1,6 +1,11 @@
 //! Owns the app root: the route table, the contexts every screen depends on, and the bundled
 //! font faces.
 
+// Module-wide because the lint fires in the impl `Routable` generates beside `Route`, where an
+// attribute on the enum does not reach: the catch-all `Vec<String>` segment parses with an
+// `Infallible` error, so the derive's error arm is unreachable.
+#![expect(unreachable_code, reason = "dioxus `Routable` catch-all")]
+
 #[cfg(feature = "desktop")]
 use crate::components::{CloseToTray, SettingsSheet, TitleBar, TrayHost, WhatsNew};
 use crate::components::{FocusTargets, Shell, UnreadBadge};

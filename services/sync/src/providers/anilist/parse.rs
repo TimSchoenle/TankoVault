@@ -295,14 +295,13 @@ fn genres_from_media(media: &serde_json::Value) -> Vec<String> {
     media
         .get("genres")
         .and_then(serde_json::Value::as_array)
-        .map(|genres| {
+        .map_or_default(|genres| {
             genres
                 .iter()
                 .filter_map(serde_json::Value::as_str)
                 .map(str::to_owned)
                 .collect()
         })
-        .unwrap_or_default()
 }
 
 /// `AniList`'s descriptive tags for a `media` object, weighted by rank (empty when absent).
@@ -353,14 +352,13 @@ fn staff_from_media(media: &serde_json::Value) -> Vec<String> {
         .get("staff")
         .and_then(|s| s.get("edges"))
         .and_then(serde_json::Value::as_array)
-        .map(|edges| {
+        .map_or_default(|edges| {
             edges
                 .iter()
                 .filter_map(|e| e.get("node")?.get("name")?.get("full")?.as_str())
                 .map(str::to_owned)
                 .collect()
         })
-        .unwrap_or_default()
 }
 
 /// Strips HTML tags and collapses the common `<br>` breaks `AniList` uses in descriptions to

@@ -12,6 +12,13 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [11.2.2](https://github.com/TimSchoenle/TankoVault/compare/v11.2.1...v11.2.2) (2026-11-19)
+
+
+### Build System
+
+* **docker:** move wasm-chef to trixie for wasm-bindgen 0.2.130 ([#678](https://github.com/TimSchoenle/TankoVault/issues/678)) ([f5c7530](https://github.com/TimSchoenle/TankoVault/commit/f5c7530c7fb58281bd03c6626dd78ed348bdbc79))
+
 ## [11.2.1](https://github.com/TimSchoenle/TankoVault/compare/v11.2.0...v11.2.1) (2026-11-19)
 
 

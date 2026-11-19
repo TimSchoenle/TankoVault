@@ -12,6 +12,34 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [11.2.1](https://github.com/TimSchoenle/TankoVault/compare/v11.2.0...v11.2.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* **deps:** update quinn-proto to 0.11.19 and quinn-udp to 0.5.16 ([#660](https://github.com/TimSchoenle/TankoVault/issues/660)) ([eb98a2d](https://github.com/TimSchoenle/TankoVault/commit/eb98a2d3345a3f4ab265d2aa7190a1e823808514))
+
+
+### Dependencies
+
+* **deps:** lock file maintenance ([#472](https://github.com/TimSchoenle/TankoVault/issues/472)) ([cca15ce](https://github.com/TimSchoenle/TankoVault/commit/cca15ce022e5675a1e575aefa857acf7daf7f6a5))
+* **deps:** update nats:2-alpine docker digest to 558394a ([#662](https://github.com/TimSchoenle/TankoVault/issues/662)) ([80f4225](https://github.com/TimSchoenle/TankoVault/commit/80f422589fbf97b17a971ee3b2c199c73367ec41))
+* **deps:** update redis:8-alpine docker digest to 7958cfb ([#663](https://github.com/TimSchoenle/TankoVault/issues/663)) ([22c336e](https://github.com/TimSchoenle/TankoVault/commit/22c336e3cfc93a266f0da80afc0e92a3a53fee3d))
+* **deps:** update rust crate arc-swap to v1.9.4 ([#646](https://github.com/TimSchoenle/TankoVault/issues/646)) ([a81d8f9](https://github.com/TimSchoenle/TankoVault/commit/a81d8f9f40b38b4a29b0144626613f6876507617))
+* **deps:** update rust crate arc-swap to v1.9.5 ([#667](https://github.com/TimSchoenle/TankoVault/issues/667)) ([f964eaa](https://github.com/TimSchoenle/TankoVault/commit/f964eaa95a89b04de8c4271066a1d40a6159fae0))
+* **deps:** update rust crate gloo-net to 0.8 ([#671](https://github.com/TimSchoenle/TankoVault/issues/671)) ([9814bba](https://github.com/TimSchoenle/TankoVault/commit/9814bba9ee0147c02bdff2b9e14197bfb7f6eb56))
+* **deps:** update rust crate gloo-timers to v0.4.1 ([#668](https://github.com/TimSchoenle/TankoVault/issues/668)) ([d0710d8](https://github.com/TimSchoenle/TankoVault/commit/d0710d82014a7625331c83cd975c452e8da3235f))
+* **deps:** update rust crate notify-rust to v4.19.0 ([#650](https://github.com/TimSchoenle/TankoVault/issues/650)) ([c3c55e1](https://github.com/TimSchoenle/TankoVault/commit/c3c55e1044ed55bc3c61a95c71db74697be18080))
+* **deps:** update rust crate progenitor-client to v0.16.0 ([#651](https://github.com/TimSchoenle/TankoVault/issues/651)) ([d7887ca](https://github.com/TimSchoenle/TankoVault/commit/d7887ca8a37e31e0d810ba873927dd16296881e3))
+* **deps:** update rust crate progenitor-client to v0.16.1 ([#675](https://github.com/TimSchoenle/TankoVault/issues/675)) ([1250be6](https://github.com/TimSchoenle/TankoVault/commit/1250be6c2f22284744ab43f2d4f692f4ee75c51d))
+* **deps:** update rust crate progenitor-impl to 0.16.0 ([#672](https://github.com/TimSchoenle/TankoVault/issues/672)) ([0ddf808](https://github.com/TimSchoenle/TankoVault/commit/0ddf808da45c43a02ddb729db340145383347110))
+* **deps:** update rust crate rand to v0.10.4 ([#669](https://github.com/TimSchoenle/TankoVault/issues/669)) ([0005c08](https://github.com/TimSchoenle/TankoVault/commit/0005c082290287b026a5e1c8d17cda4355906a10))
+* **deps:** update rust crate rfd to 0.18 ([#673](https://github.com/TimSchoenle/TankoVault/issues/673)) ([f6732d0](https://github.com/TimSchoenle/TankoVault/commit/f6732d069c21499457d33be17a4ebae5f58dfe8e))
+* **deps:** update rust crate syn to v3.0.10 ([#670](https://github.com/TimSchoenle/TankoVault/issues/670)) ([8b38412](https://github.com/TimSchoenle/TankoVault/commit/8b38412ae36abb5de6862bf2c9ba898b4aec6472))
+* **deps:** update rust crate uuid to v1.29.2 ([#647](https://github.com/TimSchoenle/TankoVault/issues/647)) ([1a93957](https://github.com/TimSchoenle/TankoVault/commit/1a939571fbb971c9ea2f9f16cf993946d05151e8))
+* **deps:** update rust toolchain (minor) ([#674](https://github.com/TimSchoenle/TankoVault/issues/674)) ([8b8ae06](https://github.com/TimSchoenle/TankoVault/commit/8b8ae065dbdffe492d73c9bf1e34c3dd9fb1001d))
+* **deps:** update webauthn to v0.6.2 ([#648](https://github.com/TimSchoenle/TankoVault/issues/648)) ([186c837](https://github.com/TimSchoenle/TankoVault/commit/186c837fa3a753d124ee94759716a5124536f823))
+
 ## [11.2.0](https://github.com/TimSchoenle/TankoVault/compare/v11.1.4...v11.2.0) (2026-11-11)
 
 

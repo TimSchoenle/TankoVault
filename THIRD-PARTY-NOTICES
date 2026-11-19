@@ -6966,7 +6966,7 @@ by the block naming that crate.
   - global-hotkey 0.7.0
   - gloo-net 0.8.0
   - gloo-timers 0.3.0
-  - gloo-timers 0.4.0
+  - gloo-timers 0.4.1
   - gloo-utils 0.3.0
   - group 0.14.0
   - half 2.7.1

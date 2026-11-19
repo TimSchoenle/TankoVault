@@ -100,6 +100,7 @@ jobs:
       notices: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.notices == 'true' }}
       compose: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.compose == 'true' }}
       readme: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.readme == 'true' }}
+      wasm_tools: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.wasm_tools == 'true' }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
@@ -296,6 +297,12 @@ jobs:
             compose:
               - *workflows
               - 'deploy/docker-compose.yml'
+            # What decides which prebuilt `wasm-bindgen` runs in which base image.
+            wasm_tools:
+              - *workflows
+              - 'web/frontend/Cargo.lock'
+              - 'deploy/docker/Dockerfile'
+              - '.github/scripts/check-wasm-tools.sh'
             # Everything the rendered `README.md` is a function of: the template, the stack script,
             # the files the payload is read out of, and `docs/` for the documentation table. The artefact
             # itself is listed too, so a hand-edit of a generated document fails the gate that
@@ -1349,6 +1356,41 @@ jobs:
           TANKOVAULT_INTERNAL_TOKEN_WORKER: ci-validation-only
         run: docker compose -f deploy/docker-compose.yml config --quiet
 
+  # The `dx build` step in `wasm-builder` executes a wasm-bindgen release binary chosen by
+  # `web/frontend/Cargo.lock` inside the `wasm-chef` base image, and nothing ties the binary's
+  # glibc floor to that image's. Pull requests build amd64 images only, whose binary is static
+  # musl, so a bump that breaks arm64 otherwise surfaces on `main`'s release, after the full wasm
+  # compile. Seconds per architecture on native runners; see the script for the details.
+  wasm-tools:
+    name: wasm tools run in their base image (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    needs: [changes]
+    if: needs.changes.outputs.wasm_tools == 'true'
+    permissions:
+      contents: read # to check out the Dockerfile and lockfile
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: run wasm-bindgen in the wasm-chef image
+        run: bash .github/scripts/check-wasm-tools.sh
+
   # `README.md` is generated from `.github/templates/README.md.hbs` (ENGINEERING_GUIDE rule 6).
   # This is the half of that claim which holds on the branches nothing can commit to: a push to
   # `main`, and a pull request from a fork. `auto-fix.yaml`'s `readme` job renders and commits
@@ -1883,6 +1925,7 @@ jobs:
       - supply-chain
       - compose
       - readme
+      - wasm-tools
       - docker-deps
       - docker
       - docker-arm64

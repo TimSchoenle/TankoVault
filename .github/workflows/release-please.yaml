@@ -987,6 +987,16 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+      # For `terrace-contract image attach` below. It shells out to the `oras` this job installs, so the
+      # action installs none of its own. It does put its own cosign on PATH, which is why it runs before
+      # the job's cosign install: that one is added to PATH last and stays the cosign every signature uses.
+      - name: install terrace-contract
+        uses: TimSchoenle/actions/actions/terrace/setup@54a4dc05fd351a9bf9e9638fa3ebbc572b5f2d7f # tag=actions-terrace-setup-v4.0.3
+        with:
+          # renovate: datasource=github-releases depName=TimSchoenle/terrace-config extractVersion=^terrace-contract-v(?<version>.+)$
+          version: '0.14.2'
+          oras: 'false'
+
       - name: install cosign
         uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
 
@@ -1085,44 +1095,32 @@ jobs:
         run: |
           set -euo pipefail
           token="${RUNNER_TEMP}/cosign-oidc-token"
-          artifact_type="application/vnd.terrace.config-schema.v1+json"
           contract="${RUNNER_TEMP}/contract/${BIN}.json"
 
           for pair in "${DOCKERHUB_IMAGE}@${DOCKERHUB_DIGEST}" "${GHCR_IMAGE}@${GHCR_DIGEST}"; do
-            # From the contract's own directory, by name. `oras` rejects an absolute file path,
-            # and `--disable-path-validation` would only trade that refusal for a runner path
-            # published as the attachment's title annotation.
-            ( cd "$(dirname "$contract")" && "${RUNNER_TEMP}/registry-retry" oras attach \
-              --artifact-type "$artifact_type" \
-              "$pair" "$(basename "$contract"):application/json" )
-
-            # The referrer's own digest, which is what cosign signs: signing the image again
-            # would say nothing about the document hanging off it.
+            # Idempotent, so a re-run of this job is safe: the build is reproducible, a re-run
+            # pushes the same digest, and a raw `oras attach` would hang a second identical
+            # referrer off it. `image attach` looks first: a digest already carrying these exact
+            # bytes gets nothing new, one carrying a different document fails the step, and only
+            # a bare digest is attached to. The look is itself a read of Docker Hub's eventually
+            # consistent referrers index, so a retry moments after an attach that stored its
+            # referrer but reported a failure can still attach a second identical copy. That
+            # is harmless to readers that treat identical copies as one contract, as terrace-contract
+            # does once its duplicate-referrer fix is released.
             #
-            # Polled, because `registry-retry` cannot see this one: Docker Hub's referrers index
-            # is eventually consistent, so for seconds after the attach above returns, a discover
-            # answers with an empty index: a successful call, not a failed one, and the wrapper
-            # only retries failures.
-            digests=""
-            for attempt in 1 2 3 4 5 6; do
-              if [ "$attempt" -gt 1 ]; then
-                sleep $(( (attempt - 1) * 5 ))
-              fi
-              digests=$("${RUNNER_TEMP}/registry-retry" oras discover --format json \
-                --artifact-type "$artifact_type" "$pair" \
-                | jq -r --arg t "$artifact_type" '[.. | objects | select(.artifactType? == $t) | .digest] | unique | .[]')
-              if [ -n "$digests" ]; then
-                break
-              fi
-            done
+            # Either way it prints the referrer's own digest on stdout (progress goes to stderr),
+            # and that is what cosign signs: signing the image again would say nothing about the
+            # document hanging off it.
+            referrer=$("${RUNNER_TEMP}/registry-retry" terrace-contract image attach "$contract" --image "$pair")
 
-            # Still exactly one, or the chart repository would have to pick between two documents
-            # claiming to describe the same image.
-            if [ "$(printf '%s\n' "$digests" | grep -c .)" != "1" ]; then
-              echo "::error::expected one config-schema referrer on ${pair} within 75s of attaching one, got: ${digests:-none}" >&2
+            # The digest attach printed, not one read back with `oras discover`: Docker Hub's
+            # referrers index is eventually consistent, so a discover right after the attach can
+            # answer with nothing, or with an older referrer only, and signing what it returned
+            # would sign the wrong document and leave the new one unsigned.
+            if [[ ! "$referrer" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::attaching the contract to ${pair} printed no referrer digest, got: ${referrer:-nothing}" >&2
               exit 1
             fi
-            referrer="$digests"
 
             "${RUNNER_TEMP}/registry-retry" cosign sign --yes --identity-token "$token" "${pair%@*}@${referrer}"
           done

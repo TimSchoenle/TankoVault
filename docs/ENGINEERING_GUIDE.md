@@ -850,8 +850,13 @@ that `load` their image, so a failure costs a retry instead of a release. Labels
 platform manifest's own config blob, so an index checked after the fact would see only one arch:
 a per-platform base or build argument can leave one carrying them and another not.
 
-`oras attach` and `cosign sign` run in `manifest`, after that check has passed, against the
-manifest **list** digest: the digest `helm-release` writes into the chart, and therefore the one
-its refresh asks for referrers. The chart repo pins a signer regexp over the workflow identity;
-`.github/workflows/release-please.yaml@refs/heads/main` is what it admits and what these
-signatures carry.
+`terrace-contract image attach` and `cosign sign` run in `manifest`, after that check has passed,
+against the manifest **list** digest: the digest `helm-release` writes into the chart, and
+therefore the one its refresh asks for referrers. The chart repo pins a signer regexp over the
+workflow identity; `.github/workflows/release-please.yaml@refs/heads/main` is what it admits and
+what these signatures carry.
+
+The attach is idempotent: a re-run of the job pushes the same digest (the build is
+reproducible), and the attach leaves that digest with the one referrer it already carries instead
+of a second, which the chart repo would refuse. cosign signs the referrer digest the attach
+printed, never one read back from Docker Hub's eventually consistent referrers index.

@@ -21,9 +21,11 @@ use std::path::{Path, PathBuf};
 /// looks like a flake, it is load, and the next call added outside the wrapper brings it back on
 /// a release nobody is watching.
 ///
-/// `oras` is on the list for the same reason as the rest of it: attaching the configuration
-/// contract is a registry write on the publishing path, and it is the last call of the leg;
-/// everything it can lose has already been pushed by the time it runs.
+/// `terrace-contract image attach` is on the list for the same reason as the rest of it:
+/// attaching the configuration contract is a registry write on the publishing path, and it is the
+/// last call of the leg; everything it can lose has already been pushed by the time it runs. The
+/// raw `oras` spellings it replaced stay listed, so one written back in is still held to the
+/// wrapper.
 ///
 /// Scoped to those two jobs on purpose. `plan`'s `imagetools inspect` probes are *deliberately*
 /// unretried: a failed probe there means "not published yet", which is a legitimate answer that a
@@ -39,12 +41,13 @@ pub(in crate::repo_lint) fn registry_calls_in_publish_retry(
     /// The composite action that installs it, by the path a job references it at.
     const HELPER_ACTION: &str = "$/.github/actions/registry-retry";
     /// Commands that reach a registry, in the spellings this workflow uses.
-    const REGISTRY_COMMANDS: [&str; 7] = [
+    const REGISTRY_COMMANDS: [&str; 8] = [
         "docker buildx build",
         "docker buildx imagetools",
         "docker pull",
         "cosign sign",
         "cosign attest",
+        "terrace-contract image attach",
         // Two words, so the install step's download URL and its `mv` are not calls.
         "oras attach",
         "oras discover",

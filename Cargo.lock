@@ -6245,6 +6245,7 @@ version = "11.2.2"
 dependencies = [
  "async-trait",
  "axum",
+ "futures",
  "metrics",
  "proptest",
  "serde",

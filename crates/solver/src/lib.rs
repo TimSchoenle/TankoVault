@@ -4,6 +4,7 @@
 //! It does not depend on `tankovault-fetch`, which depends on it; detection reads responses
 //! through the minimal [`ResponseView`] trait instead.
 
+mod body;
 mod detection;
 mod fake;
 #[cfg(feature = "axum")]
@@ -11,6 +12,7 @@ pub mod http;
 mod trawl;
 mod types;
 
+pub use body::{MAX_BODY_BYTES, read_capped};
 pub use detection::{
     ResponseView, default_error_page_server, detect_challenge, detect_challenge_body,
     is_rate_limit_page,

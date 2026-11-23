@@ -202,7 +202,7 @@ impl BrowserManager {
             tokio::time::sleep(Duration::from_millis(settle)).await;
         }
 
-        let html = page.content().await?;
+        let html = within_body_cap(page.content().await?)?;
         let final_url = page.url().await?.unwrap_or_else(|| opts.url.clone());
         let cookies = page
             .get_cookies()
@@ -275,6 +275,17 @@ impl Drop for Tab {
     }
 }
 
+/// Refuses a DOM past [`tankovault_solver::MAX_BODY_BYTES`], the cap every other body path applies.
+fn within_body_cap(html: String) -> anyhow::Result<String> {
+    if html.len() > tankovault_solver::MAX_BODY_BYTES {
+        anyhow::bail!(
+            "rendered page exceeds {} bytes",
+            tankovault_solver::MAX_BODY_BYTES
+        );
+    }
+    Ok(html)
+}
+
 async fn close_page(page: Page) {
     match tokio::time::timeout(CLOSE_TIMEOUT, page.close()).await {
         Ok(Ok(())) => {}
@@ -305,6 +316,15 @@ mod tests {
         );
         // Saturates instead of overflowing on a hostile configuration.
         assert!(render_budget(u64::MAX, MAX_SETTLE_MS) >= RENDER_OVERHEAD);
+    }
+
+    /// Regression: the rendered DOM was returned uncapped, so one hostile page could make the
+    /// render service and every caller buffer an arbitrarily large `html`.
+    #[test]
+    fn a_dom_past_the_body_cap_is_refused() {
+        let cap = tankovault_solver::MAX_BODY_BYTES;
+        assert!(within_body_cap("a".repeat(cap)).is_ok());
+        assert!(within_body_cap("a".repeat(cap + 1)).is_err());
     }
 
     /// Regression: a crashed browser stayed cached, so every later render failed against a

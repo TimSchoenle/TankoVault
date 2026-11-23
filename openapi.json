@@ -10221,7 +10221,7 @@
     },
     "/v1/admin/privacy/requests/{id}/fulfil-erasure": {
       "post": {
-        "description": "Erases the subject's account and everything it owns, then resolves the request as completed\nin the same call, so the compliance record cannot end up saying an erasure was done when it\nwas not, or the reverse.\n\nRequires [`Permission::UsersDelete`] as well as [`Permission::PrivacyWrite`]: working the\nprivacy queue and being able to destroy an account are separate authorities, and this is the\none action that needs both.",
+        "description": "Erases the subject's account and everything it owns, then resolves the request as completed\nin the same call, so the compliance record cannot end up saying an erasure was done when it\nwas not, or the reverse.\n\nRequires [`Permission::UsersDelete`] as well as [`Permission::PrivacyWrite`]: working the\nprivacy queue and being able to destroy an account are separate authorities, and this is the\none action that needs both.\n\nRefuses the deployment's super user and the last administrator, as administrative erasure does.",
         "operationId": "fulfil_erasure",
         "parameters": [
           {
@@ -10264,7 +10264,7 @@
                 }
               }
             },
-            "description": "not an erasure request, or the confirmation did not match"
+            "description": "not an erasure request, the confirmation did not match, or the subject is the super user or the last administrator"
           },
           "401": {
             "content": {

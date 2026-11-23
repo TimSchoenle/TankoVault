@@ -260,6 +260,86 @@ async fn an_administrator_cannot_sign_out_an_account_that_outranks_them() {
     );
 }
 
+/// The bug: fulfilling an erasure request ran the erasure cascade with neither guard that
+/// administrative deletion applies, so `privacy.write` plus `users.delete` could erase the
+/// owner, or the only account able to grant permissions, by way of the privacy queue.
+#[tokio::test]
+async fn an_erasure_request_cannot_erase_the_owner_or_the_last_administrator() {
+    use tankovault_db::repo::gdpr::{self, RequestKind, RequestStatus};
+
+    let app = TestApp::spawn().await;
+    let (bearer, step_up) = admin(
+        &app,
+        "clerk",
+        &[Permission::PrivacyWrite, Permission::UsersDelete],
+        AccountStatus::Active,
+    )
+    .await;
+
+    // Seeded before the owner, whose grant would otherwise count as another administrator.
+    let keeper = app
+        .seed_user(
+            "keeper",
+            &[Permission::UsersPermissions],
+            AccountStatus::Active,
+        )
+        .await;
+    let keeper_request = gdpr::create(&app.db.pool, keeper, RequestKind::Erasure, None)
+        .await
+        .expect("file request")
+        .id;
+    let (status, _) = app
+        .call_elevated(
+            "POST",
+            &format!("/v1/admin/privacy/requests/{keeper_request}/fulfil-erasure"),
+            Some(&bearer),
+            Some(&step_up),
+            Some(json!({ "confirm_username": "keeper" })),
+        )
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "the last administrator cannot be erased"
+    );
+
+    let owner = app
+        .seed_user("owner", &[Permission::SuperUser], AccountStatus::Active)
+        .await;
+    let owner_request = gdpr::create(&app.db.pool, owner, RequestKind::Erasure, None)
+        .await
+        .expect("file request")
+        .id;
+    let (status, _) = app
+        .call_elevated(
+            "POST",
+            &format!("/v1/admin/privacy/requests/{owner_request}/fulfil-erasure"),
+            Some(&bearer),
+            Some(&step_up),
+            Some(json!({ "confirm_username": "owner" })),
+        )
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "the owner cannot be erased"
+    );
+
+    for (subject, request) in [(keeper, keeper_request), (owner, owner_request)] {
+        tankovault_db::repo::users::get(&app.db.pool, subject)
+            .await
+            .expect("the subject still exists");
+        let row = gdpr::get_admin(&app.db.pool, request)
+            .await
+            .expect("request exists");
+        assert_eq!(
+            row.request.status,
+            RequestStatus::Pending,
+            "a refused erasure is not recorded as done"
+        );
+    }
+}
+
 /// An email address is the recovery channel, so redirecting it is a password reset away from
 /// taking the account.
 ///

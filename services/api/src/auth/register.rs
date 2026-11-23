@@ -102,8 +102,15 @@ pub async fn register(
 
     // Without confirmation a fresh registration returns a session, which a taken email cannot
     // fake, so that mode keeps the plain 409.
-    if verifying && notify_existing_owner(&state, email).await? {
-        return Ok((jar, Json(RegisterResponse::verification_sent())));
+    if verifying {
+        // The username is checked before the email: otherwise a known username paired with a
+        // registered email answers 200 and with an unused one 409, which probes emails.
+        if username_taken(&state, username).await? {
+            return Err(ApiError::Conflict("username already taken".to_owned()));
+        }
+        if notify_existing_owner(&state, email).await? {
+            return Ok((jar, Json(RegisterResponse::verification_sent())));
+        }
     }
     let user = match tankovault_db::repo::users::create(&state.pool, email, username, &hash).await {
         Ok(user) => user,
@@ -164,6 +171,17 @@ async fn notify_existing_owner(state: &AppState, email: &str) -> ApiResult<bool>
         mailer::registration_attempted(state.branding.name(), &owner.email, &owner.username),
     );
     Ok(true)
+}
+
+/// Whether `username` belongs to an account.
+///
+/// `validate_username` rejects `@`, so [`find_credentials`] matches the username column only.
+///
+/// [`find_credentials`]: tankovault_db::repo::users::find_credentials
+async fn username_taken(state: &AppState, username: &str) -> ApiResult<bool> {
+    Ok(tankovault_db::repo::users::find_credentials(&state.pool, username)
+        .await?
+        .is_some())
 }
 
 /// Validates every field a registration writes, in the order the user filled them in.

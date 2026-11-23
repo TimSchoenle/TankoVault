@@ -242,6 +242,40 @@ async fn a_taken_username_is_refused_without_mentioning_the_email() {
     assert_eq!(body["detail"], "username already taken", "got {body}");
 }
 
+/// A taken username is refused the same way whether the submitted email is registered or not.
+///
+/// # The bug this pins
+///
+/// The email was looked up before the username, so a known username with a registered email
+/// answered 200 and with an unused email 409: an email probe that needs no new account.
+#[tokio::test]
+async fn a_taken_username_answers_the_same_for_a_registered_and_an_unused_email() {
+    let (app, _mailer) = app_with_mail().await;
+    register(&app, "known").await;
+    register(&app, "victim").await;
+
+    let mut answers = Vec::new();
+    for email in ["victim@example.test", "nobody@example.test"] {
+        let resp = app
+            .request(post(
+                "/v1/auth/register",
+                None,
+                Some(json!({
+                    "email": email,
+                    "username": "known",
+                    "password": "correct horse battery",
+                })),
+            ))
+            .await;
+        answers.push((resp.status(), json_body(resp).await));
+    }
+    assert_eq!(answers[0].0, StatusCode::CONFLICT, "got {:?}", answers[0].1);
+    assert_eq!(
+        answers[0], answers[1],
+        "a registered email must not change the answer to a taken username"
+    );
+}
+
 #[tokio::test]
 async fn an_unconfirmed_account_cannot_log_in_and_is_told_why() {
     let (app, _mailer) = app_with_mail().await;

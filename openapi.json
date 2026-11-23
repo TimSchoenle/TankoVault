@@ -14038,7 +14038,7 @@
         ]
       },
       "patch": {
-        "description": "Change another account's username and/or email. Omitted fields are left alone.\n\nChanging an email does **not** re-open verification: an administrator setting an address is\nasserting it is correct, and forcing a confirmation round trip would lock the account out\nuntil the user acted on mail they did not expect.",
+        "description": "Change another account's username and/or email. Omitted fields are left alone.\n\nChanging an email does **not** re-open verification: an administrator setting an address is\nasserting it is correct, and forcing a confirmation round trip would lock the account out\nuntil the user acted on mail they did not expect. The old address is told, as it is when the\nuser changes it themselves.\n\nRefused on your own account and on any account holding a permission you lack: an address is\nthe recovery channel, so redirecting it is a password reset away from taking the account.",
         "operationId": "update_user",
         "parameters": [
           {
@@ -14072,6 +14072,16 @@
               }
             },
             "description": "The updated account"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "nothing to update, an invalid username or email, your own account, or an account holding permissions you lack"
           },
           "401": {
             "content": {

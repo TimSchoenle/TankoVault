@@ -13,6 +13,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use super::detail::{UserDetailResponse, user_detail_response};
+use super::{guard_not_self, guard_outranks};
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct AdminProfileUpdate {
@@ -28,7 +29,11 @@ pub struct AdminProfileUpdate {
 ///
 /// Changing an email does **not** re-open verification: an administrator setting an address is
 /// asserting it is correct, and forcing a confirmation round trip would lock the account out
-/// until the user acted on mail they did not expect.
+/// until the user acted on mail they did not expect. The old address is told, as it is when the
+/// user changes it themselves.
+///
+/// Refused on your own account and on any account holding a permission you lack: an address is
+/// the recovery channel, so redirecting it is a password reset away from taking the account.
 #[utoipa::path(
     patch,
     path = "/v1/admin/users/{id}",
@@ -38,6 +43,7 @@ pub struct AdminProfileUpdate {
     security(("bearer_auth" = [])),
     responses(
         (status = 200, description = "The updated account", body = UserDetailResponse),
+        (status = 400, description = "nothing to update, an invalid username or email, your own account, or an account holding permissions you lack", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "no such user", body = crate::error::ProblemDetails),
@@ -52,6 +58,8 @@ pub async fn update_user(
 ) -> ApiResult<Json<UserDetailResponse>> {
     user.require(Permission::UsersWrite).await?;
     let target = UserId::from_uuid(id);
+    guard_not_self(&state, &user, target, "user.update").await?;
+    guard_outranks(&state, &user, target, "user.update").await?;
 
     let username = body
         .username
@@ -76,7 +84,22 @@ pub async fn update_user(
         crate::auth::validate_email(email)?;
     }
 
+    let before = tankovault_db::repo::users::get(&state.pool, target).await?;
     tankovault_db::repo::user_admin::update_identity(&state.pool, target, username, email).await?;
+    // `citext` compares case-insensitively, so a case-only edit is not an address change.
+    if let Some(email) = email
+        && !email.eq_ignore_ascii_case(&before.email)
+    {
+        crate::mailer::send_in_background(
+            &state,
+            crate::mailer::email_changed(
+                state.branding.name(),
+                &before.email,
+                username.unwrap_or(&before.username),
+                email,
+            ),
+        );
+    }
     audit(
         &state,
         &user,

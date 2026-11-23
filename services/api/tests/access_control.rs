@@ -202,6 +202,74 @@ async fn an_administrator_cannot_suspend_or_erase_the_deployment_owner() {
     assert!(principal.permissions.is_super_user());
 }
 
+/// An email address is the recovery channel, so redirecting it is a password reset away from
+/// taking the account.
+///
+/// The bug: `users.write` alone let an administrator rewrite the owner's or a broader
+/// administrator's address, with no guard at all. It is now refused on any account holding a
+/// permission the caller lacks, while an ordinary account stays editable.
+#[tokio::test]
+async fn an_administrator_cannot_redirect_the_email_of_an_account_that_outranks_them() {
+    let app = TestApp::spawn().await;
+    let (bearer, step_up) = admin(
+        &app,
+        "editor",
+        &[Permission::UsersWrite],
+        AccountStatus::Active,
+    )
+    .await;
+    let owner = app
+        .seed_user("owner", &[Permission::SuperUser], AccountStatus::Active)
+        .await;
+    let peer = app
+        .seed_user(
+            "peer",
+            &[Permission::UsersWrite, Permission::UsersPermissions],
+            AccountStatus::Active,
+        )
+        .await;
+    let reader = app.seed_user("reader", &[], AccountStatus::Active).await;
+
+    for (target, name) in [(owner, "owner"), (peer, "peer")] {
+        let before = tankovault_db::repo::users::get(&app.db.pool, target)
+            .await
+            .expect("target exists");
+        let (status, _) = app
+            .call_elevated(
+                "PATCH",
+                &format!("/v1/admin/users/{}", target.as_uuid()),
+                Some(&bearer),
+                Some(&step_up),
+                Some(json!({ "email": "attacker@example.test" })),
+            )
+            .await;
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "{name} outranks the caller"
+        );
+        let after = tankovault_db::repo::users::get(&app.db.pool, target)
+            .await
+            .expect("target exists");
+        assert_eq!(after.email, before.email, "{name}'s address must not move");
+    }
+
+    let (status, _) = app
+        .call_elevated(
+            "PATCH",
+            &format!("/v1/admin/users/{}", reader.as_uuid()),
+            Some(&bearer),
+            Some(&step_up),
+            Some(json!({ "email": "reader-new@example.test" })),
+        )
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "an account without grants stays editable"
+    );
+}
+
 /// The catalogue is what the editor renders its checklist from, so a super user entry there
 /// would be a checkbox whose every submission the write path rejects.
 #[tokio::test]

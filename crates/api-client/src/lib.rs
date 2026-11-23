@@ -28183,7 +28183,7 @@ impl Client {
     pub fn delete_user(&self) -> builder::DeleteUser<'_> {
         builder::DeleteUser::new(self)
     }
-    #[doc = "Edit a user's identity\n\nChange another account's username and/or email. Omitted fields are left alone.\n\nChanging an email does **not** re-open verification: an administrator setting an address is\nasserting it is correct, and forcing a confirmation round trip would lock the account out\nuntil the user acted on mail they did not expect.\n\nSends a `PATCH` request to `/v1/admin/users/{id}`\n\nArguments:\n- `id`: User id\n- `body`\n```ignore\nlet response = client.update_user()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Edit a user's identity\n\nChange another account's username and/or email. Omitted fields are left alone.\n\nChanging an email does **not** re-open verification: an administrator setting an address is\nasserting it is correct, and forcing a confirmation round trip would lock the account out\nuntil the user acted on mail they did not expect. The old address is told, as it is when the\nuser changes it themselves.\n\nRefused on your own account and on any account holding a permission you lack: an address is\nthe recovery channel, so redirecting it is a password reset away from taking the account.\n\nSends a `PATCH` request to `/v1/admin/users/{id}`\n\nArguments:\n- `id`: User id\n- `body`\n```ignore\nlet response = client.update_user()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn update_user(&self) -> builder::UpdateUser<'_> {
         builder::UpdateUser::new(self)
     }
@@ -35301,6 +35301,9 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

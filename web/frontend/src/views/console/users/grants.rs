@@ -9,6 +9,7 @@ use crate::wire::types::{
     GrantRow, Permission, PermissionCatalogue, PermissionGroup, PermissionInfo,
 };
 use dioxus::prelude::*;
+use inkstone_ui::{Callout, Tone};
 use progenitor_client::ResponseValue;
 use std::collections::BTreeSet;
 
@@ -58,9 +59,7 @@ pub(super) fn PermissionGrants(
                 _ => rsx! {},
             },
             if owner {
-                p {
-                    class: "ik-note star",
-                    style: "font-size:11.5px;line-height:1.5;margin:0 0 9px;",
+                Callout { tone: Tone::Caution,
                     {i18n.t("console.users.superUserNotice")}
                 }
             }

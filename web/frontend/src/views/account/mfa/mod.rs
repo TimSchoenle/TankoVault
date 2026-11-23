@@ -28,7 +28,7 @@ use crate::util::iso_date;
 use crate::webauthn::{self};
 use crate::wire::types::SecurityKeyRename;
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Tone};
+use inkstone_ui::{Button, Callout, Tone};
 use progenitor_client::ResponseValue;
 #[component]
 pub(crate) fn MfaCard() -> Element {
@@ -86,10 +86,10 @@ pub(crate) fn MfaCard() -> Element {
             p { class: "ik-muted", style: "font-size:13px;margin-top:0;", {i18n.t("mfa.intro")} }
 
             if let Some(msg) = error.read().clone() {
-                div { class: "ik-error", style: "padding:10px;margin:10px 0;", "{msg}" }
+                Callout { tone: Tone::Danger, "{msg}" }
             }
             if let Some(msg) = info.read().clone() {
-                div { class: "ik-note", style: "padding:10px;margin:10px 0;", "{msg}" }
+                Callout { "{msg}" }
             }
 
             StepUpGuard { gate, enrolled }
@@ -98,8 +98,14 @@ pub(crate) fn MfaCard() -> Element {
             // it is the only copy that will ever exist, and a reader who loses it has to
             // regenerate, which invalidates the set they were half-way through writing down.
             if !fresh_codes.read().is_empty() {
-                div { class: "ik-note", style: "padding:12px;margin:12px 0;",
-                    p { style: "margin:0 0 6px;font-weight:600;", {i18n.t("mfa.recovery.title")} }
+                Callout {
+                    title: i18n.t("mfa.recovery.title"),
+                    action: rsx! {
+                        Button {
+                            on_click: move |_| fresh_codes.set(Vec::new()),
+                            {i18n.t("mfa.recovery.saved")}
+                        }
+                    },
                     p { class: "ik-muted", style: "font-size:13px;margin:0 0 8px;",
                         {i18n.t("mfa.recovery.warning")}
                     }
@@ -107,11 +113,6 @@ pub(crate) fn MfaCard() -> Element {
                         for code in fresh_codes.read().iter().cloned() {
                             li { key: "{code}", "{code}" }
                         }
-                    }
-                    Button {
-                        style: "margin-top:10px;",
-                        on_click: move |_| fresh_codes.set(Vec::new()),
-                        {i18n.t("mfa.recovery.saved")}
                     }
                 }
             }
@@ -349,7 +350,7 @@ fn SecurityKeyRow(
     rsx! {
         div { style: "padding:8px 0;border-top:1px solid var(--ik-line);",
             if let Some(msg) = error.read().clone() {
-                div { class: "ik-error", style: "padding:6px;margin-bottom:6px;", "{msg}" }
+                Callout { tone: Tone::Danger, "{msg}" }
             }
             div { class: "ik-flex", style: "justify-content:space-between;align-items:center;gap:8px;",
                 if *renaming.read() {

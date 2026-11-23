@@ -5,6 +5,7 @@
 //! A reader has to be able to tell "nothing matched" from "we could not ask".
 
 use crate::skin::{use_skin, Flag, Part, Variant};
+use crate::tone::Tone;
 use dioxus::prelude::*;
 
 /// The result of a submitted action: `Ok` reads as a confirmation, `Err` as a failure, `None`
@@ -82,6 +83,61 @@ pub fn ErrorBox(message: String, retry_label: String, on_retry: EventHandler<()>
 pub fn ErrorLine(message: String) -> Element {
     rsx! {
         p { class: use_skin().class(Part::ErrorLine, &[]), role: "alert", "{message}" }
+    }
+}
+
+/// The live-region role for a [`Callout`]. Only a failure interrupts a screen reader; a warning,
+/// note or confirmation waits its turn.
+///
+/// Before this, every inline box was announced the same way, so a backup warning read out as an
+/// error and a success message was never announced at all.
+fn callout_role(tone: Tone) -> &'static str {
+    match tone {
+        Tone::Danger | Tone::Accent => "alert",
+        _ => "status",
+    }
+}
+
+/// A tinted message bar: a failure, a warning, a note or a confirmation.
+///
+/// Use it inside a form or after an action. A panel that failed to load keeps [`ErrorBox`].
+#[component]
+pub fn Callout(
+    #[props(default = Tone::Neutral)] tone: Tone,
+    #[props(default)] title: Option<String>,
+    /// Buttons or links under the message, e.g. a retry.
+    #[props(default)]
+    action: Option<Element>,
+    /// Shows a close control; the caller clears its own state.
+    #[props(default)]
+    on_dismiss: Option<EventHandler<()>>,
+    /// Already-translated word for the close control's `aria-label`.
+    #[props(default)]
+    dismiss_label: String,
+    children: Element,
+) -> Element {
+    let skin = use_skin();
+    rsx! {
+        div { class: skin.class(Part::Callout, &[Variant::Tone(tone)]), role: callout_role(tone),
+            div { class: skin.class(Part::CalloutBody, &[]),
+                if let Some(title) = title {
+                    strong { class: skin.class(Part::CalloutTitle, &[]), "{title}" }
+                }
+                {children}
+                if let Some(action) = action {
+                    div { class: skin.class(Part::CalloutActions, &[]), {action} }
+                }
+            }
+            if let Some(on_dismiss) = on_dismiss {
+                button {
+                    class: skin.class(Part::CalloutDismiss, &[]),
+                    r#type: "button",
+                    "aria-label": "{dismiss_label}",
+                    onclick: move |_| on_dismiss.call(()),
+                    "✕"
+                }
+            }
+        }
     }
 }
 
@@ -170,4 +226,20 @@ pub fn async_list<T: 'static>(
             content(items)
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A warning once shared the failure's `alert` role, so screen readers announced a backup's
+    /// "replace mode" warning as an error. Only a failure may interrupt.
+    #[test]
+    fn only_a_failure_is_announced_as_an_alert() {
+        assert_eq!(callout_role(Tone::Danger), "alert");
+        assert_eq!(callout_role(Tone::Accent), "alert");
+        assert_eq!(callout_role(Tone::Caution), "status");
+        assert_eq!(callout_role(Tone::Positive), "status");
+        assert_eq!(callout_role(Tone::Neutral), "status");
+    }
 }

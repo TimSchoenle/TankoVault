@@ -18,7 +18,7 @@ use crate::util::iso_date;
 use crate::webauthn::{self, CeremonyError};
 use crate::wire::types::{PasskeyRegisterFinish, PasskeyRegisterStart, PasskeyRename};
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Size, Tone};
+use inkstone_ui::{Button, Callout, Size, Tone};
 use progenitor_client::ResponseValue;
 use webauthn_rs_proto::CreationChallengeResponse;
 #[component]
@@ -151,10 +151,10 @@ pub(crate) fn PasskeysCard() -> Element {
             }
 
             if let Some(msg) = error.read().clone() {
-                div { class: "ik-error", style: "padding:10px;margin:10px 0;", "{msg}" }
+                Callout { tone: Tone::Danger, "{msg}" }
             }
             if let Some(msg) = info.read().clone() {
-                div { class: "ik-note", style: "padding:10px;margin:10px 0;", "{msg}" }
+                Callout { "{msg}" }
             }
 
             StepUpGuard { gate }

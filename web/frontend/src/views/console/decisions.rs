@@ -21,7 +21,7 @@ use crate::util::rel_time;
 use crate::views::console::{signal_label, use_console_nav, RefreshTick};
 use crate::wire::types::Permission;
 use dioxus::prelude::*;
-use inkstone_ui::{button_class, Button, Pill, Size, ToggleButton, Tone};
+use inkstone_ui::{button_class, Button, Callout, Pill, Size, ToggleButton, Tone};
 use progenitor_client::ResponseValue;
 /// Rows per page. The server clamps regardless; this is the number that fits a screen without
 /// paging becoming the primary interaction.
@@ -525,7 +525,7 @@ fn SyncJournal(tick: RefreshTick) -> Element {
         }
         StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
         if !notice.read().is_empty() {
-            div { class: "ik-note", style: "margin-bottom:10px;", "{notice}" }
+            Callout { "{notice}" }
         }
         {
             async_view(

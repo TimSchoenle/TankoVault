@@ -128,10 +128,20 @@ pub enum Part {
     Empty,
     /// The box shown when content failed to load, with a retry control.
     Error,
-    /// The message inside a [`Part::Error`].
+    /// A one-line inline failure, for a panel too small for a [`Part::Error`].
     ErrorLine,
     /// A one-line report of an action's success or failure.
     Outcome,
+    /// A tinted message bar: a failure, a warning, a note or a confirmation.
+    Callout,
+    /// The text column of a [`Part::Callout`], beside its dismiss control.
+    CalloutBody,
+    /// The bold heading of a [`Part::Callout`].
+    CalloutTitle,
+    /// The buttons under a [`Part::Callout`]'s message.
+    CalloutActions,
+    /// The close control at the trailing edge of a [`Part::Callout`].
+    CalloutDismiss,
     // Overlay
     /// The backdrop behind a [`Part::Modal`].
     ModalScrim,
@@ -318,6 +328,11 @@ impl Skin for Inkstone {
             Part::Error => "ik-error",
             Part::ErrorLine => "ik-error-line",
             Part::Outcome => "ik-outcome",
+            Part::Callout => "ik-callout",
+            Part::CalloutBody => "ik-callout-body",
+            Part::CalloutTitle => "ik-callout-title",
+            Part::CalloutActions => "ik-callout-actions",
+            Part::CalloutDismiss => "ik-callout-dismiss",
             Part::ModalScrim => "ik-modal-scrim",
             Part::Modal => "ik-modal",
             Part::ModalHead => "ik-modal-head",
@@ -367,6 +382,13 @@ impl Inkstone {
     /// button and on a pill, and on most parts is not drawn at all.
     fn tone(part: Part, tone: Tone) -> &'static str {
         match part {
+            Part::Callout => match tone {
+                Tone::Danger | Tone::Accent => "danger",
+                Tone::Caution => "caution",
+                Tone::Positive => "positive",
+                Tone::Custom(modifier) => modifier,
+                _ => "",
+            },
             Part::Button | Part::IconButton => match tone {
                 Tone::Neutral => "",
                 Tone::Primary => "primary",
@@ -563,6 +585,27 @@ mod tests {
             "on"
         );
         assert_eq!(skin.class(Part::SegItem, &[]), "");
+    }
+
+    #[test]
+    fn a_callout_takes_its_tone_from_the_kit_palette() {
+        let skin = SkinHandle::default();
+        assert_eq!(
+            skin.class(Part::Callout, &[Variant::Tone(Tone::Danger)]),
+            "ik-callout danger"
+        );
+        assert_eq!(
+            skin.class(Part::Callout, &[Variant::Tone(Tone::Caution)]),
+            "ik-callout caution"
+        );
+        assert_eq!(
+            skin.class(Part::Callout, &[Variant::Tone(Tone::Positive)]),
+            "ik-callout positive"
+        );
+        assert_eq!(
+            skin.class(Part::Callout, &[Variant::Tone(Tone::Neutral)]),
+            "ik-callout"
+        );
     }
 
     /// The escape hatch has to reach parts the built-in tones do not draw, or a consumer's own

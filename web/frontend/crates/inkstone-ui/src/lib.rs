@@ -27,7 +27,7 @@ mod tone;
 
 pub use button::{button_class, Button, ButtonType, IconButton, ToggleButton};
 pub use feedback::{
-    async_list, async_view, EmptyBox, ErrorBox, ErrorLine, Outcome, OutcomeLine, Skeleton,
+    async_list, async_view, Callout, EmptyBox, ErrorBox, ErrorLine, Outcome, OutcomeLine, Skeleton,
     SkeletonGrid, SkeletonRows,
 };
 pub use field::{

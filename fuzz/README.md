@@ -1,12 +1,15 @@
 # `cargo-fuzz` targets
 
-Coverage-guided fuzzing of the code that reads **bytes somebody else chose**. Six targets, in two
+Coverage-guided fuzzing of the code that reads **bytes somebody else chose**. Ten targets, in two
 groups:
 
 - **Provider-controlled bytes**: the text and URL helpers in `crates/adapters/src/html.rs`, the
   JSON-in-markup recovery path in `crates/adapters/src/json.rs`, the selector-driven extraction
-  in `crates/adapters/src/generic.rs`, and the challenge classifier in
-  `crates/solver/src/detection.rs` that runs on every response before any of them.
+  in `crates/adapters/src/generic.rs`, the Astro island decoder in `crates/adapters/src/astro.rs`,
+  the gzip decoder in `crates/fetch/src/base.rs`, the title key in
+  `crates/domain/src/normalize.rs`, the SSRF check in `crates/domain/src/ssrf.rs`, and the
+  challenge classifier in `crates/solver/src/detection.rs` that runs on every response before
+  any of them.
 - **Credential- and operator-controlled bytes**: `tankovault_auth::verify_access_token`, which
   is the whole of the API's authentication, and `tankovault_config::load`, the environment
   reader every service boots through.
@@ -97,9 +100,24 @@ cargo +nightly fuzz run auth_jwt_verify \
 cargo +nightly fuzz run config_env_load \
   fuzz/corpus/config_env_load fuzz/seeds/config_env_load \
   -- -max_total_time=300 -timeout=5 -rss_limit_mb=512
+
+# 7-10. Astro props, gzip, SSRF and the title key. `fetch_decode_gzip`'s RSS limit sits above the
+#       16 MiB body cap it asserts, so a bomb trips the oracle, not the allocator.
+cargo +nightly fuzz run adapters_astro_props \
+  fuzz/corpus/adapters_astro_props fuzz/seeds/adapters_astro_props \
+  -- -max_total_time=60 -timeout=2 -rss_limit_mb=512 -dict=fuzz/dictionaries/json.dict
+cargo +nightly fuzz run fetch_decode_gzip \
+  fuzz/corpus/fetch_decode_gzip fuzz/seeds/fetch_decode_gzip \
+  -- -max_total_time=60 -timeout=2 -rss_limit_mb=1024
+cargo +nightly fuzz run domain_ssrf_validate \
+  fuzz/corpus/domain_ssrf_validate fuzz/seeds/domain_ssrf_validate \
+  -- -max_total_time=60 -timeout=2 -rss_limit_mb=512
+cargo +nightly fuzz run domain_normalize_title \
+  fuzz/corpus/domain_normalize_title fuzz/seeds/domain_normalize_title \
+  -- -max_total_time=60 -timeout=2 -rss_limit_mb=512
 ```
 
-`cargo +nightly fuzz build` compiles all six without running them, which is the cheap check that
+`cargo +nightly fuzz build` compiles all ten without running them, which is the cheap check that
 a change to a crate under test has not broken a target.
 
 ### Argument order matters
@@ -148,6 +166,10 @@ cmake error for the first time and reads it as a fuzzing problem.
 | `solver_challenge_detection` | `detection::{detect_challenge, detect_challenge_body, is_rate_limit_page}` over arbitrary UTF-8 | No panic, **and** two differentials: the narrow body-only classifier never accepts what the envelope-aware one rejects, and a rate-limit notice never buys a solve. |
 | `auth_jwt_verify` | `verify_access_token`, then `AccessClaims::user_id` | No panic, **and** a token that verifies must carry `alg: HS256` in its own header and must not verify under a second secret. |
 | `config_env_load` | `tankovault_config::load` over the union of every published config block, then the post-parse accessors | `Ok` or a `ConfigError`, never a panic, **and** the internal-token length floor and the feature-refresh clamp hold over values that came through env parsing. |
+| `adapters_astro_props` | `astro::unwrap_astro` after a `serde_json` parse, reached through the `__fuzz` seam | No panic, no stack overflow. |
+| `fetch_decode_gzip` | `base::decode_gzip`, reached through `tankovault_fetch::__fuzz` | No panic, **and** a decoded body never exceeds the 16 MiB body cap. |
+| `domain_ssrf_validate` | `ssrf::validate_str` | No panic, **and** an accepted URL is `http(s)` and its IP-literal host is never one `is_forbidden_ip` refuses. |
+| `domain_normalize_title` | `normalize_title`, the matcher's title key | No panic, **and** idempotent with canonical single spaces, as `crates/domain/tests/prop_normalize.rs` asserts on stable. |
 
 `parse_selector` is deliberately not fuzzed even though it is `pub` and takes provider-supplied
 text: it writes into a process-wide bounded memo, so consecutive iterations would stop

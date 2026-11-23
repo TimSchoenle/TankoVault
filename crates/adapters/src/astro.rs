@@ -87,7 +87,7 @@ impl AstroFlavour {
 /// A genuine two-element array whose first element is a number would be misread as a wrapper.
 /// No prop in either site's payload has that shape, and the alternative (threading Astro's
 /// type tags through) buys nothing, since every tag in use here denotes a plain JSON value.
-fn unwrap_astro(value: Value) -> Value {
+pub(crate) fn unwrap_astro(value: Value) -> Value {
     unwrap_astro_at(value, 0)
 }
 

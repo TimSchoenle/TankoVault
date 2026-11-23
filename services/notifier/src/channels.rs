@@ -77,9 +77,27 @@ pub(crate) fn discord_payload(alert: &Alert) -> serde_json::Value {
     })
 }
 
+/// The longest email subject sent, in characters.
+const MAX_SUBJECT_CHARS: usize = 120;
+
 /// Returns the subject line for a new-chapter alert email (the shared summary).
 pub(crate) fn email_subject(alert: &Alert) -> String {
-    alert.summary()
+    single_line(&alert.summary(), MAX_SUBJECT_CHARS)
+}
+
+/// Flattens `s` to one line of at most `max_chars` characters.
+///
+/// Security: the summary carries a provider-controlled chapter title, and a CR/LF (or a Unicode
+/// line separator a mailer may fold on) in a header is how a `Bcc:` gets injected. Control
+/// characters become spaces, whitespace runs collapse to one space.
+fn single_line(s: &str, max_chars: usize) -> String {
+    s.split(|c: char| c.is_control() || c.is_whitespace())
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(max_chars)
+        .collect()
 }
 
 /// Returns the plain-text body of a new-chapter alert email.
@@ -422,6 +440,19 @@ mod tests {
             email_subject(&sample()),
             "New chapter 12: The Duel (kunmanga)"
         );
+    }
+
+    /// Regression: the provider's chapter title went verbatim into the `Subject`, so a title
+    /// carrying CR/LF could inject headers such as `Bcc:`.
+    #[test]
+    fn a_hostile_title_cannot_break_out_of_the_subject() {
+        let mut a = sample();
+        a.chapter_title = Some("Duel\r\nBcc: x@y\u{2028}\u{2029}\u{85}\t  end".to_owned());
+        let subject = email_subject(&a);
+        assert_eq!(subject, "New chapter 12: Duel Bcc: x@y end (kunmanga)");
+
+        a.chapter_title = Some("é".repeat(500));
+        assert_eq!(email_subject(&a).chars().count(), MAX_SUBJECT_CHARS);
     }
 
     #[test]

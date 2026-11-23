@@ -27963,7 +27963,7 @@ impl Client {
     pub fn claim_privacy_request(&self) -> builder::ClaimPrivacyRequest<'_> {
         builder::ClaimPrivacyRequest::new(self)
     }
-    #[doc = "Export a subject's data for a request\n\nProduces the same document as the subject's own export, for delivery in answer to an access\n(Art. 15) or portability (Art. 20) request.\n\nGated on [`Permission::PrivacyExport`], not `privacy.write`, and audited under its own\naction: this is the one operation in the queue that *discloses* another person's entire\nrecord, and it needs to be separately grantable and separately searchable afterwards.\n\nRefused for request kinds that are not about disclosure: an erasure request is not a licence\nto read the account first.\n\nSends a `GET` request to `/v1/admin/privacy/requests/{id}/export`\n\nArguments:\n- `id`: Request id\n```ignore\nlet response = client.export_subject_data()\n    .id(id)\n    .send()\n    .await;\n```"]
+    #[doc = "Export a subject's data for a request\n\nProduces the same document as the subject's own export, for delivery in answer to an access\n(Art. 15) or portability (Art. 20) request.\n\nGated on [`Permission::PrivacyExport`], not `privacy.write`, and audited under its own\naction: this is the one operation in the queue that *discloses* another person's entire\nrecord, and it needs to be separately grantable and separately searchable afterwards.\n\nRefused for request kinds that are not about disclosure: an erasure request is not a licence\nto read the account first. Refused once the request is resolved, so answering one access\nrequest is not a standing licence to re-read the account.\n\nSends a `GET` request to `/v1/admin/privacy/requests/{id}/export`\n\nArguments:\n- `id`: Request id\n```ignore\nlet response = client.export_subject_data()\n    .id(id)\n    .send()\n    .await;\n```"]
     pub fn export_subject_data(&self) -> builder::ExportSubjectData<'_> {
         builder::ExportSubjectData::new(self)
     }
@@ -30859,6 +30859,9 @@ pub mod builder {
                     ResponseValue::from_response(response).await?,
                 )),
                 404u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                409u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
                 _ => Err(Error::UnexpectedResponse(response)),

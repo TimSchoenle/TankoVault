@@ -340,6 +340,53 @@ async fn an_erasure_request_cannot_erase_the_owner_or_the_last_administrator() {
     }
 }
 
+/// The bug: the subject export never looked at the request's status, so one access request,
+/// once answered, let `privacy.export` re-read the subject's whole record indefinitely.
+#[tokio::test]
+async fn a_resolved_access_request_cannot_be_exported_again() {
+    use tankovault_db::repo::gdpr::{self, RequestKind, RequestStatus};
+
+    let app = TestApp::spawn().await;
+    let (bearer, step_up) = admin(
+        &app,
+        "clerk",
+        &[Permission::PrivacyExport],
+        AccountStatus::Active,
+    )
+    .await;
+    let subject = app.seed_user("subject", &[], AccountStatus::Active).await;
+    let request = gdpr::create(&app.db.pool, subject, RequestKind::Access, None)
+        .await
+        .expect("file request")
+        .id;
+    let path = format!("/v1/admin/privacy/requests/{request}/export");
+
+    let (status, _) = app
+        .call_elevated("GET", &path, Some(&bearer), Some(&step_up), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "an open request can be exported");
+
+    assert!(
+        gdpr::resolve(
+            &app.db.pool,
+            request,
+            RequestStatus::Completed,
+            None,
+            Some("sent")
+        )
+        .await
+        .expect("resolve")
+    );
+    let (status, _) = app
+        .call_elevated("GET", &path, Some(&bearer), Some(&step_up), None)
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "a resolved request is no longer a reason to disclose"
+    );
+}
+
 /// An email address is the recovery channel, so redirecting it is a password reset away from
 /// taking the account.
 ///

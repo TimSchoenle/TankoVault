@@ -8141,6 +8141,7 @@
             }
           },
           {
+            "description": "Rows to skip; values above 10000 are treated as 10000.",
             "in": "query",
             "name": "offset",
             "required": false,

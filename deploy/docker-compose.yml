@@ -175,8 +175,19 @@ services:
   redis:
     image: redis:8-alpine@sha256:7958cfbb9d152f87dadfbc89f1b0b15938f0b81ff8982feb327476f4911935c3
     deploy: { resources: { limits: { memory: 256m } } }
-    # `trawl-cache` is how TRAWL reaches its cookie jar without joining `default`.
-    networks: [default, trawl-cache]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # TRAWL's cookie jar, and nothing else's. Not the shared `redis`: that one holds the API's
+  # rate-limit buckets and the control-plane's leader lock, and TRAWL runs a browser on pages
+  # someone else chose, so a compromise there could wipe login throttling or seize the lock.
+  trawl-redis:
+    image: redis:8-alpine@sha256:7958cfbb9d152f87dadfbc89f1b0b15938f0b81ff8982feb327476f4911935c3
+    deploy: { resources: { limits: { memory: 128m } } }
+    networks: [trawl-cache]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -199,7 +210,7 @@ services:
     environment:
       # Per-domain cookie jar, so a solved session is replayed instead of re-solved. Without a
       # reachable Redis every solve falls back to a fresh browser tier: slow, not broken.
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://trawl-redis:6379
       # One warm Camoufox instance, not the image's default of 3: each is a full Firefox, and
       # three of them do not fit the 2g limit below.
       BROWSER_POOL_SIZE: "1"
@@ -216,7 +227,7 @@ services:
     deploy: { resources: { limits: { memory: 2g } } }
     networks: [solver, trawl-cache]
     depends_on:
-      redis: { condition: service_healthy }
+      trawl-redis: { condition: service_healthy }
 
   # ---- Install steps (each runs once, then exits) ------------------------------------
   # The `bootstrap` image, not `xtask`: these are the same steps a cluster runs, so the local
@@ -535,7 +546,8 @@ networks:
   # `internal`: providers are on the internet. IPv6 for the reason given on `default`.
   solver:
     enable_ipv6: true
-  # TRAWL's cookie jar, and nothing else: the one internal dependency of the solver tier, kept
-  # off `solver` so `render` and `challenge-solver` cannot address Redis.
+  # TRAWL and its own Redis, and nothing else: the one internal dependency of the solver tier,
+  # kept off `solver` so `render` and `challenge-solver` cannot address it, and off `default` so
+  # TRAWL cannot address the shared one.
   trawl-cache:
     internal: true

@@ -141,8 +141,7 @@ mod tests {
     /// fail to record, surfacing as a 500 on a wrong password.
     #[test]
     fn the_persisted_kinds_match_the_check_constraint() {
-        const MIGRATION: &str =
-            include_str!("../../../../../migrations/0070_auth_throttle.up.sql");
+        const MIGRATION: &str = include_str!("../../../../../migrations/0070_auth_throttle.up.sql");
         for kind in ThrottleKind::ALL {
             assert!(
                 MIGRATION.contains(&format!("'{}'", kind.as_str())),

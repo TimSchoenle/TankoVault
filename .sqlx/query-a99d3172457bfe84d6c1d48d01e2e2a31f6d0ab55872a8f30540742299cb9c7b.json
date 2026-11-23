@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "WITH matched AS ( SELECT u.* FROM users u WHERE $1 = '' OR u.username ILIKE '%' || $1 || '%' OR u.email ILIKE '%' || $1 || '%' ) SELECT m.id, m.email::text AS \"email!\", m.username::text AS \"username!\", m.status AS \"status: AccountStatus\", (m.email_verified_at IS NOT NULL) AS \"email_verified!\", m.last_login_at, m.created_at, p.count AS \"permission_count!\", w.count AS \"tracked_count!\", EXISTS (SELECT 1 FROM user_permissions up WHERE up.user_id = m.id AND up.permission = 'system.superuser') AS \"is_super_user!\", (SELECT count(*) FROM matched) AS \"total!\" FROM matched m CROSS JOIN LATERAL (SELECT count(*) FROM user_permissions up WHERE up.user_id = m.id) AS p(count) CROSS JOIN LATERAL (SELECT count(*) FROM watchlist_entries we WHERE we.user_id = m.id) AS w(count) ORDER BY m.created_at DESC LIMIT $2 OFFSET $3",
+  "query": "WITH matched AS ( SELECT u.* FROM users u WHERE $1::text IS NULL OR u.username ILIKE $1 ESCAPE '\\' OR u.email ILIKE $1 ESCAPE '\\' ) SELECT m.id, m.email::text AS \"email!\", m.username::text AS \"username!\", m.status AS \"status: AccountStatus\", (m.email_verified_at IS NOT NULL) AS \"email_verified!\", m.last_login_at, m.created_at, p.count AS \"permission_count!\", w.count AS \"tracked_count!\", EXISTS (SELECT 1 FROM user_permissions up WHERE up.user_id = m.id AND up.permission = 'system.superuser') AS \"is_super_user!\", (SELECT count(*) FROM matched) AS \"total!\" FROM matched m CROSS JOIN LATERAL (SELECT count(*) FROM user_permissions up WHERE up.user_id = m.id) AS p(count) CROSS JOIN LATERAL (SELECT count(*) FROM watchlist_entries we WHERE we.user_id = m.id) AS w(count) ORDER BY m.created_at DESC LIMIT $2 OFFSET $3",
   "describe": {
     "columns": [
       {
@@ -121,5 +121,5 @@
       null
     ]
   },
-  "hash": "60f3a151bed2d1d5752e4a5397d58920fc3571b66ce30d4dc288078de90c2862"
+  "hash": "a99d3172457bfe84d6c1d48d01e2e2a31f6d0ab55872a8f30540742299cb9c7b"
 }

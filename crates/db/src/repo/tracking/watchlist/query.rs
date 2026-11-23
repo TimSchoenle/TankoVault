@@ -285,16 +285,7 @@ impl Default for WatchlistFilter {
 /// `ILIKE`. Without the escape a search for `50%` widens to every row, and a term ending in `\`
 /// is a dangling escape that makes Postgres reject the statement outright.
 pub(super) fn search_pattern(term: &str) -> String {
-    let mut pattern = String::with_capacity(term.len() + 2);
-    pattern.push('%');
-    for ch in term.chars() {
-        if matches!(ch, '\\' | '%' | '_') {
-            pattern.push('\\');
-        }
-        pattern.push(ch);
-    }
-    pattern.push('%');
-    pattern
+    crate::repo::like::contains_pattern(term)
 }
 
 /// Where a keyset page resumes: the sort key of the previous page's last row, plus its id.

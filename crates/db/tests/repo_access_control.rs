@@ -3,7 +3,7 @@
 //! Gated behind the `integration` feature (requires Docker).
 #![cfg(feature = "integration")]
 
-use tankovault_db::repo::{gdpr, permissions, user_admin};
+use tankovault_db::repo::{audit, gdpr, permissions, user_admin};
 use tankovault_domain::{AccountStatus, Permission, PermissionSet};
 use tankovault_test_support::TestDb;
 
@@ -602,6 +602,65 @@ async fn the_admin_directory_search_is_case_insensitive_on_both_columns() {
     // An empty search is every account, not a pattern match against nothing.
     let all = found("").await;
     assert_eq!(all.total, 2);
+}
+
+/// The bug this pins: admin searches spliced the raw term into `'%' || $1 || '%'`, so `_` and
+/// `%` were wildcards. `_` matched every account, which let an operator enumerate emails one
+/// character at a time. They now match only themselves, and a trailing `\` is not an error.
+#[tokio::test]
+async fn admin_searches_match_like_wildcards_literally() {
+    let db = TestDb::spawn().await;
+    db.seed_user("al_ice", &[], AccountStatus::Active).await;
+    db.seed_user("bob", &[], AccountStatus::Active).await;
+
+    for (search, expected) in [("_", vec!["al_ice"]), ("%", vec![]), ("b\\", vec![])] {
+        let page = user_admin::directory(&db.pool, search, 50, 0)
+            .await
+            .expect("directory");
+        assert_eq!(
+            page.users
+                .iter()
+                .map(|r| r.username.as_str())
+                .collect::<Vec<_>>(),
+            expected,
+            "search={search:?} must match literally"
+        );
+    }
+
+    let detail = serde_json::json!({});
+    for target in ["series_1", "series1"] {
+        audit::record(
+            &db.pool,
+            &audit::AuditRecord {
+                actor_id: None,
+                action: "test.action",
+                target: Some(target),
+                detail: &detail,
+                outcome: "success",
+                client_ip: None,
+                user_agent: None,
+            },
+        )
+        .await
+        .expect("record");
+    }
+    for (search, expected) in [("_", vec!["series_1"]), ("%", vec![])] {
+        let filter = audit::AuditFilter {
+            target: Some(search),
+            ..Default::default()
+        };
+        let page = audit::list_filtered(&db.pool, &filter, 50, 0)
+            .await
+            .expect("audit");
+        assert_eq!(
+            page.items
+                .iter()
+                .filter_map(|r| r.target.as_deref())
+                .collect::<Vec<_>>(),
+            expected,
+            "target={search:?} must match literally"
+        );
+    }
 }
 
 /// Two permission submits for one user commit one submitted set, never the union of both.

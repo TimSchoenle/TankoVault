@@ -142,6 +142,40 @@ pub fn email_changed(
     .with_html(html)
 }
 
+/// Composes the notice sent to an existing account's owner when someone registers with its email.
+///
+/// Registration answers a taken address exactly like a fresh one, so this inbox is the only place
+/// the attempt surfaces. Carries no link, for the same phishing reason as [`email_changed`].
+#[must_use]
+pub fn registration_attempted(brand: &str, email: &str, username: &str) -> EmailMessage {
+    let username_html = esc(username);
+    let brand_html = esc(brand);
+    let text = format!(
+        "Hi {username},\n\n\
+         Someone just tried to create a new {brand} account with this email address, which \
+         already belongs to your account.\n\n\
+         If it was you, sign in instead, or reset your password from the sign-in page if you \
+         have forgotten it. If it wasn't you, you can ignore this email; your account is \
+         unchanged.\n\n\
+         — The {brand} team\n"
+    );
+    let html = format!(
+        "<p>Hi {username_html},</p>\
+         <p>Someone just tried to create a new {brand_html} account with this email address, \
+         which already belongs to your account.</p>\
+         <p>If it was you, sign in instead, or reset your password from the sign-in page if you \
+         have forgotten it. If it wasn't you, you can ignore this email; your account is \
+         unchanged.</p>\
+         <p>— The {brand_html} team</p>"
+    );
+    EmailMessage::text(
+        email,
+        format!("Someone tried to register with your {brand} email"),
+        text,
+    )
+    .with_html(html)
+}
+
 /// Sends `message` on a detached task so the request path never blocks on (or fails
 /// because of) the relay. No-ops cheaply when email is unconfigured.
 pub fn send_in_background(state: &AppState, message: EmailMessage) {
@@ -200,6 +234,7 @@ mod tests {
             verification("MangaBox", "reader@example.com", "aster", link),
             password_reset("MangaBox", "reader@example.com", link),
             email_changed("MangaBox", "old@example.com", "aster", "new@example.com"),
+            registration_attempted("MangaBox", "reader@example.com", "aster"),
         ] {
             assert!(msg.subject.contains("MangaBox"), "{}", msg.subject);
             assert!(!msg.text.contains("TankoVault"), "{}", msg.text);
@@ -218,6 +253,7 @@ mod tests {
             welcome(BRAND, "reader@example.com", hostile),
             verification(BRAND, "reader@example.com", hostile, "https://app/verify"),
             email_changed(BRAND, "old@example.com", hostile, "new@example.com"),
+            registration_attempted(BRAND, "reader@example.com", hostile),
         ] {
             let html = msg.html.as_deref().unwrap();
             assert!(!html.contains("<a href=\"https://evil.tld\">"), "{html}");
@@ -254,6 +290,14 @@ mod tests {
         let msg = email_changed(BRAND, "old@example.com", "aster", "attacker@evil.tld");
         assert_eq!(msg.to, vec!["old@example.com".to_owned()]);
         assert!(msg.text.contains("attacker@evil.tld"));
+        assert!(!msg.html.as_deref().unwrap().contains("<a href"));
+    }
+
+    #[test]
+    fn the_registration_notice_addresses_the_owner_and_carries_no_link() {
+        let msg = registration_attempted(BRAND, "reader@example.com", "aster");
+        assert_eq!(msg.to, vec!["reader@example.com".to_owned()]);
+        assert!(msg.text.contains("Hi aster,"));
         assert!(!msg.html.as_deref().unwrap().contains("<a href"));
     }
 }

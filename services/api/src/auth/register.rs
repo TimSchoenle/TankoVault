@@ -9,6 +9,7 @@ use axum::extract::State;
 use axum_extra::extract::cookie::CookieJar;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
+use tankovault_db::DbError;
 use tankovault_domain::Feature;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -16,7 +17,7 @@ use uuid::Uuid;
 use super::session::issue_session_tokens;
 use super::validate::{validate_email, validate_password, validate_username};
 use super::verification::send_verification_email;
-use crate::error::ApiResult;
+use crate::error::{ApiError, ApiResult};
 use crate::mailer;
 use crate::openapi::AUTH_TAG;
 use crate::state::AppState;
@@ -66,6 +67,10 @@ pub struct RegisterResponse {
 /// before they can sign in, and no session is issued. When email is not configured the
 /// account is activated immediately and a session is issued exactly like [`login`], so
 /// development and SMTP-less self-hosting keep working.
+///
+/// With confirmation on, an already registered email gets the same response as a new one and
+/// its owner is emailed a notice instead, so the endpoint does not reveal who has an account.
+/// A taken username is still refused, since the user has to pick another.
 #[utoipa::path(
     post,
     path = "/v1/auth/register",
@@ -74,7 +79,7 @@ pub struct RegisterResponse {
     responses(
         (status = 200, description = "Account created; either a confirmation email was sent or (email unconfigured) an access token was issued", body = RegisterResponse),
         (status = 400, description = "Invalid email, username or password", body = crate::error::ProblemDetails),
-        (status = 409, description = "Email or username already taken", body = crate::error::ProblemDetails),
+        (status = 409, description = "Username already taken, or (email confirmation off) email or username already taken", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn register(
@@ -83,33 +88,41 @@ pub async fn register(
     Json(req): Json<RegisterRequest>,
 ) -> ApiResult<(CookieJar, Json<RegisterResponse>)> {
     validate_registration(&req)?;
+    let email = req.email.trim();
+    let username = req.username.trim();
+    // Hashed before the email lookup so a taken address costs the same KDF time as a new one.
     let hash = super::kdf::hash_password(&req.password, &state.password_pepper).await?;
-    let user = tankovault_db::repo::users::create(
-        &state.pool,
-        req.email.trim(),
-        req.username.trim(),
-        &hash,
-    )
-    .await?;
 
     // Confirmation needs both a mailer and an operator who wants the step; a missing mailer
     // is the involuntary version of switching it off.
-    if state.mailer.is_enabled()
+    let verifying = state.mailer.is_enabled()
         && state
             .features
-            .is_enabled(Feature::AccountsEmailVerification)
-    {
+            .is_enabled(Feature::AccountsEmailVerification);
+
+    // Without confirmation a fresh registration returns a session, which a taken email cannot
+    // fake, so that mode keeps the plain 409.
+    if verifying && notify_existing_owner(&state, email).await? {
+        return Ok((jar, Json(RegisterResponse::verification_sent())));
+    }
+    let user = match tankovault_db::repo::users::create(&state.pool, email, username, &hash).await {
+        Ok(user) => user,
+        Err(DbError::Conflict(_)) if verifying => {
+            // The email may have been registered since the lookup above; only a username
+            // collision is reported.
+            if notify_existing_owner(&state, email).await? {
+                return Ok((jar, Json(RegisterResponse::verification_sent())));
+            }
+            return Err(ApiError::Conflict("username already taken".to_owned()));
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    if verifying {
         // Send the link out of band and issue no session; the welcome email waits until
         // confirmed (see [`verify_email`]).
         send_verification_email(&state, &user).await?;
-        return Ok((
-            jar,
-            Json(RegisterResponse {
-                verification_required: true,
-                access_token: None,
-                expires_in: None,
-            }),
-        ));
+        return Ok((jar, Json(RegisterResponse::verification_sent())));
     }
 
     // Confirmation isn't in play: activate and sign in immediately, so dev/CI and
@@ -128,6 +141,29 @@ pub async fn register(
             expires_in: Some(token.expires_in),
         }),
     ))
+}
+
+impl RegisterResponse {
+    /// The answer to a registration awaiting confirmation, identical for a taken email.
+    fn verification_sent() -> Self {
+        Self {
+            verification_required: true,
+            access_token: None,
+            expires_in: None,
+        }
+    }
+}
+
+/// Emails the owner of `email` that someone tried to register with it; `false` if unregistered.
+async fn notify_existing_owner(state: &AppState, email: &str) -> ApiResult<bool> {
+    let Some(owner) = tankovault_db::repo::users::find_by_email(&state.pool, email).await? else {
+        return Ok(false);
+    };
+    mailer::send_in_background(
+        state,
+        mailer::registration_attempted(state.branding.name(), &owner.email, &owner.username),
+    );
+    Ok(true)
 }
 
 /// Validates every field a registration writes, in the order the user filled them in.

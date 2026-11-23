@@ -159,6 +159,89 @@ async fn registering_with_a_mailer_configured_requires_confirmation_and_issues_n
     );
 }
 
+/// Registering with a taken email answers exactly like a fresh registration and tells the owner.
+///
+/// # The bug this pins
+///
+/// A taken email was refused with 409, so `/v1/auth/register` told anyone whether an address
+/// had an account, undoing the enumeration protection of login, forgot-password and resend.
+#[tokio::test]
+async fn a_taken_email_registers_like_a_new_one_and_notifies_the_owner() {
+    let (app, mailer) = app_with_mail().await;
+
+    let fresh = register(&app, "owner").await;
+    assert_eq!(fresh.status(), StatusCode::OK);
+    let fresh_body = json_body(fresh).await;
+    next_link_token(&mailer, "/verify-email").await;
+
+    let taken = app
+        .request(post(
+            "/v1/auth/register",
+            None,
+            Some(json!({
+                "email": "OWNER@example.test",
+                "username": "intruder",
+                "password": "another horse battery",
+            })),
+        ))
+        .await;
+    assert_eq!(
+        taken.status(),
+        StatusCode::OK,
+        "a taken email must not be distinguishable by status"
+    );
+    assert!(
+        refresh_token(&taken).is_none(),
+        "a taken email must not issue a session"
+    );
+    assert_eq!(
+        json_body(taken).await,
+        fresh_body,
+        "a taken email must get the same body as a fresh registration"
+    );
+
+    let notice = mailer.next_message().await;
+    assert_eq!(notice.to, vec!["owner@example.test".to_owned()]);
+    assert!(
+        notice.subject.contains("tried to register"),
+        "the owner must be told about the attempt, got {:?}",
+        notice.subject
+    );
+    assert!(
+        RecordingMailer::first_link(&notice.text).is_none(),
+        "the notice carries no link, got {:?}",
+        notice.text
+    );
+
+    let intruder = tankovault_db::repo::users::find_credentials(&app.db.pool, "intruder")
+        .await
+        .expect("query");
+    assert!(intruder.is_none(), "no second account may be created");
+}
+
+/// A taken username is still refused, since the user must pick another, but says nothing about
+/// whether the email is registered.
+#[tokio::test]
+async fn a_taken_username_is_refused_without_mentioning_the_email() {
+    let (app, _mailer) = app_with_mail().await;
+    register(&app, "handle").await;
+
+    let resp = app
+        .request(post(
+            "/v1/auth/register",
+            None,
+            Some(json!({
+                "email": "someone-else@example.test",
+                "username": "handle",
+                "password": "correct horse battery",
+            })),
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+    let body = json_body(resp).await;
+    assert_eq!(body["detail"], "username already taken", "got {body}");
+}
+
 #[tokio::test]
 async fn an_unconfirmed_account_cannot_log_in_and_is_told_why() {
     let (app, _mailer) = app_with_mail().await;

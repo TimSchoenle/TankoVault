@@ -518,6 +518,28 @@ pub struct TestAdapterRequest {
     pub path: Option<String>,
 }
 
+/// Longest dry-run path accepted, in bytes.
+const MAX_TEST_PATH_LEN: usize = 2048;
+
+/// Refuses a dry-run path that is not a plain path on the provider's own host.
+///
+/// The adapter resolves it against the provider's base URL, so `//host`, a scheme or a backslash (which
+/// URL parsers fold into `/`) would point the fetch at another host.
+fn validate_test_path(path: &str) -> ApiResult<()> {
+    let relative = path.starts_with('/') && !path.starts_with("//");
+    if !relative
+        || path.len() > MAX_TEST_PATH_LEN
+        || path.contains('\\')
+        || path.chars().any(char::is_control)
+    {
+        return Err(ApiError::BadRequest(format!(
+            "path must be a relative path starting with a single '/', without backslashes or \
+             control characters, at most {MAX_TEST_PATH_LEN} bytes"
+        )));
+    }
+    Ok(())
+}
+
 /// Dry-run a provider's adapter
 ///
 /// Dry-runs the provider's adapter against the live site and returns the parsed sample so
@@ -537,7 +559,7 @@ pub struct TestAdapterRequest {
     security(("bearer_auth" = [])),
     responses(
         (status = 200, description = "Dry-run sample (adapter list/fetch results, each individually ok/error)", body = serde_json::Value, example = json!({"provider": "kunmanga", "latest": {"ok": true, "items": []}})),
-        (status = 400, description = "Adapter build failed or the dry-run timed out", body = crate::error::ProblemDetails),
+        (status = 400, description = "Invalid path, adapter build failed, or the dry-run timed out", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "Provider not found", body = crate::error::ProblemDetails),
@@ -551,6 +573,9 @@ pub async fn test_adapter(
 ) -> ApiResult<Json<serde_json::Value>> {
     user.require(Permission::ProvidersTest).await?;
     let req = body.map_or_default(|b| b.0);
+    if let Some(path) = &req.path {
+        validate_test_path(path)?;
+    }
 
     // Proxied to the worker: it already carries the fetch stack, so hosting the dry-run here
     // would double the TLS stack in the API image. Authorization and the audit record stay
@@ -690,6 +715,33 @@ mod tests {
             body.name = "Mine".to_owned();
             body.config = serde_json::json!({ "mine": true });
             assert!(refuse_locked_edit(&subject, &body).is_ok());
+        }
+    }
+
+    /// The bug: the dry-run path went to the worker unvalidated, so `//other.host/x`, a full URL
+    /// or a backslash form aimed the provider's fetch stack at a host the provider does not own.
+    #[test]
+    fn a_dry_run_path_must_stay_on_the_provider_host() {
+        for ok in ["/", "/series/one-piece", "/manga/x?page=2"] {
+            assert!(validate_test_path(ok).is_ok(), "{ok} is a plain path");
+        }
+        let long = format!("/{}", "a".repeat(MAX_TEST_PATH_LEN));
+        for bad in [
+            "",
+            "series/x",
+            "//evil.invalid/x",
+            "https://evil.invalid/x",
+            "javascript:alert(1)",
+            "/\\evil.invalid",
+            "\\\\evil.invalid",
+            "/x\r\nHost: evil.invalid",
+            "/x\0",
+            long.as_str(),
+        ] {
+            assert!(
+                matches!(validate_test_path(bad), Err(ApiError::BadRequest(_))),
+                "{bad:?} must be refused"
+            );
         }
     }
 }

@@ -270,6 +270,76 @@ async fn an_administrator_cannot_redirect_the_email_of_an_account_that_outranks_
     );
 }
 
+/// `users.permissions` must not be every permission in disguise.
+///
+/// The bug: an administrator holding only `users.permissions` could grant any capability to an
+/// account they also controlled, and strip grants from a broader administrator. Additions are
+/// now capped at the caller's own set, and an account holding more than the caller is refused.
+#[tokio::test]
+async fn an_administrator_can_grant_only_what_they_hold() {
+    let app = TestApp::spawn().await;
+    let (bearer, step_up) = admin(
+        &app,
+        "granter",
+        &[Permission::UsersPermissions, Permission::UsersRead],
+        AccountStatus::Active,
+    )
+    .await;
+    let sock = app.seed_user("sock", &[], AccountStatus::Active).await;
+    let senior = app
+        .seed_user(
+            "senior",
+            &[Permission::UsersPermissions, Permission::AuditRead],
+            AccountStatus::Active,
+        )
+        .await;
+
+    let put = |target: tankovault_domain::UserId, perms: serde_json::Value| {
+        let bearer = bearer.clone();
+        let step_up = step_up.clone();
+        let app = &app;
+        async move {
+            app.call_elevated(
+                "PUT",
+                &format!("/v1/admin/users/{}/permissions", target.as_uuid()),
+                Some(&bearer),
+                Some(&step_up),
+                Some(json!({ "permissions": perms })),
+            )
+            .await
+            .0
+        }
+    };
+
+    assert_eq!(
+        put(sock, json!(["users.read", "audit.read"])).await,
+        StatusCode::BAD_REQUEST,
+        "audit.read is beyond the caller"
+    );
+    let held = tankovault_db::repo::permissions::resolve(&app.db.pool, sock)
+        .await
+        .expect("resolve")
+        .expect("sock exists");
+    assert!(held.permissions.is_empty(), "refused whole, not in part");
+
+    assert_eq!(
+        put(sock, json!(["users.read"])).await,
+        StatusCode::OK,
+        "a permission the caller holds is grantable"
+    );
+
+    assert_eq!(
+        put(senior, json!(["audit.read"])).await,
+        StatusCode::BAD_REQUEST,
+        "an account holding more than the caller cannot be edited"
+    );
+    let held = tankovault_db::repo::permissions::resolve(&app.db.pool, senior)
+        .await
+        .expect("resolve")
+        .expect("senior exists");
+    assert!(held.permissions.has(Permission::UsersPermissions));
+}
+
 /// The catalogue is what the editor renders its checklist from, so a super user entry there
 /// would be a checkbox whose every submission the write path rejects.
 #[tokio::test]

@@ -263,7 +263,7 @@ by the block naming that crate.
   - asn1-rs-impl 0.2.0
   - astral-tokio-tar 0.6.4
   - async-compression 0.4.52
-  - async-nats 0.52.0
+  - async-nats 0.53.0
   - async-trait 0.1.92
   - atomic-waker 1.1.2
   - autocfg 1.5.1

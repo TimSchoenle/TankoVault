@@ -14,7 +14,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use super::detail::{UserDetailResponse, user_detail_response};
-use super::{guard_not_last_administrator, guard_not_self};
+use super::{guard_not_last_administrator, guard_not_self, guard_outranks};
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct SetPermissions {
@@ -31,6 +31,8 @@ pub struct SetPermissions {
 ///
 /// Replaces the account's entire grant set. The audit record names what was actually added and
 /// removed, not the submitted list, so "who gave them that" is answerable afterwards.
+///
+/// You can only grant permissions you hold, and cannot edit an account holding one you lack.
 #[utoipa::path(
     put,
     path = "/v1/admin/users/{id}/permissions",
@@ -40,7 +42,7 @@ pub struct SetPermissions {
     security(("bearer_auth" = [])),
     responses(
         (status = 200, description = "The updated account and its grants", body = UserDetailResponse),
-        (status = 400, description = "cannot edit your own permissions, strip the last administrator, or grant the super user", body = crate::error::ProblemDetails),
+        (status = 400, description = "cannot edit your own permissions, edit an account holding permissions you lack, grant a permission you lack, strip the last administrator, or grant the super user", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "no such user", body = crate::error::ProblemDetails),
@@ -55,8 +57,33 @@ pub async fn set_user_permissions(
     user.require(Permission::UsersPermissions).await?;
     let target = UserId::from_uuid(id);
     guard_not_self(&state, &user, target, "user.permissions").await?;
+    // Covers removals: every grant the target holds is one the caller holds too.
+    guard_outranks(&state, &user, target, "user.permissions").await?;
 
     let desired: PermissionSet = body.permissions.into_iter().collect();
+
+    // The ceiling on additions: without it, `users.permissions` alone hands out every capability
+    // there is, to an account the caller also controls.
+    if !user.permissions.is_super_user() {
+        let beyond: Vec<&str> = desired
+            .iter()
+            .filter(|p| !user.permissions.has(*p))
+            .map(tankovault_domain::Permission::as_str)
+            .collect();
+        if !beyond.is_empty() {
+            audit_failure(
+                &state,
+                &user,
+                "user.permissions",
+                &id.to_string(),
+                &serde_json::json!({ "reason": "grant_beyond_caller", "beyond": beyond }),
+            )
+            .await;
+            return Err(ApiError::BadRequest(
+                "you can only grant permissions you hold yourself".to_owned(),
+            ));
+        }
+    }
 
     // The super user grant is minted by the installer and by nothing else, so this path may
     // only ever confirm one that already exists. Repeating it is what the console does on every

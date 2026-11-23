@@ -14137,7 +14137,7 @@
     },
     "/v1/admin/users/{id}/permissions": {
       "put": {
-        "description": "Replaces the account's entire grant set. The audit record names what was actually added and\nremoved, not the submitted list, so \"who gave them that\" is answerable afterwards.",
+        "description": "Replaces the account's entire grant set. The audit record names what was actually added and\nremoved, not the submitted list, so \"who gave them that\" is answerable afterwards.\n\nYou can only grant permissions you hold, and cannot edit an account holding one you lack.",
         "operationId": "set_user_permissions",
         "parameters": [
           {
@@ -14180,7 +14180,7 @@
                 }
               }
             },
-            "description": "cannot edit your own permissions, strip the last administrator, or grant the super user"
+            "description": "cannot edit your own permissions, edit an account holding permissions you lack, grant a permission you lack, strip the last administrator, or grant the super user"
           },
           "401": {
             "content": {

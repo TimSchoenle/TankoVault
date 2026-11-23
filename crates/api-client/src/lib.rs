@@ -28187,7 +28187,7 @@ impl Client {
     pub fn update_user(&self) -> builder::UpdateUser<'_> {
         builder::UpdateUser::new(self)
     }
-    #[doc = "Set a user's permissions\n\nReplaces the account's entire grant set. The audit record names what was actually added and\nremoved, not the submitted list, so \"who gave them that\" is answerable afterwards.\n\nSends a `PUT` request to `/v1/admin/users/{id}/permissions`\n\nArguments:\n- `id`: User id\n- `body`\n```ignore\nlet response = client.set_user_permissions()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Set a user's permissions\n\nReplaces the account's entire grant set. The audit record names what was actually added and\nremoved, not the submitted list, so \"who gave them that\" is answerable afterwards.\n\nYou can only grant permissions you hold, and cannot edit an account holding one you lack.\n\nSends a `PUT` request to `/v1/admin/users/{id}/permissions`\n\nArguments:\n- `id`: User id\n- `body`\n```ignore\nlet response = client.set_user_permissions()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn set_user_permissions(&self) -> builder::SetUserPermissions<'_> {
         builder::SetUserPermissions::new(self)
     }

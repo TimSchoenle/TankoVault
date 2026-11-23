@@ -17,7 +17,7 @@ use crate::state::use_session;
 use crate::util::iso_date;
 use crate::wire::types::{WatchlistImportMode, WatchlistImportReport, WatchlistPending};
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Tone};
+use inkstone_ui::{Button, Callout, Tone};
 use progenitor_client::ResponseValue;
 
 /// The largest file offered to the server, matching its import body limit. Checked here so a
@@ -274,9 +274,7 @@ fn ImportCard(pending_reload: Reload) -> Element {
                     }
                 }
                 if current_mode == WatchlistImportMode::Replace {
-                    div { class: "ik-error", style: "font-size:12px;margin-top:6px;padding:8px 10px;",
-                        {i18n.t("account.backup.import.modes.replace.hint")}
-                    }
+                    Callout { tone: Tone::Caution, {i18n.t("account.backup.import.modes.replace.hint")} }
                 } else {
                     div { class: "ik-muted", style: "font-size:12px;margin-top:4px;",
                         {i18n.t(&format!("account.backup.import.modes.{}.hint", mode_token(current_mode)))}
@@ -355,9 +353,7 @@ fn ReportView(report: WatchlistImportReport, title: String) -> Element {
             }
         }
         if report.removed > 0 {
-            div { class: "ik-error", style: "font-size:12px;margin-top:8px;padding:8px 10px;",
-                {i18n.plural("account.backup.report.removedWarning", report.removed, &[])}
-            }
+            Callout { tone: Tone::Caution, {i18n.plural("account.backup.report.removedWarning", report.removed, &[])} }
         }
         if !report.title_matches.is_empty() {
             div { class: "ik-muted", style: "font-size:12px;margin-top:8px;",

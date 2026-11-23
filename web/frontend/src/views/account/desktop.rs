@@ -17,7 +17,7 @@ use crate::components::PanelCard;
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use dioxus::prelude::*;
-use inkstone_ui::{button_class, Size, Tone};
+use inkstone_ui::{button_class, Callout, Size, Tone};
 /// What the native client offers that a browser tab cannot. Catalogue keys, in the order they
 /// are shown.
 const ADVANTAGES: [&str; 4] = [
@@ -62,7 +62,7 @@ pub(crate) fn DesktopAppPanel() -> Element {
             }
 
             if !origin.is_empty() {
-                div { class: "ik-note", style: "padding:12px;margin-top:16px;",
+                Callout {
                     div { class: "ik-subhead", {i18n.t("account.desktop.serverAddress")} }
                     code { style: "font-size:12.5px;word-break:break-all;", "{origin}" }
                     p { class: "ik-muted", style: "font-size:12.5px;margin:6px 0 0;",

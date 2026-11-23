@@ -71,6 +71,8 @@
   /* How tall a scrolling table (`.ik-tablewrap.scroll`) gets before its body scrolls. */
   --ik-table-max-h: 60vh;
   --ik-pad-empty: 40px;
+  --ik-pad-callout: 10px 12px;
+  --ik-gap-callout: 14px;
   --ik-pad-modal: 20px;
 
   /* --- Spacing scale (Row / Stack) --- */
@@ -209,6 +211,30 @@
 
 .ik-empty, .ik-error { border: var(--ik-border) dashed var(--border); border-radius: var(--radius); padding: var(--ik-pad-empty); text-align: center; color: var(--muted); }
 .ik-error { border-color: color-mix(in srgb, var(--acc) var(--ik-edge), var(--border)); }
+
+/* A tinted message bar for a form or an action. The dashed .ik-error stays for a panel that
+ * failed to load. The tint and edge match the pill of the same tone; the title takes the tone's
+ * ink so it stays readable on Warm Paper. */
+.ik-callout { display: flex; gap: 10px; align-items: flex-start; margin: var(--ik-gap-callout) 0;
+  padding: var(--ik-pad-callout); border: var(--ik-border) solid var(--border); border-left-width: 3px;
+  border-radius: var(--radius); background: var(--surface-2); color: var(--text-2);
+  font-size: 13px; line-height: 1.5; text-align: left; }
+.ik-callout-body { flex: 1; min-width: 0; }
+.ik-callout-title { display: block; color: var(--text); margin-bottom: 2px; font-weight: 600; }
+.ik-callout-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.ik-callout-dismiss { flex: none; margin: -4px -4px 0 0; padding: 2px 6px; background: none; border: 0;
+  color: var(--muted); font: inherit; font-size: 14px; cursor: pointer; border-radius: 6px; }
+.ik-callout-dismiss:hover { color: var(--text); }
+.ik-callout-dismiss:focus-visible { outline: var(--ik-focus-ring) solid var(--acc); outline-offset: 1px; }
+.ik-callout.danger { border-color: color-mix(in srgb, var(--acc) var(--ik-edge), transparent);
+  border-left-color: var(--acc); background: color-mix(in srgb, var(--acc) var(--ik-tint-pill), var(--surface-2)); }
+.ik-callout.danger .ik-callout-title { color: var(--acc-ink); }
+.ik-callout.caution { border-color: color-mix(in srgb, var(--star) var(--ik-edge-caution), transparent);
+  border-left-color: var(--star); background: color-mix(in srgb, var(--star) var(--ik-tint-pill-caution), var(--surface-2)); }
+.ik-callout.caution .ik-callout-title { color: var(--star-ink); }
+.ik-callout.positive { border-color: color-mix(in srgb, var(--jade) var(--ik-edge), transparent);
+  border-left-color: var(--jade); background: color-mix(in srgb, var(--jade) var(--ik-tint-pill), var(--surface-2)); }
+.ik-callout.positive .ik-callout-title { color: var(--jade-ink, var(--jade)); }
 
 .ik-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
 .ik-field label { font-size: var(--ik-font-label); color: var(--muted); }

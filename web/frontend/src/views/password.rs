@@ -10,7 +10,7 @@ use crate::i18n::use_i18n;
 use crate::models::*;
 use crate::Route;
 use dioxus::prelude::*;
-use inkstone_ui::{button_class, Button, Size, Tone};
+use inkstone_ui::{button_class, Button, Callout, Size, Tone};
 /// Requests a password-reset email. The API always answers `202 Accepted` whether or not the
 /// address is registered (so it can't be used to probe accounts), so the UI shows the same
 /// reassuring confirmation regardless: the only failure surfaced is a transport error.
@@ -65,9 +65,7 @@ pub(crate) fn ForgotPassword() -> Element {
                 p { class: "ik-muted", {i18n.t("password.forgot.intro")} }
 
                 if let Some(msg) = error.read().clone() {
-                    div { class: "ik-error", style: "padding:12px;margin:14px 0;text-align:left;",
-                        "{msg}"
-                    }
+                    Callout { tone: Tone::Danger, "{msg}" }
                 }
 
                 Field {
@@ -170,9 +168,7 @@ pub(crate) fn ResetPassword(token: String) -> Element {
                 }
             } else {
                 if let Some(msg) = error.read().clone() {
-                    div { class: "ik-error", style: "padding:12px;margin:14px 0;text-align:left;",
-                        "{msg}"
-                    }
+                    Callout { tone: Tone::Danger, "{msg}" }
                 }
 
                 Field {

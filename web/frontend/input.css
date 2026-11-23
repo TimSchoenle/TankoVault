@@ -98,6 +98,7 @@
    * word sits directly on `--bg`/`--rail`; `--acc3` on a tint stays right and is unchanged. */
   --acc-ink: var(--acc3);
   --star-ink: var(--star);
+  --jade-ink: var(--jade-bright);
 
   /* Back-compat aliases (older screens / inline styles). */
   --vermilion: var(--acc);
@@ -161,6 +162,7 @@
    * block defines it, so this resolves per accent without being re-declared per accent. */
   --acc-ink: color-mix(in srgb, var(--acc-dk) 84%, #000);
   --star-ink: #7a5c0c;
+  --jade-ink: #1f6b5b;
 }
 
 /* ---- Appearance knobs (`docs/DESIGN_SYSTEM.md` §8) — CSS-variable swaps on <html>[data-*] ----

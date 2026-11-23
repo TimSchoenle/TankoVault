@@ -34,7 +34,7 @@ use crate::state::step_up::{use_step_up, StepUp};
 use crate::webauthn::{self, CeremonyError};
 use crate::wire::types::{MfaStatus, SecurityKeyAssertion, StepUpRequest};
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Tone};
+use inkstone_ui::{Button, Callout, Tone};
 use progenitor_client::ResponseValue;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -330,9 +330,7 @@ fn StepUpDialog(
                 }
 
                 if let Some(msg) = error.read().clone() {
-                    div { class: "ik-error", style: "padding:9px 11px;margin-bottom:11px;text-align:left;",
-                        "{msg}"
-                    }
+                    Callout { tone: Tone::Danger, "{msg}" }
                 }
 
                 // Nothing is asked until the factor list has settled. A field rendered on the guess

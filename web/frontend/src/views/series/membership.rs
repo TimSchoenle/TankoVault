@@ -18,7 +18,7 @@ use crate::views::{ConsoleEntity, ConsoleQuery};
 use crate::wire::types::{Feature, Permission};
 use crate::Route;
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Size, Tone};
+use inkstone_ui::{Button, Callout, Size, Tone};
 use progenitor_client::ResponseValue;
 
 /// The card's last row: when the entry was made, and the control that ends it.
@@ -185,7 +185,7 @@ pub(super) fn MergedRecordNote(series_id: SeriesId) -> Element {
     let when = rel_time(i18n, Some(decision.decided_at.as_str()));
 
     rsx! {
-        div { class: "ik-note", style: "margin-top:14px;",
+        Callout {
             div { class: "ik-flex", style: "gap:8px;align-items:flex-start;",
                 span { style: "min-width:0;font-size:12.5px;line-height:1.55;",
                     div { class: "ik-sec-lbl", style: "margin-bottom:4px;",

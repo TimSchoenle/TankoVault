@@ -16,7 +16,7 @@ use crate::i18n::use_i18n;
 use crate::icons::Icon;
 use crate::wire::types::{ContentPrefsDto, ContentPrefsUpdate};
 use dioxus::prelude::*;
-use inkstone_ui::{Button, ToggleButton, Tone};
+use inkstone_ui::{Button, Callout, ToggleButton, Tone};
 #[component]
 pub(crate) fn ContentPanel() -> Element {
     let i18n = use_i18n();
@@ -83,11 +83,11 @@ pub(crate) fn ContentPanel() -> Element {
                 // reader who cannot understand why their shelf is unchanged has the reason in
                 // front of them instead of concluding the setting failed to save.
                 if !allowed {
-                    div { class: "ik-note", {i18n.t("account.content.unavailable")} }
+                    Callout { {i18n.t("account.content.unavailable")} }
                 }
 
                 if *confirming.read() {
-                    div { class: "ik-note",
+                    Callout {
                         div { {i18n.t("account.content.confirm.body")} }
                         div { class: "ik-row", style: "margin-top:8px; gap:8px;",
                             Button {

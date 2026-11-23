@@ -17,6 +17,7 @@
 //! plain-text document out of the served bundle; see `FrontendConfig::notices_json_path`.
 
 use dioxus::prelude::*;
+use inkstone_ui::Callout;
 use serde::Deserialize;
 
 use crate::components::{async_view, SkeletonBlock};
@@ -151,7 +152,7 @@ pub(crate) fn Licenses() -> Element {
                         // instead of "something went wrong", and a retry button would keep
                         // offering to do it again.
                         None => rsx! {
-                            p { class: "ik-note", {i18n.t("licenses.unavailable")} }
+                            Callout { {i18n.t("licenses.unavailable")} }
                         },
                     },
                 )

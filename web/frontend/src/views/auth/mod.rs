@@ -17,7 +17,7 @@ use crate::webauthn::{self};
 use crate::wire::types::Feature;
 use crate::Route;
 use dioxus::prelude::*;
-use inkstone_ui::{button_class, Button, Size, Tone};
+use inkstone_ui::{button_class, Button, Callout, Size, Tone};
 
 #[component]
 pub(crate) fn Login() -> Element {
@@ -72,15 +72,11 @@ pub(crate) fn Login() -> Element {
             p { class: "ik-muted", "{subtitle}" }
 
             if let Some(msg) = error.read().clone() {
-                div { class: "ik-error", style: "padding:12px;margin:14px 0;text-align:left;",
-                    "{msg}"
-                }
+                Callout { tone: Tone::Danger, "{msg}" }
             }
 
             if let Some(msg) = info.read().clone() {
-                div { class: "ik-note", style: "padding:12px;margin:14px 0;text-align:left;",
-                    "{msg}"
-                }
+                Callout { "{msg}" }
             }
 
             if *needs_verification.read() {
@@ -355,9 +351,7 @@ pub(crate) fn VerifyEmail(token: String) -> Element {
                     p { class: "ik-muted", {i18n.t("verifyEmail.confirmed")} }
                 },
                 Some(Err(msg)) => rsx! {
-                    div { class: "ik-error", style: "padding:12px;margin:14px 0;text-align:left;",
-                        "{msg}"
-                    }
+                    Callout { tone: Tone::Danger, "{msg}" }
                     p { class: "ik-muted", {i18n.t("verifyEmail.failed")} }
                     Link {
                         to: Route::Login {},

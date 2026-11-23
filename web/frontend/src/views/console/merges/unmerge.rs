@@ -15,7 +15,7 @@ use crate::util::{rel_time, thousands};
 use crate::views::console::RefreshTick;
 use crate::wire::types::Permission;
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Size, Tone};
+use inkstone_ui::{Button, Callout, Size, Tone};
 
 /// The decision block: what each outcome does, the reason both demand, and the buttons.
 #[component]
@@ -86,7 +86,7 @@ pub(super) fn UnmergeBlock(
     // recorded, and offering the same two buttons again would write a second one.
     if let Some(settled) = settled_line(i18n, &decision) {
         return rsx! {
-            div { class: "ik-note", style: "margin-top:16px;", "{settled}" }
+            Callout { "{settled}" }
         };
     }
     if !caps.can(Permission::MergeRevert) {
@@ -144,7 +144,7 @@ pub(super) fn UnmergeBlock(
                     }
                 }
                 if !notice.read().is_empty() {
-                    div { class: "ik-note", style: "margin-top:10px;", "{notice}" }
+                    Callout { "{notice}" }
                 }
             }
             div { class: "ik-listfoot", {i18n.t("console.merges.suppressionNote")} }

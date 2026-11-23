@@ -23,7 +23,7 @@ use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::update::{self, Notes, Policy, Status, UpdateState};
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Tone};
+use inkstone_ui::{Button, Callout, Tone};
 /// One group of settings. See the module note on why this is a division instead of a fold.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Category {
@@ -169,7 +169,7 @@ fn ServerSection() -> Element {
                 {i18n.t("connect.card.intro")}
             }
             if let Some(message) = error.read().clone() {
-                div { class: "ik-error", style: "padding:10px;margin-bottom:10px;", "{message}" }
+                Callout { tone: Tone::Danger, "{message}" }
             }
             Field {
                 id: "tv-settings-origin",
@@ -266,12 +266,7 @@ fn StartupSection() -> Element {
                 {i18n.t("settings.startup.hint")}
             }
             if refused() {
-                div {
-                    class: "ik-error",
-                    role: "alert",
-                    style: "padding:10px;margin-top:8px;font-size:12.5px;",
-                    {i18n.t("settings.startup.failed")}
-                }
+                Callout { tone: Tone::Danger, {i18n.t("settings.startup.failed")} }
             }
         }
     }

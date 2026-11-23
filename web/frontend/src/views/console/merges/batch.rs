@@ -11,7 +11,7 @@ use crate::state::capabilities::use_capabilities;
 use crate::views::console::RefreshTick;
 use crate::wire::types::{MergeRevertBatch, MergeRevertBatchOutcome, Permission};
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Size, Tone};
+use inkstone_ui::{Button, Callout, Size, Tone};
 
 /// Most decisions the endpoint takes in one request.
 const MAX_BATCH: usize = 50;
@@ -169,7 +169,7 @@ pub(super) fn BatchRevert(gate: StepUpGate, tick: RefreshTick) -> Element {
                     }
                 }
                 if !notice.read().is_empty() {
-                    div { class: "ik-note", style: "margin-top:10px;", "{notice}" }
+                    Callout { "{notice}" }
                 }
                 if let Some(batch) = result.read().clone() {
                     BatchResult { batch }

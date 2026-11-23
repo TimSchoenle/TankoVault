@@ -13,7 +13,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use super::detail::{UserDetailResponse, user_detail_response};
-use super::{guard_not_last_administrator, guard_not_self, guard_not_super_user};
+use super::{guard_not_last_administrator, guard_not_self, guard_not_super_user, guard_outranks};
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct SetUserStatus {
@@ -106,6 +106,8 @@ pub async fn set_user_status(
 ///
 /// Signs the account out of every device. Does not change what the account may do (use
 /// suspension for that); this only ends the sessions currently in flight.
+///
+/// Refuses the deployment's super user and any account holding a permission the caller lacks.
 #[utoipa::path(
     post,
     path = "/v1/admin/users/{id}/revoke-sessions",
@@ -114,6 +116,7 @@ pub async fn set_user_status(
     security(("bearer_auth" = [])),
     responses(
         (status = 200, description = "How many sessions were revoked", body = serde_json::Value, example = json!({"revoked": 3})),
+        (status = 400, description = "the target is the super user or holds a permission the caller does not", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
@@ -125,6 +128,8 @@ pub async fn revoke_user_sessions(
 ) -> ApiResult<Json<serde_json::Value>> {
     user.require(Permission::UsersSessions).await?;
     let target = UserId::from_uuid(id);
+    guard_not_super_user(&state, &user, target, "user.sessions.revoke").await?;
+    guard_outranks(&state, &user, target, "user.sessions.revoke").await?;
     let revoked = tankovault_db::repo::users::revoke_all_sessions(&state.pool, target).await?;
     audit(
         &state,

@@ -202,6 +202,64 @@ async fn an_administrator_cannot_suspend_or_erase_the_deployment_owner() {
     assert!(principal.permissions.is_super_user());
 }
 
+/// The bug: `users.sessions` alone let an administrator revoke every session of the owner or
+/// of a broader administrator, as often as they liked, signing them out for good in practice.
+/// Both are now refused, while an ordinary account can still be signed out.
+#[tokio::test]
+async fn an_administrator_cannot_sign_out_an_account_that_outranks_them() {
+    let app = TestApp::spawn().await;
+    let (bearer, step_up) = admin(
+        &app,
+        "doorman",
+        &[Permission::UsersSessions],
+        AccountStatus::Active,
+    )
+    .await;
+    let owner = app
+        .seed_user("owner", &[Permission::SuperUser], AccountStatus::Active)
+        .await;
+    let peer = app
+        .seed_user(
+            "peer",
+            &[Permission::UsersSessions, Permission::UsersPermissions],
+            AccountStatus::Active,
+        )
+        .await;
+    let reader = app.seed_user("reader", &[], AccountStatus::Active).await;
+
+    for (target, name) in [(owner, "owner"), (peer, "peer")] {
+        let (status, _) = app
+            .call_elevated(
+                "POST",
+                &format!("/v1/admin/users/{}/revoke-sessions", target.as_uuid()),
+                Some(&bearer),
+                Some(&step_up),
+                None,
+            )
+            .await;
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "{name} outranks the caller"
+        );
+    }
+
+    let (status, _) = app
+        .call_elevated(
+            "POST",
+            &format!("/v1/admin/users/{}/revoke-sessions", reader.as_uuid()),
+            Some(&bearer),
+            Some(&step_up),
+            None,
+        )
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "an ordinary account can be signed out"
+    );
+}
+
 /// An email address is the recovery channel, so redirecting it is a password reset away from
 /// taking the account.
 ///

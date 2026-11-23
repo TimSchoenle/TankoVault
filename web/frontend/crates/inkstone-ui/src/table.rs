@@ -41,11 +41,14 @@ impl TableColumn {
 /// A table.
 ///
 /// `caption` is required and visually hidden by default: a table with no accessible name is
-/// announced as "table" and nothing else.
+/// announced as "table" and nothing else. With no `columns` and no `lead` there is no header row.
 #[component]
 pub fn Table(
     caption: String,
     columns: Vec<TableColumn>,
+    /// A header cell before the columns, e.g. a select-all checkbox `th`.
+    #[props(default)]
+    lead: Option<Element>,
     /// Denser padding and uppercase headers. The default, because these tables are dashboards.
     #[props(default = true)]
     compact: bool,
@@ -66,6 +69,7 @@ pub fn Table(
         &[Variant::flag(compact, Flag::Compact)],
         &class,
     );
+    let headed = lead.is_some() || !columns.is_empty();
     rsx! {
         div { class: skin.class(Part::TableWrap, &[Variant::flag(scroll, Flag::Scroll)]),
             table { class,
@@ -73,8 +77,10 @@ pub fn Table(
                     class: if show_caption { String::new() } else { skin.class(Part::VisuallyHidden, &[]) },
                     "{caption}"
                 }
+                if headed {
                 thead {
                     tr {
+                        {lead}
                         for column in columns {
                             th {
                                 key: "{column.label}",
@@ -85,6 +91,7 @@ pub fn Table(
                             }
                         }
                     }
+                }
                 }
                 tbody { {children} }
             }

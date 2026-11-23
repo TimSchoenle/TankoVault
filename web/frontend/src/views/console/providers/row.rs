@@ -5,6 +5,7 @@ use crate::i18n::use_i18n;
 use crate::models::{Provider, ProviderId, ProviderStat, ProviderState};
 use crate::util::{rel_time, thousands};
 use dioxus::prelude::*;
+use inkstone_ui::{Align, Gap, Row};
 
 /// One provider in the list: name, state, a mono meta line and the healthy-links meter.
 #[component]
@@ -55,7 +56,7 @@ pub(super) fn ProviderRow(
             class: "{class}",
             "aria-current": if selected { "true" } else { "false" },
             onclick: move |_| on_pick.call(id),
-            div { class: "ik-flex", style: "gap:8px;",
+            Row { gap: Gap::Sm, align: Align::Stretch,
                 span { style: "font-weight:600;font-size:13.5px;", "{provider.name}" }
                 HealthPill { state: Some(provider.state) }
                 if let Some((glyph, label)) = preset_mark {

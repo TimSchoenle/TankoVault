@@ -8,7 +8,7 @@ use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
 use dioxus::prelude::*;
-use inkstone_ui::{TabBar, TabItem};
+use inkstone_ui::{Chip, TabBar, TabItem};
 
 /// The filter input's DOM id. Focusing it goes through [`crate::components::FocusTargets`]
 /// instead of this: the id is kept because it is a stable hook for the field in the rendered
@@ -164,32 +164,29 @@ pub(super) fn FilterBar(
                 span { class: "kbd", "/" }
             }
 
-            button {
-                class: if query.unread_only { "ik-chip active" } else { "ik-chip" },
-                r#type: "button",
-                "aria-pressed": if query.unread_only { "true" } else { "false" },
-                onclick: move |_| {
+            Chip {
+                label: i18n.t("watchlist.unreadOnly"),
+                active: query.unread_only,
+                on_toggle: move |()| {
                     on_change.call(WatchlistQuery {
                         unread_only: !unread_query.unread_only,
                         ..unread_query.clone()
                     });
                 },
-                {i18n.t("watchlist.unreadOnly")}
             }
 
             if source_issues > 0 {
-                button {
-                    class: if query.source_issues { "ik-chip warn active" } else { "ik-chip warn" },
-                    r#type: "button",
-                    "aria-pressed": if query.source_issues { "true" } else { "false" },
-                    onclick: move |_| {
+                Chip {
+                    label: i18n.args("watchlist.sourceIssues", &[("count", &source_issues.to_string())]),
+                    active: query.source_issues,
+                    warn: true,
+                    icon: rsx! { Ic { icon: Icon::Warning, size: 14 } },
+                    on_toggle: move |()| {
                         on_change.call(WatchlistQuery {
                             source_issues: !issues_query.source_issues,
                             ..issues_query.clone()
                         });
                     },
-                    Ic { icon: Icon::Warning, size: 14 }
-                    {i18n.args("watchlist.sourceIssues", &[("count", &source_issues.to_string())])}
                 }
             }
 

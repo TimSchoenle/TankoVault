@@ -16,7 +16,7 @@ use crate::i18n::use_i18n;
 use crate::icons::Icon;
 use crate::wire::types::{ContentPrefsDto, ContentPrefsUpdate};
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Callout, ToggleButton, Tone};
+use inkstone_ui::{Button, Callout, Gap, Hint, Size, ToggleButton, Tone};
 #[component]
 pub(crate) fn ContentPanel() -> Element {
     let i18n = use_i18n();
@@ -77,7 +77,7 @@ pub(crate) fn ContentPanel() -> Element {
     rsx! {
         PanelCard { icon: Icon::ShieldLock, title: i18n.t("account.content.title"),
             Section { label: i18n.t("account.content.section.adult"),
-                p { class: "ik-muted", style: "font-size:13px;", {i18n.t("account.content.intro")} }
+                Hint { above: Gap::Md, below: Gap::Md, {i18n.t("account.content.intro")} }
 
                 // Shown whether or not the deployment allows it, and *before* the control, so a
                 // reader who cannot understand why their shelf is unchanged has the reason in
@@ -107,9 +107,7 @@ pub(crate) fn ContentPanel() -> Element {
                     div { class: "ik-row",
                         div { class: "grow",
                             div { {i18n.t("account.content.adult.label")} }
-                            div { class: "ik-muted", style: "font-size:12px;",
-                                {i18n.t("account.content.adult.hint")}
-                            }
+                            Hint { size: Size::Sm, {i18n.t("account.content.adult.hint")} }
                         }
                         ToggleButton {
                             on: opted_in,

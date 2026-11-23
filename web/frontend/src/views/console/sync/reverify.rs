@@ -12,7 +12,7 @@ use crate::state::capabilities::use_capabilities;
 use crate::util::{rel_time, thousands};
 use crate::wire::types::{MappingReverifyReason, MappingReverifyView, Permission};
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Tone};
+use inkstone_ui::{Button, Gap, Hint, Row, Size, Table, TableColumn, Tone};
 use progenitor_client::ResponseValue;
 
 /// How often the panel re-reads itself while a run holds the claim. The run publishes its
@@ -134,7 +134,7 @@ fn ReverifyBody(view: MappingReverifyView, reload: Reload) -> Element {
     let listed = view.failures.len().min(LISTED);
 
     rsx! {
-        div { class: "ik-flex", style: "gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;",
+        Row { gap: Gap::Sm, wrap: true, class: "ik-mb-md",
             span {
                 class: if view.running { "ik-pill run" } else { "ik-pill" },
                 if view.running {
@@ -178,7 +178,7 @@ fn ReverifyBody(view: MappingReverifyView, reload: Reload) -> Element {
         }
 
         if can_write {
-            div { class: "ik-flex", style: "gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center;",
+            Row { gap: Gap::Sm, wrap: true, class: "ik-mt-md",
                 Button {
                     tone: Tone::Primary,
                     disabled: view.running || *busy.read(),
@@ -207,7 +207,7 @@ fn ReverifyBody(view: MappingReverifyView, reload: Reload) -> Element {
 
         if finished && !view.failures.is_empty() {
             div { style: "margin-top:12px;",
-                p { class: "ik-muted", style: "font-size:12px;margin:0 0 6px;",
+                Hint { size: Size::Sm, below: Gap::Sm,
                     {
                         i18n.args(
                             "console.sync.reverify.listed",
@@ -218,25 +218,21 @@ fn ReverifyBody(view: MappingReverifyView, reload: Reload) -> Element {
                         )
                     }
                 }
-                div { class: "ik-tablewrap scroll",
-                table { class: "ik-table ik-table-compact",
-                    thead {
-                        tr {
-                            th { {i18n.t("console.sync.reverify.col.series")} }
-                            th { {i18n.t("console.sync.reverify.col.external")} }
-                            th { {i18n.t("console.sync.reverify.col.reason")} }
+                Table {
+                    caption: i18n.t("console.sync.reverify.title"),
+                    scroll: true,
+                    columns: vec![
+                        TableColumn::new(i18n.t("console.sync.reverify.col.series")),
+                        TableColumn::new(i18n.t("console.sync.reverify.col.external")),
+                        TableColumn::new(i18n.t("console.sync.reverify.col.reason")),
+                    ],
+                    for failure in view.failures.iter().take(LISTED) {
+                        tr { key: "{failure.series_id}-{failure.provider}",
+                            td { class: "ik-mono", "{failure.series_id}" }
+                            td { class: "ik-mono", "{failure.provider}:{failure.external_id}" }
+                            td { {reason_label(i18n, failure.reason)} }
                         }
                     }
-                    tbody {
-                        for failure in view.failures.iter().take(LISTED) {
-                            tr { key: "{failure.series_id}-{failure.provider}",
-                                td { class: "ik-mono", "{failure.series_id}" }
-                                td { class: "ik-mono", "{failure.provider}:{failure.external_id}" }
-                                td { {reason_label(i18n, failure.reason)} }
-                            }
-                        }
-                    }
-                }
                 }
             }
         }

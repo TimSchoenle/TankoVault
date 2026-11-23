@@ -15,7 +15,7 @@ use crate::icons::{Ic, Icon};
 use crate::models::{ChapterRead, SeriesId, SeriesSourceId};
 use crate::util::{chapter_number, is_fresh, monogram, rel_time};
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Size, Tone};
+use inkstone_ui::{Button, Chip, Gap, Row, Size, Tone};
 /// How many chapter groups the list shows before the "load more" footer.
 const PAGE: usize = 25;
 
@@ -117,26 +117,26 @@ pub(super) fn ChapterSection(
             }
         }
 
-        div { class: "ik-flex", style: "margin-bottom:12px;flex-wrap:wrap;gap:8px;",
-            button {
-                class: if *filter.read() == Filter::All { "ik-chip active" } else { "ik-chip" },
-                onclick: move |_| filter.set(Filter::All),
-                {i18n.args("series.filterAll", &[("count", &total.to_string())])}
+        Row { gap: Gap::Sm, wrap: true, class: "ik-mb-md",
+            Chip {
+                label: i18n.args("series.filterAll", &[("count", &total.to_string())]),
+                active: *filter.read() == Filter::All,
+                on_toggle: move |()| filter.set(Filter::All),
             }
             if tracked {
-                button {
-                    class: if *filter.read() == Filter::Unread { "ik-chip active" } else { "ik-chip" },
-                    onclick: move |_| filter.set(Filter::Unread),
-                    {i18n.args("series.filterUnread", &[("count", &unread.to_string())])}
+                Chip {
+                    label: i18n.args("series.filterUnread", &[("count", &unread.to_string())]),
+                    active: *filter.read() == Filter::Unread,
+                    on_toggle: move |()| filter.set(Filter::Unread),
                 }
             }
-            button {
-                class: if *hide_parts.read() { "ik-chip active" } else { "ik-chip" },
-                onclick: move |_| {
+            Chip {
+                label: i18n.t("series.hideParts"),
+                active: *hide_parts.read(),
+                on_toggle: move |()| {
                     let next = !*hide_parts.read();
                     hide_parts.set(next);
                 },
-                {i18n.t("series.hideParts")}
             }
             Button {
                 tone: Tone::Bare,

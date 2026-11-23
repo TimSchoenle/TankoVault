@@ -28,7 +28,7 @@ use crate::util::iso_date;
 use crate::webauthn::{self};
 use crate::wire::types::SecurityKeyRename;
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Callout, Tone};
+use inkstone_ui::{Button, Callout, Gap, Hint, Justify, Row, Size, Tone};
 use progenitor_client::ResponseValue;
 #[component]
 pub(crate) fn MfaCard() -> Element {
@@ -83,7 +83,7 @@ pub(crate) fn MfaCard() -> Element {
 
     rsx! {
         PanelCard { icon: Icon::ShieldLock, title: i18n.t("mfa.title"),
-            p { class: "ik-muted", style: "font-size:13px;margin-top:0;", {i18n.t("mfa.intro")} }
+            Hint { below: Gap::Md, {i18n.t("mfa.intro")} }
 
             if let Some(msg) = error.read().clone() {
                 Callout { tone: Tone::Danger, "{msg}" }
@@ -106,9 +106,7 @@ pub(crate) fn MfaCard() -> Element {
                             {i18n.t("mfa.recovery.saved")}
                         }
                     },
-                    p { class: "ik-muted", style: "font-size:13px;margin:0 0 8px;",
-                        {i18n.t("mfa.recovery.warning")}
-                    }
+                    Hint { below: Gap::Sm, {i18n.t("mfa.recovery.warning")} }
                     ul { style: "font-family:monospace;margin:0;padding-left:18px;",
                         for code in fresh_codes.read().iter().cloned() {
                             li { key: "{code}", "{code}" }
@@ -131,7 +129,7 @@ pub(crate) fn MfaCard() -> Element {
                     .unwrap_or(false);
                 rsx! {
                     if let Some(at) = confirmed {
-                        div { class: "ik-flex", style: "justify-content:space-between;align-items:center;gap:8px;",
+                        Row { gap: Gap::Sm, justify: Justify::Between,
                             span { class: "ik-muted", style: "font-size:13px;",
                                 {i18n.t("mfa.totp.enrolledOn")} " " {iso_date(Some(&at))}
                             }
@@ -157,14 +155,10 @@ pub(crate) fn MfaCard() -> Element {
                     } else if !can_totp {
                         // The operator configured no sealing key, so enrolment would answer 503.
                         // A button that can only report that is worse than no button.
-                        p { class: "ik-muted", style: "font-size:13px;",
-                            {i18n.t("mfa.totp.unavailable")}
-                        }
+                        Hint { above: Gap::Md, below: Gap::Md, {i18n.t("mfa.totp.unavailable")} }
                     } else if let Some((secret, uri)) = pending_secret.read().clone() {
                         div {
-                            p { class: "ik-muted", style: "font-size:13px;",
-                                {i18n.t("mfa.totp.scan")}
-                            }
+                            Hint { above: Gap::Md, below: Gap::Md, {i18n.t("mfa.totp.scan")} }
                             QrCode { data: uri }
                             p { style: "font-family:monospace;font-size:13px;word-break:break-all;",
                                 "{secret}"
@@ -202,9 +196,7 @@ pub(crate) fn MfaCard() -> Element {
                 async_block(&status, reload, 48, |s| {
                     if s.security_keys.is_empty() {
                         return rsx! {
-                            p { class: "ik-muted", style: "font-size:13px;",
-                                {i18n.t("mfa.key.empty")}
-                            }
+                            Hint { above: Gap::Md, below: Gap::Md, {i18n.t("mfa.key.empty")} }
                         };
                     }
                     rsx! {
@@ -239,9 +231,7 @@ pub(crate) fn MfaCard() -> Element {
                     }
                 }
             } else {
-                p { class: "ik-muted", style: "font-size:12px;margin-top:12px;",
-                    {i18n.t("mfa.key.unsupported")}
-                }
+                Hint { size: Size::Sm, above: Gap::Md, below: Gap::Md, {i18n.t("mfa.key.unsupported")} }
             }
 
             // --- recovery codes ---
@@ -256,7 +246,7 @@ pub(crate) fn MfaCard() -> Element {
                         h4 { style: "margin:20px 0 6px;font-size:14px;",
                             {i18n.t("mfa.recovery.heading")}
                         }
-                        p { class: "ik-muted", style: "font-size:13px;margin:0 0 8px;",
+                        Hint { below: Gap::Sm,
                             {i18n.t("mfa.recovery.remaining")} " " "{remaining}"
                         }
                         Button {
@@ -352,7 +342,7 @@ fn SecurityKeyRow(
             if let Some(msg) = error.read().clone() {
                 Callout { tone: Tone::Danger, "{msg}" }
             }
-            div { class: "ik-flex", style: "justify-content:space-between;align-items:center;gap:8px;",
+            Row { gap: Gap::Sm, justify: Justify::Between,
                 if *renaming.read() {
                     Field {
                         id: "tv-key-rename-{id}",
@@ -364,7 +354,7 @@ fn SecurityKeyRow(
                 } else {
                     div {
                         div { style: "font-weight:500;", "{label}" }
-                        div { class: "ik-muted", style: "font-size:12px;",
+                        Hint { size: Size::Sm,
                             {i18n.t("mfa.key.addedOn")} " " {iso_date(Some(&created_at))}
                             if let Some(used) = last_used_at.clone() {
                                 " · " {i18n.t("mfa.key.lastUsed")} " " {iso_date(Some(&used))}

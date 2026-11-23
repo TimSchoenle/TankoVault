@@ -142,6 +142,8 @@ pub enum Part {
     CalloutActions,
     /// The close control at the trailing edge of a [`Part::Callout`].
     CalloutDismiss,
+    /// A muted caption under a control or heading.
+    Hint,
     // Overlay
     /// The backdrop behind a [`Part::Modal`].
     ModalScrim,
@@ -224,6 +226,10 @@ pub enum Variant {
     Align(Align),
     /// How the part's children are spread on the main axis.
     Justify(Justify),
+    /// The space above the part.
+    Above(Gap),
+    /// The space below the part.
+    Below(Gap),
     /// A boolean state the part is in.
     Flag(Flag),
 }
@@ -333,6 +339,7 @@ impl Skin for Inkstone {
             Part::CalloutTitle => "ik-callout-title",
             Part::CalloutActions => "ik-callout-actions",
             Part::CalloutDismiss => "ik-callout-dismiss",
+            Part::Hint => "ik-hint",
             Part::ModalScrim => "ik-modal-scrim",
             Part::Modal => "ik-modal",
             Part::ModalHead => "ik-modal-head",
@@ -371,6 +378,20 @@ impl Skin for Inkstone {
                 Justify::Center => "ik-j-center",
                 Justify::End => "ik-j-end",
                 Justify::Between => "ik-j-between",
+            },
+            Variant::Above(gap) => match gap {
+                Gap::None => "",
+                Gap::Xs => "ik-mt-xs",
+                Gap::Sm => "ik-mt-sm",
+                Gap::Md => "ik-mt-md",
+                Gap::Lg => "ik-mt-lg",
+            },
+            Variant::Below(gap) => match gap {
+                Gap::None => "",
+                Gap::Xs => "ik-mb-xs",
+                Gap::Sm => "ik-mb-sm",
+                Gap::Md => "ik-mb-md",
+                Gap::Lg => "ik-mb-lg",
             },
             Variant::Flag(flag) => Self::flag(*part, *flag),
         }
@@ -419,11 +440,16 @@ impl Inkstone {
 
     fn size(part: Part, size: Size) -> &'static str {
         match part {
-            Part::Button | Part::IconButton => match size {
+            Part::Button | Part::IconButton | Part::Hint => match size {
                 Size::Xs => "xs",
                 Size::Sm => "sm",
                 Size::Md => "",
                 Size::Custom(modifier) => modifier,
+            },
+            Part::Chip => match size {
+                Size::Xs => "xs",
+                Size::Custom(modifier) => modifier,
+                _ => "",
             },
             _ => match size {
                 Size::Custom(modifier) => modifier,
@@ -446,6 +472,8 @@ impl Inkstone {
             (Part::Tabs, Flag::Flush) => "flush",
             (Part::Tab, Flag::Apart) => "apart",
             (Part::Table, Flag::Compact) => "ik-table-compact",
+            (Part::Empty, Flag::Compact) => "compact",
+            (Part::Hint, Flag::Narrow) => "measure",
             (Part::TableWrap, Flag::Scroll) => "scroll",
             (Part::DefinitionList, Flag::Narrow) => "narrow",
             (Part::Input | Part::Select, Flag::Mono) => "ik-mono",

@@ -65,13 +65,15 @@ pub(crate) fn AnilistCallback(code: String, state: String) -> Element {
 
     match failure {
         Some(message) => rsx! {
-            div { class: "ik-empty",
-                p { {i18n.args("account.callback.failed", &[("message", &message)])} }
-                Link {
-                    to: Route::AccountSection { panel: AccountPanel::Sync },
-                    class: button_class(Tone::Primary, Size::Md, false),
-                    {i18n.t("account.callback.back")}
-                }
+            EmptyBox {
+                message: i18n.args("account.callback.failed", &[("message", &message)]),
+                action: rsx! {
+                    Link {
+                        to: Route::AccountSection { panel: AccountPanel::Sync },
+                        class: button_class(Tone::Primary, Size::Md, false),
+                        {i18n.t("account.callback.back")}
+                    }
+                },
             }
         },
         None => rsx! {

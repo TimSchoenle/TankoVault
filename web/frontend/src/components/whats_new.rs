@@ -16,7 +16,7 @@
 use crate::i18n::use_i18n;
 use crate::update::{self, Notes, ReleaseNotes, Status, UpdateState};
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Modal, ModalSize, Tone};
+use inkstone_ui::{Button, Gap, Hint, Modal, ModalSize, Tone};
 use terrace_legal_markdown::markdown;
 
 /// What the panel is about: a version this installation has taken, or one it has only found.
@@ -117,13 +117,13 @@ fn NotesBody(notes: Notes) -> Element {
             // fact about that release; the other is a machine that could not ask, which is a
             // fact about this moment and may not be true in a minute.
             Notes::Ready(ReleaseNotes { body: None, .. }) => rsx! {
-                p { class: "ik-muted", {i18n.t("settings.update.notes.empty")} }
+                Hint { above: Gap::Md, below: Gap::Md, {i18n.t("settings.update.notes.empty")} }
             },
             Notes::Fetching => rsx! {
-                p { class: "ik-muted", {i18n.t("settings.update.notes.fetching")} }
+                Hint { above: Gap::Md, below: Gap::Md, {i18n.t("settings.update.notes.fetching")} }
             },
             Notes::None => rsx! {
-                p { class: "ik-muted", {i18n.t("settings.update.notes.unavailable")} }
+                Hint { above: Gap::Md, below: Gap::Md, {i18n.t("settings.update.notes.unavailable")} }
             },
         }
     }

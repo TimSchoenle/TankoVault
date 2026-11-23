@@ -13,6 +13,7 @@ use crate::state::capabilities::use_capabilities;
 use crate::wire::types::Feature;
 use crate::Route;
 use dioxus::prelude::*;
+use inkstone_ui::Hint;
 use progenitor_client::ResponseValue;
 
 /// How many neighbours the sidebar asks for. Short on purpose: this is a rail beside the
@@ -74,9 +75,7 @@ pub(super) fn SimilarRail(series_id: SeriesId, ready: bool) -> Element {
                             RailSkeleton {}
                         },
                         Some(items) if items.is_empty() => rsx! {
-                            div { class: "ik-muted", style: "font-size:12.5px;",
-                                {i18n.t("series.similar.empty")}
-                            }
+                            Hint { {i18n.t("series.similar.empty")} }
                         },
                         Some(items) => rsx! {
                             for item in items.iter().cloned() {

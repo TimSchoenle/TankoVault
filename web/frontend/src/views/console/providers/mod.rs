@@ -33,7 +33,7 @@ use coverage::CoverageTab;
 use create::{CloneSeed, CreateProviderForm};
 use danger::DangerTab;
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Pill, Size, Tone};
+use inkstone_ui::{Align, Button, EmptyBox, Gap, Hint, Pill, Row, Size, Tone};
 use inspector::{Inspector, Rights};
 use progenitor_client::ResponseValue;
 use row::ProviderRow;
@@ -229,8 +229,8 @@ pub(super) fn ProvidersEntity() -> Element {
                     |_| {
                         if rows.is_empty() {
                             return rsx! {
-                                div { class: "ik-empty", style: "margin:12px;padding:24px;",
-                                    {i18n.t("console.providers.empty")}
+                                div { style: "padding:12px;",
+                                    EmptyBox { message: i18n.t("console.providers.empty"), compact: true }
                                 }
                             };
                         }
@@ -330,7 +330,7 @@ fn PresetBanner(
                 {i18n.t("console.providers.preset.customHead")}
                 }
             }
-            p { class: "ik-muted", style: "font-size:11.5px;line-height:1.55;margin:0;",
+            Hint { size: Size::Xs,
                 if retired {
                 {i18n.args("console.providers.preset.retiredBody", &args)}
                 } else if link.locked {
@@ -443,7 +443,7 @@ fn ProviderInspector(
                 div { class: "ik-flex", style: "align-items:flex-start;gap:14px;",
                     span { class: "ik-mono-tile xl", "{tile}" }
                     div { style: "min-width:0;flex:1;",
-                        div { class: "ik-flex", style: "gap:10px;flex-wrap:wrap;",
+                        Row { gap: Gap::Md, align: Align::Stretch, wrap: true,
                             h2 { class: "ik-insp-title", "{provider.name}" }
                             HealthPill { state: Some(provider.state) }
                             if let Some(link) = link.clone() {

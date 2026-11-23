@@ -15,7 +15,7 @@ use crate::models::{ClearFailuresBody, FailedTask, FailureGroup};
 use crate::util::thousands;
 use crate::views::console::RefreshTick;
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Pill, Size, Tone};
+use inkstone_ui::{Align, Button, Chip, Gap, Hint, Justify, Pill, Row, Size, Tone};
 /// The failure feed with its view toggle and clear controls.
 #[component]
 pub(super) fn FailuresSection(
@@ -73,16 +73,17 @@ pub(super) fn FailuresSection(
     });
 
     rsx! {
-        div { class: "ik-flex", style: "justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-top:16px;",
+        Row { gap: Gap::Md, justify: Justify::Between, wrap: true, class: "ik-mt-lg",
             div { class: "ik-subhead", style: "margin:0;", {i18n.t("console.scans.failures")} }
-            div { class: "ik-flex", style: "gap:10px;flex-wrap:wrap;",
-                label { class: "ik-flex", style: "gap:5px;font-size:12px;align-items:center;",
-                    input {
-                        r#type: "checkbox",
-                        checked: *grouped.read(),
-                        onchange: move |event: FormEvent| grouped.set(event.checked()),
-                    }
-                    {i18n.t("console.scan.failures.grouped")}
+            Row { gap: Gap::Md, wrap: true,
+                Chip {
+                    label: i18n.t("console.scan.failures.grouped"),
+                    active: *grouped.read(),
+                    size: Size::Xs,
+                    on_toggle: move |()| {
+                        let next = !*grouped.peek();
+                        grouped.set(next);
+                    },
                 }
                 Button {
                     size: Size::Xs,
@@ -182,17 +183,15 @@ fn GroupedFailures(groups: Vec<FailureGroup>, on_clear: EventHandler<Option<Stri
     let i18n = use_i18n();
     if groups.is_empty() {
         return rsx! {
-            p { class: "ik-muted", style: "font-size:13px;margin:6px 0 0;",
-                {i18n.t("console.scans.noFailures")}
-            }
+            Hint { above: Gap::Sm, {i18n.t("console.scans.noFailures")} }
         };
     }
     rsx! {
         div { style: "margin-top:8px;display:grid;gap:8px;",
             for group in groups {
                 div { key: "{group.error:?}", class: "ik-fail",
-                    div { class: "ik-flex", style: "justify-content:space-between;gap:10px;flex-wrap:wrap;",
-                        div { class: "ik-flex", style: "gap:8px;flex-wrap:wrap;",
+                    Row { gap: Gap::Md, align: Align::Stretch, justify: Justify::Between, wrap: true,
+                        Row { gap: Gap::Sm, align: Align::Stretch, wrap: true,
                             Pill {
                                 tone: Tone::Accent,
                                 "{group.count}×"
@@ -221,7 +220,7 @@ fn GroupedFailures(groups: Vec<FailureGroup>, on_clear: EventHandler<Option<Stri
                                 }
                             }
                         }
-                        div { class: "ik-flex", style: "gap:8px;",
+                        Row { gap: Gap::Sm, align: Align::Stretch,
                             span { class: "ik-muted ik-mono", style: "font-size:12px;",
                                 "{crate::util::rel_time(i18n, group.latest_at.as_deref())}"
                             }
@@ -257,9 +256,7 @@ fn FailuresPanel(failures: Vec<FailedTask>) -> Element {
     let i18n = use_i18n();
     if failures.is_empty() {
         return rsx! {
-            p { class: "ik-muted", style: "font-size:13px;margin:6px 0 0;",
-                {i18n.t("console.scans.noFailures")}
-            }
+            Hint { above: Gap::Sm, {i18n.t("console.scans.noFailures")} }
         };
     }
     rsx! {
@@ -271,8 +268,8 @@ fn FailuresPanel(failures: Vec<FailedTask>) -> Element {
                     // A cleared row is only ever on screen because the operator asked to see
                     // cleared ones, so it is dimmed, not badged as an alert.
                     style: if failure.acknowledged_at.is_some() { "opacity:.6;" } else { "" },
-                    div { class: "ik-flex", style: "justify-content:space-between;gap:10px;flex-wrap:wrap;",
-                        div { class: "ik-flex", style: "gap:8px;flex-wrap:wrap;",
+                    Row { gap: Gap::Md, align: Align::Stretch, justify: Justify::Between, wrap: true,
+                        Row { gap: Gap::Sm, align: Align::Stretch, wrap: true,
                             Pill {
                                 tone: Tone::Accent,
                                 "{failure.kind}"

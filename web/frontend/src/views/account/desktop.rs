@@ -17,7 +17,7 @@ use crate::components::PanelCard;
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use dioxus::prelude::*;
-use inkstone_ui::{button_class, Callout, Size, Tone};
+use inkstone_ui::{button_class, Callout, Gap, Hint, Size, Tone};
 /// What the native client offers that a browser tab cannot. Catalogue keys, in the order they
 /// are shown.
 const ADVANTAGES: [&str; 4] = [
@@ -34,9 +34,7 @@ pub(crate) fn DesktopAppPanel() -> Element {
 
     rsx! {
         PanelCard { icon: Icon::Download, title: i18n.t("account.desktop.title"),
-            p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
-                {i18n.t("account.desktop.intro")}
-            }
+            Hint { below: Gap::Md, {i18n.t("account.desktop.intro")} }
 
             ul { class: "ik-bullets",
                 for key in ADVANTAGES {
@@ -57,17 +55,13 @@ pub(crate) fn DesktopAppPanel() -> Element {
                     Ic { icon: Icon::OpenInNew, size: 13 }
                 }
             }
-            p { class: "ik-muted", style: "font-size:12.5px;margin:10px 0 0;",
-                {i18n.t("account.desktop.platforms")}
-            }
+            Hint { above: Gap::Md, {i18n.t("account.desktop.platforms")} }
 
             if !origin.is_empty() {
                 Callout {
                     div { class: "ik-subhead", {i18n.t("account.desktop.serverAddress")} }
                     code { style: "font-size:12.5px;word-break:break-all;", "{origin}" }
-                    p { class: "ik-muted", style: "font-size:12.5px;margin:6px 0 0;",
-                        {i18n.t("account.desktop.serverAddressHint")}
-                    }
+                    Hint { above: Gap::Xs, {i18n.t("account.desktop.serverAddressHint")} }
                 }
             }
         }

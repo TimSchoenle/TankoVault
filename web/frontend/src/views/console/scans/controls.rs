@@ -6,7 +6,7 @@ use crate::i18n::use_i18n;
 use crate::models::*;
 use crate::views::console::RefreshTick;
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Tone};
+use inkstone_ui::{Button, FilterSelect, Gap, Hint, SegOption, Tone};
 
 use super::{filters, ScanFilter};
 
@@ -84,27 +84,31 @@ pub(super) fn QueueControls(filter: ScanFilter, tick: RefreshTick) -> Element {
         });
     };
 
+    let mode_options: Vec<SegOption> = <ScanMode as ScanModeExt>::all()
+        .iter()
+        .copied()
+        .map(|option| {
+            (
+                ScanModeExt::token(option).to_owned(),
+                i18n.t(ScanModeExt::label_key(option)),
+            )
+        })
+        .collect();
+
     rsx! {
         div { class: "ik-flex", style: "justify-content:space-between;flex-wrap:wrap;",
             h3 { style: "margin:0;", {i18n.t("console.scans.title")} }
             div { class: "ik-flex",
-                select {
-                    class: "ik-input",
-                    style: "width:auto;",
-                    "aria-label": i18n.t("console.scans.triggerMode"),
-                    value: ScanModeExt::token(*mode.read()),
-                    onchange: move |event: FormEvent| {
-                        if let Some(chosen) = ScanModeExt::parse(&event.value()) {
+                FilterSelect {
+                    id: "tv-scans-trigger-mode",
+                    aria_label: i18n.t("console.scans.triggerMode"),
+                    options: mode_options,
+                    selected: ScanModeExt::token(*mode.read()).to_owned(),
+                    on_select: move |chosen: String| {
+                        if let Some(chosen) = ScanModeExt::parse(&chosen) {
                             mode.set(chosen);
                         }
                     },
-                    for option in <ScanMode as ScanModeExt>::all().iter().copied() {
-                        option {
-                            key: "{ScanModeExt::token(option)}",
-                            value: ScanModeExt::token(option),
-                            {i18n.t(ScanModeExt::label_key(option))}
-                        }
-                    }
                 }
                 Button {
                     tone: Tone::Primary,
@@ -123,7 +127,7 @@ pub(super) fn QueueControls(filter: ScanFilter, tick: RefreshTick) -> Element {
 
         StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
         if let Some(m) = message.read().clone() {
-            p { class: "ik-muted", style: "margin:8px 0 0;", "{m}" }
+            Hint { above: Gap::Sm, "{m}" }
         }
     }
 }

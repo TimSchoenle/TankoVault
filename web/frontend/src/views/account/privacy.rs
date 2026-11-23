@@ -18,7 +18,7 @@ use crate::state::use_session;
 use crate::util::iso_date;
 use crate::wire::types::{DeleteAccount, Feature, NewPrivacyRequest, RequestKind, RequestRow};
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Tone};
+use inkstone_ui::{Button, Gap, Hint, Section, Size, Tone};
 use progenitor_client::ResponseValue;
 #[component]
 pub(crate) fn PrivacyPanel() -> Element {
@@ -99,9 +99,7 @@ fn ExportCard() -> Element {
 
     rsx! {
         PanelCard { icon: Icon::Download, title: i18n.t("account.privacy.export.title"),
-            p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
-                {i18n.t("account.privacy.export.intro")}
-            }
+            Hint { below: Gap::Md, {i18n.t("account.privacy.export.intro")} }
             OutcomeLine { outcome: outcome.read().clone() }
             StepUpGuard { gate }
             Button {
@@ -197,9 +195,7 @@ fn RequestsCard() -> Element {
     let current_kind = *kind.read();
     rsx! {
         PanelCard { icon: Icon::ShieldLock, title: i18n.t("account.privacy.requests.title"),
-            p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
-                {i18n.t("account.privacy.requests.intro")}
-            }
+            Hint { below: Gap::Md, {i18n.t("account.privacy.requests.intro")} }
 
             div { class: "ik-field",
                 label { r#for: "tv-privacy-kind", {i18n.t("account.privacy.requests.kind")} }
@@ -241,21 +237,20 @@ fn RequestsCard() -> Element {
                 }
             }
 
-            div { class: "ik-subhead", style: "margin-top:18px;",
-                {i18n.t("account.privacy.requests.mine")}
-            }
-            {
-                async_list(
-                    &requests,
-                    reload,
-                    || rsx! { SkeletonRows { count: 2 } },
-                    &i18n.t("account.privacy.requests.empty"),
-                    |rows| rsx! {
-                        for row in rows.iter().cloned() {
-                            RequestRowView { key: "{row.id}", request: row, reload, gate }
-                        }
-                    },
-                )
+            Section { label: i18n.t("account.privacy.requests.mine"), class: "ik-mt-lg",
+                {
+                    async_list(
+                        &requests,
+                        reload,
+                        || rsx! { SkeletonRows { count: 2 } },
+                        &i18n.t("account.privacy.requests.empty"),
+                        |rows| rsx! {
+                            for row in rows.iter().cloned() {
+                                RequestRowView { key: "{row.id}", request: row, reload, gate }
+                            }
+                        },
+                    )
+                }
             }
         }
     }
@@ -307,7 +302,7 @@ fn RequestRowView(request: RequestRow, reload: Reload, gate: StepUpGate) -> Elem
                     " · "
                     {i18n.t(request.kind.label_key())}
                 }
-                div { class: "ik-mono ik-muted", style: "font-size:11px;",
+                Hint { size: Size::Xs, class: "ik-mono",
                     {i18n.args("account.privacy.requests.filedOn", &[("date", &filed)])}
                     // The deadline is only meaningful while the clock is still running.
                     if open {
@@ -316,7 +311,7 @@ fn RequestRowView(request: RequestRow, reload: Reload, gate: StepUpGate) -> Elem
                     }
                 }
                 if let Some(note) = request.resolution_note.clone() {
-                    div { class: "ik-muted", style: "font-size:12px;margin-top:4px;", "{note}" }
+                    Hint { size: Size::Sm, above: Gap::Xs, "{note}" }
                 }
             }
             if open {
@@ -384,9 +379,7 @@ fn DeleteAccountCard() -> Element {
 
     rsx! {
         PanelCard { icon: Icon::Delete, title: i18n.t("account.privacy.delete.title"),
-            p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
-                {i18n.t("account.privacy.delete.intro")}
-            }
+            Hint { below: Gap::Md, {i18n.t("account.privacy.delete.intro")} }
             StepUpGuard { gate }
             if *armed.read() {
                 div { class: "ik-field", style: "margin-top:12px;",

@@ -34,7 +34,7 @@ use crate::state::step_up::{use_step_up, StepUp};
 use crate::webauthn::{self, CeremonyError};
 use crate::wire::types::{MfaStatus, SecurityKeyAssertion, StepUpRequest};
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Callout, Tone};
+use inkstone_ui::{Button, Callout, Hint, Tone};
 use progenitor_client::ResponseValue;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -337,9 +337,7 @@ fn StepUpDialog(
                 // and swapped a moment later would ask half the accounts here for the wrong thing.
                 if settled {
                     if current == StepUpFactor::SecurityKey {
-                        p { class: "ik-muted", style: "font-size:13px;margin:0;",
-                            {i18n.t("stepUp.hint.key")}
-                        }
+                        Hint { {i18n.t("stepUp.hint.key")} }
                     } else {
                         {
                             let (label, kind, autocomplete, hint) = match current {

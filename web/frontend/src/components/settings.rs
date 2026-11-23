@@ -23,7 +23,7 @@ use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::update::{self, Notes, Policy, Status, UpdateState};
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Callout, Tone};
+use inkstone_ui::{Button, Callout, Gap, Hint, Size, Tone};
 /// One group of settings. See the module note on why this is a division instead of a fold.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Category {
@@ -165,9 +165,7 @@ fn ServerSection() -> Element {
     rsx! {
         section { class: "ik-prefs-section",
             h3 { {i18n.t("connect.card.title")} }
-            p { class: "ik-muted", style: "font-size:12.5px;margin-top:0;",
-                {i18n.t("connect.card.intro")}
-            }
+            Hint { below: Gap::Md, {i18n.t("connect.card.intro")} }
             if let Some(message) = error.read().clone() {
                 Callout { tone: Tone::Danger, "{message}" }
             }
@@ -224,9 +222,7 @@ fn WindowSection() -> Element {
             CloseToTraySection {}
         }
         if !startup && !tray {
-            p { class: "ik-muted", style: "font-size:12.5px;margin:0;",
-                {i18n.t("settings.window.unsupported")}
-            }
+            Hint { {i18n.t("settings.window.unsupported")} }
         }
     }
 }
@@ -262,7 +258,7 @@ fn StartupSection() -> Element {
                 }
                 span { {i18n.t("settings.startup.label")} }
             }
-            p { class: "ik-muted", style: "font-size:12.5px;margin:6px 0 0;",
+            Hint { above: Gap::Sm,
                 {i18n.t("settings.startup.hint")}
             }
             if refused() {
@@ -302,7 +298,7 @@ fn CloseToTraySection() -> Element {
                 }
                 span { {i18n.t("settings.window.closing.label")} }
             }
-            p { class: "ik-muted", style: "font-size:12.5px;margin:6px 0 0;",
+            Hint { above: Gap::Sm,
                 {i18n.t("settings.window.closing.hint")}
             }
         }
@@ -336,10 +332,10 @@ fn NotificationSection() -> Element {
                 }
                 span { {i18n.t("settings.notifications.label")} }
             }
-            p { class: "ik-muted", style: "font-size:12.5px;margin:6px 0 0;",
+            Hint { above: Gap::Sm,
                 {i18n.t("settings.notifications.hint")}
             }
-            p { class: "ik-muted", style: "font-size:12.5px;margin:6px 0 0;",
+            Hint { above: Gap::Sm,
                 {i18n.t("settings.notifications.systemHint")}
             }
             div { class: "ik-prefs-actions", style: "margin-top:10px;",
@@ -426,19 +422,19 @@ fn UpdateSection() -> Element {
                             },
                         }
                     }
-                    p { class: "ik-muted", style: "font-size:12.5px;margin:6px 0 0;",
+                    Hint { above: Gap::Sm,
                         {i18n.t("settings.update.holdBackHint")}
                     }
                 }
                 if let Some(reason) = flavour.unmanaged_reason() {
-                    p { class: "ik-muted", style: "font-size:12.5px;margin:10px 0 0;", {i18n.t(reason)} }
+                    Hint { above: Gap::Md, {i18n.t(reason)} }
                 }
-                p { class: "ik-muted", style: "font-size:12.5px;margin:10px 0 0;",
+                Hint { above: Gap::Md,
                     {i18n.t("settings.update.source")}
                 }
                 p { style: "font-size:12.5px;margin:10px 0 0;", {state_line} }
                 if let Some(recorded) = recorded_line {
-                    p { class: "ik-muted", style: "font-size:11.5px;margin:4px 0 0;", {recorded} }
+                    Hint { size: Size::Xs, above: Gap::Xs, {recorded} }
                 }
                 // The one state with a number behind it. A percentage in a sentence is easy to
                 // miss on a long download, and this is the whole of the feedback an automatic
@@ -457,7 +453,7 @@ fn UpdateSection() -> Element {
                 }
                 UpdateActions { state, status: status.clone(), busy, on_check: check }
             } else {
-                p { class: "ik-muted", style: "font-size:12.5px;margin:10px 0 0;",
+                Hint { above: Gap::Md,
                     {i18n.t("settings.update.error.unconfigured")}
                 }
             }

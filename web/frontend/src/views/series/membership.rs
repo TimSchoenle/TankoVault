@@ -18,7 +18,7 @@ use crate::views::{ConsoleEntity, ConsoleQuery};
 use crate::wire::types::{Feature, Permission};
 use crate::Route;
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Callout, Size, Tone};
+use inkstone_ui::{Align, Button, Callout, Gap, Hint, Row, Size, Tone};
 use progenitor_client::ResponseValue;
 
 /// The card's last row: when the entry was made, and the control that ends it.
@@ -64,7 +64,7 @@ pub(super) fn MembershipFooter(entry: WatchlistItem, reload_wl: Reload) -> Eleme
                     on_confirm: remove,
                 }
             } else {
-                div { class: "ik-flex", style: "gap:8px;",
+                Row { gap: Gap::Sm,
                     Button {
                         size: Size::Sm,
                         tone: Tone::Bare,
@@ -127,9 +127,7 @@ pub(super) fn NotTrackedNote(series_id: SeriesId, reload_wl: Reload) -> Element 
     rsx! {
         div { class: "ik-track-sec",
             div { class: "ik-sec-lbl", style: "margin-bottom:6px;", {i18n.t("series.track.notTracked")} }
-            p { class: "ik-muted", style: "font-size:12.5px;line-height:1.55;margin:0 0 10px;",
-                {i18n.t("series.track.notTrackedBody")}
-            }
+            Hint { below: Gap::Md, {i18n.t("series.track.notTrackedBody")} }
             Button {
                 size: Size::Sm,
                 disabled: busy.is_busy(),
@@ -186,7 +184,7 @@ pub(super) fn MergedRecordNote(series_id: SeriesId) -> Element {
 
     rsx! {
         Callout {
-            div { class: "ik-flex", style: "gap:8px;align-items:flex-start;",
+            Row { gap: Gap::Sm, align: Align::Start,
                 span { style: "min-width:0;font-size:12.5px;line-height:1.55;",
                     div { class: "ik-sec-lbl", style: "margin-bottom:4px;",
                         {i18n.t("series.track.mergedRecord")}

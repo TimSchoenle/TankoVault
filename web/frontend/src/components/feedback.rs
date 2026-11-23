@@ -42,13 +42,15 @@ pub(crate) fn SignInGate() -> Element {
         };
     }
     rsx! {
-        div { class: "ik-empty",
-            p { {i18n.t("feedback.signInGate")} }
-            Link {
-                to: crate::Route::Login {},
-                class: button_class(Tone::Primary, Size::Md, false),
-                {i18n.t("common.signIn")}
-            }
+        EmptyBox {
+            message: i18n.t("feedback.signInGate"),
+            action: rsx! {
+                Link {
+                    to: crate::Route::Login {},
+                    class: button_class(Tone::Primary, Size::Md, false),
+                    {i18n.t("common.signIn")}
+                }
+            },
         }
     }
 }

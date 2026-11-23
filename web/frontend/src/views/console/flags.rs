@@ -6,7 +6,7 @@
 //! its own writes instead.
 
 use crate::api;
-use crate::components::{async_view, use_step_up_gate, StepUpGate, StepUpGuard};
+use crate::components::{async_view, use_step_up_gate, ConsolePanel, StepUpGate, StepUpGuard};
 use crate::hooks::{use_busy, use_reload, Busy, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
@@ -14,7 +14,7 @@ use crate::state::capabilities::use_capabilities;
 use crate::util::iso_date;
 use crate::wire::types::{FeatureGroup, FlagView, Permission, SetFlag};
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Pill, Tone};
+use inkstone_ui::{Button, Gap, Hint, Pill, Row, Size, Tone};
 use progenitor_client::ResponseValue;
 /// The groups in display order, each with the catalogue key that titles it.
 const GROUPS: [(FeatureGroup, &str); 8] = [
@@ -56,15 +56,11 @@ pub(super) fn FeatureFlagsPanel() -> Element {
     });
 
     rsx! {
-        section { style: "margin-bottom:18px;",
-            h3 { {i18n.t("console.tab.flags")} }
-            p { class: "ik-muted", style: "font-size:13px;margin-top:0;max-width:70ch;",
-                {i18n.t("console.flags.intro")}
-            }
+        ConsolePanel {
+            title: i18n.t("console.tab.flags"),
+            intro: i18n.t("console.flags.intro"),
             if !can_write {
-                p { class: "ik-muted", style: "font-size:12px;",
-                    {i18n.t("console.flags.readOnly")}
-                }
+                Hint { size: Size::Sm, below: Gap::Md, {i18n.t("console.flags.readOnly")} }
             }
             StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
             {
@@ -130,7 +126,7 @@ fn FlagRow(flag: FlagView, can_write: bool, reload: Reload, gate: StepUpGate) ->
     rsx! {
         div { class: "ik-row", style: "align-items:flex-start;",
             div { class: "grow",
-                div { class: "ik-flex", style: "gap:8px;align-items:center;",
+                Row { gap: Gap::Sm,
                     span {
                         class: if enabled { "ik-pill jade" } else { "ik-pill vermilion" },
                         if enabled {
@@ -156,9 +152,7 @@ fn FlagRow(flag: FlagView, can_write: bool, reload: Reload, gate: StepUpGate) ->
                     }
                 }
                 div { class: "ik-mono ik-muted", style: "font-size:11px;margin-top:2px;", "{key}" }
-                p { class: "ik-muted", style: "font-size:12px;margin:6px 0 0;max-width:74ch;",
-                    "{flag.description}"
-                }
+                Hint { size: Size::Sm, above: Gap::Sm, measure: true, "{flag.description}" }
                 if let Some(note) = flag.note.clone() {
                     p { style: "font-size:12px;margin:4px 0 0;", "“{note}”" }
                 }

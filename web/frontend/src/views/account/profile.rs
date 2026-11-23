@@ -8,7 +8,7 @@ use crate::models::ProfileUpdate;
 use crate::state::use_session;
 use crate::util::initial;
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Tone};
+use inkstone_ui::{Button, Hint, Size, Tone};
 #[component]
 pub(crate) fn ProfilePanel(name: String, tier: String) -> Element {
     let session = use_session();
@@ -84,7 +84,7 @@ pub(crate) fn ProfilePanel(name: String, tier: String) -> Element {
                     div { style: "font-family:var(--font-display);font-size:20px;font-weight:700;",
                         "{current_name}"
                     }
-                    div { class: "ik-mono ik-muted", style: "font-size:12px;", "{tier}" }
+                    Hint { size: Size::Sm, class: "ik-mono", "{tier}" }
                 }
             }
             div { class: "ik-field",

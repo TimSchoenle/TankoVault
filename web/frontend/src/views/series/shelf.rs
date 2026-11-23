@@ -13,7 +13,7 @@ use crate::icons::{Ic, Icon};
 use crate::models::*;
 use crate::util::{rel_time, thousands};
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Size};
+use inkstone_ui::{Align, Button, Gap, Row, Size};
 use progenitor_client::ResponseValue;
 
 /// The shelf row, and the picker it opens into.
@@ -41,7 +41,7 @@ pub(super) fn ShelfSection(entry: WatchlistItem, reload_wl: Reload) -> Element {
 
     rsx! {
         div { class: "ik-track-sec",
-            div { class: "ik-flex", style: "align-items:baseline;gap:8px;margin-bottom:8px;",
+            Row { gap: Gap::Sm, align: Align::Baseline, class: "ik-mb-sm",
                 span { class: "ik-sec-lbl", {i18n.t("series.track.shelf")} }
                 span { class: "ik-mono ik-muted", style: "margin-left:auto;font-size:11.5px;",
                     {

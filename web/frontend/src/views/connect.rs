@@ -11,7 +11,7 @@ use super::auth::AuthBrand;
 use crate::components::Field;
 use crate::i18n::use_i18n;
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Callout, Tone};
+use inkstone_ui::{Button, Callout, Gap, Hint, Tone};
 use tankovault_api_client::Client;
 /// Asks for a server, proves it answers, and stores it.
 ///
@@ -54,7 +54,7 @@ pub(crate) fn ConnectServer(on_connected: EventHandler<String>) -> Element {
         div { class: "ik-auth",
             AuthBrand {}
             h1 { {i18n.t("connect.heading")} }
-            p { class: "ik-muted", {i18n.t("connect.subtitle")} }
+            Hint { above: Gap::Md, below: Gap::Md, {i18n.t("connect.subtitle")} }
 
             if let Some(message) = error.read().clone() {
                 Callout { tone: Tone::Danger, "{message}" }

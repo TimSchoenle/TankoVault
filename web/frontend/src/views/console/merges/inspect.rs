@@ -14,7 +14,7 @@ use crate::views::console::decisions::{percent, pretty, reason_label, signed};
 use crate::views::console::{signal_label, use_console_nav, RefreshTick};
 use crate::Route;
 use dioxus::prelude::*;
-use inkstone_ui::{button_class, Pill, Size, Tone};
+use inkstone_ui::{button_class, Align, Gap, Hint, Pill, Row, Size, Table, TableColumn, Tone};
 
 /// The inspector's tab strip.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -103,7 +103,7 @@ pub(super) fn MergeInspector(
         div { class: "ik-cons-insphead",
             div { class: "ik-flex", style: "align-items:flex-start;gap:14px;",
                 div { style: "min-width:0;flex:1;",
-                    div { class: "ik-flex", style: "gap:10px;flex-wrap:wrap;",
+                    Row { gap: Gap::Md, align: Align::Stretch, wrap: true,
                         h2 { class: "ik-insp-title", "{sides.survivor_title}" }
                         if reverted {
                             Pill { tone: Tone::Accent, {i18n.t("console.merges.badge.reverted")} }
@@ -114,7 +114,7 @@ pub(super) fn MergeInspector(
                             Pill { tone: Tone::Caution, {i18n.t("console.merges.badge.flagged")} }
                         }
                     }
-                    p { class: "ik-muted", style: "font-size:13px;margin:6px 0 0;",
+                    Hint { above: Gap::Sm,
                         {i18n.t("console.merges.absorbedVerb")}
                         " "
                         span { style: "color:var(--text-2);", "{sides.absorbed_title}" }
@@ -210,44 +210,39 @@ fn ScoreTable(decision: MergeDecision) -> Element {
     rsx! {
         Section { label: i18n.t("console.decisions.howScored"),
             if terms.is_empty() {
-                p { class: "ik-muted", {i18n.t("console.decisions.noTerms")} }
+                Hint { {i18n.t("console.decisions.noTerms")} }
             } else {
-                div { class: "ik-tablewrap",
-                    table { class: "ik-table ik-table-compact",
-                        thead {
-                            tr {
-                                th { {i18n.t("console.decisions.col.rule")} }
-                                th { style: "text-align:right;", {i18n.t("console.decisions.col.delta")} }
-                                th { {i18n.t("console.decisions.col.detail")} }
+                Table {
+                    caption: i18n.t("console.decisions.howScored"),
+                    columns: vec![
+                        TableColumn::new(i18n.t("console.decisions.col.rule")),
+                        TableColumn::new(i18n.t("console.decisions.col.delta")).numeric(),
+                        TableColumn::new(i18n.t("console.decisions.col.detail")),
+                    ],
+                    for (index , term) in terms.iter().enumerate() {
+                        tr { key: "{index}",
+                            td {
+                                {term.get("rule").and_then(|v| v.as_str()).map_or_else(
+                                    || "?".to_owned(),
+                                    |rule| signal_label(i18n, rule),
+                                )}
+                            }
+                            td { class: "ik-mono", style: "text-align:right;",
+                                {signed(term.get("delta").and_then(serde_json::Value::as_f64).unwrap_or(0.0))}
+                            }
+                            td { class: "ik-muted", style: "font-size:12px;",
+                                {term.get("detail").and_then(|v| v.as_str()).unwrap_or("")}
                             }
                         }
-                        tbody {
-                            for (index , term) in terms.iter().enumerate() {
-                                tr { key: "{index}",
-                                    td {
-                                        {term.get("rule").and_then(|v| v.as_str()).map_or_else(
-                                            || "?".to_owned(),
-                                            |rule| signal_label(i18n, rule),
-                                        )}
-                                    }
-                                    td { class: "ik-mono", style: "text-align:right;",
-                                        {signed(term.get("delta").and_then(serde_json::Value::as_f64).unwrap_or(0.0))}
-                                    }
-                                    td { class: "ik-muted", style: "font-size:12px;",
-                                        {term.get("detail").and_then(|v| v.as_str()).unwrap_or("")}
-                                    }
-                                }
-                            }
-                            tr {
-                                td { strong { {i18n.t("console.decisions.finalScore")} } }
-                                td { class: "ik-mono", style: "text-align:right;",
-                                    strong { {percent(decision.score)} "%" }
-                                }
-                                td { class: "ik-muted", style: "font-size:12px;",
-                                    if let Some(threshold) = threshold {
-                                        {i18n.args("console.merges.threshold", &[("value", &format!("{threshold:.2}"))])}
-                                    }
-                                }
+                    }
+                    tr {
+                        td { strong { {i18n.t("console.decisions.finalScore")} } }
+                        td { class: "ik-mono", style: "text-align:right;",
+                            strong { {percent(decision.score)} "%" }
+                        }
+                        td { class: "ik-muted", style: "font-size:12px;",
+                            if let Some(threshold) = threshold {
+                                {i18n.args("console.merges.threshold", &[("value", &format!("{threshold:.2}"))])}
                             }
                         }
                     }
@@ -285,7 +280,7 @@ fn BothRecords(decision: MergeDecision) -> Element {
 
     rsx! {
         Section { label: i18n.t("console.merges.bothRecords"),
-            div { class: "ik-flex", style: "gap:10px;align-items:stretch;",
+            Row { gap: Gap::Md, align: Align::Stretch,
                 if let Some(facts) = survivor {
                     RecordCard { role: i18n.t("console.merges.kept"), facts, kept: true }
                 }
@@ -384,27 +379,21 @@ fn UndoInventory(decision: MergeDecision) -> Element {
                 }
             },
             if decision.undo_breakdown.is_empty() {
-                p { class: "ik-muted", style: "font-size:12.5px;margin:0;",
-                    {i18n.t("console.merges.noInventory")}
-                }
+                Hint { {i18n.t("console.merges.noInventory")} }
             } else {
-                div { class: "ik-tablewrap",
-                    table { class: "ik-table ik-table-compact",
-                        tbody {
-                            for segment in decision.undo_breakdown.clone() {
-                                tr { key: "{segment.kind}",
-                                    td { {segment_label(i18n, &segment.kind)} }
-                                    td { class: "ik-mono", style: "text-align:right;",
-                                        "{thousands(segment.rows)}"
-                                    }
-                                }
+                Table { caption: i18n.t("console.merges.putsBack"), columns: Vec::new(),
+                    for segment in decision.undo_breakdown.clone() {
+                        tr { key: "{segment.kind}",
+                            td { {segment_label(i18n, &segment.kind)} }
+                            td { class: "ik-mono", style: "text-align:right;",
+                                "{thousands(segment.rows)}"
                             }
-                            tr {
-                                td { strong { {i18n.t("console.merges.restoredTotal")} } }
-                                td { class: "ik-mono", style: "text-align:right;",
-                                    strong { "{thousands(decision.undo_rows)}" }
-                                }
-                            }
+                        }
+                    }
+                    tr {
+                        td { strong { {i18n.t("console.merges.restoredTotal")} } }
+                        td { class: "ik-mono", style: "text-align:right;",
+                            strong { "{thousands(decision.undo_rows)}" }
                         }
                     }
                 }

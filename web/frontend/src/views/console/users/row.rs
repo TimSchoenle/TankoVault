@@ -5,7 +5,7 @@ use crate::models::AccountStatusExt as _;
 use crate::util::{initial, thousands};
 use crate::wire::types::{AccountStatus, DirectoryRow};
 use dioxus::prelude::*;
-use inkstone_ui::{Pill, Tone};
+use inkstone_ui::{Pill, Row, Tone};
 
 /// One directory row: who they are, what they hold, and the state their account is in.
 #[component]
@@ -29,7 +29,7 @@ pub(super) fn UserRow(row: DirectoryRow, selected: bool, on_pick: EventHandler<S
             class: "{class}",
             "aria-current": if selected { "true" } else { "false" },
             onclick: move |_| on_pick.call(id.clone()),
-            div { class: "ik-flex", style: "gap:10px;",
+            Row {
                 span { class: if staff { "ik-avatar sm" } else { "ik-avatar sm neutral" },
                     {initial(&row.username)}
                 }

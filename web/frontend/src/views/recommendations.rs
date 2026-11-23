@@ -16,7 +16,7 @@ use crate::state::capabilities::use_capabilities;
 use crate::state::use_session;
 use crate::wire::types::Feature;
 use dioxus::prelude::*;
-use inkstone_ui::{button_class, Size, Tone};
+use inkstone_ui::{button_class, Gap, Hint, Size, Tone};
 use progenitor_client::ResponseValue;
 
 #[component]
@@ -62,9 +62,7 @@ pub(crate) fn Recommendations() -> Element {
                 h1 { class: "ik-page-title", style: "margin-bottom:2px;",
                     {i18n.t("nav.recommendations")}
                 }
-                p { class: "ik-muted", style: "font-size:13px;margin:0;max-width:70ch;",
-                    {i18n.t("recommendations.intro")}
-                }
+                Hint { measure: true, {i18n.t("recommendations.intro")} }
             }
         }
 
@@ -85,7 +83,7 @@ pub(crate) fn Recommendations() -> Element {
                                     p { style: "margin:10px 0 4px;font-weight:600;",
                                         {i18n.t("recommendations.empty.title")}
                                     }
-                                    p { class: "ik-muted", style: "font-size:13px;",
+                                    Hint { above: Gap::Md, below: Gap::Md,
                                         {i18n.t("recommendations.empty.hint")}
                                     }
                                     Link { to: crate::Route::Discover { query: crate::views::DiscoverQuery::default() }, class: button_class(Tone::Neutral, Size::Md, false), style: "margin-top:10px;",

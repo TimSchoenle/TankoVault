@@ -12,7 +12,7 @@ use crate::views::console::query::QueueFilter;
 use crate::views::console::sync::use_sync_gate;
 use crate::views::console::{use_console_nav, ConsoleQuery};
 use dioxus::prelude::*;
-use inkstone_ui::{button_class, Button, Size, Tone};
+use inkstone_ui::{button_class, Align, Button, Gap, Hint, Justify, Row, Size, Tone};
 use progenitor_client::ResponseValue;
 /// The provider `<select>`'s options.
 ///
@@ -82,7 +82,7 @@ pub(super) fn AssignQueue(reload: Reload) -> Element {
     });
 
     rsx! {
-        div { class: "ik-flex", style: "gap:8px;margin-bottom:10px;flex-wrap:wrap;",
+        Row { gap: Gap::Sm, align: Align::Stretch, wrap: true, class: "ik-mb-md",
             select {
                 class: "ik-input",
                 value: "{filter.provider}",
@@ -177,7 +177,7 @@ pub(super) fn AssignRow(
         div { class: "ik-row",
             div { class: "grow",
                 div { style: "font-weight:600;", "{s.series_title}" }
-                div { class: "ik-muted", style: "font-size:12px;",
+                Hint { size: Size::Sm,
                     {
                         let sources = i18n.plural("series.sources", s.source_count, &[]);
                         format!("{sources} · {provider}")
@@ -261,7 +261,7 @@ pub(super) fn UnmatchedRemoteQueue(reload: Reload) -> Element {
     });
 
     rsx! {
-        div { class: "ik-flex", style: "gap:8px;margin-bottom:10px;flex-wrap:wrap;",
+        Row { gap: Gap::Sm, align: Align::Stretch, wrap: true, class: "ik-mb-md",
             select {
                 class: "ik-input",
                 value: "{filter.provider}",
@@ -411,10 +411,10 @@ pub(super) fn UnmatchedRemoteRow(entry: Signal<UnmatchedRemoteEntry>, reload: Re
 
     rsx! {
         div { class: "ik-row", style: "flex-direction:column;align-items:stretch;gap:8px;",
-            div { class: "ik-flex", style: "justify-content:space-between;gap:8px;align-items:flex-start;",
+            Row { gap: Gap::Sm, align: Align::Start, justify: Justify::Between,
                 div { style: "min-width:0;",
                     div { style: "font-weight:600;", "{en.title}" }
-                    div { class: "ik-muted", style: "font-size:12px;", "{en.username} · {type_line}" }
+                    Hint { size: Size::Sm, "{en.username} · {type_line}" }
                 }
                 if let Some(url) = entry_url {
                     a {
@@ -560,10 +560,10 @@ pub(super) fn CandidateMatchRow(
 
     rsx! {
         div { class: "ik-card", style: "padding:8px;",
-            div { class: "ik-flex", style: "justify-content:space-between;gap:8px;align-items:center;",
+            Row { gap: Gap::Sm, justify: Justify::Between,
                 div { style: "min-width:0;",
                     div { style: "font-weight:600;", "{title}" }
-                    div { class: "ik-muted", style: "font-size:11px;", "{meta}" }
+                    Hint { size: Size::Xs, "{meta}" }
                 }
                 div { class: "ik-flex", style: "gap:4px;align-items:center;flex:0 0 auto;",
                     if let Some((cls, pct)) = score_badge {

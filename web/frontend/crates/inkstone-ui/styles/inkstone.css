@@ -71,6 +71,7 @@
   /* How tall a scrolling table (`.ik-tablewrap.scroll`) gets before its body scrolls. */
   --ik-table-max-h: 60vh;
   --ik-pad-empty: 40px;
+  --ik-pad-empty-compact: 24px;
   --ik-pad-callout: 10px 12px;
   --ik-gap-callout: 14px;
   --ik-pad-modal: 20px;
@@ -138,6 +139,7 @@
 .ik-chips { display: flex; flex-wrap: wrap; gap: var(--ik-gap-sm); margin-bottom: var(--ik-gap-lg); }
 .ik-chip { border: var(--ik-border) solid var(--border-ctl); background: var(--surface); color: var(--muted); padding: var(--ik-pad-chip); border-radius: var(--ik-radius-chip); font-size: var(--ik-font-chip); cursor: pointer; user-select: none; }
 .ik-chip.active { color: var(--acc3); border-color: var(--acc); background: color-mix(in srgb, var(--acc) var(--ik-tint-chip), transparent); }
+.ik-chip.xs { font-size: 11.5px; padding: 4px 9px; }
 
 .ik-pill { font-family: var(--font-mono); font-size: var(--ik-font-pill); padding: var(--ik-pad-pill); border-radius: var(--ik-radius-pill); border: var(--ik-border) solid var(--border-ctl); text-transform: uppercase; letter-spacing: .05em; }
 .ik-pill.jade { color: var(--jade-bright); border-color: color-mix(in srgb, var(--jade) var(--ik-edge-strong), transparent); background: color-mix(in srgb, var(--jade) var(--ik-tint-pill), transparent); }
@@ -210,6 +212,20 @@
 .ik-skel-cover { aspect-ratio: 2/3; width: 100%; }
 
 .ik-empty, .ik-error { border: var(--ik-border) dashed var(--border); border-radius: var(--radius); padding: var(--ik-pad-empty); text-align: center; color: var(--muted); }
+.ik-empty.compact { padding: var(--ik-pad-empty-compact); }
+.ik-hint { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+.ik-hint.sm { font-size: 12px; }
+.ik-hint.xs { font-size: 11.5px; }
+.ik-hint.measure { max-width: 74ch; }
+.ik-mt-xs { margin-top: var(--ik-gap-xs); }
+.ik-mt-sm { margin-top: var(--ik-gap-sm); }
+.ik-mt-md { margin-top: var(--ik-gap-md); }
+.ik-mt-lg { margin-top: var(--ik-gap-lg); }
+.ik-mb-xs { margin-bottom: var(--ik-gap-xs); }
+.ik-mb-sm { margin-bottom: var(--ik-gap-sm); }
+.ik-mb-md { margin-bottom: var(--ik-gap-md); }
+.ik-mb-lg { margin-bottom: var(--ik-gap-lg); }
+.ik-filter-select { width: auto; }
 .ik-error { border-color: color-mix(in srgb, var(--acc) var(--ik-edge), var(--border)); }
 
 /* A tinted message bar for a form or an action. The dashed .ik-error stays for a panel that

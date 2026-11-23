@@ -26,7 +26,7 @@ use crate::state::use_session;
 use crate::views::discover::{Sort, Tracking};
 use crate::Route;
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Size, Tone};
+use inkstone_ui::{Button, FilterSelect, Gap, Hint, Size, Tone};
 use progenitor_client::ResponseValue;
 
 /// Search screen: trigram-backed query passed straight to the API (§7.6).
@@ -163,9 +163,7 @@ fn SearchLanding(query: SearchQuery, on_search: EventHandler<SearchQuery>) -> El
         div { class: "ik-search-landing",
             div { class: "ik-search-mark", Ic { icon: Icon::Search, size: 26 } }
             h1 { class: "ik-page-title", style: "margin:14px 0 6px;", {i18n.t("nav.search")} }
-            p { class: "ik-muted", style: "margin:0 0 20px;max-width:56ch;",
-                {i18n.t("search.landing.hint")}
-            }
+            Hint { below: Gap::Lg, measure: true, {i18n.t("search.landing.hint")} }
             SearchField {
                 term: query.q.clone(),
                 autofocus: true,
@@ -234,17 +232,46 @@ fn SearchOptions(
     on_change: EventHandler<SearchQuery>,
 ) -> Element {
     let i18n = use_i18n();
+    // The absent parameter *is* relevance, so this is not a separate ordering: it is the one the
+    // server applies when nobody overrides it.
+    let sort_options: Vec<(String, String)> =
+        std::iter::once((String::new(), i18n.t("discover.sort.relevance")))
+            .chain(
+                Sort::ALL
+                    .iter()
+                    .map(|option| (option.token().to_owned(), i18n.t(option.label_key()))),
+            )
+            .collect();
+    let type_options: Vec<(String, String)> =
+        std::iter::once((String::new(), i18n.t("search.anyType")))
+            .chain(
+                <ContentType as ContentTypeExt>::all()
+                    .iter()
+                    .map(|option| (option.token().to_owned(), i18n.t(option.label_key()))),
+            )
+            .collect();
+    let status_options: Vec<(String, String)> =
+        std::iter::once((String::new(), i18n.t("search.anyStatus")))
+            .chain(
+                <SeriesStatus as SeriesStatusExt>::all()
+                    .iter()
+                    .map(|option| (option.token().to_owned(), i18n.t(option.label_key()))),
+            )
+            .collect();
+    let tracking_options: Vec<(String, String)> = Tracking::ALL
+        .iter()
+        .map(|option| (option.token().to_owned(), i18n.t(option.label_key())))
+        .collect();
     rsx! {
         div { class: "ik-search-options",
-            select {
-                class: "ik-input",
-                style: "width:auto;",
-                "aria-label": i18n.t("discover.sortLabel"),
-                value: query.sort.map_or("", Sort::token),
-                onchange: {
+            FilterSelect {
+                id: "tv-search-sort",
+                aria_label: i18n.t("discover.sortLabel"),
+                options: sort_options,
+                selected: query.sort.map_or("", Sort::token),
+                on_select: {
                     let query = query.clone();
-                    move |event: FormEvent| {
-                        let chosen = event.value();
+                    move |chosen: String| {
                         on_change
                             .call(SearchQuery {
                                 sort: (!chosen.is_empty()).then(|| Sort::parse(&chosen)),
@@ -252,24 +279,15 @@ fn SearchOptions(
                             });
                     }
                 },
-                // The absent parameter *is* relevance, so this is not a separate ordering: it is
-                // the one the server applies when nobody overrides it.
-                option { value: "", {i18n.t("discover.sort.relevance")} }
-                for option in Sort::ALL {
-                    option { key: "{option.token()}", value: option.token(),
-                        {i18n.t(option.label_key())}
-                    }
-                }
             }
-            select {
-                class: "ik-input",
-                style: "width:auto;",
-                "aria-label": i18n.t("discover.contentType"),
-                value: query.content_type.map_or_default(|value| value.token()),
-                onchange: {
+            FilterSelect {
+                id: "tv-search-type",
+                aria_label: i18n.t("discover.contentType"),
+                options: type_options,
+                selected: query.content_type.map_or_default(|value| value.token()),
+                on_select: {
                     let query = query.clone();
-                    move |event: FormEvent| {
-                        let chosen = event.value();
+                    move |chosen: String| {
                         on_change
                             .call(SearchQuery {
                                 content_type: <ContentType as ContentTypeExt>::all()
@@ -280,22 +298,15 @@ fn SearchOptions(
                             });
                     }
                 },
-                option { value: "", {i18n.t("search.anyType")} }
-                for option in <ContentType as ContentTypeExt>::all().iter().copied() {
-                    option { key: "{option.token()}", value: option.token(),
-                        {i18n.t(option.label_key())}
-                    }
-                }
             }
-            select {
-                class: "ik-input",
-                style: "width:auto;",
-                "aria-label": i18n.t("discover.status"),
-                value: query.status.map_or_default(|value| value.token()),
-                onchange: {
+            FilterSelect {
+                id: "tv-search-status",
+                aria_label: i18n.t("discover.status"),
+                options: status_options,
+                selected: query.status.map_or_default(|value| value.token()),
+                on_select: {
                     let query = query.clone();
-                    move |event: FormEvent| {
-                        let chosen = event.value();
+                    move |chosen: String| {
                         on_change
                             .call(SearchQuery {
                                 status: <SeriesStatus as SeriesStatusExt>::all()
@@ -306,36 +317,25 @@ fn SearchOptions(
                             });
                     }
                 },
-                option { value: "", {i18n.t("search.anyStatus")} }
-                for option in <SeriesStatus as SeriesStatusExt>::all().iter().copied() {
-                    option { key: "{option.token()}", value: option.token(),
-                        {i18n.t(option.label_key())}
-                    }
-                }
             }
             // Resolved server-side against the caller's own token, so it is only offered to a
             // reader who has a watchlist for it to mean anything about.
             if authenticated {
-                select {
-                    class: "ik-input",
-                    style: "width:auto;",
-                    "aria-label": i18n.t("discover.tracking.label"),
-                    value: query.tracking.token(),
-                    onchange: {
+                FilterSelect {
+                    id: "tv-search-tracking",
+                    aria_label: i18n.t("discover.tracking.label"),
+                    options: tracking_options,
+                    selected: query.tracking.token(),
+                    on_select: {
                         let query = query.clone();
-                        move |event: FormEvent| {
+                        move |chosen: String| {
                             on_change
                                 .call(SearchQuery {
-                                    tracking: Tracking::parse_token(&event.value()),
+                                    tracking: Tracking::parse_token(&chosen),
                                     ..query.clone()
                                 });
                         }
                     },
-                    for option in Tracking::ALL {
-                        option { key: "{option.label_key()}", value: option.token(),
-                            {i18n.t(option.label_key())}
-                        }
-                    }
                 }
             }
             if query.has_options() {

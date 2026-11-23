@@ -5,7 +5,7 @@ use crate::models::*;
 use crate::util::{rel_time, thousands};
 use crate::views::console::decisions::percent;
 use dioxus::prelude::*;
-use inkstone_ui::{Pill, Tone};
+use inkstone_ui::{Align, Gap, Pill, Row, Tone};
 
 /// A row: the survivor leads, the absorbed title is the subtitle, the facts are the third line.
 #[component]
@@ -49,7 +49,7 @@ pub(super) fn MergeListRow(
             },
             "aria-current": if selected { "true" } else { "false" },
             onclick: move |_| on_pick.call(id),
-            div { class: "ik-flex", style: "gap:8px;flex-wrap:wrap;",
+            Row { gap: Gap::Sm, align: Align::Stretch, wrap: true,
                 span { style: "font-weight:600;font-size:13px;", "{survivor}" }
                 if reverted {
                     Pill { tone: Tone::Accent, class: "ik-pill-tiny", {i18n.t("console.merges.badge.reverted")} }

@@ -15,7 +15,7 @@ use crate::util::{rel_time, thousands};
 use crate::views::console::RefreshTick;
 use crate::wire::types::Permission;
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Callout, Size, Tone};
+use inkstone_ui::{Align, Button, Callout, Gap, Row, Size, Tone};
 
 /// The decision block: what each outcome does, the reason both demand, and the buttons.
 #[component]
@@ -121,7 +121,7 @@ pub(super) fn UnmergeBlock(
                         oninput: move |event: FormEvent| reason.set(event.value()),
                     }
                 }
-                div { class: "ik-flex", style: "gap:8px;margin-top:11px;flex-wrap:wrap;",
+                Row { gap: Gap::Sm, align: Align::Stretch, wrap: true, class: "ik-mt-md",
                     if decision.revertible {
                         Button {
                             size: Size::Sm,

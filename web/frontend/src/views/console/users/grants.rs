@@ -9,7 +9,7 @@ use crate::wire::types::{
     GrantRow, Permission, PermissionCatalogue, PermissionGroup, PermissionInfo,
 };
 use dioxus::prelude::*;
-use inkstone_ui::{Callout, Tone};
+use inkstone_ui::{Callout, FilterSelect, Gap, Hint, SegOption, Size, Tone};
 use progenitor_client::ResponseValue;
 use std::collections::BTreeSet;
 
@@ -91,9 +91,7 @@ pub(super) fn PermissionGrants(
                     }
                 },
             }
-            p { class: "ik-muted", style: "font-size:11.5px;line-height:1.5;margin:8px 0 0;",
-                {i18n.t("console.users.grantLifetime")}
-            }
+            Hint { size: Size::Xs, above: Gap::Sm, {i18n.t("console.users.grantLifetime")} }
         }
     }
 }
@@ -109,22 +107,27 @@ pub(super) fn PresetPicker(
 ) -> Element {
     let i18n = use_i18n();
     let mut chosen = chosen;
+    let mut last_pick = use_signal(String::new);
+    let mut options: Vec<SegOption> = vec![(String::new(), i18n.t("console.users.presets"))];
+    options.extend(
+        catalogue
+            .presets
+            .iter()
+            .map(|preset| (preset.key.to_string(), i18n.t(preset.key.label_key()))),
+    );
     rsx! {
-        select {
-            class: "ik-select",
-            style: "font-size:11.5px;padding:5px 8px;",
-            "aria-label": i18n.t("console.users.presets"),
-            onchange: move |event| {
-                let picked = event.value();
+        FilterSelect {
+            id: "tv-users-preset",
+            aria_label: i18n.t("console.users.presets"),
+            options,
+            selected: last_pick.read().clone(),
+            on_select: move |picked: String| {
                 if let Some(preset) = catalogue.presets.iter().find(|p| p.key.to_string() == picked)
                 {
                     chosen.set(preset.permissions.iter().copied().collect());
                 }
+                last_pick.set(picked);
             },
-            option { value: "", {i18n.t("console.users.presets")} }
-            for preset in catalogue.presets.iter() {
-                option { key: "{preset.key}", value: "{preset.key}", {i18n.t(preset.key.label_key())} }
-            }
         }
     }
 }

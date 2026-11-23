@@ -11,7 +11,7 @@ use crate::views::console::run_state_pill;
 use crate::views::console::{use_console_nav, ConsoleQuery};
 use crate::wire::types::ScanRunId;
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Size};
+use inkstone_ui::{Align, Button, Gap, Hint, Justify, Row, Size, Table, TableColumn};
 /// Recent runs under the current filter, with the drawer for the selected one and a pager.
 ///
 /// Paged, not capped: a capped panel shows whichever page the server's default hands it and
@@ -34,7 +34,7 @@ pub(super) fn RunHistory(
     rsx! {
         RunDrawer {}
         div { style: "margin-top:16px;",
-            div { class: "ik-flex", style: "justify-content:space-between;align-items:baseline;",
+            Row { gap: Gap::None, align: Align::Baseline, justify: Justify::Between,
                 div { class: "ik-subhead", {i18n.t("console.scans.recent")} }
                 // Says what the list is a window on, so a page of 30 out of 400 does not read as
                 // the whole history, and, under a filter, states that it is one.
@@ -55,7 +55,7 @@ pub(super) fn RunHistory(
                 }
             }
             if runs.is_empty() {
-                p { class: "ik-muted", style: "font-size:13px;margin:6px 0 0;",
+                Hint { above: Gap::Sm,
                     {
                         i18n.t(
                             if narrowed { "console.scan.history.noneMatch" } else { "console.scans.noRuns" },
@@ -63,24 +63,20 @@ pub(super) fn RunHistory(
                     }
                 }
             } else {
-                div { class: "ik-tablewrap scroll",
-                    table { class: "ik-table ik-table-compact",
-                        thead {
-                            tr {
-                                th { {i18n.t("console.scans.col.state")} }
-                                th { {i18n.t("console.scans.col.mode")} }
-                                th { {i18n.t("console.scans.col.scope")} }
-                                th { {i18n.t("console.scans.col.progress")} }
-                                th { {i18n.t("console.scans.col.duration")} }
-                                th { {i18n.t("console.scans.col.started")} }
-                                th { {i18n.t("console.scans.col.finished")} }
-                            }
-                        }
-                        tbody {
-                            for run in runs {
-                                RunHistoryRow { key: "{run.id}", run }
-                            }
-                        }
+                Table {
+                    caption: i18n.t("console.scans.recent"),
+                    scroll: true,
+                    columns: vec![
+                        TableColumn::new(i18n.t("console.scans.col.state")),
+                        TableColumn::new(i18n.t("console.scans.col.mode")),
+                        TableColumn::new(i18n.t("console.scans.col.scope")),
+                        TableColumn::new(i18n.t("console.scans.col.progress")),
+                        TableColumn::new(i18n.t("console.scans.col.duration")),
+                        TableColumn::new(i18n.t("console.scans.col.started")),
+                        TableColumn::new(i18n.t("console.scans.col.finished")),
+                    ],
+                    for run in runs {
+                        RunHistoryRow { key: "{run.id}", run }
                     }
                 }
             }
@@ -139,7 +135,7 @@ fn RunHistoryRow(run: ScanRun) -> Element {
             td { class: "ik-mono", "{run.mode:?}" }
             td { class: "ik-mono ik-muted", "{scope_label(i18n, &run)}" }
             td {
-                div { class: "ik-flex", style: "gap:8px;",
+                Row { gap: Gap::Sm, align: Align::Stretch,
                     span { class: "ik-mono", style: "font-size:12px;min-width:82px;",
                         "{run.done_tasks}/{run.total_tasks}"
                         if run.failed_tasks > 0 {
@@ -215,8 +211,8 @@ fn RunDrawer() -> Element {
 
     rsx! {
         div { class: "ik-tile", style: "margin-top:12px;",
-            div { class: "ik-flex", style: "justify-content:space-between;align-items:center;gap:10px;",
-                div { class: "ik-flex", style: "gap:8px;align-items:center;flex-wrap:wrap;",
+            Row { gap: Gap::Md, justify: Justify::Between,
+                Row { gap: Gap::Sm, wrap: true,
                     span { class: run_state_ring(run.state) }
                     span { class: run_state_pill(run.state), {i18n.t(run.state.label_key())} }
                     span { class: "ik-mono", style: "font-size:12px;", "{run.mode:?}" }
@@ -231,7 +227,7 @@ fn RunDrawer() -> Element {
                     {i18n.t("common.close")}
                 }
             }
-            div { class: "ik-flex", style: "gap:16px;flex-wrap:wrap;margin-top:10px;",
+            Row { gap: Gap::Lg, align: Align::Stretch, wrap: true, class: "ik-mt-md",
                 Fact {
                     label: i18n.t("console.scan.detail.tasks"),
                     value: format!("{}/{}", run.done_tasks, run.total_tasks),

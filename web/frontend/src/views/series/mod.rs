@@ -31,7 +31,7 @@ use crate::util::{chapter_number, rel_time};
 use crate::Route;
 use chapters::{ChapterSection, OpenControl};
 use dioxus::prelude::*;
-use inkstone_ui::{Button, IconButton, Pill, Size, Tone};
+use inkstone_ui::{Button, IconButton, Pill, Row, Size, Tone};
 use model::{
     merge_chapters, next_unread, rank_sources, source_ceiling, source_freshest, ChapterKey,
     MergedChapter, RankedSource,
@@ -410,7 +410,7 @@ fn Hero(
             div { class: "ik-hero",
                 div { Cover { url: detail.cover_url.clone(), title: detail.title.clone() } }
                 div { style: "min-width:0;",
-                    div { class: "ik-flex", style: "margin-bottom:8px;flex-wrap:wrap;",
+                    Row { wrap: true, class: "ik-mb-sm",
                         Pill {
                             style: "color:{detail.content_type.color()};",
                             span { class: "ik-typemark", {detail.content_type.initial()} }

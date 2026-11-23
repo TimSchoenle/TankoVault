@@ -89,6 +89,37 @@ pub(super) fn no_dangerous_inner_html(root: &Path) -> Vec<Finding> {
     findings
 }
 
+/// **Data tables go through `inkstone_ui::Table`.** A hand-built `table.ik-table` had no
+/// `caption` in nine console panels, so a screen reader announced each as "table" and nothing
+/// else; the kit's `Table` makes the caption a required prop.
+pub(super) fn tables_go_through_the_kit(root: &Path) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for path in walk(&root.join("web/frontend/src"), &["rs"], &["target"]) {
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        for (number, line) in text.lines().enumerate() {
+            if !is_comment(line) && builds_a_table_by_hand(line) {
+                findings.push(Finding {
+                    rule: "tables-go-through-the-kit",
+                    file: path.clone(),
+                    line: number + 1,
+                    detail: "a hand-built table has no accessible name unless someone remembers \
+                             one. Use `inkstone_ui::Table`, which requires a caption"
+                        .to_owned(),
+                });
+            }
+        }
+    }
+    findings
+}
+
+/// Whether `line` opens a `table` in the kit's class without the kit. The `ik-tablewrap` wrapper
+/// alone is not a table: some panels reuse it for a list of rows.
+fn builds_a_table_by_hand(line: &str) -> bool {
+    line.contains("table {") && line.contains("\"ik-table")
+}
+
 /// **The app shell loads nothing off-origin.** `default-src 'self'` refuses a CDN `<script>` or
 /// `<link>` in `web/frontend/index.html` at browser runtime and nothing at build time: the
 /// symptom is a missing font or dead feature in production only, and CDN-loading a boot script
@@ -536,6 +567,19 @@ fn quoted_after(text: &str, prefix: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Nine console tables once shipped with no caption; the kit's `Table` requires one.
+    #[test]
+    fn a_hand_built_table_trips_and_the_kit_does_not() {
+        assert!(!builds_a_table_by_hand(
+            r#"div { class: "ik-tablewrap scroll","#
+        ));
+        assert!(builds_a_table_by_hand(
+            r#"table { class: "ik-table ik-table-compact","#
+        ));
+        assert!(!builds_a_table_by_hand("Table {"));
+        assert!(!builds_a_table_by_hand(r#"tr { class: "ik-row-pick","#));
+    }
 
     /// A rule only ever seen green is indistinguishable from one whose pattern never fires:
     /// exactly how a mistyped `clippy.toml` path behaves.

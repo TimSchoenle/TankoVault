@@ -8,6 +8,7 @@ use crate::state::capabilities::use_capabilities;
 use crate::util::rel_time;
 use crate::wire::types::Permission;
 use dioxus::prelude::*;
+use inkstone_ui::{Hint, Size};
 use progenitor_client::ResponseValue;
 
 /// How many of this account's actions the panel shows.
@@ -56,9 +57,7 @@ pub(super) fn RecentActions(user_id: String) -> Element {
                     |page| {
                         if page.items.is_empty() {
                             return rsx! {
-                                p { class: "ik-muted", style: "font-size:12px;margin:0;",
-                                    {i18n.t("console.users.noRecentActions")}
-                                }
+                                Hint { size: Size::Sm, {i18n.t("console.users.noRecentActions")} }
                             };
                         }
                         rsx! {

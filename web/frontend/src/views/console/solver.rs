@@ -1,7 +1,9 @@
 //! Owns Challenge & solver, and the standalone adapter-test tab.
 
 use crate::api;
-use crate::components::{async_block_list, use_step_up_gate, HealthPill, StepUpGate, StepUpGuard};
+use crate::components::{
+    async_block_list, use_step_up_gate, ConsolePanel, HealthPill, StepUpGate, StepUpGuard,
+};
 use crate::hooks::{use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
@@ -10,7 +12,7 @@ use crate::state::use_session;
 use crate::views::console::providers::AdapterTestPanel;
 use crate::views::console::RefreshTick;
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Pill, Tone};
+use inkstone_ui::{Button, FilterSelect, Gap, Hint, Justify, Pill, Row, SegOption, Tone};
 use progenitor_client::ResponseValue;
 /// Challenge & solver panel: provider health with re-solve and re-enable actions.
 #[component]
@@ -45,10 +47,10 @@ pub(super) fn SolverPanel(tick: RefreshTick) -> Element {
     });
 
     rsx! {
-        section { style: "margin-bottom:18px;",
-            div { class: "ik-tile", style: "margin-bottom:14px;",
-                div { class: "ik-flex", style: "justify-content:space-between;flex-wrap:wrap;",
-                    div { class: "ik-flex", style: "gap:9px;",
+        section { class: "ik-mb-lg",
+            div { class: "ik-tile ik-mb-lg",
+                Row { justify: Justify::Between, wrap: true,
+                    Row { gap: Gap::Sm,
                         Ic { icon: Icon::ShieldLock, size: 20 }
                         div {
                             div { style: "font-weight:600;", {i18n.t("console.solver.title")} }
@@ -63,9 +65,7 @@ pub(super) fn SolverPanel(tick: RefreshTick) -> Element {
                         {i18n.t("console.solver.active")}
                     }
                 }
-                p { class: "ik-muted", style: "font-size:13px;margin:10px 0 0;",
-                    {i18n.t("console.solver.note")}
-                }
+                Hint { above: Gap::Md, {i18n.t("console.solver.note")} }
             }
             h3 { {i18n.t("console.solver.providerStates")} }
             StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
@@ -182,24 +182,28 @@ pub(super) fn AdapterTestTab() -> Element {
 
     let empty = i18n.t("console.adapterTest.noProviders");
     let body = async_block_list(&res, reload, 60, &empty, |rows| {
-        let opts = rows.to_vec();
-        let sel = chosen.read().clone();
+        let mut options: Vec<SegOption> =
+            vec![(String::new(), i18n.t("console.adapterTest.choose"))];
+        options.extend(rows.iter().map(|p| (p.id.to_string(), p.name.clone())));
+        let sel = chosen.read().clone().unwrap_or_default();
         rsx! {
-                div { class: "ik-flex", style: "margin-bottom:4px;",
-                    label { class: "ik-muted", style: "font-size:13px;", {i18n.t("discover.provider")} }
-                    select {
-                        class: "ik-input",
-                        style: "width:auto;",
-                        onchange: move |e| {
-                            let v = e.value();
-                            chosen.set(if v.is_empty() { None } else { Some(v) });
-                        },
-                        option { value: "", selected: sel.is_none(), {i18n.t("console.adapterTest.choose")} }
-                        for p in opts {
-                            option { value: "{p.id}", selected: sel.as_deref() == Some(p.id.to_string().as_str()), "{p.name}" }
-                        }
-                    }
+            Row { class: "ik-mb-xs",
+                label {
+                    class: "ik-muted",
+                    style: "font-size:13px;",
+                    r#for: "tv-adapter-test-provider",
+                    {i18n.t("discover.provider")}
                 }
+                FilterSelect {
+                    id: "tv-adapter-test-provider",
+                    aria_label: i18n.t("discover.provider"),
+                    options,
+                    selected: sel,
+                    on_select: move |v: String| {
+                        chosen.set(if v.is_empty() { None } else { Some(v) });
+                    },
+                }
+            }
             if let Some(pid) = chosen.read().clone().and_then(|v| v.parse::<ProviderId>().ok()) {
                 AdapterTestPanel { provider_id: pid }
             }
@@ -207,11 +211,9 @@ pub(super) fn AdapterTestTab() -> Element {
     });
 
     rsx! {
-        section { style: "margin-bottom:18px;",
-            h3 { {i18n.t("console.tab.adapterTest")} }
-            p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
-                {i18n.t("console.adapterTest.intro")}
-            }
+        ConsolePanel {
+            title: i18n.t("console.tab.adapterTest"),
+            intro: i18n.t("console.adapterTest.intro"),
             {body}
         }
     }

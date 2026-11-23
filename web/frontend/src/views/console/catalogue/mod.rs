@@ -10,8 +10,8 @@ mod row;
 
 use crate::api;
 use crate::components::{
-    async_view, use_step_up_gate, CompactPager, InlineConfirm, Kpi, ListSearch, OutcomeLine,
-    SegControl, SkeletonRows, StepUpGuard, Window,
+    async_view, use_step_up_gate, CompactPager, ConsolePanel, InlineConfirm, Kpi, ListSearch,
+    OutcomeLine, SegControl, SkeletonRows, StepUpGuard, Window,
 };
 use crate::hooks::{use_busy, use_outcome, use_reload};
 use crate::i18n::use_i18n;
@@ -21,7 +21,7 @@ use crate::util::thousands;
 use crate::views::console::{use_console_nav, ConsoleQuery};
 use crate::wire::types::{BulkDeleteSeries, HealthFilter, Permission, SeriesId};
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Size};
+use inkstone_ui::{Button, EmptyBox, Gap, Row, Size, Table, TableColumn};
 use progenitor_client::ResponseValue;
 use purge::PurgePanel;
 use row::CatalogueTableRow;
@@ -137,11 +137,9 @@ pub(super) fn CatalogueEntity() -> Element {
 
     rsx! {
         div { class: "ik-cons-pane",
-            section { style: "margin-bottom:18px;",
-                h3 { {i18n.t("console.catalogue.title")} }
-                p { class: "ik-muted", style: "font-size:12.5px;line-height:1.5;margin:0 0 12px;",
-                    {i18n.t("console.catalogue.intro")}
-                }
+            ConsolePanel {
+                title: i18n.t("console.catalogue.title"),
+                intro: i18n.t("console.catalogue.intro"),
                 match &*summary.read() {
                     Some(Ok(totals)) => rsx! {
                         div { class: "ik-kpis", style: "margin-bottom:14px;",
@@ -177,7 +175,7 @@ pub(super) fn CatalogueEntity() -> Element {
                     _ => rsx! {},
                 }
 
-                div { class: "ik-flex", style: "gap:8px;flex-wrap:wrap;margin-bottom:10px;",
+                Row { gap: Gap::Sm, wrap: true, class: "ik-mb-md",
                     div { style: "flex:1;min-width:16ch;",
                         ListSearch {
                             placeholder: i18n.t("console.catalogue.searchPlaceholder"),
@@ -237,19 +235,24 @@ pub(super) fn CatalogueEntity() -> Element {
                         |_| {
                             if rows.is_empty() {
                                 return rsx! {
-                                    div { class: "ik-empty", style: "padding:24px;",
-                                        {i18n.t("console.catalogue.empty")}
-                                    }
+                                    EmptyBox { message: i18n.t("console.catalogue.empty"), compact: true }
                                 };
                             }
                             let ids = page_ids.clone();
                             rsx! {
-                                div { class: "ik-tablewrap scroll",
-                                    table { class: "ik-table ik-table-compact",
-                                        thead {
-                                            tr {
+                                Table {
+                                    caption: i18n.t("console.catalogue.title"),
+                                    scroll: true,
+                                    columns: vec![
+                                        TableColumn::new(i18n.t("console.catalogue.col.title")),
+                                        TableColumn::new(i18n.t("console.catalogue.col.providers")),
+                                        TableColumn::new(i18n.t("console.catalogue.col.chapters")).numeric(),
+                                        TableColumn::new(i18n.t("console.catalogue.col.watchers")).numeric(),
+                                        TableColumn::new(i18n.t("console.catalogue.col.added")),
+                                    ],
+                                    lead: rsx! {
                                                 if can_delete {
-                                                    th { style: "width:30px;",
+                                                    th { style: "width:30px;", scope: "col",
                                                         input {
                                                             class: "ik-cbx",
                                                             r#type: "checkbox",
@@ -268,22 +271,13 @@ pub(super) fn CatalogueEntity() -> Element {
                                                         }
                                                     }
                                                 }
-                                                th { {i18n.t("console.catalogue.col.title")} }
-                                                th { {i18n.t("console.catalogue.col.providers")} }
-                                                th { style: "text-align:right;", {i18n.t("console.catalogue.col.chapters")} }
-                                                th { style: "text-align:right;", {i18n.t("console.catalogue.col.watchers")} }
-                                                th { {i18n.t("console.catalogue.col.added")} }
-                                            }
-                                        }
-                                        tbody {
-                                            for entry in rows.clone() {
-                                                CatalogueTableRow {
-                                                    key: "{entry.id}",
-                                                    entry: entry.clone(),
-                                                    selectable: can_delete,
-                                                    picked,
-                                                }
-                                            }
+                                    },
+                                    for entry in rows.clone() {
+                                        CatalogueTableRow {
+                                            key: "{entry.id}",
+                                            entry: entry.clone(),
+                                            selectable: can_delete,
+                                            picked,
                                         }
                                     }
                                 }

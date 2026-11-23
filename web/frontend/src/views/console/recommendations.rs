@@ -10,7 +10,7 @@
 
 use crate::api;
 use crate::components::{
-    async_view, use_step_up_gate, Kpi, SkeletonBlock, StepUpGate, StepUpGuard,
+    async_view, use_step_up_gate, ConsolePanel, Kpi, SkeletonBlock, StepUpGate, StepUpGuard,
 };
 use crate::hooks::{use_busy, use_reload, Reload};
 use crate::i18n::use_i18n;
@@ -22,7 +22,7 @@ use crate::wire::types::{
     ModelHealthView, Permission, RebuildRequest, RecsysBuildMode, TunableGroup,
 };
 use dioxus::prelude::*;
-use inkstone_ui::Button;
+use inkstone_ui::{Align, Button, Gap, Hint, Row, Size};
 use progenitor_client::ResponseValue;
 /// How often the health panel re-reads itself while a build holds the claim.
 ///
@@ -88,13 +88,11 @@ pub(super) fn RecommendationsPanel() -> Element {
     });
 
     rsx! {
-        section { style: "margin-bottom:18px;",
-            h3 { {i18n.t("console.tab.recommendations")} }
-            p { class: "ik-muted", style: "font-size:13px;margin-top:0;max-width:70ch;",
-                {i18n.t("console.recsys.intro")}
-            }
+        ConsolePanel {
+            title: i18n.t("console.tab.recommendations"),
+            intro: i18n.t("console.recsys.intro"),
             if !can_write {
-                p { class: "ik-muted", style: "font-size:12px;", {i18n.t("console.recsys.readOnly")} }
+                Hint { size: Size::Sm, below: Gap::Md, {i18n.t("console.recsys.readOnly")} }
             }
             StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
 
@@ -187,7 +185,7 @@ fn HealthBody(view: ModelHealthView, can_write: bool, reload: Reload, gate: Step
     let repair_accent = if repairing { "warn" } else { "" }.to_owned();
 
     rsx! {
-        div { class: "ik-flex", style: "gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;",
+        Row { gap: Gap::Sm, wrap: true, class: "ik-mb-md",
             span {
                 class: if view.building { "ik-pill run" } else { "ik-pill" },
                 "{view.stage}"
@@ -333,8 +331,8 @@ fn BuildProgress(stage: String, done: i32, total: i32, started_at: Option<String
     };
 
     rsx! {
-        div { style: "margin-bottom:14px;",
-            div { class: "ik-flex", style: "gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px;",
+        div { class: "ik-mb-lg",
+            Row { align: Align::Baseline, wrap: true, class: "ik-mb-xs",
                 span { class: "ik-mono", style: "font-size:12.5px;", "{stage}" }
                 if let Some(step) = step {
                     span { class: "ik-mono ik-muted", style: "font-size:11.5px;", "{step}" }

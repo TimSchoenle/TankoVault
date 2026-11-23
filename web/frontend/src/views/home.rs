@@ -23,7 +23,7 @@ use crate::views::{DiscoverQuery, SearchQuery};
 use crate::wire::types::{Feature, MeStats};
 use crate::Route;
 use dioxus::prelude::*;
-use inkstone_ui::{button_class, Button, Pill, Size, Tone};
+use inkstone_ui::{button_class, Button, Gap, Hint, Pill, Size, Tone};
 use progenitor_client::ResponseValue;
 #[component]
 pub(crate) fn Home() -> Element {
@@ -250,7 +250,7 @@ fn FirstRun() -> Element {
     rsx! {
         div { class: "ik-auth", style: "margin:18px auto 0;",
             h1 { {i18n.t("home.firstRun.title")} }
-            p { class: "ik-muted", {i18n.t("home.firstRun.body")} }
+            Hint { above: Gap::Md, below: Gap::Md, {i18n.t("home.firstRun.body")} }
             if caps.has_feature(Feature::CatalogueBrowse) {
                 Link {
                     to: Route::Discover { query: DiscoverQuery::default() },
@@ -285,7 +285,7 @@ fn GuestHome() -> Element {
         div { class: "ik-auth",
             AuthBrand {}
             h1 { {i18n.t("home.guest.title")} }
-            p { class: "ik-muted", {i18n.t("home.guest.subtitle")} }
+            Hint { above: Gap::Md, below: Gap::Md, {i18n.t("home.guest.subtitle")} }
             Link {
                 to: Route::Login {},
                 class: button_class(Tone::Primary, Size::Md, true),
@@ -516,7 +516,7 @@ fn FeedRow(release: Release, reload: Reload) -> Element {
             span { class: "ik-mono", style: "color:var(--acc);min-width:56px;", "{marker}" }
             div { class: "grow",
                 div { style: "font-weight:600;", "{release.series_title}" }
-                div { class: "ik-muted", style: "font-size:13px;", "{label} · {release.provider_slug}" }
+                Hint { "{label} · {release.provider_slug}" }
             }
             a { class: button_class(Tone::Neutral, Size::Md, false), href: "{release.url}", target: "_blank", rel: "noopener", {i18n.t("common.open")} }
             Button {

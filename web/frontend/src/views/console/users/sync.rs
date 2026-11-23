@@ -8,7 +8,7 @@ use crate::models::AdminSyncAccount;
 use crate::util::{monogram, rel_time};
 use crate::wire::types::{SyncAccountTarget, UserId};
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Size, Tone};
+use inkstone_ui::{Button, Hint, Size, Tone};
 use progenitor_client::ResponseValue;
 /// This account's linked external trackers, with the two admin-side actions the API supports.
 #[component]
@@ -54,9 +54,7 @@ pub(super) fn ExternalSync(
                             .collect();
                         if mine.is_empty() {
                             return rsx! {
-                                p { class: "ik-muted", style: "font-size:12px;margin:0;",
-                                    {i18n.t("console.users.noSyncLinks")}
-                                }
+                                Hint { size: Size::Sm, {i18n.t("console.users.noSyncLinks")} }
                             };
                         }
                         rsx! {

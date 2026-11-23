@@ -13,7 +13,7 @@ use crate::wire::types::{
     CataloguePurgeStatus, CataloguePurgeStop, CatalogueSummary, PurgeRequest, PurgeScope,
 };
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Tone};
+use inkstone_ui::{Button, Hint, Row, Size, Tone};
 use progenitor_client::ResponseValue;
 
 /// How often the panel re-reads a running purge.
@@ -162,12 +162,8 @@ pub(super) fn PurgePanel(totals: Option<CatalogueSummary>, reload: Reload) -> El
                 }
             }
             if let Some(line) = line {
-                div {
-                    class: "ik-flex",
-                    style: "gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0 0;",
-                    p { class: "ik-mono", style: "font-size:12px;margin:0;color:var(--muted);",
-                        "{line}"
-                    }
+                Row { wrap: true, class: "ik-mt-md",
+                    Hint { size: Size::Sm, class: "ik-mono", "{line}" }
                     if running && !cancelling {
                         Button {
                             tone: Tone::Danger,

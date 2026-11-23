@@ -17,7 +17,7 @@ use crate::icons::{Ic, Icon};
 use crate::models::{PreferredProvider, ProviderId, PublicProvider, SourcePreferencesUpdate};
 use crate::state::source_order::use_source_order;
 use dioxus::prelude::*;
-use inkstone_ui::Button;
+use inkstone_ui::{Button, Gap, Hint, Size};
 #[component]
 pub(crate) fn SourcesPanel() -> Element {
     let i18n = use_i18n();
@@ -128,12 +128,10 @@ pub(crate) fn SourcesPanel() -> Element {
 
     rsx! {
         PanelCard { icon: Icon::Layers, title: i18n.t("account.sources.title"),
-            p { class: "ik-muted", style: "font-size:12.5px;margin:0 0 14px;",
-                {i18n.t("account.sources.intro")}
-            }
+            Hint { below: Gap::Lg, {i18n.t("account.sources.intro")} }
             Section { label: i18n.t("account.sources.section.ranked"),
                 if order.is_empty() {
-                    div { class: "ik-muted", style: "font-size:12.5px;", {i18n.t("account.sources.empty")} }
+                    Hint { {i18n.t("account.sources.empty")} }
                 }
                 for (index , provider) in order.iter().cloned().enumerate() {
                     div { class: "ik-row", key: "{provider.id}",
@@ -193,7 +191,7 @@ pub(crate) fn SourcesPanel() -> Element {
                         div { class: "ik-row", key: "{provider.id}",
                             div { class: "grow",
                                 div { "{provider.name}" }
-                                div { class: "ik-muted", style: "font-size:12px;",
+                                Hint { size: Size::Sm,
                                     {i18n.args("account.sources.seriesCount", &[("count", &provider.series_count.to_string())])}
                                 }
                             }
@@ -215,9 +213,7 @@ pub(crate) fn SourcesPanel() -> Element {
                 }
             }
             Section { label: i18n.t("account.sources.section.earlyAccess"),
-                p { class: "ik-muted", style: "font-size:12.5px;margin:0 0 10px;",
-                    {i18n.t("account.sources.earlyAccessIntro")}
-                }
+                Hint { below: Gap::Md, {i18n.t("account.sources.earlyAccessIntro")} }
                 for provider in available.read().iter().cloned() {
                     {
                         let enabled = early.read().iter().any(|e| e.id.0 == provider.id);
@@ -226,7 +222,7 @@ pub(crate) fn SourcesPanel() -> Element {
                             div { class: "ik-row", key: "ea-{provider.id}",
                                 div { class: "grow",
                                     div { "{provider.name}" }
-                                    div { class: "ik-muted", style: "font-size:12px;",
+                                    Hint { size: Size::Sm,
                                         if enabled {
                                             {i18n.t("account.sources.earlyAccessOn")}
                                         } else {

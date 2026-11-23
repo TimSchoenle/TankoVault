@@ -8,6 +8,7 @@ use crate::i18n::{use_i18n, LOCALES};
 use crate::icons::Icon;
 use crate::state::prefs::{Knob, ACCENT, COVER, DENSITY, THEME};
 use dioxus::prelude::*;
+use inkstone_ui::{Chip, Gap, Hint, Section};
 
 #[component]
 pub(crate) fn AppearancePanel() -> Element {
@@ -27,9 +28,7 @@ pub(crate) fn AppearancePanel() -> Element {
 
     rsx! {
         PanelCard { icon: Icon::Settings, title: i18n.t("account.appearance.title"),
-            p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
-                {i18n.t("account.appearance.intro")}
-            }
+            Hint { below: Gap::Md, {i18n.t("account.appearance.intro")} }
             LanguageGroup {}
             KnobGroup {
                 title: i18n.t("account.appearance.theme"),
@@ -82,10 +81,7 @@ fn LanguageGroup() -> Element {
     let i18n = use_i18n();
     let current = i18n.language();
     rsx! {
-        div { style: "margin-top:16px;",
-            div { class: "ik-subhead", style: "margin-bottom:8px;",
-                {i18n.t("account.appearance.language")}
-            }
+        Section { label: i18n.t("account.appearance.language"), class: "ik-mt-lg",
             div { class: "ik-chips", style: "margin-bottom:0;",
                 for locale in LOCALES {
                     button {
@@ -114,16 +110,14 @@ fn KnobGroup(
 ) -> Element {
     let current = value.read().clone();
     rsx! {
-        div { style: "margin-top:16px;",
-            div { class: "ik-subhead", style: "margin-bottom:8px;", "{title}" }
+        Section { label: title, class: "ik-mt-lg",
             div { class: "ik-chips", style: "margin-bottom:0;",
                 for (option , label) in options {
-                    button {
+                    Chip {
                         key: "{option}",
-                        class: if current == option { "ik-chip active" } else { "ik-chip" },
-                        "aria-pressed": current == option,
-                        onclick: move |_| knob.apply(value, option),
-                        "{label}"
+                        label,
+                        active: current == option,
+                        on_toggle: move |()| knob.apply(value, option),
                     }
                 }
             }

@@ -5,13 +5,14 @@
 //! reader, not to the link they were sent.
 
 use crate::api;
-use crate::components::{async_block_list, HealthPill};
+use crate::components::{async_block_list, ConsolePanel, HealthPill};
 use crate::i18n::use_i18n;
 use crate::models::*;
 use crate::state::prefs;
 use crate::util::{rel_time, thousands};
 use crate::views::console::RefreshTick;
 use dioxus::prelude::*;
+use inkstone_ui::{Button, Chip, Size, Table, TableColumn};
 use progenitor_client::ResponseValue;
 
 /// A hideable column of the provider stats table.
@@ -110,41 +111,35 @@ pub(super) fn ProviderStatsTable(tick: RefreshTick) -> Element {
         .into_iter()
         .filter(|column| !hidden_now.contains(column.token()))
         .collect();
-    let table_class = if *compact.read() {
-        "ik-table ik-table-compact"
-    } else {
-        "ik-table"
-    };
+    let compact_now = *compact.read();
+    let picking_now = *picking.read();
 
     let empty = i18n.t("console.stats.empty");
     rsx! {
-        section { style: "margin-bottom:18px;",
-            div { class: "ik-flex", style: "justify-content:space-between;align-items:center;gap:10px;",
-                h3 { style: "margin:0;", {i18n.t("console.stats.title")} }
-                div { class: "ik-flex", style: "gap:6px;",
-                    button {
-                        class: if *compact.read() { "ik-chip active" } else { "ik-chip" },
-                        style: "font-size:11.5px;padding:4px 9px;",
-                        onclick: move |_| {
-                            let next = !*compact.peek();
-                            compact.set(next);
-                            prefs::set_console_compact(next);
-                        },
-                        {i18n.t("console.table.compact")}
-                    }
-                    button {
-                        class: "ik-chip",
-                        style: "font-size:11.5px;padding:4px 9px;",
-                        "aria-expanded": if *picking.read() { "true" } else { "false" },
-                        onclick: move |_| {
-                            let next = !*picking.peek();
-                            picking.set(next);
-                        },
-                        {i18n.t("console.table.columns")}
-                    }
+        ConsolePanel {
+            title: i18n.t("console.stats.title"),
+            actions: rsx! {
+                Chip {
+                    label: i18n.t("console.table.compact"),
+                    active: compact_now,
+                    size: Size::Xs,
+                    on_toggle: move |()| {
+                        let next = !*compact.peek();
+                        compact.set(next);
+                        prefs::set_console_compact(next);
+                    },
                 }
-            }
-            if *picking.read() {
+                Button {
+                    size: Size::Xs,
+                    expanded: picking_now,
+                    on_click: move |_| {
+                        let next = !*picking.peek();
+                        picking.set(next);
+                    },
+                    {i18n.t("console.table.columns")}
+                }
+            },
+            if picking_now {
                 fieldset {
                     class: "ik-card",
                     style: "margin:8px 0;padding:10px;display:flex;gap:12px;flex-wrap:wrap;border:1px solid var(--border-ctl);",
@@ -152,25 +147,19 @@ pub(super) fn ProviderStatsTable(tick: RefreshTick) -> Element {
                         {i18n.t("console.table.columnsLegend")}
                     }
                     for column in Column::ALL {
-                        label {
+                        Chip {
                             key: "{column.token()}",
-                            class: "ik-flex",
-                            style: "gap:5px;font-size:12px;align-items:center;",
-                            input {
-                                r#type: "checkbox",
-                                checked: !hidden_now.contains(column.token()),
-                                onchange: move |event: FormEvent| {
-                                    let mut next = hidden.peek().clone();
-                                    if event.checked() {
-                                        next.remove(column.token());
-                                    } else {
-                                        next.insert(column.token().to_owned());
-                                    }
-                                    prefs::set_console_hidden_columns(&next);
-                                    hidden.set(next);
-                                },
-                            }
-                            {i18n.t(column.label_key())}
+                            label: i18n.t(column.label_key()),
+                            active: !hidden_now.contains(column.token()),
+                            size: Size::Xs,
+                            on_toggle: move |()| {
+                                let mut next = hidden.peek().clone();
+                                if !next.remove(column.token()) {
+                                    next.insert(column.token().to_owned());
+                                }
+                                prefs::set_console_hidden_columns(&next);
+                                hidden.set(next);
+                            },
                         }
                     }
                 }
@@ -184,29 +173,22 @@ pub(super) fn ProviderStatsTable(tick: RefreshTick) -> Element {
                     |rows| {
                         let rows = rows.to_vec();
                         let columns = shown.clone();
+                        let mut headings = vec![TableColumn::new(i18n.t("console.stats.col.provider"))];
+                        headings.extend(columns.iter().map(|column| {
+                            let heading = TableColumn::new(i18n.t(column.label_key()));
+                            if column.numeric() { heading.numeric() } else { heading }
+                        }));
                         rsx! {
-                            div { class: "ik-tablewrap scroll",
-                                table { class: "{table_class}",
-                                    thead {
-                                        tr {
-                                            th { {i18n.t("console.stats.col.provider")} }
-                                            for column in columns.clone() {
-                                                th {
-                                                    key: "{column.token()}",
-                                                    style: if column.numeric() { "text-align:right;" } else { "" },
-                                                    {i18n.t(column.label_key())}
-                                                }
-                                            }
-                                        }
-                                    }
-                                    tbody {
-                                        for p in rows {
-                                            ProviderStatRow {
-                                                key: "{p.provider_id}",
-                                                stat: p,
-                                                columns: columns.clone(),
-                                            }
-                                        }
+                            Table {
+                                caption: i18n.t("console.stats.title"),
+                                columns: headings,
+                                compact: compact_now,
+                                scroll: true,
+                                for p in rows {
+                                    ProviderStatRow {
+                                        key: "{p.provider_id}",
+                                        stat: p,
+                                        columns: columns.clone(),
                                     }
                                 }
                             }

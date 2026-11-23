@@ -18,7 +18,7 @@ use crate::models::{
 use crate::util::rel_time;
 use crate::views::console::{run_state_pill, RefreshTick};
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Tone};
+use inkstone_ui::{Align, Button, Gap, Hint, Justify, Row, Tone};
 /// How long a single claim may sit before the card says so. Deliberately generous: a full
 /// catalogue page against a slow provider legitimately takes minutes, and crying wolf at one
 /// would train an operator to ignore the one that matters.
@@ -45,9 +45,7 @@ pub(super) fn LivePanel(
         div { style: "margin-top:16px;",
             div { class: "ik-subhead", {i18n.t("console.scans.active")} }
             if active.is_empty() {
-                p { class: "ik-muted", style: "font-size:13px;margin:6px 0 0;",
-                    {i18n.t("console.scans.noneActive")}
-                }
+                Hint { above: Gap::Sm, {i18n.t("console.scans.noneActive")} }
             } else {
                 div { style: "display:grid;gap:10px;margin-top:8px;",
                     for run in active {
@@ -194,8 +192,8 @@ fn RunCard(run: ScanRun, activity: Option<RunActivity>, tick: RefreshTick) -> El
 
     rsx! {
         div { class: "ik-tile", style: "padding:12px;",
-            div { class: "ik-flex", style: "justify-content:space-between;gap:10px;flex-wrap:wrap;",
-                div { class: "ik-flex", style: "gap:8px;flex-wrap:wrap;align-items:center;",
+            Row { gap: Gap::Md, align: Align::Stretch, justify: Justify::Between, wrap: true,
+                Row { gap: Gap::Sm, wrap: true,
                     span { class: run_state_ring(run.state) }
                     span { class: run_state_pill(run.state), {i18n.t(run.state.label_key())} }
                     span { class: "ik-mono", style: "font-size:12px;", "{run.mode:?}" }
@@ -203,7 +201,7 @@ fn RunCard(run: ScanRun, activity: Option<RunActivity>, tick: RefreshTick) -> El
                         "{scope_label(i18n, &run)}"
                     }
                 }
-                div { class: "ik-flex", style: "gap:8px;align-items:center;",
+                Row { gap: Gap::Sm,
                     span { class: "ik-mono", style: "font-size:12px;",
                         {
                             i18n.args(
@@ -294,9 +292,7 @@ fn StageLine(doing: Doing) -> Element {
         )
     };
     rsx! {
-        div {
-            class: "ik-flex",
-            style: "gap:8px;flex-wrap:wrap;align-items:baseline;margin-top:8px;",
+        Row { gap: Gap::Sm, align: Align::Baseline, wrap: true, class: "ik-mt-sm",
             match doing {
                 Doing::Stage { label, detail, progress, seconds } => rsx! {
                     span { class: "ik-mono", style: "font-size:12.5px;", "{label}" }

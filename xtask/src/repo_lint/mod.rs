@@ -40,10 +40,11 @@ struct Finding {
 /// so one invocation reports the whole set.
 pub(crate) fn run(root: &Path) -> anyhow::Result<()> {
     let mut findings = Vec::new();
-    // Every rule below the first two reads one specific, required artefact; a missing one is a
+    // Every rule below the first three reads one specific, required artefact; a missing one is a
     // broken checkout, not a clean bill of health, so those return `Result` and stop the run.
     findings.extend(frontend::no_unsafe_eval(root));
     findings.extend(frontend::no_dangerous_inner_html(root));
+    findings.extend(frontend::tables_go_through_the_kit(root));
     findings.extend(frontend::shell_loads_nothing_off_origin(root)?);
     findings.extend(frontend::autostart_entry_agrees(root)?);
     findings.extend(frontend::the_window_ceiling_matches_the_layout(root)?);
@@ -76,7 +77,7 @@ pub(crate) fn run(root: &Path) -> anyhow::Result<()> {
     findings.extend(components::components_fit_the_line_threshold(root)?);
 
     if findings.is_empty() {
-        println!("repo-lint: 29 rules, no violations");
+        println!("repo-lint: 30 rules, no violations");
         return Ok(());
     }
 

@@ -10,6 +10,7 @@ use crate::models::{ProviderScanHealthView, ScanSummary};
 use crate::util::{rel_time, thousands};
 use crate::views::console::{use_console_nav, ConsoleQuery};
 use dioxus::prelude::*;
+use inkstone_ui::{Align, Gap, Hint, Row, Table, TableColumn};
 
 /// A failure rate at or above this is called out, not merely printed. Not a threshold the
 /// system acts on: an operator's eye needs somewhere to land on a table of twenty providers.
@@ -139,42 +140,36 @@ fn ProviderHealthTable(providers: Vec<ProviderScanHealthView>, filter: ScanFilte
     let nav = use_console_nav();
     if providers.is_empty() {
         return rsx! {
-            p { class: "ik-muted", style: "font-size:13px;margin:12px 0 0;",
-                {i18n.t("console.scan.health.noProviders")}
-            }
+            Hint { above: Gap::Md, {i18n.t("console.scan.health.noProviders")} }
         };
     }
     rsx! {
         div { style: "margin-top:16px;",
             div { class: "ik-subhead", {i18n.t("console.scan.health.byProvider")} }
-            div { class: "ik-tablewrap scroll",
-                table { class: "ik-table ik-table-compact",
-                    thead {
-                        tr {
-                            th { {i18n.t("console.scan.health.col.provider")} }
-                            th { {i18n.t("console.scan.health.col.runs")} }
-                            th { {i18n.t("console.scan.health.col.tasks")} }
-                            th { {i18n.t("console.scan.health.col.failureRate")} }
-                            th { {i18n.t("console.scan.health.col.open")} }
-                            th { {i18n.t("console.scan.health.col.lastRun")} }
-                        }
-                    }
-                    tbody {
-                        for provider in providers {
-                            ProviderHealthRow {
-                                key: "{provider.slug}",
-                                provider: provider.clone(),
-                                selected: filter.provider.as_deref() == Some(provider.slug.as_str()),
-                                on_pick: move |slug: String| {
-                                    let query = nav.query();
-                                    let already = query.provider.as_deref() == Some(slug.as_str());
-                                    nav.filter(ConsoleQuery {
-                                        provider: (!already).then_some(slug),
-                                        ..query
-                                    });
-                                },
-                            }
-                        }
+            Table {
+                caption: i18n.t("console.scan.health.byProvider"),
+                scroll: true,
+                columns: vec![
+                    TableColumn::new(i18n.t("console.scan.health.col.provider")),
+                    TableColumn::new(i18n.t("console.scan.health.col.runs")),
+                    TableColumn::new(i18n.t("console.scan.health.col.tasks")),
+                    TableColumn::new(i18n.t("console.scan.health.col.failureRate")),
+                    TableColumn::new(i18n.t("console.scan.health.col.open")),
+                    TableColumn::new(i18n.t("console.scan.health.col.lastRun")),
+                ],
+                for provider in providers {
+                    ProviderHealthRow {
+                        key: "{provider.slug}",
+                        provider: provider.clone(),
+                        selected: filter.provider.as_deref() == Some(provider.slug.as_str()),
+                        on_pick: move |slug: String| {
+                            let query = nav.query();
+                            let already = query.provider.as_deref() == Some(slug.as_str());
+                            nav.filter(ConsoleQuery {
+                                provider: (!already).then_some(slug),
+                                ..query
+                            });
+                        },
                     }
                 }
             }
@@ -224,7 +219,7 @@ fn ProviderHealthRow(
                 }
             }
             td {
-                div { class: "ik-flex", style: "gap:8px;",
+                Row { gap: Gap::Sm, align: Align::Stretch,
                     span { class: "ik-mono", style: "font-size:12px;min-width:4ch;{tone}",
                         if failure.is_some() { "{failure_pct}%" } else { "—" }
                     }

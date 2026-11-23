@@ -12,7 +12,7 @@ use crate::views::console::merge::SeriesMiniCard;
 use crate::views::console::sync::use_sync_gate;
 use crate::views::console::use_console_nav;
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Pill, Tone};
+use inkstone_ui::{Align, Button, Gap, Hint, Justify, Pill, Row, Size, Tone};
 use progenitor_client::ResponseValue;
 /// Either the editable per-series "manga info" view (when a series is selected) or a title
 /// search and a recently-mapped list to open one.
@@ -117,9 +117,7 @@ pub(super) fn SeriesSyncInspector(reload: Reload) -> Element {
             oninput: move |e| nav.filter(nav.query().with_search(e.value())),
         }
         {results_body}
-        div { class: "ik-muted", style: "font-size:12px;margin:14px 0 6px;",
-            {i18n.t("console.sync.recentlyMapped")}
-        }
+        Hint { size: Size::Sm, above: Gap::Lg, below: Gap::Sm, {i18n.t("console.sync.recentlyMapped")} }
         {mappings_body}
     }
 }
@@ -134,9 +132,7 @@ pub(super) fn SeriesPickRow(series: SeriesSummary) -> Element {
         div { class: "ik-row",
             div { class: "grow",
                 span { style: "font-weight:600;", "{series.title}" }
-                div { class: "ik-muted", style: "font-size:12px;",
-                    {i18n.plural("series.sources", series.source_count, &[])}
-                }
+                Hint { size: Size::Sm, {i18n.plural("series.sources", series.source_count, &[])} }
             }
             Button {
                 on_click: move |_| nav.select(nav.query().with_selection(Some(sid.to_string()))),
@@ -157,7 +153,7 @@ pub(super) fn MappingPickRow(mapping: Signal<AdminSyncMapping>) -> Element {
     rsx! {
         div { class: "ik-row",
             div { class: "grow",
-                div { class: "ik-flex", style: "justify-content:space-between;",
+                Row { gap: Gap::None, align: Align::Stretch, justify: Justify::Between,
                     span { style: "font-weight:600;", "{m.series_title}" }
                     Pill {
                         "{m.provider}"
@@ -235,7 +231,7 @@ pub(super) fn SeriesSyncEditor(series_id: String, reload: Reload) -> Element {
     };
 
     rsx! {
-        div { class: "ik-flex", style: "justify-content:space-between;align-items:center;margin-bottom:10px;",
+        Row { gap: Gap::None, justify: Justify::Between, class: "ik-mb-md",
             Button {
                 on_click: move |_| nav.select(nav.query().with_selection(None)),
                 {i18n.t("console.sync.backToSearch")}
@@ -246,9 +242,7 @@ pub(super) fn SeriesSyncEditor(series_id: String, reload: Reload) -> Element {
             }
         }
         SeriesMiniCard { series_id: sid }
-        div { class: "ik-muted", style: "font-size:12px;margin:14px 0 6px;",
-            {i18n.t("console.sync.externalMappings")}
-        }
+        Hint { size: Size::Sm, above: Gap::Lg, below: Gap::Sm, {i18n.t("console.sync.externalMappings")} }
         if prov_list.is_empty() && map_list.is_empty() {
             EmptyBox { message: i18n.t("console.sync.noProvidersRegistered") }
         }

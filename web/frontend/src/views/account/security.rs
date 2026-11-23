@@ -19,7 +19,7 @@ use crate::state::use_session;
 use crate::util::iso_date;
 use crate::wire::types::Feature;
 use dioxus::prelude::*;
-use inkstone_ui::Button;
+use inkstone_ui::{Button, Gap, Hint, Size};
 use progenitor_client::ResponseValue;
 #[component]
 pub(crate) fn SecurityPanel() -> Element {
@@ -64,9 +64,7 @@ pub(crate) fn SecurityPanel() -> Element {
 
         if sessions_enabled {
         PanelCard { icon: Icon::ShieldLock, title: i18n.t("account.security.title"),
-            p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
-                {i18n.t("account.security.intro")}
-            }
+            Hint { below: Gap::Md, {i18n.t("account.security.intro")} }
             // Revoking a session is behind a step-up, so a refusal on any row opens this one
             // prompt. Without it the button would do nothing, which reads as a broken control.
             StepUpGuard { gate }
@@ -90,7 +88,7 @@ pub(crate) fn SecurityPanel() -> Element {
                     },
                 )
             }
-            p { class: "ik-muted", style: "font-size:12px;margin-top:14px;",
+            Hint { size: Size::Sm, above: Gap::Lg, below: Gap::Md,
                 {i18n.t("account.security.unavailable")}
             }
         }
@@ -144,7 +142,7 @@ fn SessionRow(
                 div { style: "font-weight:600;font-size:13px;",
                     {i18n.args("account.security.signedIn", &[("date", &created)])}
                 }
-                div { class: "ik-mono ik-muted", style: "font-size:11px;",
+                Hint { size: Size::Xs, class: "ik-mono",
                     {i18n.args("account.security.expires", &[("date", &expires)])}
                 }
             }

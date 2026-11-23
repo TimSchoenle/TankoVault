@@ -11,6 +11,7 @@ use crate::models::*;
 use crate::state::use_session;
 use crate::util::thousands;
 use dioxus::prelude::*;
+use inkstone_ui::{Chip, Hint, Size};
 
 /// Which of the tag chip's three states one tag is in.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -135,7 +136,7 @@ pub(super) fn FilterPanel(
                 strong { Ic { icon: Icon::Tune, size: 16 } {i18n.t("discover.filters")} }
                 button { class: "reset", onclick: move |_| on_reset.call(()), {i18n.t("common.reset")} }
             }
-            div { class: "ik-muted", style: "font-size:12px;",
+            Hint { size: Size::Sm,
                 if active_count == 0 {
                     {i18n.t("discover.noFilters")}
                 } else {
@@ -182,7 +183,7 @@ pub(super) fn FilterPanel(
                     }
                 }
                 if tags.is_empty() {
-                    div { class: "ik-muted", style: "font-size:12px;", {i18n.t("discover.noTags")} }
+                    Hint { size: Size::Sm, {i18n.t("discover.noTags")} }
                 } else {
                     TagFacetPanel {
                         tags: tags.clone(),
@@ -215,7 +216,7 @@ pub(super) fn FilterPanel(
             div { class: "ik-filter-group",
                 div { class: "lbl", {i18n.t("discover.provider")} }
                 if providers.is_empty() {
-                    div { class: "ik-muted", style: "font-size:12px;", {i18n.t("discover.noProviders")} }
+                    Hint { size: Size::Sm, {i18n.t("discover.noProviders")} }
                 } else {
                     select {
                         class: "ik-select",
@@ -296,7 +297,7 @@ pub(super) fn FilterPanel(
             // SAVED PRESETS: stub.
             div { class: "ik-filter-group",
                 div { class: "lbl", {i18n.t("discover.presets")} }
-                div { class: "ik-muted", style: "font-size:12px;", {i18n.t("discover.presetsSoon")} }
+                Hint { size: Size::Sm, {i18n.t("discover.presetsSoon")} }
             }
         }
     }
@@ -309,15 +310,8 @@ pub(super) fn TypeChip(
     on_toggle: EventHandler<ContentType>,
 ) -> Element {
     let i18n = use_i18n();
-    let class = if active { "ik-chip active" } else { "ik-chip" };
     rsx! {
-        button {
-            class: "{class}",
-            r#type: "button",
-            "aria-pressed": "{active}",
-            onclick: move |_| on_toggle.call(t),
-            {i18n.t(t.label_key())}
-        }
+        Chip { label: i18n.t(t.label_key()), active, on_toggle: move |()| on_toggle.call(t) }
     }
 }
 
@@ -330,15 +324,8 @@ pub(super) fn TrackingChip(
     on_pick: EventHandler<Tracking>,
 ) -> Element {
     let i18n = use_i18n();
-    let class = if active { "ik-chip active" } else { "ik-chip" };
     rsx! {
-        button {
-            class: "{class}",
-            r#type: "button",
-            "aria-pressed": "{active}",
-            onclick: move |_| on_pick.call(option),
-            {i18n.t(option.label_key())}
-        }
+        Chip { label: i18n.t(option.label_key()), active, on_toggle: move |()| on_pick.call(option) }
     }
 }
 
@@ -349,15 +336,8 @@ pub(super) fn StatusChip(
     on_toggle: EventHandler<SeriesStatus>,
 ) -> Element {
     let i18n = use_i18n();
-    let class = if active { "ik-chip active" } else { "ik-chip" };
     rsx! {
-        button {
-            class: "{class}",
-            r#type: "button",
-            "aria-pressed": "{active}",
-            onclick: move |_| on_toggle.call(s),
-            {i18n.t(s.label_key())}
-        }
+        Chip { label: i18n.t(s.label_key()), active, on_toggle: move |()| on_toggle.call(s) }
     }
 }
 
@@ -418,7 +398,7 @@ pub(super) fn TagFacetPanel(
             oninput: move |e| query.set(e.value()),
         }
         if shown.is_empty() {
-            div { class: "ik-muted", style: "font-size:12px;",
+            Hint { size: Size::Sm,
                 {i18n.args("discover.noTagMatch", &[("query", query.read().trim())])}
             }
         } else {

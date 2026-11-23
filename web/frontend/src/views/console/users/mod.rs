@@ -29,7 +29,7 @@ use crate::wire::types::{AccountStatus, DirectoryRow, GrantRow, Permission, User
 use activity::RecentActions;
 use dioxus::prelude::*;
 use editor::{Editor, Rights};
-use inkstone_ui::{Button, Pill, Size, Tone};
+use inkstone_ui::{Align, Button, Chip, EmptyBox, Gap, Hint, Pill, Row, Size, Tone};
 use progenitor_client::ResponseValue;
 use row::UserRow;
 use std::collections::BTreeSet;
@@ -265,25 +265,26 @@ pub(super) fn UsersEntity() -> Element {
                         &[],
                     ),
                 }
-                div { class: "ik-flex", style: "gap:6px;flex-wrap:wrap;",
-                    button {
-                        class: if staff_only { "ik-chip active" } else { "ik-chip" },
-                        style: "font-size:11.5px;padding:4px 9px;",
-                        onclick: move |_| {
+                Row { gap: Gap::Xs, wrap: true,
+                    Chip {
+                        label: i18n.t("console.users.filter.staff"),
+                        active: staff_only,
+                        size: Size::Xs,
+                        icon: staff_only.then(|| rsx! {
+                            Ic { icon: Icon::Close, size: 11 }
+                        }),
+                        on_toggle: move |()| {
                             // Page one: the filter narrows the directory, so page 4 of the old
                             // width is very likely past the end of the new one.
                             let next = ConsoleQuery { staff: !staff_only, page: 0, ..nav.query() };
                             nav.filter(next);
                         },
-                        {i18n.t("console.users.filter.staff")}
-                        if staff_only {
-                            Ic { icon: Icon::Close, size: 11 }
-                        }
                     }
-                    button {
-                        class: if status == StatusFilter::Any { "ik-chip" } else { "ik-chip active" },
-                        style: "font-size:11.5px;padding:4px 9px;",
-                        onclick: move |_| {
+                    Chip {
+                        label: i18n.t(status.label_key()),
+                        active: status != StatusFilter::Any,
+                        size: Size::Xs,
+                        on_toggle: move |()| {
                             let token = status.next().token();
                             let next = ConsoleQuery {
                                 status: (!token.is_empty()).then(|| token.to_owned()),
@@ -292,7 +293,6 @@ pub(super) fn UsersEntity() -> Element {
                             };
                             nav.filter(next);
                         },
-                        {i18n.t(status.label_key())}
                     }
                     Button {
                         size: Size::Xs,
@@ -315,8 +315,8 @@ pub(super) fn UsersEntity() -> Element {
                     |_| {
                         if rows.is_empty() {
                             return rsx! {
-                                div { class: "ik-empty", style: "margin:12px;padding:24px;",
-                                    {i18n.t("console.users.empty")}
+                                div { style: "margin:12px;",
+                                    EmptyBox { message: i18n.t("console.users.empty"), compact: true }
                                 }
                             };
                         }
@@ -443,12 +443,12 @@ fn UserEditor(
 
     rsx! {
         div { class: "ik-cons-insphead",
-            div { class: "ik-flex", style: "align-items:flex-start;gap:14px;",
+            Row { align: Align::Start, gap: Gap::Lg,
                 span { class: if staff { "ik-avatar lg" } else { "ik-avatar lg neutral" },
                     {initial(&user.username)}
                 }
                 div { style: "min-width:0;flex:1;",
-                    div { class: "ik-flex", style: "gap:10px;flex-wrap:wrap;",
+                    Row { wrap: true,
                         h2 { class: "ik-insp-title", "{user.username}" }
                         if owner {
                             Pill {
@@ -517,9 +517,7 @@ fn UserEditor(
         }
         div { style: "padding:0 22px;",
             if rights.is_self {
-                p { class: "ik-muted", style: "font-size:12px;margin:12px 0 0;",
-                    {i18n.t("console.users.selfNotice")}
-                }
+                Hint { size: Size::Sm, above: Gap::Md, {i18n.t("console.users.selfNotice")} }
             }
             StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
             OutcomeLine { outcome: outcome.read().clone() }

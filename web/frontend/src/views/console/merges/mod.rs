@@ -25,7 +25,7 @@ use crate::models::*;
 use crate::views::console::{landing_selection, use_console_nav, RefreshTick};
 use batch::BatchRevert;
 use dioxus::prelude::*;
-use inkstone_ui::{Size, ToggleButton};
+use inkstone_ui::{EmptyBox, Hint, Size, ToggleButton};
 use inspect::MergeInspector;
 use progenitor_client::ResponseValue;
 use row::MergeListRow;
@@ -256,9 +256,7 @@ pub(super) fn MergesEntity(tick: RefreshTick) -> Element {
                     }
                 }
                 if outside_page {
-                    div { class: "ik-muted", style: "font-size:12px;",
-                        {i18n.t("console.merges.offPage")}
-                    }
+                    Hint { size: Size::Sm, {i18n.t("console.merges.offPage")} }
                 }
             }
             {
@@ -273,8 +271,8 @@ pub(super) fn MergesEntity(tick: RefreshTick) -> Element {
                     |_| {
                         if shown.is_empty() {
                             return rsx! {
-                                div { class: "ik-empty", style: "margin:12px;padding:24px;",
-                                    {i18n.t("console.merges.empty")}
+                                div { style: "padding:12px;",
+                                    EmptyBox { message: i18n.t("console.merges.empty"), compact: true }
                                 }
                             };
                         }

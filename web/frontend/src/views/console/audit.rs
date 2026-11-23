@@ -6,14 +6,14 @@
 //! means "no matches in the forty rows I happen to hold".
 
 use crate::api;
-use crate::components::{async_view, CompactPager, SkeletonRows, Window};
+use crate::components::{async_view, CompactPager, ConsolePanel, SkeletonRows, Window};
 use crate::i18n::use_i18n;
 use crate::models::*;
 use crate::util::rel_time;
 use crate::views::console::query::Window as TimeWindow;
 use crate::views::console::{config_editor_text, use_console_nav, ConsoleQuery, RefreshTick};
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Size};
+use inkstone_ui::{Button, EmptyBox, FilterSelect, Gap, Row, SegOption, Size, Table, TableColumn};
 use progenitor_client::ResponseValue;
 
 /// Rows per page. The server's default; it clamps regardless.
@@ -106,17 +106,27 @@ pub(super) fn AuditPanel(tick: RefreshTick) -> Element {
         total,
     };
     let known_actions = actions.read().clone().unwrap_or_default();
+    let mut action_options: Vec<SegOption> =
+        vec![(String::new(), i18n.t("console.audit.filter.anyAction"))];
+    action_options.extend(
+        known_actions
+            .iter()
+            .map(|key| (key.clone(), action_label(i18n, key))),
+    );
+    let window_options: Vec<SegOption> = TimeWindow::ALL
+        .into_iter()
+        .map(|option| (option.token().to_owned(), i18n.t(option.label_key())))
+        .collect();
 
     rsx! {
-        section { style: "margin-bottom:18px;",
-            h3 { {i18n.t("console.audit.title")} }
-            div { class: "ik-flex", style: "gap:8px;flex-wrap:wrap;margin-bottom:10px;",
-                select {
-                    class: "ik-input",
-                    "aria-label": i18n.t("console.audit.filter.action"),
-                    value: view.status.clone().unwrap_or_default(),
-                    onchange: move |event: FormEvent| {
-                        let chosen = event.value();
+        ConsolePanel { title: i18n.t("console.audit.title"),
+            Row { gap: Gap::Sm, wrap: true, class: "ik-mb-md",
+                FilterSelect {
+                    id: "tv-audit-action",
+                    aria_label: i18n.t("console.audit.filter.action"),
+                    options: action_options,
+                    selected: view.status.clone().unwrap_or_default(),
+                    on_select: move |chosen: String| {
                         let next = ConsoleQuery {
                             status: (!chosen.is_empty()).then_some(chosen),
                             page: 0,
@@ -124,30 +134,20 @@ pub(super) fn AuditPanel(tick: RefreshTick) -> Element {
                         };
                         nav.filter(next);
                     },
-                    option { value: "", {i18n.t("console.audit.filter.anyAction")} }
-                    for key in known_actions.clone() {
-                        option { key: "{key}", value: "{key}", {action_label(i18n, &key)} }
-                    }
                 }
-                select {
-                    class: "ik-input",
-                    "aria-label": i18n.t("console.audit.filter.window"),
-                    value: view.since.token(),
-                    onchange: move |event: FormEvent| {
+                FilterSelect {
+                    id: "tv-audit-window",
+                    aria_label: i18n.t("console.audit.filter.window"),
+                    options: window_options,
+                    selected: view.since.token().to_owned(),
+                    on_select: move |chosen: String| {
                         let next = ConsoleQuery {
-                            since: TimeWindow::parse_token(&event.value()),
+                            since: TimeWindow::parse_token(&chosen),
                             page: 0,
                             ..nav.query()
                         };
                         nav.filter(next);
                     },
-                    for option in TimeWindow::ALL {
-                        option {
-                            key: "{option.label_key()}",
-                            value: option.token(),
-                            {i18n.t(option.label_key())}
-                        }
-                    }
                 }
                 input {
                     class: "ik-input",
@@ -169,28 +169,22 @@ pub(super) fn AuditPanel(tick: RefreshTick) -> Element {
                     |_| {
                         if rows.is_empty() {
                             return rsx! {
-                                div { class: "ik-empty", style: "padding:24px;",
-                                    {i18n.t("console.audit.empty")}
-                                }
+                                EmptyBox { message: i18n.t("console.audit.empty"), compact: true }
                             };
                         }
                         rsx! {
-                            div { class: "ik-tablewrap scroll",
-                                table { class: "ik-table ik-table-compact",
-                                    thead {
-                                        tr {
-                                            th { {i18n.t("console.audit.col.when")} }
-                                            th { {i18n.t("console.audit.col.actor")} }
-                                            th { {i18n.t("console.audit.col.action")} }
-                                            th { {i18n.t("console.audit.col.target")} }
-                                            th { style: "text-align:right;", {i18n.t("console.audit.col.detail")} }
-                                        }
-                                    }
-                                    tbody {
-                                        for entry in rows.clone() {
-                                            AuditRow { key: "{entry.id}", entry: Signal::new(entry) }
-                                        }
-                                    }
+                            Table {
+                                caption: i18n.t("console.audit.title"),
+                                scroll: true,
+                                columns: vec![
+                                    TableColumn::new(i18n.t("console.audit.col.when")),
+                                    TableColumn::new(i18n.t("console.audit.col.actor")),
+                                    TableColumn::new(i18n.t("console.audit.col.action")),
+                                    TableColumn::new(i18n.t("console.audit.col.target")),
+                                    TableColumn::new(i18n.t("console.audit.col.detail")).numeric(),
+                                ],
+                                for entry in rows.clone() {
+                                    AuditRow { key: "{entry.id}", entry: Signal::new(entry) }
                                 }
                             }
                         }

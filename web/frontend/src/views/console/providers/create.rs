@@ -7,7 +7,7 @@ use crate::i18n::use_i18n;
 use crate::models::*;
 use crate::views::console::{adapter_label_key, ADAPTER_KINDS};
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Size, Tone};
+use inkstone_ui::{Align, Button, Gap, Row, Size, Stack, Tone};
 /// Why the form would not submit, as the operator has to be told.
 enum Rejected {
     /// The catalogue key of a self-contained message.
@@ -166,7 +166,7 @@ pub(super) fn CreateProviderForm(
                     {i18n.t("console.providers.cloneIntro")}
                 }
             }
-            div { style: "display:flex;flex-direction:column;gap:10px;",
+            Stack { gap: Gap::Md,
                 div { class: "ik-kv",
                     label { class: "k", r#for: "tv-new-slug", {i18n.t("console.providers.field.slug")} }
                     input {
@@ -226,7 +226,7 @@ pub(super) fn CreateProviderForm(
                 }
                 StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
                 OutcomeLine { outcome: outcome.read().clone() }
-                div { class: "ik-flex", style: "gap:8px;",
+                Row { gap: Gap::Sm, align: Align::Stretch,
                     Button {
                         size: Size::Sm,
                         tone: Tone::Primary,

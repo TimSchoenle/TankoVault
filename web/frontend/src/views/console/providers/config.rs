@@ -3,7 +3,7 @@
 use crate::components::{ErrorLine, Section};
 use crate::i18n::use_i18n;
 use dioxus::prelude::*;
-use inkstone_ui::{Pill, Tone};
+use inkstone_ui::{Hint, Pill, Size, Tone};
 
 /// The dry-run panel: what the adapter parsed, and the raw sample behind the claim.
 #[component]
@@ -12,9 +12,7 @@ pub(super) fn DryRunResult(result: Option<Result<serde_json::Value, String>>) ->
     let Some(result) = result else {
         return rsx! {
             Section { label: i18n.t("console.providers.dryRunHead"),
-                p { class: "ik-muted", style: "font-size:12px;line-height:1.5;margin:0;",
-                    {i18n.t("console.adapterTest.hint")}
-                }
+                Hint { size: Size::Sm, {i18n.t("console.adapterTest.hint")} }
             }
         };
     };

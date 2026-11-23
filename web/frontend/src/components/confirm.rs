@@ -3,7 +3,7 @@
 
 use crate::i18n::use_i18n;
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Size, Tone};
+use inkstone_ui::{Button, Gap, Row, Size, Tone};
 /// A reversible destructive action: state the consequence, ask once more, act.
 #[component]
 pub(crate) fn InlineConfirm(
@@ -17,11 +17,13 @@ pub(crate) fn InlineConfirm(
     let i18n = use_i18n();
     rsx! {
         div { class: "ik-inline-confirm",
-            div { style: "min-width:0;",
+            // Grows instead of the buttons carrying `margin-left:auto`, so they still sit at the
+            // right edge and the strip still wraps on its content width.
+            div { style: "min-width:0;flex:1 1 auto;",
                 div { class: "ttl", "{title}" }
                 div { class: "why", "{body}" }
             }
-            div { class: "ik-flex", style: "margin-left:auto;gap:6px;flex:none;",
+            Row { gap: Gap::Sm,
                 Button {
                     size: Size::Xs,
                     on_click: move |_| on_cancel.call(()),

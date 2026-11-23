@@ -11,7 +11,7 @@ use crate::state::capabilities::use_capabilities;
 use crate::views::console::RefreshTick;
 use crate::wire::types::{MergeRevertBatch, MergeRevertBatchOutcome, Permission};
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Callout, Size, Tone};
+use inkstone_ui::{Align, Button, Callout, Gap, Hint, Row, Size, Table, TableColumn, Tone};
 
 /// Most decisions the endpoint takes in one request.
 const MAX_BATCH: usize = 50;
@@ -110,7 +110,7 @@ pub(super) fn BatchRevert(gate: StepUpGate, tick: RefreshTick) -> Element {
 
     rsx! {
         div { class: "ik-card", style: "margin:0 0 12px;padding:10px;",
-            div { class: "ik-flex", style: "gap:8px;align-items:center;flex-wrap:wrap;",
+            Row { gap: Gap::Sm, wrap: true,
                 Button {
                     size: Size::Sm,
                     on_click: move |_| {
@@ -134,7 +134,7 @@ pub(super) fn BatchRevert(gate: StepUpGate, tick: RefreshTick) -> Element {
                         oninput: move |event: FormEvent| text.set(event.value()),
                     }
                 }
-                p { class: "ik-muted", style: "font-size:12px;margin:4px 0 0;",
+                Hint { size: Size::Sm, above: Gap::Xs,
                     if too_many {
                         {i18n.args("console.merges.batch.tooMany", &[("max", &MAX_BATCH.to_string())])}
                     } else {
@@ -152,7 +152,7 @@ pub(super) fn BatchRevert(gate: StepUpGate, tick: RefreshTick) -> Element {
                         oninput: move |event: FormEvent| reason.set(event.value()),
                     }
                 }
-                div { class: "ik-flex", style: "gap:8px;margin-top:11px;flex-wrap:wrap;",
+                Row { gap: Gap::Sm, align: Align::Stretch, wrap: true, class: "ik-mt-md",
                     Button {
                         size: Size::Sm,
                         tone: Tone::Primary,
@@ -195,24 +195,20 @@ fn BatchResult(batch: MergeRevertBatch) -> Element {
     );
     rsx! {
         p { style: "font-size:12px;margin:10px 0 6px;", "{summary}" }
-        div { class: "ik-tablewrap scroll",
-            table { class: "ik-table ik-table-compact",
-                thead {
-                    tr {
-                        th { {i18n.t("console.merges.batch.col.decision")} }
-                        th { {i18n.t("console.merges.batch.col.outcome")} }
-                    }
-                }
-                tbody {
-                    for item in batch.items.iter() {
-                        tr { key: "{item.decision_id}",
-                            td { class: "ik-mono", "{item.decision_id}" }
-                            td {
-                                {outcome_label(i18n, item.outcome, batch.dry_run)}
-                                if let Some(detail) = item.detail.clone() {
-                                    span { class: "ik-muted", " — {detail}" }
-                                }
-                            }
+        Table {
+            caption: i18n.t("console.merges.batch.toggle"),
+            scroll: true,
+            columns: vec![
+                TableColumn::new(i18n.t("console.merges.batch.col.decision")),
+                TableColumn::new(i18n.t("console.merges.batch.col.outcome")),
+            ],
+            for item in batch.items.iter() {
+                tr { key: "{item.decision_id}",
+                    td { class: "ik-mono", "{item.decision_id}" }
+                    td {
+                        {outcome_label(i18n, item.outcome, batch.dry_run)}
+                        if let Some(detail) = item.detail.clone() {
+                            span { class: "ik-muted", " — {detail}" }
                         }
                     }
                 }

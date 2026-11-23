@@ -12,6 +12,7 @@ use crate::api;
 use crate::i18n::use_i18n;
 use crate::models::{ScanRunDetail, ScanRunId, ScanTaskDetail};
 use dioxus::prelude::*;
+use inkstone_ui::{Gap, Hint, Row, Size};
 use progenitor_client::ResponseValue;
 
 /// How many task rows the panel lists. The API already caps and orders costliest-first, so this
@@ -41,9 +42,7 @@ pub(super) fn ExplainPanel(run_id: ScanRunId) -> Element {
         div { class: "ik-tile", style: "padding:10px;margin-top:8px;background:transparent;",
             match &*detail.read_unchecked() {
                 None => rsx! {
-                    p { class: "ik-muted", style: "margin:0;font-size:12px;",
-                        {i18n.t("common.loading")}
-                    }
+                    Hint { size: Size::Sm, {i18n.t("common.loading")} }
                 },
                 Some(Err(message)) => rsx! {
                     p { style: "margin:0;font-size:12px;color:var(--vermilion);", "{message}" }
@@ -96,17 +95,12 @@ fn Breakdown(detail: ScanRunDetail) -> Element {
         }
 
         if detail.stages.is_empty() {
-            p { class: "ik-muted", style: "margin:0;font-size:12px;",
-                {i18n.t("console.scan.explain.noStages")}
-            }
+            Hint { size: Size::Sm, {i18n.t("console.scan.explain.noStages")} }
         } else {
             div { class: "ik-subhead", {i18n.t("console.scan.explain.byStage")} }
             div { style: "display:grid;gap:4px;margin:6px 0 10px;",
                 for total in detail.stages.iter() {
-                    div {
-                        key: "{total.stage}",
-                        class: "ik-flex",
-                        style: "gap:8px;align-items:center;",
+                    Row { key: "{total.stage}", gap: Gap::Sm,
                         span { class: "ik-mono", style: "font-size:11.5px;min-width:16ch;",
                             "{stage_label(i18n, &total.stage)}"
                         }

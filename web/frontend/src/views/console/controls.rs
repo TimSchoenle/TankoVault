@@ -8,7 +8,7 @@ use crate::i18n::use_i18n;
 use crate::views::console::live::LiveState;
 use crate::views::console::RefreshTick;
 use dioxus::prelude::*;
-use inkstone_ui::Button;
+use inkstone_ui::{Button, Row};
 /// Live-stream status pill and detach/attach and manual-refresh controls.
 #[component]
 pub(super) fn LiveControls(
@@ -25,7 +25,7 @@ pub(super) fn LiveControls(
         "ik-live"
     };
     rsx! {
-        div { class: "ik-flex",
+        Row {
             span {
                 class: "{pill_class}",
                 // The one place the console reports its own staleness, so it is announced,

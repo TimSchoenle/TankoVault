@@ -28,7 +28,7 @@ pub(super) fn SystemOverview(tick: RefreshTick) -> Element {
     });
 
     rsx! {
-        section { style: "margin-bottom:18px;",
+        section { class: "ik-mb-lg",
             {
                 async_block(
                     &res,

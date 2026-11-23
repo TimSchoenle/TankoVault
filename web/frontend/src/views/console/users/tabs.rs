@@ -1,7 +1,7 @@
 //! Owns the inspector's tab bodies, one per tab.
 
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Size};
+use inkstone_ui::{Button, Gap, Hint, Size};
 
 use super::editor::{Editor, Rights};
 use super::grants::PermissionGrants;
@@ -179,9 +179,7 @@ pub(super) fn sessions(editor: &Editor, user: &UserDetail, rights: Rights) -> El
                         }
                     }
                     // TODO(api): per-device rows need GET /v1/admin/users/:id/sessions.
-                    p { class: "ik-muted", style: "font-size:11.5px;line-height:1.5;margin:8px 0 0;",
-                        {i18n.t("console.users.sessionRowsUnavailable")}
-                    }
+                    Hint { size: Size::Xs, above: Gap::Sm, {i18n.t("console.users.sessionRowsUnavailable")} }
                 }
             }
         }
@@ -235,7 +233,7 @@ pub(super) fn privacy(
         div { class: "ik-cons-inspbody",
             div { class: "ik-cons-col", style: "max-width:620px;",
                 Section { label: i18n.t("console.users.tab.privacy"),
-                    p { class: "ik-muted", style: "font-size:12px;line-height:1.5;margin:0 0 12px;",
+                    Hint { size: Size::Sm, below: Gap::Md,
                         {
                             i18n.plural(
                                 "console.users.openRequests",

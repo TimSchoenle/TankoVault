@@ -19,7 +19,7 @@ use crate::models::*;
 use crate::state::use_session;
 use crate::util::rel_time;
 use dioxus::prelude::*;
-use inkstone_ui::{Button, ToggleButton, Tone};
+use inkstone_ui::{Button, Chip, Gap, Hint, Row, Section, Size, ToggleButton, Tone};
 use progenitor_client::ResponseValue;
 #[component]
 pub(crate) fn SyncPanel() -> Element {
@@ -140,7 +140,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                         }
                         div { class: "grow",
                             div { style: "font-weight:700;font-size:16px;", "{card_name}" }
-                            div { class: "ik-muted", style: "font-size:13px;", {i18n.t("series.notConnected")} }
+                            Hint { {i18n.t("series.notConnected")} }
                         }
                         Button {
                             tone: Tone::Primary,
@@ -182,9 +182,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                 div { class: "ik-row", style: "margin-bottom:12px;",
                     div { class: "grow",
                         div { style: "font-weight:600;font-size:13px;", {i18n.t("account.sync.auto")} }
-                        div { class: "ik-muted", style: "font-size:12px;",
-                            {i18n.t("account.sync.autoHint")}
-                        }
+                        Hint { size: Size::Sm, {i18n.t("account.sync.autoHint")} }
                     }
                     ToggleButton {
                         on: auto_sync,
@@ -207,29 +205,27 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                         }
                     }
                 }
-                div { class: "ik-subhead", style: "margin-bottom:8px;",
-                    {i18n.args("account.sync.policyHeading", &[("provider", &card_name)])}
-                }
-                div { class: "ik-chips",
-                    for option in ConflictPolicy::all().iter().copied() {
-                        {
-                            let patch_settings = patch_settings.clone();
-                            rsx! {
-                                button {
-                                    key: "{option}",
-                                    class: if policy == option { "ik-chip active" } else { "ik-chip" },
-                                    "aria-pressed": policy == option,
-                                    onclick: move |_| patch_settings(SyncSettingsPatch {
-                                        auto_sync_enabled: None,
-                                        conflict_policy: Some(option),
-                                    }),
-                                    {i18n.t(option.label_key())}
+                Section { label: i18n.args("account.sync.policyHeading", &[("provider", &card_name)]),
+                    div { class: "ik-chips",
+                        for option in ConflictPolicy::all().iter().copied() {
+                            {
+                                let patch_settings = patch_settings.clone();
+                                rsx! {
+                                    Chip {
+                                        key: "{option}",
+                                        label: i18n.t(option.label_key()),
+                                        active: policy == option,
+                                        on_toggle: move |()| patch_settings(SyncSettingsPatch {
+                                            auto_sync_enabled: None,
+                                            conflict_policy: Some(option),
+                                        }),
+                                    }
                                 }
                             }
                         }
                     }
                 }
-                div { class: "ik-flex", style: "gap:10px;flex-wrap:wrap;margin-top:12px;",
+                Row { gap: Gap::Md, wrap: true, class: "ik-mt-md",
                     Button {
                         disabled: busy.is_busy(),
                         on_click: pull,
@@ -304,7 +300,7 @@ fn SyncHistory(provider: String, refresh: Reload) -> Element {
                             div { class: "ik-row", key: "{row.id}",
                                 div { class: "grow",
                                     div { style: "font-weight:600;font-size:13px;", "{row.series_title}" }
-                                    div { class: "ik-mono ik-muted", style: "font-size:11px;",
+                                    Hint { size: Size::Xs, class: "ik-mono",
                                         "{row.action} · {rel_time(i18n, Some(&row.created_at))}"
                                     }
                                 }
@@ -431,7 +427,7 @@ fn ConflictRowView(conflict: ConflictRow, reload: Reload, parent_reload: Reload)
         div { class: "ik-row",
             div { class: "grow",
                 div { style: "font-weight:600;font-size:13px;", "{conflict.series_title}" }
-                div { class: "ik-mono ik-muted", style: "font-size:11px;",
+                Hint { size: Size::Xs, class: "ik-mono",
                     {
                         i18n.args(
                             "account.sync.conflictValues",

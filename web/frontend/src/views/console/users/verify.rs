@@ -5,7 +5,7 @@ use crate::components::StepUpGate;
 use crate::hooks::{use_busy, Reload};
 use crate::i18n::use_i18n;
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Size};
+use inkstone_ui::{Button, Gap, Row, Size};
 
 /// Confirms an address administratively, for an account that never clicked its link.
 #[component]
@@ -47,7 +47,7 @@ pub(super) fn VerifyEmailAction(
     };
 
     rsx! {
-        div { class: "ik-flex", style: "gap:8px;",
+        Row { gap: Gap::Sm,
             span {
                 class: "ik-mono",
                 style: "font-size:12px;color:var(--star);",

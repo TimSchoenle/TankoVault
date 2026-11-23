@@ -12,7 +12,7 @@
 
 use crate::api;
 use crate::components::{
-    async_view, use_step_up_gate, ListSearch, SkeletonRows, StepUpGate, StepUpGuard,
+    async_view, use_step_up_gate, ConsolePanel, ListSearch, SkeletonRows, StepUpGate, StepUpGuard,
 };
 use crate::i18n::{use_i18n, Translator};
 use crate::models::*;
@@ -21,7 +21,10 @@ use crate::util::rel_time;
 use crate::views::console::{signal_label, use_console_nav, RefreshTick};
 use crate::wire::types::Permission;
 use dioxus::prelude::*;
-use inkstone_ui::{button_class, Button, Callout, Pill, Size, ToggleButton, Tone};
+use inkstone_ui::{
+    button_class, Align, Button, Callout, Chip, EmptyBox, FilterSelect, Gap, Hint, Pill, Row,
+    Section, SegOption, Size, Table, TableColumn, ToggleButton, Tone,
+};
 use progenitor_client::ResponseValue;
 /// Rows per page. The server clamps regardless; this is the number that fits a screen without
 /// paging becoming the primary interaction.
@@ -75,12 +78,10 @@ pub(super) fn DecisionsPanel(tick: RefreshTick) -> Element {
     let current = *journal.read();
 
     rsx! {
-        section { style: "margin-bottom:18px;",
-            h3 { {i18n.t("console.decisions.title")} }
-            p { class: "ik-muted", style: "margin:0 0 12px;max-width:78ch;",
-                {i18n.t("console.decisions.intro")}
-            }
-            div { class: "ik-flex", style: "gap:8px;flex-wrap:wrap;margin-bottom:12px;",
+        ConsolePanel {
+            title: i18n.t("console.decisions.title"),
+            intro: i18n.t("console.decisions.intro"),
+            Row { gap: Gap::Sm, wrap: true, class: "ik-mb-md",
                 if can_merge {
                     ToggleButton {
                         on: current == Journal::Merges,
@@ -102,9 +103,7 @@ pub(super) fn DecisionsPanel(tick: RefreshTick) -> Element {
                 Journal::Merges if can_merge => rsx! { MergeJournal { tick } },
                 Journal::Sync if can_sync => rsx! { SyncJournal { tick } },
                 _ => rsx! {
-                    div { class: "ik-empty", style: "padding:24px;",
-                        {i18n.t("console.operatorsOnly")}
-                    }
+                    Callout { tone: Tone::Caution, {i18n.t("console.operatorsOnly")} }
                 },
             }
         }
@@ -170,27 +169,31 @@ fn MergeJournal(tick: RefreshTick) -> Element {
             )
     };
 
+    let mut outcome_options: Vec<SegOption> =
+        vec![(String::new(), i18n.t("console.decisions.filter.anyOutcome"))];
+    outcome_options.extend(
+        ["merged", "queued", "reopened", "withdrawn", "deferred"].map(|token| {
+            (
+                token.to_owned(),
+                i18n.t(&format!("console.decisions.outcome.{token}")),
+            )
+        }),
+    );
+
     rsx! {
-        div { class: "ik-flex", style: "gap:8px;flex-wrap:wrap;margin-bottom:10px;",
-            select {
-                class: "ik-input",
-                "aria-label": i18n.t("console.decisions.filter.outcome"),
-                value: "{outcome}",
-                onchange: move |event: FormEvent| outcome.set(event.value()),
-                option { value: "", {i18n.t("console.decisions.filter.anyOutcome")} }
-                for token in ["merged", "queued", "reopened", "withdrawn", "deferred"] {
-                    option { key: "{token}", value: "{token}",
-                        {i18n.t(&format!("console.decisions.outcome.{token}"))}
-                    }
-                }
+        Row { gap: Gap::Sm, wrap: true, class: "ik-mb-md",
+            FilterSelect {
+                id: "tv-decisions-outcome",
+                aria_label: i18n.t("console.decisions.filter.outcome"),
+                options: outcome_options,
+                selected: outcome.read().clone(),
+                on_select: move |chosen: String| outcome.set(chosen),
             }
-            label { class: "ik-flex", style: "gap:6px;align-items:center;",
-                input {
-                    r#type: "checkbox",
-                    checked: only_blocked,
-                    onchange: move |event: FormEvent| blocked_only.set(event.checked()),
-                }
-                span { {i18n.t("console.decisions.filter.blockedOnly")} }
+            Chip {
+                label: i18n.t("console.decisions.filter.blockedOnly"),
+                active: only_blocked,
+                size: Size::Xs,
+                on_toggle: move |()| blocked_only.set(!only_blocked),
             }
         }
         {
@@ -208,16 +211,15 @@ fn MergeJournal(tick: RefreshTick) -> Element {
                             hits,
                         }
                         if list.is_empty() {
-                            div { class: "ik-empty", style: "padding:24px;",
-                                {
-                                    i18n.t(
-                                        if searching {
-                                            "console.decisions.searchEmpty"
-                                        } else {
-                                            "console.decisions.mergeEmpty"
-                                        },
-                                    )
-                                }
+                            EmptyBox {
+                                message: i18n.t(
+                                    if searching {
+                                        "console.decisions.searchEmpty"
+                                    } else {
+                                        "console.decisions.mergeEmpty"
+                                    },
+                                ),
+                                compact: true,
                             }
                         } else {
                             div { class: "ik-cons-list",
@@ -245,7 +247,7 @@ fn MergeJournal(tick: RefreshTick) -> Element {
 fn DecisionSearch(placeholder: String, hits: String) -> Element {
     let nav = use_console_nav();
     rsx! {
-        div { style: "margin-bottom:10px;",
+        div { class: "ik-mb-md",
             ListSearch {
                 placeholder,
                 query: nav.query().q,
@@ -289,7 +291,7 @@ fn MergeDecisionRow(
 
     rsx! {
         article { class: "ik-card", style: "padding:12px;margin-bottom:10px;",
-            div { class: "ik-flex", style: "gap:10px;align-items:baseline;flex-wrap:wrap;",
+            Row { align: Align::Baseline, wrap: true,
                 span { class: outcome_tone(&d.outcome),
                     {i18n.t(&format!("console.decisions.outcome.{}", d.outcome))}
                 }
@@ -300,7 +302,7 @@ fn MergeDecisionRow(
                     "{rel_time(i18n, Some(d.decided_at.as_str()))}"
                 }
             }
-            div { class: "ik-flex", style: "gap:6px;flex-wrap:wrap;margin-top:6px;",
+            Row { gap: Gap::Xs, wrap: true, class: "ik-mt-sm",
                 Pill {
                     {i18n.args("console.merge.score", &[("percent", &percent(d.score))])}
                 }
@@ -334,7 +336,7 @@ fn MergeDecisionRow(
                     }
                 }
             }
-            div { class: "ik-flex", style: "gap:8px;margin-top:8px;flex-wrap:wrap;",
+            Row { gap: Gap::Sm, wrap: true, class: "ik-mt-sm",
                 Button {
                     size: Size::Xs,
                     expanded,
@@ -379,60 +381,59 @@ fn MergeEvidence(decision: Signal<MergeDecision>) -> Element {
 
     rsx! {
         div { style: "margin-top:10px;border-top:1px solid var(--line);padding-top:10px;",
-            h4 { style: "margin:0 0 6px;font-size:13px;", {i18n.t("console.decisions.howScored")} }
-            if terms.is_empty() {
-                p { class: "ik-muted", {i18n.t("console.decisions.noTerms")} }
-            } else {
-                div { class: "ik-tablewrap scroll",
-                    table { class: "ik-table ik-table-compact",
-                        thead {
-                            tr {
-                                th { {i18n.t("console.decisions.col.rule")} }
-                                th { style: "text-align:right;", {i18n.t("console.decisions.col.delta")} }
-                                th { {i18n.t("console.decisions.col.detail")} }
+            Section { label: i18n.t("console.decisions.howScored"),
+                if terms.is_empty() {
+                    Hint { below: Gap::Md, {i18n.t("console.decisions.noTerms")} }
+                } else {
+                    Table {
+                        caption: i18n.t("console.decisions.howScored"),
+                        scroll: true,
+                        columns: vec![
+                            TableColumn::new(i18n.t("console.decisions.col.rule")),
+                            TableColumn::new(i18n.t("console.decisions.col.delta")).numeric(),
+                            TableColumn::new(i18n.t("console.decisions.col.detail")),
+                        ],
+                        for (index , term) in terms.iter().enumerate() {
+                            tr { key: "{index}",
+                                td {
+                                    {term.get("rule").and_then(|v| v.as_str()).map_or_else(
+                                        || "?".to_owned(),
+                                        |rule| signal_label(i18n, rule),
+                                    )}
+                                }
+                                td { class: "ik-mono", style: "text-align:right;",
+                                    {signed(term.get("delta").and_then(serde_json::Value::as_f64).unwrap_or(0.0))}
+                                }
+                                td { class: "ik-muted", style: "font-size:12px;",
+                                    {term.get("detail").and_then(|v| v.as_str()).unwrap_or("")}
+                                }
                             }
                         }
-                        tbody {
-                            for (index , term) in terms.iter().enumerate() {
-                                tr { key: "{index}",
-                                    td {
-                                        {term.get("rule").and_then(|v| v.as_str()).map_or_else(
-                                            || "?".to_owned(),
-                                            |rule| signal_label(i18n, rule),
-                                        )}
-                                    }
-                                    td { class: "ik-mono", style: "text-align:right;",
-                                        {signed(term.get("delta").and_then(serde_json::Value::as_f64).unwrap_or(0.0))}
-                                    }
-                                    td { class: "ik-muted", style: "font-size:12px;",
-                                        {term.get("detail").and_then(|v| v.as_str()).unwrap_or("")}
-                                    }
-                                }
+                        tr {
+                            td { strong { {i18n.t("console.decisions.finalScore")} } }
+                            td { class: "ik-mono", style: "text-align:right;",
+                                strong { {percent(d.score)} "%" }
                             }
-                            tr {
-                                td { strong { {i18n.t("console.decisions.finalScore")} } }
-                                td { class: "ik-mono", style: "text-align:right;",
-                                    strong { {percent(d.score)} "%" }
-                                }
-                                td {}
-                            }
+                            td {}
                         }
                     }
                 }
             }
-            h4 { style: "margin:12px 0 6px;font-size:13px;", {i18n.t("console.decisions.evidence")} }
-            pre { class: "ik-code", style: "max-height:280px;overflow:auto;",
-                {pretty(&d.evidence)}
+            Section { label: i18n.t("console.decisions.evidence"),
+                pre { class: "ik-code", style: "max-height:280px;overflow:auto;",
+                    {pretty(&d.evidence)}
+                }
             }
-            h4 { style: "margin:12px 0 6px;font-size:13px;", {i18n.t("console.decisions.policyInForce")} }
-            pre { class: "ik-code", style: "max-height:180px;overflow:auto;", {pretty(&d.policy)} }
+            Section { label: i18n.t("console.decisions.policyInForce"),
+                pre { class: "ik-code", style: "max-height:180px;overflow:auto;", {pretty(&d.policy)} }
+            }
             if let Some(text) = d.revert_reason.clone() {
-                p { class: "ik-muted", style: "margin-top:8px;",
+                Hint { above: Gap::Sm,
                     {i18n.args("console.decisions.revertedBecause", &[("reason", &text)])}
                 }
             }
             if let Some(text) = d.flag_reason.clone() {
-                p { class: "ik-muted", style: "margin-top:4px;",
+                Hint { above: Gap::Xs,
                     {i18n.args("console.decisions.flaggedBecause", &[("reason", &text)])}
                 }
             }
@@ -500,27 +501,40 @@ fn SyncJournal(tick: RefreshTick) -> Element {
             )
     };
 
+    let mut action_options: Vec<SegOption> =
+        vec![(String::new(), i18n.t("console.decisions.filter.anyAction"))];
+    action_options.extend(
+        [
+            "matched",
+            "unmatched",
+            "pull",
+            "push",
+            "conflict",
+            "skipped",
+            "noop",
+        ]
+        .map(|token| {
+            (
+                token.to_owned(),
+                i18n.t(&format!("console.decisions.action.{token}")),
+            )
+        }),
+    );
+
     rsx! {
-        div { class: "ik-flex", style: "gap:8px;flex-wrap:wrap;margin-bottom:10px;",
-            select {
-                class: "ik-input",
-                "aria-label": i18n.t("console.decisions.filter.action"),
-                value: "{action}",
-                onchange: move |event: FormEvent| action.set(event.value()),
-                option { value: "", {i18n.t("console.decisions.filter.anyAction")} }
-                for token in ["matched", "unmatched", "pull", "push", "conflict", "skipped", "noop"] {
-                    option { key: "{token}", value: "{token}",
-                        {i18n.t(&format!("console.decisions.action.{token}"))}
-                    }
-                }
+        Row { gap: Gap::Sm, wrap: true, class: "ik-mb-md",
+            FilterSelect {
+                id: "tv-decisions-action",
+                aria_label: i18n.t("console.decisions.filter.action"),
+                options: action_options,
+                selected: action.read().clone(),
+                on_select: move |chosen: String| action.set(chosen),
             }
-            label { class: "ik-flex", style: "gap:6px;align-items:center;",
-                input {
-                    r#type: "checkbox",
-                    checked: only_applied,
-                    onchange: move |event: FormEvent| applied_only.set(event.checked()),
-                }
-                span { {i18n.t("console.decisions.filter.appliedOnly")} }
+            Chip {
+                label: i18n.t("console.decisions.filter.appliedOnly"),
+                active: only_applied,
+                size: Size::Xs,
+                on_toggle: move |()| applied_only.set(!only_applied),
             }
         }
         StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
@@ -542,16 +556,15 @@ fn SyncJournal(tick: RefreshTick) -> Element {
                             hits,
                         }
                         if list.is_empty() {
-                            div { class: "ik-empty", style: "padding:24px;",
-                                {
-                                    i18n.t(
-                                        if searching {
-                                            "console.decisions.searchEmpty"
-                                        } else {
-                                            "console.decisions.syncEmpty"
-                                        },
-                                    )
-                                }
+                            EmptyBox {
+                                message: i18n.t(
+                                    if searching {
+                                        "console.decisions.searchEmpty"
+                                    } else {
+                                        "console.decisions.syncEmpty"
+                                    },
+                                ),
+                                compact: true,
                             }
                         } else {
                             div { class: "ik-cons-list",
@@ -660,7 +673,7 @@ fn SyncDecisionRow(
 
     rsx! {
         article { class: "ik-card", style: "padding:12px;margin-bottom:10px;",
-            div { class: "ik-flex", style: "gap:10px;align-items:baseline;flex-wrap:wrap;",
+            Row { align: Align::Baseline, wrap: true,
                 span { class: if d.applied { "ik-pill" } else { "ik-pill ghost" },
                     {i18n.t(&format!("console.decisions.action.{}", d.action))}
                 }
@@ -676,7 +689,7 @@ fn SyncDecisionRow(
                     "{rel_time(i18n, Some(d.decided_at.as_str()))}"
                 }
             }
-            div { class: "ik-flex", style: "gap:6px;flex-wrap:wrap;margin-top:6px;",
+            Row { gap: Gap::Xs, wrap: true, class: "ik-mt-sm",
                 Pill {
                     {reason_label(i18n, &d.reason)}
                 }
@@ -710,7 +723,7 @@ fn SyncDecisionRow(
                     }
                 }
             }
-            div { class: "ik-flex", style: "gap:8px;margin-top:8px;flex-wrap:wrap;",
+            Row { gap: Gap::Sm, wrap: true, class: "ik-mt-sm",
                 Button {
                     size: Size::Xs,
                     expanded,
@@ -760,7 +773,7 @@ fn SyncDecisionRow(
                         DecisionFact { label: i18n.t("console.decisions.externalId"), value: d.external_id.clone() }
                     }
                     if !d.match_signals.is_empty() {
-                        div { class: "ik-flex", style: "gap:6px;flex-wrap:wrap;margin:8px 0;",
+                        Row { gap: Gap::Xs, wrap: true, class: "ik-mt-sm ik-mb-sm",
                             for signal in d.match_signals.clone() {
                                 Pill {
                                     tone: Tone::Ghost,
@@ -772,12 +785,12 @@ fn SyncDecisionRow(
                     }
                     pre { class: "ik-code", style: "max-height:280px;overflow:auto;", {pretty(&d.evidence)} }
                     if let Some(text) = d.revert_reason.clone() {
-                        p { class: "ik-muted", style: "margin-top:8px;",
+                        Hint { above: Gap::Sm,
                             {i18n.args("console.decisions.revertedBecause", &[("reason", &text)])}
                         }
                     }
                     if let Some(text) = d.flag_reason.clone() {
-                        p { class: "ik-muted", style: "margin-top:4px;",
+                        Hint { above: Gap::Xs,
                             {i18n.args("console.decisions.flaggedBecause", &[("reason", &text)])}
                         }
                     }

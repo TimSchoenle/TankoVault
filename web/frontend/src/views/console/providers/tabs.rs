@@ -1,7 +1,7 @@
 //! Owns the inspector's editing tab bodies: the adapter config and the politeness budget.
 
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Size};
+use inkstone_ui::{Button, Gap, Hint, Size};
 
 use super::config::DryRunResult;
 use super::inspector::{Inspector, Rights};
@@ -243,17 +243,13 @@ pub(super) fn politeness(
                             }
                         }
                     }
-                    p { class: "ik-muted", style: "font-size:11.5px;line-height:1.5;margin:10px 0 0;",
-                        {i18n.t("console.providers.politenessNote")}
-                    }
+                    Hint { size: Size::Xs, above: Gap::Md, {i18n.t("console.providers.politenessNote")} }
                 }
             }
             div { class: "ik-cons-col",
                 if let Some(preset) = preset.cloned() {
                     Section { label: i18n.t("console.providers.preset.budgetHead"),
-                        p { class: "ik-muted", style: "font-size:11.5px;line-height:1.55;margin:0 0 9px;",
-                            {i18n.t("console.providers.preset.budgetNote")}
-                        }
+                        Hint { size: Size::Xs, below: Gap::Sm, {i18n.t("console.providers.preset.budgetNote")} }
                         div { class: "ik-mono", style: "font-size:11.5px;color:var(--muted);",
                             {
                                 i18n.args(
@@ -280,12 +276,8 @@ pub(super) fn politeness(
                     }
                 }
                 Section { label: i18n.t("console.providers.limitsHead"),
-                    p { class: "ik-muted", style: "font-size:11.5px;line-height:1.5;margin:0 0 8px;",
-                        {i18n.t("console.providers.clampNote")}
-                    }
-                    p { class: "ik-muted", style: "font-size:11.5px;line-height:1.5;margin:0;",
-                        {i18n.t("console.providers.emulationNote")}
-                    }
+                    Hint { size: Size::Xs, below: Gap::Sm, {i18n.t("console.providers.clampNote")} }
+                    Hint { size: Size::Xs, {i18n.t("console.providers.emulationNote")} }
                 }
             }
         }

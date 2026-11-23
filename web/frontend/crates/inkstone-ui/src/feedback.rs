@@ -5,7 +5,7 @@
 //! A reader has to be able to tell "nothing matched" from "we could not ask".
 
 use crate::skin::{use_skin, Flag, Part, Variant};
-use crate::tone::Tone;
+use crate::tone::{Gap, Size, Tone};
 use dioxus::prelude::*;
 
 /// The result of a submitted action: `Ok` reads as a confirmation, `Err` as a failure, `None`
@@ -141,11 +141,44 @@ pub fn Callout(
     }
 }
 
+/// A muted caption under a control or heading. Size and spacing come from the skin's scale.
+#[component]
+pub fn Hint(
+    #[props(default = Size::Md)] size: Size,
+    #[props(default = Gap::None)] above: Gap,
+    #[props(default = Gap::None)] below: Gap,
+    /// Caps the line length for a paragraph of prose.
+    #[props(default = false)]
+    measure: bool,
+    #[props(default)] class: String,
+    children: Element,
+) -> Element {
+    let class = use_skin().class_with(
+        Part::Hint,
+        &[
+            Variant::Size(size),
+            Variant::Above(above),
+            Variant::Below(below),
+            Variant::flag(measure, Flag::Narrow),
+        ],
+        &class,
+    );
+    rsx! {
+        p { class, {children} }
+    }
+}
+
 /// An empty state. Never styled as an error: it is not one.
 #[component]
-pub fn EmptyBox(message: String, #[props(default)] action: Option<Element>) -> Element {
+pub fn EmptyBox(
+    message: String,
+    #[props(default)] action: Option<Element>,
+    /// Smaller padding for a box inside a dense panel.
+    #[props(default = false)]
+    compact: bool,
+) -> Element {
     rsx! {
-        div { class: use_skin().class(Part::Empty, &[]),
+        div { class: use_skin().class(Part::Empty, &[Variant::flag(compact, Flag::Compact)]),
             p { "{message}" }
             {action}
         }
@@ -241,5 +274,38 @@ mod tests {
         assert_eq!(callout_role(Tone::Caution), "status");
         assert_eq!(callout_role(Tone::Positive), "status");
         assert_eq!(callout_role(Tone::Neutral), "status");
+    }
+
+    /// The hint's spacing replaced ~150 inline margins; a class the skin emits but the stylesheet
+    /// lacks would drop that spacing with nothing failing.
+    #[test]
+    fn every_hint_modifier_has_a_rule() {
+        use crate::skin::{Inkstone, Skin};
+        let css = include_str!("../styles/inkstone.css");
+        let gaps = [Gap::Xs, Gap::Sm, Gap::Md, Gap::Lg];
+        let variants = gaps
+            .iter()
+            .flat_map(|gap| [Variant::Above(*gap), Variant::Below(*gap)])
+            .chain([
+                Variant::Size(Size::Xs),
+                Variant::Size(Size::Sm),
+                Variant::Flag(Flag::Narrow),
+            ]);
+        for variant in variants {
+            let modifier = Inkstone.modifier(&Part::Hint, &variant);
+            assert!(
+                !modifier.is_empty(),
+                "{variant:?} must draw something on a hint"
+            );
+            let selector = if modifier.starts_with("ik-") {
+                format!(".{modifier} {{")
+            } else {
+                format!(".ik-hint.{modifier} {{")
+            };
+            assert!(
+                css.contains(&selector),
+                "missing `{selector}` for {variant:?}"
+            );
+        }
     }
 }

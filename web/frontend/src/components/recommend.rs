@@ -13,7 +13,7 @@ use crate::icons::{Ic, Icon};
 use crate::models::{FeedbackBody, Recommendation, SeriesId};
 use crate::Route;
 use dioxus::prelude::*;
-use inkstone_ui::Button;
+use inkstone_ui::{Button, Gap, Hint, Size};
 /// The verdicts `POST /v1/me/recommendations/{id}/feedback` accepts.
 ///
 /// Wire tokens instead of an enum, because the endpoint publishes a free-form string and
@@ -122,9 +122,7 @@ fn Because(
             }
             if !shared.is_empty() {
                 if detailed {
-                    div { class: "ik-muted", style: "font-size:11.5px;margin-top:8px;",
-                        {i18n.t("recommendations.sharesLabel")}
-                    }
+                    Hint { size: Size::Xs, above: Gap::Sm, {i18n.t("recommendations.sharesLabel")} }
                 }
                 div { class: "ik-flex", style: "flex-wrap:wrap;gap:5px;margin-top:5px;",
                     for feature in shared {

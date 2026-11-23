@@ -25,7 +25,7 @@ use crate::Route;
 use bulk::BulkBar;
 use dioxus::prelude::*;
 use grid::CoverGrid;
-use inkstone_ui::{button_class, Button, Pill, Size, Tone};
+use inkstone_ui::{button_class, Button, Gap, Hint, Pill, Row, Size, Tone};
 pub(crate) use query::WatchlistQuery;
 use query::{Order, Released, Sort, View};
 use row::{GroupHeader, RowCtx, WatchRow};
@@ -542,9 +542,9 @@ fn page_head(
         div { class: "ik-page-head",
             div {
                 h1 { class: "ik-page-title", style: "margin-bottom:2px;", {i18n.t("nav.watchlist")} }
-                div { class: "ik-muted", style: "font-size:13px;", "{headline}" }
+                Hint { "{headline}" }
             }
-            div { class: "ik-flex", style: "gap:10px;align-items:center;",
+            Row { gap: Gap::Md,
                 {sync_chip(i18n, sync_status)}
                 Button {
                     disabled: syncing.is_busy(),
@@ -813,7 +813,7 @@ fn empty_state(
         div { class: "ik-empty",
             Ic { icon: Icon::Search, size: 28 }
             p { style: "margin:10px 0 4px;font-weight:600;", {i18n.t("watchlist.noMatch.title")} }
-            p { class: "ik-muted", style: "font-size:13px;", {i18n.t("watchlist.noMatch.hint")} }
+            Hint { above: Gap::Md, below: Gap::Md, {i18n.t("watchlist.noMatch.hint")} }
             Button {
                 style: "margin-top:10px;",
                 on_click: move |_| go(WatchlistQuery { status: None, unread_only: false, ..WatchlistQuery::default() }),

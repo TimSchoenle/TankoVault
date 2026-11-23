@@ -13,6 +13,7 @@ use crate::icons::Icon;
 use crate::models::{TasteFeature, TasteView};
 use crate::util::iso_date;
 use dioxus::prelude::*;
+use inkstone_ui::{Gap, Hint, Section, Size};
 use progenitor_client::ResponseValue;
 
 /// Features shown per column. The profile keeps 64 positive and 32 negative; the tail of that
@@ -41,9 +42,7 @@ pub(crate) fn TastePanel() -> Element {
 
     rsx! {
         PanelCard { icon: Icon::AutoAwesome, title: i18n.t("account.taste.title"),
-            p { class: "ik-muted", style: "font-size:12.5px;margin:0 0 14px;line-height:1.6;",
-                {i18n.t("account.taste.intro")}
-            }
+            Hint { below: Gap::Lg, {i18n.t("account.taste.intro")} }
             {async_block(&taste, reload, 200, |profile| rsx! { Profile { profile: profile.clone() } })}
         }
     }
@@ -57,7 +56,7 @@ fn Profile(profile: TasteView) -> Element {
     // shelf falls back to the catalogue's popularity prior until there is something to learn from.
     if profile.likes.is_empty() && profile.avoids.is_empty() {
         return rsx! {
-            div { class: "ik-muted", style: "font-size:13px;", {i18n.t("account.taste.empty")} }
+            Hint { {i18n.t("account.taste.empty")} }
         };
     }
     let seeds = i64::try_from(profile.seeds.len()).unwrap_or(i64::MAX);
@@ -66,7 +65,7 @@ fn Profile(profile: TasteView) -> Element {
         if !profile.avoids.is_empty() {
             FeatureList { label: i18n.t("account.taste.avoids"), features: profile.avoids.clone() }
         }
-        div { class: "ik-mono ik-muted", style: "font-size:11px;margin-top:14px;",
+        Hint { size: Size::Xs, above: Gap::Lg, class: "ik-mono",
             {i18n.plural("account.taste.seeds", seeds, &[])}
             " · "
             {
@@ -93,8 +92,7 @@ fn FeatureList(label: String, features: Vec<TasteFeature>) -> Element {
         .fold(0.0_f32, f32::max);
 
     rsx! {
-        div { style: "margin-bottom:16px;",
-            div { class: "ik-sec-lbl", style: "margin-bottom:8px;", "{label}" }
+        Section { label, class: "ik-mb-lg",
             for feature in features.iter().take(SHOWN) {
                 div { key: "{feature.kind}-{feature.value}", class: "ik-flex", style: "gap:10px;padding:3px 0;",
                     span { style: "font-size:12.5px;min-width:0;flex:1;", "{feature.value}" }

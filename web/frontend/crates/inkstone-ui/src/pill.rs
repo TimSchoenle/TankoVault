@@ -1,7 +1,7 @@
 //! Owns the status decorations: the pill, the filter chip and the state dot.
 
 use crate::skin::{use_skin, Flag, Part, Variant};
-use crate::tone::Tone;
+use crate::tone::{Size, Tone};
 use dioxus::prelude::*;
 
 /// A small uppercase status label.
@@ -34,19 +34,24 @@ pub fn Pill(
 /// A filter chip: a pill-shaped toggle that is part of a set.
 #[component]
 pub fn Chip(
-    label: String,
+    #[props(default)] label: String,
     active: bool,
     on_toggle: EventHandler<()>,
     /// Amber styling for a chip that narrows to something exceptional (failures, blocked).
     #[props(default = false)]
     warn: bool,
     #[props(default = false)] disabled: bool,
+    #[props(default = Size::Md)] size: Size,
+    /// A mark shown before the label, e.g. a type glyph.
+    #[props(default)]
+    icon: Option<Element>,
 ) -> Element {
     let class = use_skin().class(
         Part::Chip,
         &[
             Variant::flag(active, Flag::Active),
             Variant::flag(warn, Flag::Warn),
+            Variant::Size(size),
         ],
     );
     rsx! {
@@ -56,6 +61,7 @@ pub fn Chip(
             disabled,
             "aria-pressed": if active { "true" } else { "false" },
             onclick: move |_| on_toggle.call(()),
+            {icon}
             "{label}"
         }
     }

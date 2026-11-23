@@ -20,7 +20,7 @@ use crate::wire::types::{
     Applies, MergePolicyKnob, SetMergePolicy, SetTunable, TunableKind, TunableView,
 };
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Pill, ToggleButton, Tone};
+use inkstone_ui::{Button, Gap, Hint, Pill, Row, Size, ToggleButton, Tone};
 
 /// Which surface a row belongs to, and therefore which endpoints its controls call.
 ///
@@ -164,7 +164,7 @@ pub(super) fn KnobRow(row: Knob, can_write: bool, reload: Reload, gate: StepUpGa
     rsx! {
         div { class: "ik-row", style: "align-items:flex-start;",
             div { class: "grow",
-                div { class: "ik-flex", style: "gap:8px;align-items:center;flex-wrap:wrap;",
+                Row { gap: Gap::Sm, wrap: true,
                     strong { style: "font-size:13px;", "{row.title}" }
                     AppliesPill { applies: row.applies }
                     if changed {
@@ -182,9 +182,7 @@ pub(super) fn KnobRow(row: Knob, can_write: bool, reload: Reload, gate: StepUpGa
                     }
                 }
                 div { class: "ik-mono ik-muted", style: "font-size:11px;margin-top:2px;", "{key}" }
-                p { class: "ik-muted", style: "font-size:12px;margin:6px 0 0;max-width:74ch;",
-                    "{row.description}"
-                }
+                Hint { size: Size::Sm, above: Gap::Sm, measure: true, "{row.description}" }
                 div { class: "ik-mono ik-muted", style: "font-size:11px;margin-top:4px;",
                     if toggle {
                         {

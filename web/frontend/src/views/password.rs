@@ -10,7 +10,7 @@ use crate::i18n::use_i18n;
 use crate::models::*;
 use crate::Route;
 use dioxus::prelude::*;
-use inkstone_ui::{button_class, Button, Callout, Size, Tone};
+use inkstone_ui::{button_class, Button, Callout, Gap, Hint, Size, Tone};
 /// Requests a password-reset email. The API always answers `202 Accepted` whether or not the
 /// address is registered (so it can't be used to probe accounts), so the UI shows the same
 /// reassuring confirmation regardless: the only failure surfaced is a transport error.
@@ -54,7 +54,7 @@ pub(crate) fn ForgotPassword() -> Element {
             h1 { {i18n.t("password.forgot.heading")} }
 
             if *sent.read() {
-                p { class: "ik-muted", {i18n.t("password.forgot.sent")} }
+                Hint { above: Gap::Md, below: Gap::Md, {i18n.t("password.forgot.sent")} }
                 Link {
                     to: Route::Login {},
                     class: button_class(Tone::Primary, Size::Md, false),
@@ -62,7 +62,7 @@ pub(crate) fn ForgotPassword() -> Element {
                     {i18n.t("common.backToSignIn")}
                 }
             } else {
-                p { class: "ik-muted", {i18n.t("password.forgot.intro")} }
+                Hint { above: Gap::Md, below: Gap::Md, {i18n.t("password.forgot.intro")} }
 
                 if let Some(msg) = error.read().clone() {
                     Callout { tone: Tone::Danger, "{msg}" }
@@ -159,7 +159,7 @@ pub(crate) fn ResetPassword(token: String) -> Element {
             h1 { {i18n.t("password.reset.heading")} }
 
             if *done.read() {
-                p { class: "ik-muted", {i18n.t("password.reset.done")} }
+                Hint { above: Gap::Md, below: Gap::Md, {i18n.t("password.reset.done")} }
                 Link {
                     to: Route::Login {},
                     class: button_class(Tone::Primary, Size::Md, false),

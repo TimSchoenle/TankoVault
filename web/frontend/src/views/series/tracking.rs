@@ -29,7 +29,7 @@ use crate::icons::{Ic, Icon};
 use crate::models::*;
 use crate::util::{monogram, rel_time};
 use dioxus::prelude::*;
-use inkstone_ui::{button_class, Button, Pill, Size, ToggleButton, Tone};
+use inkstone_ui::{button_class, Align, Button, Gap, Hint, Pill, Row, Size, ToggleButton, Tone};
 use progenitor_client::ResponseValue;
 /// The conflict resolution that adopts the local value, as the sync service spells it.
 const RESOLVE_LOCAL: &str = "local";
@@ -180,9 +180,7 @@ pub(super) fn TrackingCard(
         return rsx! {
             div { class: "ik-panel",
                 TrackingHead { conflicts: 0 }
-                p { class: "ik-muted", style: "font-size:13px;margin:0 0 12px;",
-                    {i18n.t("series.signInToTrack")}
-                }
+                Hint { below: Gap::Md, {i18n.t("series.signInToTrack")} }
                 Link { to: crate::Route::Login {}, class: button_class(Tone::Neutral, Size::Md, true), {i18n.t("common.signIn")} }
             }
         };
@@ -250,9 +248,7 @@ pub(super) fn TrackingCard(
                         SkeletonBlock { height: 54 }
                     },
                     Some(rows) if rows.is_empty() => rsx! {
-                        p { class: "ik-muted", style: "font-size:12.5px;margin:0;",
-                            {i18n.t("account.sync.noProviders")}
-                        }
+                        Hint { {i18n.t("account.sync.noProviders")} }
                     },
                     Some(rows) => rsx! {
                         div { class: "ik-listbox",
@@ -294,9 +290,7 @@ pub(super) fn TrackingCard(
                         SkeletonBlock { height: 84 }
                     },
                     Some(rows) if rows.is_empty() => rsx! {
-                        p { class: "ik-muted", style: "font-size:12.5px;margin:0;",
-                            {i18n.t("series.track.historyEmpty")}
-                        }
+                        Hint { {i18n.t("series.track.historyEmpty")} }
                     },
                     Some(rows) => rsx! {
                         div { class: "ik-timeline",
@@ -365,7 +359,7 @@ fn MarkAllRow(
     };
 
     rsx! {
-        div { class: "ik-flex", style: "gap:8px;margin-top:8px;",
+        Row { gap: Gap::Sm, class: "ik-mt-sm",
             Button {
                 size: Size::Sm,
                 disabled: busy.is_busy() || unread == 0,
@@ -487,7 +481,7 @@ fn ConflictCard(conflict: ConflictRow, reload_sync: Reload, reload_progress: Rel
                     }
                 }
             }
-            div { class: "ik-flex", style: "gap:8px;margin-bottom:10px;align-items:stretch;",
+            Row { gap: Gap::Sm, align: Align::Stretch, class: "ik-mb-md",
                 div { class: "ik-valbox",
                     div { class: "k", {i18n.t("series.track.here")} }
                     div { class: "v", "{conflict.local_value}" }
@@ -609,13 +603,13 @@ fn ProgressEditor(
     };
 
     rsx! {
-        div { class: "ik-flex", style: "align-items:baseline;gap:8px;margin-bottom:8px;",
+        Row { gap: Gap::Sm, align: Align::Baseline, class: "ik-mb-sm",
             span { class: "ik-sec-lbl", {i18n.t("series.track.progress")} }
             span { class: "ik-mono ik-muted", style: "margin-left:auto;font-size:11.5px;",
                 "{shown} / {total}"
             }
         }
-        div { class: "ik-flex", style: "gap:8px;",
+        Row { gap: Gap::Sm,
             div { class: "ik-stepper",
                 button {
                     disabled: busy.is_busy() || value <= 0.0,

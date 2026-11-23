@@ -25,7 +25,7 @@ use crate::Route;
 use active::ActiveFilters;
 use dioxus::prelude::*;
 use filters::FilterPanel;
-use inkstone_ui::Button;
+use inkstone_ui::{Button, Gap, Hint};
 use query::DiscoverFilters;
 pub(crate) use query::{DiscoverQuery, Sort, Tracking};
 use std::collections::{BTreeSet, HashMap};
@@ -480,7 +480,7 @@ fn empty_state(
             div { class: "ik-empty",
                 Ic { icon: Icon::Explore, size: 28 }
                 p { style: "margin:10px 0 4px;font-weight:600;", {i18n.t("discover.pastEnd.title")} }
-                p { class: "ik-muted", style: "font-size:13px;", {i18n.t("discover.pastEnd.hint")} }
+                Hint { above: Gap::Md, below: Gap::Md, {i18n.t("discover.pastEnd.hint")} }
                 Button {
                     style: "margin-top:10px;",
                     on_click: move |_| on_filters(filters.clone()),
@@ -493,7 +493,7 @@ fn empty_state(
         div { class: "ik-empty",
             Ic { icon: Icon::Search, size: 28 }
             p { style: "margin:10px 0 4px;font-weight:600;", {i18n.t("discover.noMatch.title")} }
-            p { class: "ik-muted", style: "font-size:13px;", {i18n.t("discover.noMatch.hint")} }
+            Hint { above: Gap::Md, below: Gap::Md, {i18n.t("discover.noMatch.hint")} }
             Button {
                 style: "margin-top:10px;",
                 on_click: move |_| on_filters(DiscoverFilters::default()),

@@ -27,12 +27,12 @@ mod tone;
 
 pub use button::{button_class, Button, ButtonType, IconButton, ToggleButton};
 pub use feedback::{
-    async_list, async_view, Callout, EmptyBox, ErrorBox, ErrorLine, Outcome, OutcomeLine, Skeleton,
-    SkeletonGrid, SkeletonRows,
+    async_list, async_view, Callout, EmptyBox, ErrorBox, ErrorLine, Hint, Outcome, OutcomeLine,
+    Skeleton, SkeletonGrid, SkeletonRows,
 };
 pub use field::{
-    Checkbox, Field, FieldShell, SearchField, SegControl, SegOption, SelectField, SliderRow,
-    TextArea, TextInput,
+    Checkbox, Field, FieldShell, FilterSelect, SearchField, SegControl, SegOption, SelectField,
+    SliderRow, TextArea, TextInput,
 };
 pub use layout::{Brush, Card, Kv, KvRow, Row, Section, Stack, Tile};
 pub use overlay::{Modal, ModalSize};

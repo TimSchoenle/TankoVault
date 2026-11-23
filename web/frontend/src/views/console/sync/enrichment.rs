@@ -15,6 +15,7 @@ use crate::i18n::use_i18n;
 use crate::util::{rel_time, thousands};
 use crate::wire::types::EnrichmentSweepView;
 use dioxus::prelude::*;
+use inkstone_ui::{Gap, Row};
 use progenitor_client::ResponseValue;
 
 /// How often the panel re-reads itself while a sweep is in flight.
@@ -94,7 +95,7 @@ fn SweepBody(view: EnrichmentSweepView) -> Element {
     };
 
     rsx! {
-        div { class: "ik-flex", style: "gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;",
+        Row { gap: Gap::Sm, wrap: true, class: "ik-mb-md",
             span {
                 class: if view.running { "ik-pill run" } else { "ik-pill" },
                 if view.running {

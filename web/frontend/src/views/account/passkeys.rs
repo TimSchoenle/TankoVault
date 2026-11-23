@@ -18,7 +18,7 @@ use crate::util::iso_date;
 use crate::webauthn::{self, CeremonyError};
 use crate::wire::types::{PasskeyRegisterFinish, PasskeyRegisterStart, PasskeyRename};
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Callout, Size, Tone};
+use inkstone_ui::{Button, Callout, Gap, Hint, Size, Tone};
 use progenitor_client::ResponseValue;
 use webauthn_rs_proto::CreationChallengeResponse;
 #[component]
@@ -146,9 +146,7 @@ pub(crate) fn PasskeysCard() -> Element {
 
     rsx! {
         PanelCard { icon: Icon::ShieldLock, title: i18n.t("passkey.title"),
-            p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
-                {i18n.t("passkey.intro")}
-            }
+            Hint { below: Gap::Md, {i18n.t("passkey.intro")} }
 
             if let Some(msg) = error.read().clone() {
                 Callout { tone: Tone::Danger, "{msg}" }
@@ -181,7 +179,7 @@ pub(crate) fn PasskeysCard() -> Element {
             }
 
             if !available {
-                p { class: "ik-muted", style: "font-size:12px;margin-top:14px;",
+                Hint { size: Size::Sm, above: Gap::Lg, below: Gap::Md,
                     {i18n.t("passkey.error.unsupported")}
                 }
             } else if *adding.read() {
@@ -335,7 +333,7 @@ fn PasskeyRow(
                     }
                 } else {
                     div { style: "font-weight:600;font-size:13px;", "{label}" }
-                    div { class: "ik-mono ik-muted", style: "font-size:11px;",
+                    Hint { size: Size::Xs, class: "ik-mono",
                         {i18n.args("passkey.addedOn", &[("date", &created)])}
                         " · "
                         "{used}"

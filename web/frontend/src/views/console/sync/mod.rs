@@ -6,14 +6,16 @@ mod queues;
 mod reverify;
 
 use crate::api;
-use crate::components::{async_block_list, use_step_up_gate, StepUpGate, StepUpGuard};
+use crate::components::{
+    async_block_list, use_step_up_gate, ConsolePanel, StepUpGate, StepUpGuard,
+};
 use crate::hooks::{use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::models::*;
 use crate::util::rel_time;
 use dioxus::prelude::*;
 use enrichment::EnrichmentPanel;
-use inkstone_ui::{Button, Pill};
+use inkstone_ui::{Align, Button, Gap, Hint, Justify, Pill, Row};
 use inspector::SeriesSyncInspector;
 use progenitor_client::ResponseValue;
 use queues::AssignQueue;
@@ -72,43 +74,30 @@ pub(super) fn SyncAdminPanel() -> Element {
         // First, not last: this is the only surface that says whether the catalogue-wide half of
         // the AniList integration is running at all, and every account row below it is about the
         // other half.
-        section { style: "margin-bottom:24px;",
-            h3 { {i18n.t("console.sync.enrich.title")} }
-            p { class: "ik-muted", style: "font-size:13px;margin-top:0;max-width:74ch;",
-                {i18n.t("console.sync.enrich.intro")}
-            }
+        ConsolePanel {
+            title: i18n.t("console.sync.enrich.title"),
+            intro: i18n.t("console.sync.enrich.intro"),
             EnrichmentPanel {}
         }
-        section { style: "margin-bottom:24px;",
-            h3 { {i18n.t("console.sync.reverify.title")} }
-            p { class: "ik-muted", style: "font-size:13px;margin-top:0;max-width:74ch;",
-                {i18n.t("console.sync.reverify.intro")}
-            }
+        ConsolePanel {
+            title: i18n.t("console.sync.reverify.title"),
+            intro: i18n.t("console.sync.reverify.intro"),
             MappingReverifyPanel {}
         }
-        section { style: "margin-bottom:24px;",
-            h3 { {i18n.t("console.sync.accounts")} }
-            {accounts_body}
-        }
-        section { style: "margin-bottom:24px;",
-            h3 { {i18n.t("console.sync.inspector")} }
-            p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
-                {i18n.t("console.sync.inspectorIntro")}
-            }
+        ConsolePanel { title: i18n.t("console.sync.accounts"), {accounts_body} }
+        ConsolePanel {
+            title: i18n.t("console.sync.inspector"),
+            intro: i18n.t("console.sync.inspectorIntro"),
             SeriesSyncInspector { reload }
         }
-        section { style: "margin-bottom:24px;",
-            h3 { {i18n.t("console.sync.assignQueue")} }
-            p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
-                {i18n.t("console.sync.assignQueueIntro")}
-            }
+        ConsolePanel {
+            title: i18n.t("console.sync.assignQueue"),
+            intro: i18n.t("console.sync.assignQueueIntro"),
             AssignQueue { reload }
         }
-        section {
-            h3 { {i18n.t("console.sync.remoteQueue")} }
-            p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
-                {i18n.t("console.sync.remoteQueueIntro")}
-            }
+        ConsolePanel {
+            title: i18n.t("console.sync.remoteQueue"),
+            intro: i18n.t("console.sync.remoteQueueIntro"),
             UnmatchedRemoteQueue { reload }
         }
     }
@@ -212,13 +201,13 @@ pub(super) fn SyncAccountRow(account: Signal<AdminSyncAccount>, reload: Reload) 
     rsx! {
         div { class: "ik-row",
             div { class: "grow",
-                div { class: "ik-flex", style: "justify-content:space-between;",
+                Row { gap: Gap::None, align: Align::Stretch, justify: Justify::Between,
                     span { style: "font-weight:600;", "{acc.username}" }
                     Pill {
                         "{acc.provider}"
                     }
                 }
-                div { class: "ik-muted", style: "font-size:13px;",
+                Hint {
                     if let Some(u) = &acc.external_username {
                         {
                             i18n.args(

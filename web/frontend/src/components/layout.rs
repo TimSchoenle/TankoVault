@@ -4,6 +4,7 @@
 use crate::components::EmptyBox;
 use crate::icons::{Ic, Icon};
 use dioxus::prelude::*;
+use inkstone_ui::{Align, Gap, Hint, Justify, Row};
 
 pub(crate) use inkstone_ui::Section;
 
@@ -27,6 +28,32 @@ pub(crate) fn NoSelection(message: String) -> Element {
     rsx! {
         div { class: "ik-cons-pane",
             EmptyBox { message: "{message}" }
+        }
+    }
+}
+
+/// One console panel: a heading, an optional intro under it, and optional controls beside it.
+#[component]
+pub(crate) fn ConsolePanel(
+    title: String,
+    #[props(default)] intro: Option<String>,
+    #[props(default)] actions: Option<Element>,
+    children: Element,
+) -> Element {
+    rsx! {
+        section { class: "ik-mb-lg",
+            if let Some(actions) = actions {
+                Row { justify: Justify::Between, align: Align::Center, wrap: true,
+                    h3 { "{title}" }
+                    Row { gap: Gap::Sm, wrap: true, {actions} }
+                }
+            } else {
+                h3 { "{title}" }
+            }
+            if let Some(intro) = intro {
+                Hint { below: Gap::Md, measure: true, "{intro}" }
+            }
+            {children}
         }
     }
 }

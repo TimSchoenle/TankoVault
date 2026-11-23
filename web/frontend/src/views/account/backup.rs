@@ -17,7 +17,7 @@ use crate::state::use_session;
 use crate::util::iso_date;
 use crate::wire::types::{WatchlistImportMode, WatchlistImportReport, WatchlistPending};
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Callout, Tone};
+use inkstone_ui::{Button, Callout, Checkbox, Gap, Hint, Row, Section, Size, Tone};
 use progenitor_client::ResponseValue;
 
 /// The largest file offered to the server, matching its import body limit. Checked here so a
@@ -70,9 +70,7 @@ fn ExportCard() -> Element {
 
     rsx! {
         PanelCard { icon: Icon::Download, title: i18n.t("account.backup.export.title"),
-            p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
-                {i18n.t("account.backup.export.intro")}
-            }
+            Hint { below: Gap::Md, {i18n.t("account.backup.export.intro")} }
             OutcomeLine { outcome: outcome.read().clone() }
             Button {
                 tone: Tone::Primary,
@@ -240,9 +238,7 @@ fn ImportCard(pending_reload: Reload) -> Element {
 
     rsx! {
         PanelCard { icon: Icon::History, title: i18n.t("account.backup.import.title"),
-            p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
-                {i18n.t("account.backup.import.intro")}
-            }
+            Hint { below: Gap::Md, {i18n.t("account.backup.import.intro")} }
             div { class: "ik-field",
                 label { r#for: "tv-backup-file", {i18n.t("account.backup.import.file")} }
                 input {
@@ -253,9 +249,7 @@ fn ImportCard(pending_reload: Reload) -> Element {
                     onchange: choose,
                 }
                 if !file_name.read().is_empty() {
-                    div { class: "ik-mono ik-muted", style: "font-size:11px;margin-top:4px;",
-                        "{file_name}"
-                    }
+                    Hint { size: Size::Xs, above: Gap::Xs, class: "ik-mono", "{file_name}" }
                 }
             }
             div { class: "ik-field",
@@ -276,23 +270,17 @@ fn ImportCard(pending_reload: Reload) -> Element {
                 if current_mode == WatchlistImportMode::Replace {
                     Callout { tone: Tone::Caution, {i18n.t("account.backup.import.modes.replace.hint")} }
                 } else {
-                    div { class: "ik-muted", style: "font-size:12px;margin-top:4px;",
+                    Hint { size: Size::Sm, above: Gap::Xs,
                         {i18n.t(&format!("account.backup.import.modes.{}.hint", mode_token(current_mode)))}
                     }
                 }
             }
-            label { style: "display:flex;gap:8px;align-items:flex-start;font-size:13px;",
-                input {
-                    r#type: "checkbox",
-                    checked: *match_titles.read(),
-                    onchange: move |e| match_titles.set(e.checked()),
-                }
-                span {
-                    {i18n.t("account.backup.import.matchTitles")}
-                    div { class: "ik-muted", style: "font-size:12px;",
-                        {i18n.t("account.backup.import.matchTitlesHint")}
-                    }
-                }
+            Checkbox {
+                id: "tv-backup-match-titles",
+                label: i18n.t("account.backup.import.matchTitles"),
+                checked: *match_titles.read(),
+                on_toggle: move |checked| match_titles.set(checked),
+                hint: i18n.t("account.backup.import.matchTitlesHint"),
             }
             OutcomeLine { outcome: outcome.read().clone() }
             StepUpGuard { gate }
@@ -302,7 +290,7 @@ fn ImportCard(pending_reload: Reload) -> Element {
             if let Some(report) = applied.read().clone() {
                 ReportView { report, title: i18n.t("account.backup.import.resultTitle") }
             }
-            div { style: "display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;",
+            Row { gap: Gap::Sm, wrap: true, class: "ik-mt-md",
                 Button {
                     disabled: busy.is_busy() || !has_file,
                     on_click: preview,
@@ -342,36 +330,33 @@ fn ReportView(report: WatchlistImportReport, title: String) -> Element {
     .collect();
 
     rsx! {
-        div { class: "ik-subhead", style: "margin-top:16px;", "{title}" }
-        if figures.is_empty() {
-            p { class: "ik-muted", style: "font-size:13px;", {i18n.t("account.backup.report.nothing")} }
-        } else {
-            ul { style: "font-size:13px;margin:6px 0 0;padding-left:18px;",
-                for (i, line) in figures.into_iter().enumerate() {
-                    li { key: "{i}", "{line}" }
+        Section { label: title, class: "ik-mt-lg",
+            if figures.is_empty() {
+                Hint { below: Gap::Md, {i18n.t("account.backup.report.nothing")} }
+            } else {
+                ul { style: "font-size:13px;margin:0;padding-left:18px;",
+                    for (i, line) in figures.into_iter().enumerate() {
+                        li { key: "{i}", "{line}" }
+                    }
                 }
             }
-        }
-        if report.removed > 0 {
-            Callout { tone: Tone::Caution, {i18n.plural("account.backup.report.removedWarning", report.removed, &[])} }
-        }
-        if !report.title_matches.is_empty() {
-            div { class: "ik-muted", style: "font-size:12px;margin-top:8px;",
-                {i18n.t("account.backup.report.titleMatches")}
+            if report.removed > 0 {
+                Callout { tone: Tone::Caution, {i18n.plural("account.backup.report.removedWarning", report.removed, &[])} }
             }
-            ul { style: "font-size:12px;margin:4px 0 0;padding-left:18px;",
-                for issue in report.title_matches.iter() {
-                    li { key: "t{issue.index}", "{issue.title}" }
+            if !report.title_matches.is_empty() {
+                Hint { size: Size::Sm, above: Gap::Sm, {i18n.t("account.backup.report.titleMatches")} }
+                ul { style: "font-size:12px;margin:4px 0 0;padding-left:18px;",
+                    for issue in report.title_matches.iter() {
+                        li { key: "t{issue.index}", "{issue.title}" }
+                    }
                 }
             }
-        }
-        if !report.pending_entries.is_empty() {
-            div { class: "ik-muted", style: "font-size:12px;margin-top:8px;",
-                {i18n.t("account.backup.report.pendingList")}
-            }
-            ul { style: "font-size:12px;margin:4px 0 0;padding-left:18px;",
-                for issue in report.pending_entries.iter() {
-                    li { key: "p{issue.index}", "{issue.title}" }
+            if !report.pending_entries.is_empty() {
+                Hint { size: Size::Sm, above: Gap::Sm, {i18n.t("account.backup.report.pendingList")} }
+                ul { style: "font-size:12px;margin:4px 0 0;padding-left:18px;",
+                    for issue in report.pending_entries.iter() {
+                        li { key: "p{issue.index}", "{issue.title}" }
+                    }
                 }
             }
         }
@@ -427,9 +412,7 @@ fn PendingCard(reload: Reload) -> Element {
 
     rsx! {
         PanelCard { icon: Icon::CloudSync, title: i18n.t("account.backup.pending.title"),
-            p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
-                {i18n.t("account.backup.pending.intro")}
-            }
+            Hint { below: Gap::Md, {i18n.t("account.backup.pending.intro")} }
             OutcomeLine { outcome: outcome.read().clone() }
             {
                 async_view(
@@ -439,7 +422,7 @@ fn PendingCard(reload: Reload) -> Element {
                     |view| {
                         if view.total == 0 {
                             return rsx! {
-                                p { class: "ik-muted", style: "font-size:13px;", {i18n.t("account.backup.pending.empty")} }
+                                Hint { above: Gap::Md, below: Gap::Md, {i18n.t("account.backup.pending.empty")} }
                             };
                         }
                         let shown = i64::try_from(view.items.len()).unwrap_or(i64::MAX);
@@ -451,7 +434,7 @@ fn PendingCard(reload: Reload) -> Element {
                                 div { key: "{i}", class: "ik-row",
                                     div { class: "grow",
                                         div { style: "font-weight:600;font-size:13px;", "{item.title}" }
-                                        div { class: "ik-mono ik-muted", style: "font-size:11px;",
+                                        Hint { size: Size::Xs, class: "ik-mono",
                                             {i18n.args("account.backup.pending.queuedOn", &[("date", iso_date(Some(&item.queued_at)))])}
                                             if let Some(url) = item.source_urls.first() {
                                                 " · {url}"
@@ -461,7 +444,7 @@ fn PendingCard(reload: Reload) -> Element {
                                 }
                             }
                             if view.total > shown {
-                                div { class: "ik-muted", style: "font-size:12px;",
+                                Hint { size: Size::Sm,
                                     {i18n.plural("account.backup.pending.more", view.total - shown, &[])}
                                 }
                             }

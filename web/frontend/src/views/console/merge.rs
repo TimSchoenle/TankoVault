@@ -20,7 +20,7 @@ use crate::views::console::tuning::{Knob, KnobRow};
 use crate::views::console::{use_console_nav, ConsoleQuery};
 use crate::wire::types::{MergeFullSweepStatusView, Permission, TunableGroup};
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Pill, ToggleButton, Tone};
+use inkstone_ui::{Align, Button, Gap, Hint, Justify, Pill, Row, Size, ToggleButton, Tone};
 use progenitor_client::ResponseValue;
 
 /// How often the exhaustive sweep's state is re-read while a run holds the claim.
@@ -166,7 +166,7 @@ pub(super) fn MergeQueue() -> Element {
         section {
             h3 { {i18n.t("console.tab.merge")} }
             div { class: "ik-row", style: "gap:8px;flex-wrap:wrap;margin-bottom:12px;",
-                div { class: "ik-flex", style: "gap:4px;flex-wrap:wrap;",
+                Row { gap: Gap::Xs, align: Align::Stretch, wrap: true,
                     for option in Band::ALL {
                         ToggleButton {
                             key: "{option.token()}",
@@ -289,7 +289,7 @@ fn FullSweep(reload: Reload, gate: StepUpGate) -> Element {
 
     rsx! {
         div { class: "ik-card", style: "margin-bottom:12px;padding:10px;",
-            div { class: "ik-flex", style: "gap:8px;align-items:center;flex-wrap:wrap;",
+            Row { gap: Gap::Sm, wrap: true,
                 Button {
                     disabled: running || *busy.read(),
                     on_click: start,
@@ -381,7 +381,7 @@ fn MergePolicy(reload: Reload, gate: StepUpGate) -> Element {
     // open once they disagree with it.
     rsx! {
         div { class: "ik-card", style: "margin-bottom:12px;padding:10px;",
-            div { class: "ik-flex", style: "gap:8px;align-items:center;",
+            Row { gap: Gap::Sm,
                 strong { style: "font-size:13px;", {i18n.t(POLICY_GROUPS[0].1)} }
                 div { class: "grow" }
                 Button {
@@ -394,13 +394,11 @@ fn MergePolicy(reload: Reload, gate: StepUpGate) -> Element {
                 }
             }
             if *open.read() {
-                p { class: "ik-muted", style: "font-size:12px;margin:8px 0 0;max-width:74ch;",
+                Hint { size: Size::Sm, above: Gap::Sm, measure: true,
                     {i18n.t("console.merge.policy.intro")}
                 }
                 if !can_write {
-                    p { class: "ik-muted", style: "font-size:12px;margin:4px 0 0;",
-                        {i18n.t("console.merge.policy.readOnly")}
-                    }
+                    Hint { size: Size::Sm, above: Gap::Xs, {i18n.t("console.merge.policy.readOnly")} }
                 }
                 {
                     async_view(
@@ -531,14 +529,14 @@ pub(super) fn MergeRow(
         div { class: "ik-card", style: "margin-bottom:10px;",
             div { class: "ik-row",
                 div { class: "grow",
-                    div { class: "ik-flex", style: "justify-content:space-between;align-items:center;",
+                    Row { gap: Gap::None, justify: Justify::Between,
                         span { style: "font-weight:600;", "{keep.title}" }
                         span { class: "{score_class}",
                             {i18n.args("console.merge.score", &[("percent", &pct.to_string())])}
                         }
                     }
-                    div { class: "ik-muted", style: "font-size:13px;", "↔ {drop_side.title}" }
-                    div { class: "ik-flex", style: "gap:4px;margin-top:6px;flex-wrap:wrap;",
+                    Hint { "↔ {drop_side.title}" }
+                    Row { gap: Gap::Xs, align: Align::Stretch, wrap: true, class: "ik-mt-xs",
                         for s in signals.iter() {
                             Pill {
                                 key: "{s}",
@@ -547,7 +545,7 @@ pub(super) fn MergeRow(
                             }
                         }
                     }
-                    div { class: "ik-muted", style: "font-size:12px;margin-top:4px;",
+                    Hint { size: Size::Sm, above: Gap::Xs,
                         {
                             i18n.args(
                                 "console.merge.sides",
@@ -559,9 +557,7 @@ pub(super) fn MergeRow(
                         }
                     }
                     if let Some(r) = &reason {
-                        div { class: "ik-muted", style: "font-size:12px;",
-                            {i18n.args("console.merge.reason", &[("reason", r)])}
-                        }
+                        Hint { size: Size::Sm, {i18n.args("console.merge.reason", &[("reason", r)])} }
                     }
                 }
                 Button {
@@ -706,7 +702,7 @@ pub(super) fn SeriesMiniCard(series_id: SeriesId) -> Element {
         let tags: Vec<String> = d.tags.iter().take(6).map(|t| t.name.clone()).collect();
         rsx! {
             div { class: "ik-card", style: "padding:10px;",
-                div { class: "ik-flex", style: "gap:10px;align-items:flex-start;",
+                Row { gap: Gap::Md, align: Align::Start,
                     div { style: "width:56px;flex:0 0 auto;",
                         Cover { url: d.cover_url.clone(), title: d.title.clone() }
                     }
@@ -743,7 +739,7 @@ pub(super) fn SeriesMiniCard(series_id: SeriesId) -> Element {
                 if !d.sources.is_empty() {
                     div { style: "margin-top:8px;",
                         for s in d.sources.iter().take(5) {
-                            div { class: "ik-muted", style: "font-size:12px;",
+                            Hint { size: Size::Sm,
                                 {
                                     let count = i18n.args(
                                         "series.chapterCount",
@@ -756,7 +752,7 @@ pub(super) fn SeriesMiniCard(series_id: SeriesId) -> Element {
                     }
                 }
                 if !tags.is_empty() {
-                    div { class: "ik-flex", style: "gap:4px;margin-top:8px;flex-wrap:wrap;",
+                    Row { gap: Gap::Xs, align: Align::Stretch, wrap: true, class: "ik-mt-sm",
                         for t in tags {
                             Pill {
                                 style: "font-size:11px;",

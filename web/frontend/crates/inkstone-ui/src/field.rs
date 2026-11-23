@@ -136,6 +136,7 @@ pub fn TextArea(
     #[props(default = false)] mono: bool,
 ) -> Element {
     let described = described_by(&id, hint.as_ref(), error.as_ref());
+    let invalid = error.is_some();
     let class = use_skin().class(Part::Input, &[Variant::flag(mono, Flag::Mono)]);
     rsx! {
         FieldShell { id: id.clone(), label, hint, error,
@@ -145,6 +146,7 @@ pub fn TextArea(
                 rows: "{rows}",
                 disabled,
                 placeholder: placeholder.clone().unwrap_or_default(),
+                "aria-invalid": if invalid { "true" } else { "false" },
                 "aria-describedby": "{described}",
                 oninput: move |event| on_input.call(event.value()),
                 "{value}"
@@ -166,6 +168,7 @@ pub fn SelectField(
     #[props(default = false)] disabled: bool,
 ) -> Element {
     let described = described_by(&id, hint.as_ref(), error.as_ref());
+    let invalid = error.is_some();
     let class = use_skin().class(Part::Select, &[]);
     rsx! {
         FieldShell { id: id.clone(), label, hint, error,
@@ -174,11 +177,36 @@ pub fn SelectField(
                 class,
                 disabled,
                 value: "{selected}",
+                "aria-invalid": if invalid { "true" } else { "false" },
                 "aria-describedby": "{described}",
                 onchange: move |event| on_select.call(event.value()),
                 for (value , text) in options {
                     option { key: "{value}", value: "{value}", selected: value == selected, "{text}" }
                 }
+            }
+        }
+    }
+}
+
+/// A compact `<select>` for a filter bar. It has no visible label, so `aria_label` names it.
+#[component]
+pub fn FilterSelect(
+    id: String,
+    aria_label: String,
+    options: Vec<SegOption>,
+    selected: String,
+    on_select: EventHandler<String>,
+) -> Element {
+    let class = use_skin().class_with(Part::Select, &[], "ik-filter-select");
+    rsx! {
+        select {
+            id: "{id}",
+            class,
+            "aria-label": "{aria_label}",
+            value: "{selected}",
+            onchange: move |event| on_select.call(event.value()),
+            for (value , text) in options {
+                option { key: "{value}", value: "{value}", selected: value == selected, "{text}" }
             }
         }
     }

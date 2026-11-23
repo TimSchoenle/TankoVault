@@ -10,7 +10,7 @@ use crate::i18n::use_i18n;
 use crate::icons::Icon;
 use crate::models::NotificationPrefs;
 use dioxus::prelude::*;
-use inkstone_ui::ToggleButton;
+use inkstone_ui::{Hint, Size, ToggleButton};
 
 /// One switch: its catalogue key, how to read it, and how to flip it.
 ///
@@ -176,7 +176,7 @@ pub(crate) fn NotificationsPanel() -> Element {
                                 div { class: "grow",
                                     div { {i18n.t(switch.label_key)} }
                                     if let Some(hint) = switch.hint_key {
-                                        div { class: "ik-muted", style: "font-size:12px;", {i18n.t(hint)} }
+                                        Hint { size: Size::Sm, {i18n.t(hint)} }
                                     }
                                 }
                                 ToggleButton {

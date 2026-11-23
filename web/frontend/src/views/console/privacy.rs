@@ -8,7 +8,7 @@
 //! username typed back.
 
 use crate::api;
-use crate::components::{async_list, use_step_up_gate, StepUpGate, StepUpGuard};
+use crate::components::{async_list, use_step_up_gate, ConsolePanel, StepUpGate, StepUpGuard};
 use crate::hooks::{use_busy, use_outcome, use_reload, Busy, Reload};
 use crate::i18n::use_i18n;
 use crate::models::{RequestKindExt as _, RequestStatusExt as _};
@@ -19,7 +19,7 @@ use crate::wire::types::{
     AdminRequestRow, FulfilErasure, Permission, RequestKind, RequestStatus, ResolveRequest,
 };
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Pill, Tone};
+use inkstone_ui::{Button, Chip, Gap, Hint, Pill, Row, Size, Tone};
 use progenitor_client::ResponseValue;
 /// What this reader is allowed to do to the queue at all.
 ///
@@ -115,27 +115,23 @@ pub(super) fn PrivacyQueuePanel(tick: RefreshTick) -> Element {
     });
 
     rsx! {
-        section { style: "margin-bottom:18px;",
-            div { class: "ik-flex", style: "justify-content:space-between;align-items:center;",
-                h3 { style: "margin:0;", {i18n.t("console.tab.privacy")} }
-                label { class: "ik-flex", style: "gap:6px;font-size:13px;",
-                    input {
-                        r#type: "checkbox",
-                        checked: include_resolved,
-                        onchange: move |e: FormEvent| {
-                            let next = ConsoleQuery {
-                                status: e.checked().then(|| "all".to_owned()),
-                                ..nav.query()
-                            };
-                            nav.filter(next);
-                        },
-                    }
-                    {i18n.t("console.privacy.includeResolved")}
+        ConsolePanel {
+            title: i18n.t("console.tab.privacy"),
+            intro: i18n.t("console.privacy.intro"),
+            actions: rsx! {
+                Chip {
+                    label: i18n.t("console.privacy.includeResolved"),
+                    active: include_resolved,
+                    size: Size::Xs,
+                    on_toggle: move |()| {
+                        let next = ConsoleQuery {
+                            status: (!include_resolved).then(|| "all".to_owned()),
+                            ..nav.query()
+                        };
+                        nav.filter(next);
+                    },
                 }
-            }
-            p { class: "ik-muted", style: "font-size:13px;max-width:70ch;",
-                {i18n.t("console.privacy.intro")}
-            }
+            },
             {
                 async_list(
                     &requests,
@@ -180,7 +176,7 @@ fn QueueRow(row: AdminRequestRow, permits: QueuePermits, reload: Reload) -> Elem
     rsx! {
         div { class: "ik-row", style: "align-items:flex-start;",
             div { class: "grow",
-                div { class: "ik-flex", style: "gap:8px;align-items:center;",
+                Row { gap: Gap::Sm,
                     span {
                         class: if row.overdue { "ik-pill vermilion" } else { "ik-pill" },
                         {i18n.t(row.request.status.label_key())}
@@ -209,7 +205,7 @@ fn QueueRow(row: AdminRequestRow, permits: QueuePermits, reload: Reload) -> Elem
                     p { style: "font-size:12px;margin:6px 0 0;max-width:74ch;", "“{detail}”" }
                 }
                 if let Some(note) = row.request.resolution_note.clone() {
-                    p { class: "ik-muted", style: "font-size:12px;margin:4px 0 0;", "{note}" }
+                    Hint { size: Size::Sm, above: Gap::Xs, "{note}" }
                 }
                 if let Some(by) = row.claimed_by.clone() {
                     div { class: "ik-mono ik-muted", style: "font-size:11px;margin-top:2px;",
@@ -232,7 +228,7 @@ fn QueueRow(row: AdminRequestRow, permits: QueuePermits, reload: Reload) -> Elem
                             oninput: move |e| typed.set(e.value()),
                         }
                     }
-                    div { class: "ik-flex", style: "margin-top:8px;",
+                    Row { class: "ik-mt-sm",
                         EraseButton {
                             id,
                             confirm: typed.read().trim().to_owned(),

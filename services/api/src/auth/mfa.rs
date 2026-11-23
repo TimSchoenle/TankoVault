@@ -18,6 +18,7 @@ use axum::extract::State;
 use axum_extra::extract::cookie::CookieJar;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
+use tankovault_db::repo::users::throttle::ThrottleKind;
 use tankovault_service::AuditOutcome;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -186,8 +187,24 @@ pub async fn mfa_verify(
         .await);
     }
 
+    // Per account, not per challenge: each password sign-in opens a fresh challenge with fresh
+    // attempts, so only this count bounds guessing across them.
+    if super::throttle::is_locked(&state, pending.user_id, ThrottleKind::SecondFactor).await? {
+        return Err(refuse(
+            &state,
+            &client,
+            pending.user_id,
+            &serde_json::json!({ "reason": "second_factor_locked" }),
+            AuditOutcome::Denied,
+            ApiError::Unauthorized,
+        )
+        .await);
+    }
+
     let (ok, factor) = present_factor(&state, pending.user_id, &req).await?;
     if !ok {
+        super::throttle::record_failure(&state, pending.user_id, ThrottleKind::SecondFactor)
+            .await?;
         return Err(refuse(
             &state,
             &client,
@@ -198,6 +215,8 @@ pub async fn mfa_verify(
         )
         .await);
     }
+
+    super::throttle::clear(&state, pending.user_id, &[ThrottleKind::SecondFactor]).await?;
 
     // Consumed on success, so one challenge yields at most one session even if two requests
     // carrying different valid factors arrive together.

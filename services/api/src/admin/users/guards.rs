@@ -74,6 +74,51 @@ pub(crate) async fn guard_not_last_administrator(
     ))
 }
 
+/// Refuses an action aimed at an account holding any permission the caller lacks.
+///
+/// Without it, an administrator with a narrow grant can act on a broader one: redirect the
+/// owner's email and take the account through a password reset, or strip a peer's grants. The
+/// super user outranks everyone, and is the only caller this waves through; a super-user target
+/// is therefore always refused here, since no other caller holds that grant. A missing target
+/// passes, so the handler's own lookup answers 404.
+pub(crate) async fn guard_outranks(
+    state: &AppState,
+    user: &AuthUser,
+    target: UserId,
+    action: &'static str,
+) -> ApiResult<()> {
+    if user.permissions.is_super_user() {
+        return Ok(());
+    }
+    let Some(principal) = tankovault_db::repo::permissions::resolve(&state.pool, target).await?
+    else {
+        return Ok(());
+    };
+    let beyond: Vec<&str> = principal
+        .permissions
+        .iter()
+        .filter(|p| !user.permissions.has(*p))
+        .map(tankovault_domain::Permission::as_str)
+        .collect();
+    if beyond.is_empty() {
+        return Ok(());
+    }
+
+    audit_failure(
+        state,
+        user,
+        action,
+        &target.as_uuid().to_string(),
+        &serde_json::json!({ "reason": "target_outranks_caller", "beyond": beyond }),
+    )
+    .await;
+    Err(ApiError::BadRequest(
+        "this account holds permissions you do not; only an administrator holding all of them \
+         can change it"
+            .to_owned(),
+    ))
+}
+
 /// Refuses an action that would take the deployment's super user out of service (suspension or
 /// erasure), aimed at the one account [`Permission::SuperUser`] belongs to.
 ///

@@ -4,7 +4,7 @@
 //! not disclose them. The type is `Sealer`, not `SecretBox`, to avoid confusion with
 //! [`secrecy::SecretBox`].
 
-use aes_gcm::aead::{Aead, KeyInit, Nonce};
+use aes_gcm::aead::{Aead, KeyInit, Nonce, Payload};
 use aes_gcm::{Aes256Gcm, Key};
 use base64::Engine;
 use rand::RngExt as _;
@@ -16,6 +16,8 @@ use crate::AuthError;
 const NONCE_LEN: usize = 12;
 /// The AES-256 key length.
 const KEY_LEN: usize = 32;
+/// Leading byte of a value from [`Sealer::seal_bound`]; [`Sealer::seal`] output has no header.
+const BOUND_V1: u8 = 1;
 
 /// Seals and opens values with AES-256-GCM under one data-encryption key.
 ///
@@ -98,6 +100,82 @@ impl Sealer {
         self.seal(plaintext.expose_secret().as_bytes())
     }
 
+    /// Seals `plaintext` bound to `aad`: `[BOUND_V1] || nonce || ciphertext+tag`.
+    ///
+    /// The associated data names the value's owner, so a ciphertext copied into another row
+    /// fails to open there even though the key is the same.
+    ///
+    /// # Errors
+    /// [`AuthError::Crypto`] if the AEAD provider fails.
+    pub fn seal_bound(&self, plaintext: &[u8], aad: &[u8]) -> Result<Vec<u8>, AuthError> {
+        let nonce_bytes: [u8; NONCE_LEN] = rand::rng().random();
+        let nonce = Nonce::<Aes256Gcm>::from(nonce_bytes);
+        let ciphertext = self
+            .cipher
+            .encrypt(
+                &nonce,
+                Payload {
+                    msg: plaintext,
+                    aad,
+                },
+            )
+            .map_err(|_| AuthError::Crypto)?;
+        let mut out = Vec::with_capacity(1 + NONCE_LEN + ciphertext.len());
+        out.push(BOUND_V1);
+        out.extend_from_slice(&nonce_bytes);
+        out.extend_from_slice(&ciphertext);
+        Ok(out)
+    }
+
+    /// Seals a secret string bound to `aad`; see [`seal_bound`](Self::seal_bound).
+    ///
+    /// # Errors
+    /// [`AuthError::Crypto`] if the AEAD provider fails.
+    pub fn seal_string_bound(
+        &self,
+        plaintext: &SecretString,
+        aad: &[u8],
+    ) -> Result<Vec<u8>, AuthError> {
+        self.seal_bound(plaintext.expose_secret().as_bytes(), aad)
+    }
+
+    /// Opens a value produced by [`seal_bound`](Self::seal_bound) under the same `aad`.
+    ///
+    /// Strict: an unbound [`seal`](Self::seal) value is refused, so a caller that accepts
+    /// legacy values has to fall back to [`open`](Self::open) explicitly.
+    ///
+    /// # Errors
+    /// [`AuthError::Crypto`] if the header is missing, the input is truncated, or authentication
+    /// fails (wrong key, wrong `aad`, tampering).
+    pub fn open_bound(&self, sealed: &[u8], aad: &[u8]) -> Result<SecretSlice<u8>, AuthError> {
+        let Some((&BOUND_V1, rest)) = sealed.split_first() else {
+            return Err(AuthError::Crypto);
+        };
+        if rest.len() < NONCE_LEN {
+            return Err(AuthError::Crypto);
+        }
+        let (nonce_bytes, ciphertext) = rest.split_at(NONCE_LEN);
+        let nonce = Nonce::<Aes256Gcm>::try_from(nonce_bytes).map_err(|_| AuthError::Crypto)?;
+        self.cipher
+            .decrypt(
+                &nonce,
+                Payload {
+                    msg: ciphertext,
+                    aad,
+                },
+            )
+            .map(SecretSlice::from)
+            .map_err(|_| AuthError::Crypto)
+    }
+
+    /// Opens a [`seal_string_bound`](Self::seal_string_bound) value and decodes it as UTF-8.
+    ///
+    /// # Errors
+    /// [`AuthError::Crypto`], for the same reasons as [`open_string`](Self::open_string).
+    pub fn open_string_bound(&self, sealed: &[u8], aad: &[u8]) -> Result<SecretString, AuthError> {
+        utf8_secret(&self.open_bound(sealed, aad)?)
+    }
+
     /// Opens a value produced by [`seal`](Self::seal).
     ///
     /// The plaintext is returned as a [`SecretSlice`]; for text, use
@@ -126,10 +204,14 @@ impl Sealer {
     /// # Errors
     /// [`AuthError::Crypto`].
     pub fn open_string(&self, sealed: &[u8]) -> Result<SecretString, AuthError> {
-        let opened = self.open(sealed)?;
-        let text = core::str::from_utf8(opened.expose_secret()).map_err(|_| AuthError::Crypto)?;
-        Ok(SecretString::from(text))
+        utf8_secret(&self.open(sealed)?)
     }
+}
+
+/// Decodes opened bytes as UTF-8, reporting failure as [`AuthError::Crypto`].
+fn utf8_secret(opened: &SecretSlice<u8>) -> Result<SecretString, AuthError> {
+    let text = core::str::from_utf8(opened.expose_secret()).map_err(|_| AuthError::Crypto)?;
+    Ok(SecretString::from(text))
 }
 
 impl std::fmt::Debug for Sealer {
@@ -232,6 +314,41 @@ mod tests {
         let s = sealer();
         let sealed = s.seal(&[0xff, 0xfe, 0xfd]).unwrap();
         assert!(matches!(s.open_string(&sealed), Err(AuthError::Crypto)));
+    }
+
+    /// The bug: values were sealed without associated data, so a ciphertext copied into another
+    /// user's row opened there. A bound value opens only under the `aad` it was sealed with.
+    #[test]
+    fn a_bound_value_opens_only_under_its_own_aad() {
+        let s = sealer();
+        let sealed = s.seal_bound(b"token", b"user-a/anilist").unwrap();
+        assert_eq!(
+            s.open_bound(&sealed, b"user-a/anilist")
+                .unwrap()
+                .expose_secret(),
+            b"token"
+        );
+        for wrong in [&b"user-b/anilist"[..], b"user-a/mal", b""] {
+            assert!(matches!(
+                s.open_bound(&sealed, wrong),
+                Err(AuthError::Crypto)
+            ));
+        }
+        // Nor does it open as an unbound value.
+        assert!(matches!(s.open(&sealed), Err(AuthError::Crypto)));
+    }
+
+    /// Strict opening refuses an unbound value, so a legacy fallback is always explicit.
+    #[test]
+    fn open_bound_refuses_an_unbound_value() {
+        let s = sealer();
+        let legacy = s.seal(b"token").unwrap();
+        assert!(matches!(s.open_bound(&legacy, b""), Err(AuthError::Crypto)));
+        assert!(matches!(s.open_bound(&[], b""), Err(AuthError::Crypto)));
+        assert!(matches!(
+            s.open_bound(&[BOUND_V1, 0, 0], b""),
+            Err(AuthError::Crypto)
+        ));
     }
 
     /// A `tracing::debug!(?state)` cannot print the key.

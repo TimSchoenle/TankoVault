@@ -58,6 +58,9 @@ impl TrawlSolver {
 /// The diagnostic members (`tier`, `timings`, `sessionCached`, `totalMs`) are not read.
 #[derive(Deserialize)]
 struct ScrapeResult {
+    /// The URL the winning tier finally landed on, after any redirects.
+    #[serde(default)]
+    url: String,
     #[serde(default)]
     cookies: Vec<TrawlCookie>,
     #[serde(rename = "userAgent", default)]
@@ -126,6 +129,19 @@ impl ChallengeSolver for TrawlSolver {
 
         let parsed: ScrapeResult =
             serde_json::from_str(&body).map_err(|e| SolveError::Malformed(e.to_string()))?;
+
+        // The target was vetted before the solve, but TRAWL follows redirects in its own browser,
+        // so a provider page can bounce it to `169.254.169.254` or a compose peer and hand the
+        // response back as `html`. Re-vetting where it landed discards that whole outcome. It
+        // cannot see subresources or a rebind inside TRAWL; network egress control covers those.
+        if !parsed.url.is_empty()
+            && let Err(e) = tankovault_domain::ssrf::validate_unpinned(&parsed.url).await
+        {
+            tracing::warn!(error = %e, "discarded a solve that landed on a refused address");
+            return Err(SolveError::Unsolved(format!(
+                "solve landed on a refused target: {e}"
+            )));
+        }
 
         Ok(SolveOutcome {
             cookies: parsed
@@ -248,7 +264,9 @@ mod tests {
         mount_scrape(
             &server,
             ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "url": "https://provider.example/manga/x",
+                // A public literal: the final URL is resolved and vetted, and `.example` does not
+                // resolve.
+                "url": "https://1.1.1.1/manga/x",
                 "userAgent": "Mozilla/5.0",
                 "cookies": [
                     { "name": "cf_clearance", "value": "abc", "domain": ".example" },
@@ -307,6 +325,42 @@ mod tests {
             .expect("a response without headers still solves");
         assert_eq!(outcome.status, Some(200));
         assert_eq!(outcome.headers, Vec::<(String, String)>::new());
+    }
+
+    /// A solve that a redirect carried to an internal address is discarded, page and cookies
+    /// with it.
+    ///
+    /// The bug: only the requested URL was vetted, and TRAWL follows redirects itself, so a
+    /// provider answering `302 Location: http://169.254.169.254/…` had the metadata service's
+    /// response returned to the worker as the rendered page.
+    #[tokio::test]
+    async fn a_solve_that_landed_on_an_internal_address_is_discarded() {
+        for landed in [
+            "http://169.254.169.254/latest/meta-data/",
+            "http://localhost:6379/",
+        ] {
+            let server = MockServer::start().await;
+            mount_scrape(
+                &server,
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "url": landed,
+                    "userAgent": "UA",
+                    "cookies": [{ "name": "leaked", "value": "secret" }],
+                    "html": "<html>instance credentials</html>",
+                    "statusCode": 200,
+                })),
+            )
+            .await;
+
+            let err = TrawlSolver::new(server.uri(), 45_000, 600)
+                .solve(request())
+                .await
+                .expect_err("a refused landing address is a failed solve");
+            assert!(
+                matches!(err, SolveError::Unsolved(_)),
+                "{landed}: expected Unsolved, got {err:?}"
+            );
+        }
     }
 
     /// An empty `html` becomes `None`, not `Some("")`.

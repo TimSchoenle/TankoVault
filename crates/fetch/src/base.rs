@@ -31,9 +31,9 @@ use wreq_util::{Emulation, Platform, Profile};
 const MAX_REDIRECTS: usize = 5;
 /// The hard cap on response body size, which guards memory and the no-binary-content invariant.
 ///
-/// The solver path returns the browser's rendered body uncapped, so a cap much tighter than
-/// the largest sitemap shard would make a provider's catalogue depend on whether its session
-/// happened to be cached.
+/// Shared with the solver path, which caps the rendered body at the same value: a different cap
+/// on either side would make a provider's catalogue depend on whether its session happened to
+/// be cached.
 ///
 /// The bound that matters is concurrency times this value: `Politeness::MAX_CONCURRENCY` is 16
 /// in-flight requests per provider, so a provider at the ceiling can hold 256 MiB of bodies.

@@ -56,8 +56,9 @@ pub struct RenderConfig {
     /// Run the browser headless (the default; set `false` only for local debugging).
     #[serde(default = "default_true")]
     pub headless: bool,
-    /// Pass `--no-sandbox` (required to run Chromium as root inside the runtime container).
-    #[serde(default = "default_true")]
+    /// Pass `--no-sandbox`. Off by default; the container image opts in, because Docker's default
+    /// seccomp profile denies the user namespaces Chromium's sandbox needs.
+    #[serde(default)]
     pub no_sandbox: bool,
     /// Per-navigation time budget handed to the CDP client (ms).
     #[serde(default = "default_nav_timeout")]
@@ -82,7 +83,7 @@ impl Default for RenderConfig {
         Self {
             chrome_path: None,
             headless: default_true(),
-            no_sandbox: default_true(),
+            no_sandbox: false,
             nav_timeout_ms: default_nav_timeout(),
             default_wait_ms: 0,
             user_agent: None,
@@ -113,7 +114,9 @@ mod tests {
     fn render_config_defaults_are_container_safe() {
         let cfg = RenderConfig::default();
         assert!(cfg.headless);
-        assert!(cfg.no_sandbox);
+        // The browser runs hostile pages: dropping the sandbox is an explicit opt-in (the image's
+        // ENV), never what an unconfigured deployment gets.
+        assert!(!cfg.no_sandbox);
         assert_eq!(cfg.nav_timeout_ms, 30_000);
         assert_eq!(cfg.session_ttl_secs, 900);
         assert_eq!(cfg.challenge_wait_ms, 5_000);
@@ -129,7 +132,7 @@ mod tests {
         assert!(!cfg.headless);
         assert_eq!(cfg.nav_timeout_ms, 5_000);
         // Unspecified keys still fall back to their defaults.
-        assert!(cfg.no_sandbox);
+        assert!(!cfg.no_sandbox);
         assert_eq!(cfg.session_ttl_secs, 900);
     }
 }

@@ -767,7 +767,7 @@ stack sets neither.
 | `TANKOVAULT_BIND_ADDR` | `0.0.0.0:8084` | |
 | `TANKOVAULT_RENDER__CHROME_PATH` | auto-detected (`/usr/bin/chromium` in the image) | |
 | `TANKOVAULT_RENDER__HEADLESS` | `true` | |
-| `TANKOVAULT_RENDER__NO_SANDBOX` | `true` (image sets it explicitly) | Required inside the container: no user namespaces. |
+| `TANKOVAULT_RENDER__NO_SANDBOX` | `false` (the image sets `true`) | Required inside the container: Docker's default seccomp profile denies the user namespaces the sandbox needs. Leave it off anywhere the sandbox can run. |
 | `TANKOVAULT_RENDER__NAV_TIMEOUT_MS` | `30000` | |
 | `TANKOVAULT_RENDER__DEFAULT_WAIT_MS` | `0` | Extra settle delay after every navigation. |
 | `TANKOVAULT_RENDER__USER_AGENT` | *(unset)* | When set it is applied to the page **and reported back**, so a solved `cf_clearance` cookie stays paired with a stable UA. |

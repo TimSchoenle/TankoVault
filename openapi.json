@@ -11085,7 +11085,7 @@
                 }
               }
             },
-            "description": "Adapter build failed or the dry-run timed out"
+            "description": "Invalid path, adapter build failed, or the dry-run timed out"
           },
           "401": {
             "content": {

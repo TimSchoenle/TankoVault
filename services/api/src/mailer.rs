@@ -237,10 +237,11 @@ mod tests {
             registration_attempted("MangaBox", "reader@example.com", "aster"),
         ] {
             assert!(msg.subject.contains("MangaBox"), "{}", msg.subject);
-            assert!(!msg.text.contains("TankoVault"), "{}", msg.text);
+            // Named by subject, not by body: a body can carry a link or token.
+            assert!(!msg.text.contains("TankoVault"), "{}", msg.subject);
             let html = msg.html.as_deref().unwrap();
-            assert!(html.contains("MangaBox"), "{html}");
-            assert!(!html.contains("TankoVault"), "{html}");
+            assert!(html.contains("MangaBox"), "{}", msg.subject);
+            assert!(!html.contains("TankoVault"), "{}", msg.subject);
         }
     }
 

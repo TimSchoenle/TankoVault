@@ -14903,7 +14903,7 @@
     },
     "/v1/auth/verify-email": {
       "post": {
-        "description": "Consumes a valid, unexpired, unused confirmation token, marks the address verified, and\nsigns the user in, issuing an access token and a rotating refresh cookie exactly like\n[`login`] so clicking the link lands the user in the app.",
+        "description": "Consumes a valid, unexpired, unused confirmation token and marks the address verified.\n\nIssues no session: the user signs in afterwards with their password and second factor, so\nwhoever reads the confirmation mail gets no credential of their own.",
         "operationId": "verify_email",
         "requestBody": {
           "content": {
@@ -14916,15 +14916,8 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TokenResponse"
-                }
-              }
-            },
-            "description": "Email confirmed; session issued"
+          "204": {
+            "description": "Email confirmed; no session issued"
           },
           "400": {
             "content": {

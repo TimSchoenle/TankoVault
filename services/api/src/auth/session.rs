@@ -237,7 +237,7 @@ fn removal_cookie(name: &'static str, path: &'static str, secure: bool) -> Cooki
 }
 
 /// Mints an access token and a rotating refresh cookie for `user` under `family_id`, returning
-/// the JSON body wrapper used by [`login`], [`refresh`] and [`verify_email`].
+/// the JSON body wrapper used by [`login`] and [`refresh`].
 pub(super) async fn issue_session(
     state: &AppState,
     jar: CookieJar,

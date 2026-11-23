@@ -28243,7 +28243,7 @@ impl Client {
     pub fn register(&self) -> builder::Register<'_> {
         builder::Register::new(self)
     }
-    #[doc = "Confirm an email address with a token\n\nConsumes a valid, unexpired, unused confirmation token, marks the address verified, and\nsigns the user in, issuing an access token and a rotating refresh cookie exactly like\n[`login`] so clicking the link lands the user in the app.\n\nSends a `POST` request to `/v1/auth/verify-email`\n\n```ignore\nlet response = client.verify_email()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Confirm an email address with a token\n\nConsumes a valid, unexpired, unused confirmation token and marks the address verified.\n\nIssues no session: the user signs in afterwards with their password and second factor, so\nwhoever reads the confirmation mail gets no credential of their own.\n\nSends a `POST` request to `/v1/auth/verify-email`\n\n```ignore\nlet response = client.verify_email()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn verify_email(&self) -> builder::VerifyEmail<'_> {
         builder::VerifyEmail::new(self)
     }
@@ -36354,9 +36354,7 @@ pub mod builder {
             self
         }
         #[doc = "Sends a `POST` request to `/v1/auth/verify-email`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<types::TokenResponse>, Error<types::ProblemDetails>> {
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::ProblemDetails>> {
             let Self { client, body } = self;
             let body = body
                 .and_then(|v| types::VerifyEmailRequest::try_from(v).map_err(|e| e.to_string()))
@@ -36386,7 +36384,7 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
+                204u16 => Ok(ResponseValue::empty(response)),
                 400u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

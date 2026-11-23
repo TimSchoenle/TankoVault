@@ -177,8 +177,10 @@ async fn an_unconfirmed_account_cannot_log_in_and_is_told_why() {
     assert_eq!(json_body(resp).await["title"], "email_not_verified");
 }
 
+/// Confirming a link must only confirm the address. Issuing a session here would let whoever
+/// reads the confirmation mail bypass the password and second factor.
 #[tokio::test]
-async fn confirming_the_emailed_link_verifies_the_address_and_signs_the_user_in() {
+async fn confirming_the_emailed_link_verifies_the_address_without_issuing_a_session() {
     let (app, mailer) = app_with_mail().await;
     register(&app, "confirmer").await;
     let token = next_link_token(&mailer, "/verify-email").await;
@@ -190,14 +192,10 @@ async fn confirming_the_emailed_link_verifies_the_address_and_signs_the_user_in(
             Some(json!({ "token": token })),
         ))
         .await;
-    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(resp.status(), StatusCode::NO_CONTENT);
     assert!(
-        refresh_token(&resp).is_some(),
-        "confirming the link must land the user in the app with a session"
-    );
-    assert!(
-        json_body(resp).await["access_token"].is_string(),
-        "confirming the link must issue an access token"
+        refresh_token(&resp).is_none(),
+        "confirming the link must not set a refresh cookie"
     );
 
     let resp = app
@@ -229,7 +227,7 @@ async fn a_confirmation_token_is_single_use() {
             Some(json!({ "token": token.clone() })),
         ))
         .await;
-    assert_eq!(first.status(), StatusCode::OK);
+    assert_eq!(first.status(), StatusCode::NO_CONTENT);
 
     let replay = app
         .request(post(
@@ -289,7 +287,7 @@ async fn resending_the_confirmation_issues_a_second_working_link() {
             Some(json!({ "token": second })),
         ))
         .await;
-    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 }
 
 #[tokio::test]
@@ -311,14 +309,22 @@ async fn a_reset_link_changes_the_password_and_kills_every_live_session() {
     let (app, mailer) = app_with_mail().await;
     register(&app, "forgetful").await;
     let confirmation = next_link_token(&mailer, "/verify-email").await;
-    let signed_in = app
+    let confirmed = app
         .request(post(
             "/v1/auth/verify-email",
             None,
             Some(json!({ "token": confirmation })),
         ))
         .await;
-    let live_session = refresh_token(&signed_in).expect("confirming issues a session");
+    assert_eq!(confirmed.status(), StatusCode::NO_CONTENT);
+    let signed_in = app
+        .request(post(
+            "/v1/auth/login",
+            None,
+            Some(json!({ "login": "forgetful", "password": "correct horse battery" })),
+        ))
+        .await;
+    let live_session = refresh_token(&signed_in).expect("a confirmed account signs in");
 
     let resp = app
         .request(post(

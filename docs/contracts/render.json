@@ -639,7 +639,7 @@
         "env": "TANKOVAULT_RENDER__NO_SANDBOX",
         "env_file": "TANKOVAULT_RENDER__NO_SANDBOX_FILE",
         "secrets_file": "render__no_sandbox",
-        "docs": "Pass `--no-sandbox` (required to run Chromium as root inside the runtime container).",
+        "docs": "Pass `--no-sandbox`. Off by default; the container image opts in, because Docker's default\nseccomp profile denies the user namespaces Chromium's sandbox needs.",
         "ty": "bool",
         "values": [],
         "constraint": {
@@ -654,8 +654,8 @@
         "env_aliases": [],
         "env_file_aliases": [],
         "secrets_file_aliases": [],
-        "default": "true",
-        "default_value": true,
+        "default": "false",
+        "default_value": false,
         "note": null,
         "required": false,
         "secret": false,
@@ -1906,8 +1906,8 @@
             "type": "integer"
           },
           "no_sandbox": {
-            "default": true,
-            "description": "Pass `--no-sandbox` (required to run Chromium as root inside the runtime container).",
+            "default": false,
+            "description": "Pass `--no-sandbox`. Off by default; the container image opts in, because Docker's default\nseccomp profile denies the user namespaces Chromium's sandbox needs.",
             "type": "boolean"
           },
           "session_ttl_secs": {

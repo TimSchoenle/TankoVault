@@ -336,7 +336,7 @@ pub(crate) fn VerifyEmail(token: String) -> Element {
                 None => rsx! {
                     p { class: "ik-muted", {i18n.t("verifyEmail.pending")} }
                 },
-                Some(Ok(_)) => rsx! {
+                Some(Ok(())) => rsx! {
                     p { class: "ik-muted", {i18n.t("verifyEmail.confirmed")} }
                     Link {
                         to: Route::Login {},

@@ -68,4 +68,13 @@ pub mod __fuzz {
     ) -> Result<serde_json::Value, AdapterError> {
         crate::json::parse_json_body(what, resp)
     }
+
+    /// Decodes an Astro island `props` attribute the way the Astro adapter does, or `None` when
+    /// it is not JSON.
+    #[must_use]
+    pub fn astro_props(raw: &str) -> Option<serde_json::Value> {
+        serde_json::from_str(raw)
+            .ok()
+            .map(crate::astro::unwrap_astro)
+    }
 }

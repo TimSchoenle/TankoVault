@@ -18,6 +18,12 @@ use crate::provider::OAuthTokens;
 /// derived from it: the message and the `rate_limited` classification must not drift apart.
 const RATE_LIMITED: &str = "AniList GraphQL rate-limited after retry";
 
+/// Ceiling on a buffered `AniList` response body; real pages are tens of KiB.
+const MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
+
+/// How much of an error body is quoted into an error message, which ends up in logs.
+const MAX_ERROR_BODY_BYTES: usize = 512;
+
 /// `AniList` API client. Cheap to share behind an `Arc`.
 pub(crate) struct AniListClient {
     http: reqwest::Client,
@@ -117,12 +123,16 @@ impl AniListClient {
             .await
             .context("AniList token request failed")?;
         let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
+        let bytes = read_capped(resp).await.unwrap_or_default();
         if !status.is_success() {
-            return Err(anyhow!("AniList token endpoint returned {status}: {text}"));
+            let text = String::from_utf8_lossy(&bytes);
+            return Err(anyhow!(
+                "AniList token endpoint returned {status}: {}",
+                truncate_on_char_boundary(&text, MAX_ERROR_BODY_BYTES)
+            ));
         }
         let parsed: TokenResponse =
-            serde_json::from_str(&text).context("decoding AniList token response")?;
+            serde_json::from_slice(&bytes).context("decoding AniList token response")?;
         let expires_at = parsed
             .expires_in
             .and_then(|secs| OffsetDateTime::now_utc().checked_add(time::Duration::seconds(secs)));
@@ -227,10 +237,11 @@ impl AniListClient {
             }
 
             let status = resp.status();
-            let value: serde_json::Value = resp
-                .json()
+            let bytes = read_capped(resp)
                 .await
-                .context("decoding AniList GraphQL response")?;
+                .context("reading AniList GraphQL response")?;
+            let value: serde_json::Value =
+                serde_json::from_slice(&bytes).context("decoding AniList GraphQL response")?;
             if let Some(errors) = value.get("errors").filter(|e| !e.is_null()) {
                 return Err(anyhow!("AniList GraphQL error ({status}): {errors}"));
             }
@@ -266,9 +277,41 @@ impl AniListClient {
     }
 }
 
+/// Buffers a response body, refusing one past [`MAX_BODY_BYTES`] instead of growing without bound.
+async fn read_capped(mut resp: reqwest::Response) -> anyhow::Result<Vec<u8>> {
+    let declared = resp
+        .content_length()
+        .and_then(|n| usize::try_from(n).ok())
+        .map_or(0, |n| n.min(MAX_BODY_BYTES));
+    let mut buf = Vec::with_capacity(declared);
+    while let Some(chunk) = resp
+        .chunk()
+        .await
+        .context("reading AniList response body")?
+    {
+        if buf.len() + chunk.len() > MAX_BODY_BYTES {
+            return Err(anyhow!("AniList response exceeds {MAX_BODY_BYTES} bytes"));
+        }
+        buf.extend_from_slice(&chunk);
+    }
+    Ok(buf)
+}
+
+/// The longest prefix of `s` that is at most `max` bytes and ends on a char boundary.
+fn truncate_on_char_boundary(s: &str, max: usize) -> &str {
+    if s.len() <= max {
+        return s;
+    }
+    let mut end = max;
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
 #[cfg(test)]
 mod tests {
-    use super::AniListClient;
+    use super::{AniListClient, MAX_BODY_BYTES, MAX_ERROR_BODY_BYTES, truncate_on_char_boundary};
     use secrecy::{ExposeSecret, SecretString};
     use std::time::{Duration, Instant};
     use time::OffsetDateTime;
@@ -451,6 +494,59 @@ mod tests {
         let message = err.to_string();
         assert!(message.contains("400"), "no status in: {message}");
         assert!(message.contains("invalid_grant"), "no body in: {message}");
+    }
+
+    /// Pins the bug where a rejected token request's whole body was copied into the error, so an
+    /// upstream could push an unbounded, attacker-shaped string into the logs.
+    #[tokio::test]
+    async fn a_rejected_token_request_quotes_only_a_bounded_prefix_of_the_body() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(400).set_body_string("é".repeat(10_000)))
+            .mount(&server)
+            .await;
+
+        let err = client_for(&server, Duration::from_millis(1))
+            .exchange_code("stale")
+            .await
+            .expect_err("a 400 is an error");
+        let message = err.to_string();
+        assert!(message.contains("400"), "no status in: {message}");
+        assert!(
+            message.len() < MAX_ERROR_BODY_BYTES + 100,
+            "the body was not truncated: {} bytes",
+            message.len()
+        );
+    }
+
+    /// Pins the bug where a GraphQL response was buffered whole, letting a hostile or broken
+    /// upstream exhaust memory with one oversized body.
+    #[tokio::test]
+    async fn an_oversized_graphql_response_is_refused() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/graphql"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string(" ".repeat(MAX_BODY_BYTES + 1)),
+            )
+            .mount(&server)
+            .await;
+
+        let err = client_for(&server, Duration::from_millis(1))
+            .graphql_public("test", "query {}", serde_json::json!({}))
+            .await
+            .expect_err("an oversized body is an error");
+        assert!(
+            format!("{err:#}").contains("exceeds"),
+            "not refused for size: {err:#}"
+        );
+    }
+
+    #[test]
+    fn truncation_never_splits_a_multibyte_char() {
+        assert_eq!(truncate_on_char_boundary("aé", 2), "a");
+        assert_eq!(truncate_on_char_boundary("abc", 5), "abc");
     }
 
     /// Both legs asserted together: the failure worth catching is `graphql_public` acquiring a

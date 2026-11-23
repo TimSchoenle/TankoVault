@@ -49,6 +49,17 @@ pub async fn system_stats(
 /// a caller asking for everything would page a year of operator actions into one response.
 const MAX_AUDIT_PAGE: u32 = 200;
 const DEFAULT_AUDIT_PAGE: u32 = 40;
+/// Highest accepted offset. Postgres reads and discards every skipped row, so an unbounded
+/// offset is a full scan of the trail per request; older entries are reached with `until`.
+const MAX_AUDIT_OFFSET: u32 = 10_000;
+
+/// Returns the `(limit, offset)` actually queried, each clamped to its cap.
+fn audit_window(limit: Option<u32>, offset: Option<u32>) -> (i64, i64) {
+    (
+        i64::from(limit.unwrap_or(DEFAULT_AUDIT_PAGE).clamp(1, MAX_AUDIT_PAGE)),
+        i64::from(offset.unwrap_or(0).min(MAX_AUDIT_OFFSET)),
+    )
+}
 
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct AuditQuery {
@@ -76,6 +87,7 @@ pub struct AuditQuery {
     pub until: Option<OffsetDateTime>,
     #[serde(default)]
     pub limit: Option<u32>,
+    /// Rows to skip; values above 10000 are treated as 10000.
     #[serde(default)]
     pub offset: Option<u32>,
 }
@@ -107,10 +119,7 @@ pub async fn audit_log(
     Query(q): Query<AuditQuery>,
 ) -> ApiResult<Json<tankovault_contracts::admin::AuditPageView>> {
     user.require(Permission::AuditRead).await?;
-    let limit = q
-        .limit
-        .unwrap_or(DEFAULT_AUDIT_PAGE)
-        .clamp(1, MAX_AUDIT_PAGE);
+    let (limit, offset) = audit_window(q.limit, q.offset);
     let filter = tankovault_db::repo::audit::AuditFilter {
         actor_id: q.actor.map(UserId::from),
         // Blank is the absence of a filter, not a search for the empty string: a cleared
@@ -120,13 +129,8 @@ pub async fn audit_log(
         since: q.since,
         until: q.until,
     };
-    let page = tankovault_db::repo::audit::list_filtered(
-        &state.pool,
-        &filter,
-        i64::from(limit),
-        i64::from(q.offset.unwrap_or(0)),
-    )
-    .await?;
+    let page =
+        tankovault_db::repo::audit::list_filtered(&state.pool, &filter, limit, offset).await?;
     Ok(Json(page.into_view()))
 }
 
@@ -155,4 +159,21 @@ pub async fn audit_actions(
     Ok(Json(
         tankovault_db::repo::audit::distinct_actions(&state.pool).await?,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The bug: `limit` was capped but `offset` was not, so one request could make Postgres
+    /// walk and discard the whole audit trail.
+    #[test]
+    fn the_audit_offset_is_capped_like_the_page_size() {
+        assert_eq!(audit_window(None, None), (40, 0));
+        assert_eq!(audit_window(Some(0), Some(500)), (1, 500));
+        assert_eq!(
+            audit_window(Some(u32::MAX), Some(u32::MAX)),
+            (i64::from(MAX_AUDIT_PAGE), i64::from(MAX_AUDIT_OFFSET))
+        );
+    }
 }

@@ -285,7 +285,8 @@ pub async fn extend_privacy_request(
 /// record, and it needs to be separately grantable and separately searchable afterwards.
 ///
 /// Refused for request kinds that are not about disclosure: an erasure request is not a licence
-/// to read the account first.
+/// to read the account first. Refused once the request is resolved, so answering one access
+/// request is not a standing licence to re-read the account.
 #[utoipa::path(
     get,
     path = "/v1/admin/privacy/requests/{id}/export",
@@ -295,6 +296,7 @@ pub async fn extend_privacy_request(
     responses(
         (status = 200, description = "The subject's complete personal-data export", body = serde_json::Value),
         (status = 400, description = "this request kind does not call for an export", body = crate::error::ProblemDetails),
+        (status = 409, description = "the request was already resolved", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "no such request, or its subject no longer exists", body = crate::error::ProblemDetails),
@@ -311,6 +313,11 @@ pub async fn export_subject_data(
     if !request.request.kind.needs_export() {
         return Err(ApiError::BadRequest(
             "this request is not an access or portability request".to_owned(),
+        ));
+    }
+    if !request.request.status.is_open() {
+        return Err(ApiError::Conflict(
+            "this request has already been resolved".to_owned(),
         ));
     }
     // A missing subject means the account is gone, which for a completed erasure is the

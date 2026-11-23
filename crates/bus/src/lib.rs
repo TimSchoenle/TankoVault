@@ -223,9 +223,10 @@ pub enum BusError {
 impl Bus {
     /// Connects to NATS and builds a `JetStream` context.
     ///
-    /// `url` is a [`SecretString`] because `nats://user:pass@host` carries a per-account
-    /// credential. A separate account per service is what stops `notifier` from publishing
-    /// scan tasks; the accounts are NATS server configuration, which this client cannot assert.
+    /// `url` is a [`SecretString`] because `nats://user:pass@host` carries a per-service
+    /// credential. A separate user per service is what stops `notifier` from publishing scan
+    /// tasks; the permissions are NATS server configuration (`deploy/nats/nats.conf`), which this
+    /// client cannot assert.
     ///
     /// `tls` is present under `internal.identity = "mtls"`. The connection is then mutually
     /// authenticated with the HTTP tier's material, and TLS is **required**, not just offered:
@@ -239,6 +240,9 @@ impl Bus {
         tls: Option<&tankovault_config::ResolvedTls>,
     ) -> Result<Self, BusError> {
         let mut options = async_nats::ConnectOptions::new();
+        if let Some((user, pass)) = url_credentials(url.expose_secret()) {
+            options = options.user_and_password(user, pass.expose_secret().to_owned());
+        }
         if let Some(paths) = tls {
             options = options
                 .require_tls(true)
@@ -611,6 +615,19 @@ impl Bus {
     }
 }
 
+/// Returns the `user:pass` of a NATS URL, taken from its first server.
+///
+/// `async-nats` parses the userinfo of a URL and then never sends it: CONNECT carries only
+/// what the options were given, so a credential in the URL alone is an authorization violation.
+/// The values are passed as written, not percent-decoded.
+fn url_credentials(url: &str) -> Option<(String, SecretString)> {
+    let first = url.split(',').next()?.trim();
+    let addr: async_nats::ServerAddr = first.parse().ok()?;
+    let user = addr.username()?.to_owned();
+    let pass = SecretString::from(addr.password().unwrap_or_default());
+    Some((user, pass))
+}
+
 /// Says what a handler wants done with a message.
 ///
 /// The handler returns it because only its own layer can tell "the provider blocked us, try
@@ -808,6 +825,24 @@ async fn ack_or_warn(msg: &jetstream::Message, what: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `async-nats` drops a URL's `user:pass` from CONNECT, so per-service NATS users were
+    /// refused with "authorization violation" although the URL named the right credential.
+    #[test]
+    fn credentials_in_the_url_are_sent() {
+        let Some((user, pass)) = url_credentials("nats://worker:s3cr3t@nats:4222") else {
+            panic!("credentials are read from the URL");
+        };
+        assert_eq!(user, "worker");
+        assert_eq!(pass.expose_secret(), "s3cr3t");
+
+        let Some((user, _)) = url_credentials("nats://api:a@n1:4222,nats://api:a@n2:4222") else {
+            panic!("the first server of a list carries them");
+        };
+        assert_eq!(user, "api");
+
+        assert!(url_credentials("nats://nats:4222").is_none());
+    }
 
     /// A deployment with Sentry off publishes no header block at all.
     ///

@@ -5,7 +5,7 @@ use axum::Json;
 use axum::extract::State;
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use secrecy::{ExposeSecret as _, SecretString};
-use tankovault_auth::{generate_refresh_token, hash_refresh_token, issue_access_token};
+use tankovault_auth::{generate_refresh_token, hash_refresh_token, issue_session_access_token};
 use tankovault_domain::User;
 use tankovault_service::AuditOutcome;
 use time::OffsetDateTime;
@@ -269,8 +269,15 @@ async fn issue_session_tokens_via<'e, E: tankovault_db::PgExecutor<'e>>(
     user: &User,
     family_id: Uuid,
 ) -> ApiResult<(CookieJar, TokenResponse)> {
-    let access = issue_access_token(&state.jwt_secret, user.id, &user.username, state.access_ttl)
-        .map_err(|_| ApiError::Internal)?;
+    // Bound to `family_id`, so revoking the session also ends this token (see `AuthUser`).
+    let access = issue_session_access_token(
+        &state.jwt_secret,
+        user.id,
+        &user.username,
+        state.access_ttl,
+        family_id,
+    )
+    .map_err(|_| ApiError::Internal)?;
 
     let raw_refresh = generate_refresh_token();
     let refresh_hash = hash_refresh_token(&raw_refresh);

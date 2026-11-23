@@ -28,6 +28,13 @@ pub struct AccessClaims {
     pub iat: i64,
     /// The token id, for tracing and audit.
     pub jti: String,
+    /// The session (refresh-token family) it was minted under, as a UUID string.
+    ///
+    /// The API rejects the token once that family is revoked, so logout, a password reset or a
+    /// revoked session ends it on the next request instead of at `exp`. Absent only on tokens
+    /// from [`issue_access_token`], which the API never mints.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sid: Option<String>,
 }
 
 impl AccessClaims {
@@ -36,12 +43,26 @@ impl AccessClaims {
     pub fn user_id(&self) -> Option<UserId> {
         Uuid::from_str(&self.sub).ok().map(UserId::from_uuid)
     }
+
+    /// Parses the session claim; `Ok(None)` when the token carries none.
+    ///
+    /// # Errors
+    /// [`AuthError::InvalidToken`] if the claim is present but not a UUID.
+    pub fn session_id(&self) -> Result<Option<Uuid>, AuthError> {
+        self.sid
+            .as_deref()
+            .map(|s| Uuid::from_str(s).map_err(|_| AuthError::InvalidToken))
+            .transpose()
+    }
 }
 
 /// Issues a signed HS256 access token valid for `ttl`.
 ///
 /// A minted token is a bearer credential as sensitive as the password that bought it, so it is
 /// a [`SecretString`] and stays out of tracing fields and error bodies.
+///
+/// Bound to no session, so it outlives a revocation until `exp`: for tests and tooling only.
+/// Every sign-in path uses [`issue_session_access_token`].
 ///
 /// # Errors
 /// [`AuthError::TokenIssue`] if encoding fails.
@@ -51,6 +72,30 @@ pub fn issue_access_token(
     username: &str,
     ttl: Duration,
 ) -> Result<SecretString, AuthError> {
+    mint(secret, user_id, username, ttl, None)
+}
+
+/// Issues an access token bound to the session (refresh-token family) `session`.
+///
+/// # Errors
+/// [`AuthError::TokenIssue`] if encoding fails.
+pub fn issue_session_access_token(
+    secret: &SecretSlice<u8>,
+    user_id: UserId,
+    username: &str,
+    ttl: Duration,
+    session: Uuid,
+) -> Result<SecretString, AuthError> {
+    mint(secret, user_id, username, ttl, Some(session))
+}
+
+fn mint(
+    secret: &SecretSlice<u8>,
+    user_id: UserId,
+    username: &str,
+    ttl: Duration,
+    session: Option<Uuid>,
+) -> Result<SecretString, AuthError> {
     let now = OffsetDateTime::now_utc();
     let claims = AccessClaims {
         sub: user_id.to_string(),
@@ -58,6 +103,7 @@ pub fn issue_access_token(
         iat: now.unix_timestamp(),
         exp: (now + ttl).unix_timestamp(),
         jti: Uuid::now_v7().to_string(),
+        sid: session.map(|s| s.to_string()),
     };
     encode(
         &Header::default(),
@@ -197,6 +243,27 @@ mod tests {
                 "access tokens must not carry authorization state ({forbidden})"
             );
         }
+    }
+
+    #[test]
+    fn a_session_token_carries_its_session() {
+        let secret = key(b"secret");
+        let session = Uuid::now_v7();
+        let token = issue_session_access_token(
+            &secret,
+            UserId::new(),
+            "aster",
+            Duration::minutes(5),
+            session,
+        )
+        .unwrap();
+        let claims = verify_access_token(&secret, token.expose_secret()).unwrap();
+        assert_eq!(claims.session_id().unwrap(), Some(session));
+
+        let bare =
+            issue_access_token(&secret, UserId::new(), "aster", Duration::minutes(5)).unwrap();
+        let claims = verify_access_token(&secret, bare.expose_secret()).unwrap();
+        assert_eq!(claims.session_id().unwrap(), None);
     }
 
     #[test]

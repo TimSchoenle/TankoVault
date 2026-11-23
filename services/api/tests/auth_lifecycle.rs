@@ -378,6 +378,109 @@ async fn a_reset_link_changes_the_password_and_kills_every_live_session() {
     );
 }
 
+/// Registers, confirms and signs in `username`, returning its access token and refresh cookie.
+async fn signed_in(app: &TestApp, mailer: &RecordingMailer, username: &str) -> (String, String) {
+    register(app, username).await;
+    let confirmation = next_link_token(mailer, "/verify-email").await;
+    app.request(post(
+        "/v1/auth/verify-email",
+        None,
+        Some(json!({ "token": confirmation })),
+    ))
+    .await;
+    let resp = app
+        .request(post(
+            "/v1/auth/login",
+            None,
+            Some(json!({ "login": username, "password": "correct horse battery" })),
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let cookie = refresh_token(&resp).expect("a confirmed account signs in");
+    let access = json_body(resp).await["session"]["access_token"]
+        .as_str()
+        .expect("sign-in returns an access token")
+        .to_owned();
+    (access, cookie)
+}
+
+async fn me_status(app: &TestApp, access: &str) -> StatusCode {
+    app.request(
+        Request::builder()
+            .uri("/v1/me/capabilities")
+            .header(header::AUTHORIZATION, format!("Bearer {access}"))
+            .body(Body::empty())
+            .expect("build request"),
+    )
+    .await
+    .status()
+}
+
+/// An access token must end with its session.
+///
+/// The bug: the access token was bound to nothing, so logout, a password reset or a revoked
+/// session left an already-stolen access token working until its expiry.
+#[tokio::test]
+async fn an_access_token_dies_with_its_session_on_logout() {
+    let (app, mailer) = app_with_mail().await;
+    let (access, cookie) = signed_in(&app, &mailer, "leaver").await;
+    assert_eq!(me_status(&app, &access).await, StatusCode::OK);
+
+    app.request(post("/v1/auth/logout", Some(&cookie), None))
+        .await;
+
+    assert_eq!(
+        me_status(&app, &access).await,
+        StatusCode::UNAUTHORIZED,
+        "logout must end the access token minted for that session"
+    );
+}
+
+/// As [`an_access_token_dies_with_its_session_on_logout`], for a password reset.
+#[tokio::test]
+async fn an_access_token_dies_with_a_password_reset() {
+    let (app, mailer) = app_with_mail().await;
+    let (access, _cookie) = signed_in(&app, &mailer, "resetter").await;
+
+    app.request(post(
+        "/v1/auth/password/forgot",
+        None,
+        Some(json!({ "email": "resetter@example.test" })),
+    ))
+    .await;
+    let reset = next_link_token(&mailer, "/reset-password").await;
+    let resp = app
+        .request(post(
+            "/v1/auth/password/reset",
+            None,
+            Some(json!({ "token": reset, "new_password": "a whole new passphrase" })),
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    assert_eq!(
+        me_status(&app, &access).await,
+        StatusCode::UNAUTHORIZED,
+        "a reset must end access tokens minted under the old password"
+    );
+}
+
+/// A refresh rotates the token but keeps the session, so the access token it replaced still works.
+#[tokio::test]
+async fn an_access_token_survives_its_sessions_rotation() {
+    let (app, mailer) = app_with_mail().await;
+    let (access, cookie) = signed_in(&app, &mailer, "rotator").await;
+    let resp = app
+        .request(post("/v1/auth/refresh", Some(&cookie), None))
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(
+        me_status(&app, &access).await,
+        StatusCode::OK,
+        "rotation keeps the family live, so the earlier token stays valid"
+    );
+}
+
 #[tokio::test]
 async fn a_reset_token_is_single_use() {
     let (app, mailer) = app_with_mail().await;

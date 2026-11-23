@@ -315,13 +315,21 @@ impl FromRequestParts<AppState> for AuthUser {
 
         let claims = verify_access_token(&state.jwt_secret, token)?;
         let user_id = claims.user_id().ok_or(ApiError::Unauthorized)?;
+        let session = claims.session_id().map_err(|_| ApiError::Unauthorized)?;
 
         // A valid signature proves the token was ours; it does not prove the account still
         // exists, is still permitted to act, or still holds what it held when the token was
-        // minted. All three are settled here.
-        let principal = tankovault_db::repo::permissions::resolve(&state.pool, user_id)
-            .await?
-            .ok_or(ApiError::Unauthorized)?;
+        // minted. All three are settled here, and so is its session: a token whose
+        // refresh-token family was revoked (logout, password reset, a revoked or forced-out
+        // session) is refused now, not at `exp`. Only test and tooling tokens carry no session.
+        let principal = match session {
+            Some(session) => {
+                tankovault_db::repo::permissions::resolve_for_session(&state.pool, user_id, session)
+                    .await?
+            }
+            None => tankovault_db::repo::permissions::resolve(&state.pool, user_id).await?,
+        }
+        .ok_or(ApiError::Unauthorized)?;
 
         if !principal.status.may_authenticate() {
             return Err(ApiError::Suspended);

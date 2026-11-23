@@ -46,6 +46,12 @@ ignore = [
     # lockfile scan does report it, agrees with this file. Reviewed 2026-11-10; re-review if any
     # crate enables a `sqlx` `sqlite` feature.
     "RUSTSEC-2026-0459",
+
+    # RUSTSEC-2026-0543: `chrono` is unmaintained, with no fixed release. It is in `Cargo.lock`
+    # only as an optional dependency of `serde_with`, whose `chrono` feature nothing enables, so no
+    # build compiles it (`cargo tree -i chrono --workspace --all-features --target all` prints
+    # nothing). Reviewed 2026-11-23; re-review if anything starts enabling it.
+    "RUSTSEC-2026-0543",
 ]
 
 [licenses]

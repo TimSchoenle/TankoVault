@@ -21,5 +21,5 @@ pub use opaque::{generate_handle, hash_handle};
 pub use password::{hash_password, verify_password};
 pub use token::{
     AccessClaims, generate_refresh_token, hash_refresh_token, issue_access_token,
-    verify_access_token,
+    issue_session_access_token, verify_access_token,
 };

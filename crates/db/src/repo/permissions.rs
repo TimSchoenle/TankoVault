@@ -51,6 +51,31 @@ pub async fn resolve<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
 ) -> DbResult<Option<Principal>> {
+    resolve_inner(exec, user_id, None).await
+}
+
+/// As [`resolve`], but `None` also when the session (refresh-token family) `session` has no
+/// unrevoked token left.
+///
+/// This is what ends an access token with its session: logout, a revoked session, a password
+/// reset and a forced sign-out all revoke the family, and the bearer token minted under it must
+/// stop working on the next request, not at its expiry. Folded into the same round trip.
+///
+/// # Errors
+/// `Sqlx` only; `Ok(None)` means the account is gone or the session has ended.
+pub async fn resolve_for_session<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+    session: Uuid,
+) -> DbResult<Option<Principal>> {
+    resolve_inner(exec, user_id, Some(session)).await
+}
+
+async fn resolve_inner<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+    session: Option<Uuid>,
+) -> DbResult<Option<Principal>> {
     #[derive(FromRow)]
     struct Row {
         status: AccountStatus,
@@ -78,8 +103,12 @@ pub async fn resolve<'e, E: PgExecutor<'e>>(
          FROM users u \
          LEFT JOIN user_permissions p ON p.user_id = u.id \
          WHERE u.id = $1 \
+           AND ($2::uuid IS NULL OR EXISTS ( \
+                SELECT 1 FROM refresh_tokens r \
+                 WHERE r.family_id = $2 AND r.user_id = u.id AND r.revoked_at IS NULL)) \
          GROUP BY u.id",
         user_id.as_uuid(),
+        session,
     )
     .fetch_optional(exec)
     .await?;

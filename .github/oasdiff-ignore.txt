@@ -94,3 +94,10 @@ in api put /v1/me/notification-prefs the `watch_status` request property `type` 
 # not a side effect. Consumed only by `web/frontend`'s `/account/anilist-callback` route, updated
 # in the same commit; an old bundle mid-skew gets a 400 and the user restarts the link.
 in api get /v1/me/sync/{provider}/callback added the new required `query` request parameter `state`
+
+# Confirming an email address minted a full session, so whoever could read the inbox signed in
+# without the password or the second factor. It now only confirms and answers `204`; taking the
+# session away is the fix, not a side effect. Consumed only by `web/frontend`'s `/verify-email`
+# route, updated in the same commit to link to sign-in; an old bundle mid-skew reads the empty
+# body as an error and the user signs in anyway.
+in api post /v1/auth/verify-email removed the success response with the status `200`

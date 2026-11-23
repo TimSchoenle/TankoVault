@@ -11,8 +11,6 @@ use crate::i18n::{use_i18n, Translator};
 use crate::icons::{Ic, Icon};
 use crate::models::*;
 use crate::state::capabilities::use_capabilities;
-use crate::state::use_session;
-use crate::views::DiscoverQuery;
 use crate::webauthn::{self};
 use crate::wire::types::Feature;
 use crate::Route;
@@ -306,13 +304,11 @@ pub(crate) fn AuthBrand() -> Element {
 }
 
 /// Email-confirmation landing page for the link in the sign-up email
-/// (`/verify-email?token=…`). Confirms the token on mount and, on success, adopts the issued
-/// session and drops the user straight into the app.
+/// (`/verify-email?token=…`). Confirms the token on mount. Confirming issues no session, so on
+/// success the user signs in afterwards with their password and second factor.
 #[component]
 pub(crate) fn VerifyEmail(token: String) -> Element {
-    let session = use_session();
     let i18n = use_i18n();
-    let nav = use_navigator();
     let api = api::use_api();
 
     // `use_resource` re-runs only if `token` changes, so a stale link isn't retried every render.
@@ -326,19 +322,8 @@ pub(crate) fn VerifyEmail(token: String) -> Element {
                 .body(VerifyEmailRequest { token })
                 .send()
                 .await
-                .map(|r| r.into_inner().access_token)
+                .map(|_| ())
                 .map_err(|e| api::friendly_error(i18n, e))
-        }
-    });
-
-    // On success the API issued a session (and set the refresh cookie); adopt the access
-    // token and route into the library, mirroring a fresh sign-in.
-    use_effect(move || {
-        if let Some(Ok(access_token)) = resource.read().clone() {
-            session.set_token(access_token);
-            nav.push(Route::Discover {
-                query: DiscoverQuery::default(),
-            });
         }
     });
 
@@ -351,8 +336,14 @@ pub(crate) fn VerifyEmail(token: String) -> Element {
                 None => rsx! {
                     p { class: "ik-muted", {i18n.t("verifyEmail.pending")} }
                 },
-                Some(Ok(_)) => rsx! {
+                Some(Ok(())) => rsx! {
                     p { class: "ik-muted", {i18n.t("verifyEmail.confirmed")} }
+                    Link {
+                        to: Route::Login {},
+                        class: button_class(Tone::Primary, Size::Md, false),
+                        style: "width:100%;",
+                        {i18n.t("common.backToSignIn")}
+                    }
                 },
                 Some(Err(msg)) => rsx! {
                     div { class: "ik-error", style: "padding:12px;margin:14px 0;text-align:left;",

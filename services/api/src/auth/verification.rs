@@ -3,17 +3,13 @@
 use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum_extra::extract::cookie::CookieJar;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use tankovault_auth::{generate_refresh_token, hash_refresh_token};
 use tankovault_domain::User;
 use time::{Duration, OffsetDateTime};
 use utoipa::ToSchema;
-use uuid::Uuid;
 
-use super::login::TokenResponse;
-use super::session::issue_session;
 use crate::error::{ApiError, ApiResult};
 use crate::mailer;
 use crate::openapi::AUTH_TAG;
@@ -40,24 +36,24 @@ pub struct ResendVerificationRequest {
 
 /// Confirm an email address with a token
 ///
-/// Consumes a valid, unexpired, unused confirmation token, marks the address verified, and
-/// signs the user in, issuing an access token and a rotating refresh cookie exactly like
-/// [`login`] so clicking the link lands the user in the app.
+/// Consumes a valid, unexpired, unused confirmation token and marks the address verified.
+///
+/// Issues no session: the user signs in afterwards with their password and second factor, so
+/// whoever reads the confirmation mail gets no credential of their own.
 #[utoipa::path(
     post,
     path = "/v1/auth/verify-email",
     tag = AUTH_TAG,
     request_body = VerifyEmailRequest,
     responses(
-        (status = 200, description = "Email confirmed; session issued", body = TokenResponse),
+        (status = 204, description = "Email confirmed; no session issued"),
         (status = 400, description = "Invalid or expired confirmation token", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn verify_email(
     State(state): State<AppState>,
-    jar: CookieJar,
     Json(req): Json<VerifyEmailRequest>,
-) -> ApiResult<(CookieJar, Json<TokenResponse>)> {
+) -> ApiResult<StatusCode> {
     let token_hash = hash_refresh_token(&req.token);
     let record = tankovault_db::repo::users::find_email_verification(&state.pool, &token_hash)
         .await?
@@ -84,7 +80,7 @@ pub async fn verify_email(
         &state,
         mailer::welcome(state.branding.name(), &user.email, &user.username),
     );
-    issue_session(&state, jar, &user, Uuid::now_v7()).await
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Resend the email-confirmation link

@@ -76,6 +76,17 @@ struct Instance {
     connected: Arc<AtomicBool>,
 }
 
+/// Chromium switches closing channels `intercept` cannot see.
+///
+/// CDP's `Fetch` domain never pauses WebRTC or a DNS prefetch, so on a hostile page either could
+/// reach an address the interception would have refused. These turn both off at the source.
+/// WebSocket and a rebind between our lookup and Chromium's stay with network isolation.
+const CONTAINMENT_ARGS: [&str; 2] = [
+    // No non-proxied UDP: WebRTC can neither open peer connections nor leak local addresses.
+    "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+    "--dns-prefetch-disable",
+];
+
 /// Lazily-launched, shared headless browser.
 pub(crate) struct BrowserManager {
     cfg: RenderConfig,
@@ -103,6 +114,7 @@ impl BrowserManager {
         if self.cfg.no_sandbox {
             builder = builder.no_sandbox();
         }
+        builder = builder.args(CONTAINMENT_ARGS);
         builder = builder.request_timeout(Duration::from_millis(self.cfg.nav_timeout_ms));
         builder
             .build()

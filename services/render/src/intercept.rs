@@ -7,8 +7,9 @@
 //! connection is made; each is continued only once its host has resolved to public addresses.
 //!
 //! What this does not cover, and the compose network isolation exists for: traffic the `Fetch`
-//! domain never sees (WebSocket, WebRTC, `<link rel=preconnect>`), and a DNS rebind between this
-//! process's lookup and Chromium's own (`SECURITY.md`).
+//! domain never sees (WebSocket, `<link rel=preconnect>`), and a DNS rebind between this
+//! process's lookup and Chromium's own (`SECURITY.md`). WebRTC and DNS prefetch are switched off
+//! at launch instead (`browser::CONTAINMENT_ARGS`).
 
 use std::sync::{Arc, Weak};
 

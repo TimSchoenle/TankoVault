@@ -2,6 +2,7 @@
 //! how each request was answered. Duplicates [`crate::me::privacy`] deliberately, since these
 //! act on another person's account under separately audited permissions.
 
+use super::users::{guard_not_last_administrator, guard_not_super_user};
 use crate::audit::audit;
 use crate::error::{ApiError, ApiResult};
 use crate::openapi::ADMIN_PRIVACY_TAG;
@@ -360,6 +361,8 @@ pub struct FulfilErasure {
 /// Requires [`Permission::UsersDelete`] as well as [`Permission::PrivacyWrite`]: working the
 /// privacy queue and being able to destroy an account are separate authorities, and this is the
 /// one action that needs both.
+///
+/// Refuses the deployment's super user and the last administrator, as administrative erasure does.
 #[utoipa::path(
     post,
     path = "/v1/admin/privacy/requests/{id}/fulfil-erasure",
@@ -369,7 +372,7 @@ pub struct FulfilErasure {
     security(("bearer_auth" = [])),
     responses(
         (status = 200, description = "The completed request", body = AdminPrivacyRequestView),
-        (status = 400, description = "not an erasure request, or the confirmation did not match", body = crate::error::ProblemDetails),
+        (status = 400, description = "not an erasure request, the confirmation did not match, or the subject is the super user or the last administrator", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "no such request, or its subject no longer exists", body = crate::error::ProblemDetails),
@@ -399,6 +402,8 @@ pub async fn fulfil_erasure(
         .user_id
         .map(UserId::from_uuid)
         .ok_or(ApiError::NotFound)?;
+    guard_not_super_user(&state, &user, subject, "privacy.request.fulfil_erasure").await?;
+    guard_not_last_administrator(&state, &user, subject, "privacy.request.fulfil_erasure").await?;
 
     let account = tankovault_db::repo::users::get(&state.pool, subject).await?;
     if body.confirm_username.trim() != account.username {

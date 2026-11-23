@@ -258,13 +258,31 @@ pub(super) fn build_router(
         ))
         .service(ServeFile::new(&frontend.notices_json_path));
 
-    Router::new()
+    let router = Router::new()
         .route("/healthz", get(healthz))
         .route_service(NOTICES_ROUTE, notices)
         .route_service(NOTICES_JSON_ROUTE, notices_json)
         .route("/v1/{*rest}", any(proxy))
         .fallback_service(static_service)
-        .with_state(state)
+        .with_state(state);
+
+    // Every response, proxied ones included: HSTS is a property of the origin, and the shared
+    // stack's copy is off here with the rest of its API-shaped headers (`stack_security`).
+    match hsts_value(frontend.hsts_max_age_secs) {
+        None => router,
+        Some(value) => router.layer(SetResponseHeaderLayer::if_not_present(
+            header::STRICT_TRANSPORT_SECURITY,
+            value,
+        )),
+    }
+}
+
+/// The `Strict-Transport-Security` value for `max_age`, or `None` when it is `0`.
+pub(super) fn hsts_value(max_age: u64) -> Option<HeaderValue> {
+    (max_age > 0).then(|| {
+        HeaderValue::from_str(&format!("max-age={max_age}"))
+            .unwrap_or_else(|_| HeaderValue::from_static("max-age=63072000"))
+    })
 }
 
 /// Legacy liveness alias.

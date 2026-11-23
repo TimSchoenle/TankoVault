@@ -667,6 +667,43 @@ async fn static_assets_are_served_with_hardening_headers() {
     assert_eq!(response.text().await.unwrap(), "APPJS");
 }
 
+/// The origin holding the access token announces itself HTTPS-only, on the shell and on proxied
+/// responses alike, and `0` turns that off.
+///
+/// The bug: the frontend opts out of the shared stack's headers, HSTS included, so no
+/// configuration could make this origin send one, and a first visit over HTTP or an SSL strip
+/// could serve a tampered shell.
+#[tokio::test]
+async fn every_response_carries_hsts_unless_it_is_switched_off() {
+    let upstream = spawn_stub_upstream().await;
+    let dir = write_bundle();
+    let front = spawn_frontend(dir.to_str().unwrap(), upstream).await;
+    for path in ["/", "/app.js", "/v1/status/200"] {
+        let response = reqwest::get(format!("http://{front}{path}")).await.unwrap();
+        assert_eq!(
+            response.headers().get("strict-transport-security").unwrap(),
+            "max-age=63072000",
+            "{path}"
+        );
+    }
+
+    let off = spawn_frontend_with(
+        FrontendConfig {
+            hsts_max_age_secs: 0,
+            ..test_config(dir.to_str().unwrap())
+        },
+        upstream,
+    )
+    .await;
+    let response = reqwest::get(format!("http://{off}/")).await.unwrap();
+    assert!(
+        response
+            .headers()
+            .get("strict-transport-security")
+            .is_none()
+    );
+}
+
 /// The obligation the whole notices artefact exists for: a reader whose browser downloads
 /// and runs the WASM bundle has received a binary distribution, and almost every licence in
 /// it requires its text to travel along. Serving them only inside the image would satisfy

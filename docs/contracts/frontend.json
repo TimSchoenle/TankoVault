@@ -733,6 +733,34 @@
         "reserved": false
       },
       {
+        "path": "frontend.hsts_max_age_secs",
+        "env": "TANKOVAULT_FRONTEND__HSTS_MAX_AGE_SECS",
+        "env_file": "TANKOVAULT_FRONTEND__HSTS_MAX_AGE_SECS_FILE",
+        "secrets_file": "frontend__hsts_max_age_secs",
+        "docs": "`max-age` of the `Strict-Transport-Security` header on every response, in seconds; `0`\nsends none. Browsers ignore it over plain HTTP, so local development is unaffected.\n\nOn by default because this origin serves the page holding the access token: a first\nvisit over HTTP, or an SSL strip, would otherwise serve a tampered shell. No\n`includeSubDomains`, which would bind sibling hosts this service knows nothing about.",
+        "ty": "u64",
+        "values": [],
+        "constraint": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": "63072000",
+        "default_value": 63072000,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
         "path": "frontend.cloudflare.script_nonce",
         "env": "TANKOVAULT_FRONTEND__CLOUDFLARE__SCRIPT_NONCE",
         "env_file": "TANKOVAULT_FRONTEND__CLOUDFLARE__SCRIPT_NONCE_FILE",
@@ -1277,6 +1305,12 @@
           "connect_timeout_secs": {
             "default": 10,
             "description": "Connection-establishment timeout for the upstream, not a whole-request timeout, since\nan SSE stream stays open indefinitely.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hsts_max_age_secs": {
+            "default": 63072000,
+            "description": "`max-age` of the `Strict-Transport-Security` header on every response, in seconds; `0`\nsends none. Browsers ignore it over plain HTTP, so local development is unaffected.\n\nOn by default because this origin serves the page holding the access token: a first\nvisit over HTTP, or an SSL strip, would otherwise serve a tampered shell. No\n`includeSubDomains`, which would bind sibling hosts this service knows nothing about.",
             "minimum": 0,
             "type": "integer"
           },

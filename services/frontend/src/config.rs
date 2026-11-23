@@ -78,6 +78,14 @@ pub struct FrontendConfig {
     /// an SSE stream stays open indefinitely.
     #[serde(default = "FrontendConfig::default_connect_timeout_secs")]
     pub connect_timeout_secs: u64,
+    /// `max-age` of the `Strict-Transport-Security` header on every response, in seconds; `0`
+    /// sends none. Browsers ignore it over plain HTTP, so local development is unaffected.
+    ///
+    /// On by default because this origin serves the page holding the access token: a first
+    /// visit over HTTP, or an SSL strip, would otherwise serve a tampered shell. No
+    /// `includeSubDomains`, which would bind sibling hosts this service knows nothing about.
+    #[serde(default = "FrontendConfig::default_hsts_max_age_secs")]
+    pub hsts_max_age_secs: u64,
     /// Opt-ins for running behind Cloudflare. See [`CloudflareConfig`].
     #[serde(default)]
     #[config(nested)]
@@ -139,6 +147,9 @@ impl FrontendConfig {
     fn default_connect_timeout_secs() -> u64 {
         10
     }
+    fn default_hsts_max_age_secs() -> u64 {
+        63_072_000
+    }
 }
 
 impl Default for FrontendConfig {
@@ -150,6 +161,7 @@ impl Default for FrontendConfig {
             api_upstream: Self::default_api_upstream(),
             max_body_bytes: Self::default_max_body_bytes(),
             connect_timeout_secs: Self::default_connect_timeout_secs(),
+            hsts_max_age_secs: Self::default_hsts_max_age_secs(),
             cloudflare: CloudflareConfig::default(),
         }
     }

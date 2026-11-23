@@ -179,9 +179,11 @@ async fn notify_existing_owner(state: &AppState, email: &str) -> ApiResult<bool>
 ///
 /// [`find_credentials`]: tankovault_db::repo::users::find_credentials
 async fn username_taken(state: &AppState, username: &str) -> ApiResult<bool> {
-    Ok(tankovault_db::repo::users::find_credentials(&state.pool, username)
-        .await?
-        .is_some())
+    Ok(
+        tankovault_db::repo::users::find_credentials(&state.pool, username)
+            .await?
+            .is_some(),
+    )
 }
 
 /// Validates every field a registration writes, in the order the user filled them in.

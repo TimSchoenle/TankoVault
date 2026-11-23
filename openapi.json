@@ -14226,7 +14226,7 @@
     },
     "/v1/admin/users/{id}/revoke-sessions": {
       "post": {
-        "description": "Signs the account out of every device. Does not change what the account may do (use\nsuspension for that); this only ends the sessions currently in flight.",
+        "description": "Signs the account out of every device. Does not change what the account may do (use\nsuspension for that); this only ends the sessions currently in flight.\n\nRefuses the deployment's super user and any account holding a permission the caller lacks.",
         "operationId": "revoke_user_sessions",
         "parameters": [
           {
@@ -14251,6 +14251,16 @@
               }
             },
             "description": "How many sessions were revoked"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "the target is the super user or holds a permission the caller does not"
           },
           "401": {
             "content": {

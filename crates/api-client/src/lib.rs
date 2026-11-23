@@ -28191,7 +28191,7 @@ impl Client {
     pub fn set_user_permissions(&self) -> builder::SetUserPermissions<'_> {
         builder::SetUserPermissions::new(self)
     }
-    #[doc = "Revoke a user's sessions\n\nSigns the account out of every device. Does not change what the account may do (use\nsuspension for that); this only ends the sessions currently in flight.\n\nSends a `POST` request to `/v1/admin/users/{id}/revoke-sessions`\n\nArguments:\n- `id`: User id\n```ignore\nlet response = client.revoke_user_sessions()\n    .id(id)\n    .send()\n    .await;\n```"]
+    #[doc = "Revoke a user's sessions\n\nSigns the account out of every device. Does not change what the account may do (use\nsuspension for that); this only ends the sessions currently in flight.\n\nRefuses the deployment's super user and any account holding a permission the caller lacks.\n\nSends a `POST` request to `/v1/admin/users/{id}/revoke-sessions`\n\nArguments:\n- `id`: User id\n```ignore\nlet response = client.revoke_user_sessions()\n    .id(id)\n    .send()\n    .await;\n```"]
     pub fn revoke_user_sessions(&self) -> builder::RevokeUserSessions<'_> {
         builder::RevokeUserSessions::new(self)
     }
@@ -35475,6 +35475,9 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

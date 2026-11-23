@@ -25,6 +25,7 @@ use uuid::Uuid;
 use webauthn_rs::prelude::{RegisterPublicKeyCredential, SecurityKeyRegistration};
 
 use crate::audit::{audit, audit_failure};
+use crate::auth::throttle;
 use crate::error::{ApiError, ApiResult};
 use crate::mfa::{SecurityKeyAssertion, SecurityKeyChallenge, StepUpGrant};
 use crate::openapi::ME_ACCOUNT_TAG;
@@ -34,6 +35,7 @@ use crate::passkey::{
 use crate::state::{AppState, AuthUser};
 use crate::step_up::{Elevated, require_elevation_if_enrolled};
 use tankovault_db::repo::users::mfa::StepUpMethod;
+use tankovault_db::repo::users::throttle::ThrottleKind;
 use tankovault_db::repo::users::webauthn::{CeremonyKind, CredentialPurpose};
 
 /// Longest accepted security-key label, in characters. Matches the passkey limit; the two lists
@@ -744,13 +746,26 @@ pub async fn step_up(
         ));
     }
 
+    // Per account: the address-keyed rate limit cannot bound a stolen session spreading its
+    // guesses across many addresses.
+    let kind = if body.password.is_some() {
+        ThrottleKind::Password
+    } else {
+        ThrottleKind::SecondFactor
+    };
+    if throttle::is_locked(&state, user.user_id, kind).await? {
+        return Err(refuse_step_up(&state, &user, "locked").await);
+    }
+
     let method = if let Some(code) = body.totp_code.as_ref() {
         if !crate::mfa::verify_totp(&state, user.user_id, code).await? {
+            throttle::record_failure(&state, user.user_id, kind).await?;
             return Err(refuse_step_up(&state, &user, "totp").await);
         }
         StepUpMethod::Totp
     } else if let Some(code) = body.recovery_code.as_ref() {
         if !crate::mfa::verify_recovery_code(&state, user.user_id, code).await? {
+            throttle::record_failure(&state, user.user_id, kind).await?;
             return Err(refuse_step_up(&state, &user, "recovery_code").await);
         }
         StepUpMethod::RecoveryCode
@@ -774,10 +789,12 @@ pub async fn step_up(
         )
         .await?;
         if !ok {
+            throttle::record_failure(&state, user.user_id, kind).await?;
             return Err(refuse_step_up(&state, &user, "password").await);
         }
         StepUpMethod::Password
     };
+    throttle::clear(&state, user.user_id, &[kind]).await?;
 
     let grant = crate::mfa::issue_step_up(&state, user.user_id, method).await?;
     audit(

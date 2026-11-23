@@ -165,6 +165,151 @@ async fn a_challenge_is_destroyed_once_its_attempts_are_spent() {
     );
 }
 
+/// Lets every lock lapse, standing in for the clock; each test has a database of its own.
+async fn expire_throttle(app: &TestApp) {
+    app.db
+        .execute("UPDATE auth_throttle SET locked_until = now() - interval '1 second'")
+        .await;
+}
+
+/// Bug this pins: the attempt cap was per challenge, and every password sign-in opens a fresh
+/// one, so anyone holding the password could guess the code without limit, five at a time.
+#[tokio::test]
+async fn second_factor_failures_across_challenges_lock_the_account() {
+    let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
+    let user = register(&app, "spreadout").await;
+    let secret = app.seed_totp(user).await;
+
+    for _ in 0..5 {
+        let (_, body) = login(&app, "spreadout").await;
+        let challenge = body["mfa"]["challenge_token"].as_str().expect("a handle");
+        let (status, _) = app
+            .call(
+                "POST",
+                "/v1/auth/mfa/verify",
+                None,
+                Some(json!({ "challenge_token": challenge, "totp_code": "000000" })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    let (_, body) = login(&app, "spreadout").await;
+    let challenge = body["mfa"]["challenge_token"]
+        .as_str()
+        .expect("a handle")
+        .to_owned();
+    let code = totp_code(&secret);
+    let (status, _) = app
+        .call(
+            "POST",
+            "/v1/auth/mfa/verify",
+            None,
+            Some(json!({ "challenge_token": challenge, "totp_code": code })),
+        )
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "a fresh challenge must not reset the account's failure count"
+    );
+
+    expire_throttle(&app).await;
+    let (status, body) = app
+        .call(
+            "POST",
+            "/v1/auth/mfa/verify",
+            None,
+            Some(json!({ "challenge_token": challenge, "totp_code": code })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "the lock must lapse, got {body}");
+}
+
+/// Bug this pins: step-up had no per-account failure count, so a stolen session could guess
+/// the authenticator code from as many addresses as it had, and earn the elevation that
+/// changes the email and password.
+#[tokio::test]
+async fn step_up_failures_lock_the_second_factor() {
+    let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
+    let user = register(&app, "stolen").await;
+    let secret = app.seed_totp(user).await;
+    let token = app.bearer(user);
+
+    for _ in 0..5 {
+        let (status, _) = app
+            .call(
+                "POST",
+                "/v1/me/step-up",
+                Some(&token),
+                Some(json!({ "totp_code": "000000" })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    let code = totp_code(&secret);
+    let (status, _) = app
+        .call(
+            "POST",
+            "/v1/me/step-up",
+            Some(&token),
+            Some(json!({ "totp_code": code })),
+        )
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "a locked second factor must refuse even the right code"
+    );
+
+    expire_throttle(&app).await;
+    let (status, body) = app
+        .call(
+            "POST",
+            "/v1/me/step-up",
+            Some(&token),
+            Some(json!({ "totp_code": code })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "the lock must lapse, got {body}");
+}
+
+/// Bug this pins: sign-in was limited per address only, so a botnet could guess one account's
+/// password without limit.
+#[tokio::test]
+async fn password_failures_lock_sign_in_without_revealing_it() {
+    let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
+    register(&app, "guessed").await;
+
+    for _ in 0..10 {
+        let (status, _) = app
+            .call(
+                "POST",
+                "/v1/auth/login",
+                None,
+                Some(json!({ "login": "guessed", "password": "not the password" })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    let (status, body) = login(&app, "guessed").await;
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "a locked password must refuse even the right one"
+    );
+    assert_eq!(
+        body["title"], "unauthorized",
+        "the lock must read exactly like a wrong password"
+    );
+
+    expire_throttle(&app).await;
+    let (status, body) = login(&app, "guessed").await;
+    assert_eq!(status, StatusCode::OK, "the lock must lapse, got {body}");
+}
+
 /// One challenge yields at most one session.
 #[tokio::test]
 async fn a_challenge_is_consumed_by_the_sign_in_it_completes() {

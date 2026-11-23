@@ -8,6 +8,7 @@ use axum::extract::State;
 use axum_extra::extract::cookie::CookieJar;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
+use tankovault_db::repo::users::throttle::ThrottleKind;
 use tankovault_domain::Feature;
 use tankovault_service::AuditOutcome;
 use utoipa::ToSchema;
@@ -236,9 +237,25 @@ async fn verify_credentials(
     };
     let uid = Some(creds.user.id);
 
+    // Read before the hash but answered after it: a locked account must cost and read exactly
+    // like a wrong password, or the lock itself becomes an oracle.
+    let locked = super::throttle::is_locked(state, creds.user.id, ThrottleKind::Password).await?;
     let ok =
         super::kdf::verify_password(password, &creds.password_hash, &state.password_pepper).await?;
+    if locked {
+        return Err(refuse(
+            state,
+            client,
+            uid,
+            login,
+            "password_locked",
+            AuditOutcome::Denied,
+            ApiError::Unauthorized,
+        )
+        .await);
+    }
     if !ok {
+        super::throttle::record_failure(state, creds.user.id, ThrottleKind::Password).await?;
         return Err(refuse(
             state,
             client,
@@ -250,6 +267,7 @@ async fn verify_credentials(
         )
         .await);
     }
+    super::throttle::clear(state, creds.user.id, &[ThrottleKind::Password]).await?;
 
     // Checked here too (not just the `AuthUser` extractor), so a suspended account is told
     // so at sign-in instead of signing in and failing every request after.

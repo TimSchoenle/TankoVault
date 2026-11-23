@@ -10,6 +10,7 @@ pub mod passkey;
 pub mod password;
 pub mod register;
 pub mod session;
+pub(crate) mod throttle;
 pub mod validate;
 pub mod verification;
 

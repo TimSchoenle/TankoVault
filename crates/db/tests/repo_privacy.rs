@@ -101,6 +101,12 @@ const NOT_EXPORTED: &[(&str, &str)] = &[
          subject learns nothing from it that `audit_log` does not already say",
     ),
     (
+        "auth_throttle",
+        "a security counter, not a record about the person: how many recent guesses failed \
+         against the account. Each failure already writes the subject's own `audit_log` row, \
+         which is exported, and a success clears the counter",
+    ),
+    (
         "notification_dedup",
         "an idempotency guard, not a record about the person: every (series, chapter) in it is \
          already visible in `notifications`, which is exported",

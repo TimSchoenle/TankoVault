@@ -84,7 +84,8 @@ pub fn route_classifier() -> RouteClassifier {
         // The step-up prompt takes a six-digit code, a recovery code, or a password. It is the
         // online-guessing surface of the second factor and, unlike the sign-in second leg, it
         // has no per-challenge attempt counter to fall back on: the session is already valid,
-        // so there is no challenge row to exhaust. The rate limit is the whole bound here.
+        // so there is no challenge row to exhaust. This limit is per address; the per-account
+        // bound is `auth::throttle`.
         .auth("/v1/me/step-up")
         // Enrolment writes ceremony rows and issues secrets on demand, from an authenticated
         // caller. Same reasoning as `/v1/me/passkeys/register/start`.

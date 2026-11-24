@@ -97,6 +97,10 @@ jobs:
       rust: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.rust == 'true' }}
       frontend: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.frontend == 'true' }}
       docker: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.docker == 'true' }}
+      # The image legs. Narrower than `docker` on a pull request only; `imagescope` says why.
+      image: ${{ steps.imagescope.outputs.image }}
+      image_frontend: ${{ steps.imagescope.outputs.frontend }}
+      narrow: ${{ steps.decide.outputs.narrow }}
       notices: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.notices == 'true' }}
       compose: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.compose == 'true' }}
       readme: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.readme == 'true' }}
@@ -135,10 +139,21 @@ jobs:
           # among them: the deploy blacklist (`[workspace.metadata.deploy.exclude]`, root
           # `Cargo.toml`) keeps it out of every registry, and `repo-lint` fails if it appears
           # here. The install steps a deployment runs are in `bootstrap`, which does ship.
+          #
+          # `narrow` also makes each pull-request leg link only its own binary plus
+          # `config-contract` (`SERVICE_BINS`), not all eleven. Thin LTO runs once per binary over
+          # the whole dependency graph, so the eleven links were ~25 of a leg's ~36 minutes. A
+          # pull request exports no cache, and its `builder` misses `main`'s tag on any change to
+          # the build context anyway. The one case it costs is a branch touching only files the
+          # context excludes (this workflow, `.github/scripts`): its legs relink their two
+          # binaries instead of hitting `main`'s `builder`. `main` and releases keep the default
+          # set, whose key is the one they share.
           if [ "$EVENT" = "pull_request" ] && [ "$full" != "true" ]; then
             echo 'images=["api","render"]' >> "$GITHUB_OUTPUT"
+            echo "narrow=true" >> "$GITHUB_OUTPUT"
           else
             echo 'images=["api","bootstrap","worker","control-plane","notifier","sync","challenge-solver","render"]' >> "$GITHUB_OUTPUT"
+            echo "narrow=false" >> "$GITHUB_OUTPUT"
           fi
 
       # The only place that reads these manifests. It fails loudly instead of defaulting: a silent
@@ -293,6 +308,34 @@ jobs:
               - *rust
               - 'deploy/docker/**'
               - 'web/frontend/**'
+            # What a pull request's image legs check that no other job does: the Dockerfile and
+            # its structure tests, the build context, and everything that changes what the musl
+            # release build links (the dependency graph, the toolchain, build scripts). A change
+            # to Rust source alone is compiled and tested by `test` and `integration`; no code here
+            # is gated on `target_env` or on release-only `cfg`s, so the image legs would only
+            # repeat that compile in a slower profile. `main` still builds every image after the
+            # merge, which is where a musl-only break would surface.
+            image: &image
+              - *workflows
+              - 'deploy/docker/**'
+              - '.dockerignore'
+              - '.github/scripts/verify-config-contract.sh'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'crates/**/Cargo.toml'
+              - 'services/**/Cargo.toml'
+              - 'xtask/Cargo.toml'
+              - 'crates/**/build.rs'
+              - 'services/**/build.rs'
+              - 'rust-toolchain.toml'
+              - '.cargo/**'
+            # The frontend image also runs `dx build --release` (asset bundling, `wasm-opt`) and
+            # `xtask notices --json`, which the `frontend` job does not, so its source is an input.
+            image_frontend:
+              - *image
+              - 'web/frontend/**'
+              - 'xtask/**'
+              - 'about.toml'
             compose:
               - *workflows
               - 'deploy/docker-compose.yml'
@@ -309,6 +352,33 @@ jobs:
               - 'Cargo.toml'
               - 'rust-toolchain.toml'
               - 'deploy/docker-compose.yml'
+
+      # A pull request builds images only when an image input changed (the `image` filter);
+      # every other event keeps the `docker` scope, so `main` and the weekly run build exactly
+      # what they did before.
+      - name: decide which image legs run
+        id: imagescope
+        env:
+          EVENT: ${{ github.event_name }}
+          FULL: ${{ steps.decide.outputs.full }}
+          DOCKER: ${{ steps.filter.outputs.docker }}
+          IMAGE: ${{ steps.filter.outputs.image }}
+          IMAGE_FRONTEND: ${{ steps.filter.outputs.image_frontend }}
+        run: |
+          set -euo pipefail
+          if [ "$FULL" = "true" ]; then
+            image=true
+            frontend=true
+          elif [ "$EVENT" != "pull_request" ]; then
+            image="${DOCKER:-false}"
+            frontend="${DOCKER:-false}"
+          else
+            image="${IMAGE:-false}"
+            frontend="${IMAGE_FRONTEND:-false}"
+          fi
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
+          echo "::notice::image legs: backend $image, frontend $frontend"
 
   lint:
     name: fmt + clippy
@@ -1518,7 +1588,7 @@ jobs:
     # build the whole `builder` chain themselves. `render` came in at 38m against the old 45.
     timeout-minutes: 60
     needs: [changes, lint, docker-deps]
-    if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' }}
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.image == 'true' }}
     permissions:
       contents: read # to check out the build context
       packages: read # to import the layer cache from ghcr.io
@@ -1548,14 +1618,33 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # On a pull request `SERVICE_BINS` narrows to the binaries this image needs (`changes`
+      # decides `narrow` and says why). The contract export below reuses the same value: a
+      # different `SERVICE_BINS` is a different `builder` key, and that step would relink
+      # everything instead of hitting the build before it.
+      - name: decide the build arguments
+        id: buildargs
+        env:
+          NARROW: ${{ needs.changes.outputs.narrow }}
+          BIN: ${{ matrix.bin }}
+        run: |
+          set -euo pipefail
+          {
+            echo 'value<<BUILD_ARGS_EOF'
+            echo "BIN=${BIN}"
+            if [ "$NARROW" = "true" ]; then
+              echo "SERVICE_BINS=${BIN} config-contract"
+            fi
+            echo 'BUILD_ARGS_EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: build ${{ matrix.bin }} image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: deploy/docker/Dockerfile
           platforms: linux/amd64
-          build-args: |
-            BIN=${{ matrix.bin }}
+          build-args: ${{ steps.buildargs.outputs.value }}
           # The render tier needs a real browser at runtime (Chromium), so it selects the
           # dedicated runtime-browser stage; every other binary is a musl build that ships on
           # the default `scratch` runtime.
@@ -1592,6 +1681,7 @@ jobs:
           file: deploy/docker/Dockerfile
           platforms: linux/amd64
           target: contract
+          build-args: ${{ steps.buildargs.outputs.value }}
           outputs: type=local,dest=${{ runner.temp }}/contract-out
           provenance: false
           cache-from: type=registry,ref=${{ needs.changes.outputs.buildcache }}:${{ needs.changes.outputs.deps_scope || 'backend-deps' }}-amd64
@@ -1662,7 +1752,7 @@ jobs:
     # `backend-deps-arm64` at this commit for these legs to import. Without the second test they
     # would not skip; they would cook their own arm64 dependency graph, the 30 minutes the
     # pull-request architecture set exists to save.
-    if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' && needs.changes.outputs.arm64 == 'true' }}
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.image == 'true' && needs.changes.outputs.arm64 == 'true' }}
     permissions:
       contents: read # to check out the build context
       packages: read # to import the layer cache from ghcr.io
@@ -1767,7 +1857,7 @@ jobs:
     # for a correct build on that path.
     timeout-minutes: 90
     needs: [changes, lint, docker-deps]
-    if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' }}
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.image_frontend == 'true' }}
     permissions:
       contents: read # to check out the build context
       packages: read # to import the layer cache from ghcr.io
@@ -1791,6 +1881,25 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # On a pull request `SERVICE_BINS` narrows to the binaries this image needs (`changes`
+      # decides `narrow` and says why). The contract export below reuses the same value: a
+      # different `SERVICE_BINS` is a different `builder` key, and that step would relink
+      # everything instead of hitting the build before it.
+      - name: decide the build arguments
+        id: buildargs
+        env:
+          NARROW: ${{ needs.changes.outputs.narrow }}
+          BIN: frontend
+        run: |
+          set -euo pipefail
+          {
+            echo 'value<<BUILD_ARGS_EOF'
+            if [ "$NARROW" = "true" ]; then
+              echo "SERVICE_BINS=${BIN} config-contract"
+            fi
+            echo 'BUILD_ARGS_EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: build frontend image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -1798,6 +1907,7 @@ jobs:
           file: deploy/docker/Dockerfile
           platforms: linux/amd64
           target: frontend
+          build-args: ${{ steps.buildargs.outputs.value }}
           push: false
           # Loaded into the local daemon so container-structure-test can inspect it by tag.
           load: true
@@ -1824,6 +1934,7 @@ jobs:
           file: deploy/docker/Dockerfile
           platforms: linux/amd64
           target: contract
+          build-args: ${{ steps.buildargs.outputs.value }}
           outputs: type=local,dest=${{ runner.temp }}/contract-out
           provenance: false
           cache-from: type=registry,ref=${{ needs.changes.outputs.buildcache }}:${{ needs.changes.outputs.deps_scope || 'backend-deps' }}-amd64

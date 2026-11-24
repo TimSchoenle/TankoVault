@@ -14,20 +14,23 @@
 
 [advisories]
 ignore = [
-    # RUSTSEC-2023-0071: timing sidechannel in `rsa` 0.9.x, pulled in transitively by
-    # `jsonwebtoken`'s `rust_crypto` feature with no HMAC-only alternative and no fixed release.
-    # Not exploitable here: `crates/auth/src/token.rs` pins `Algorithm::HS256`, test-enforced,
-    # so no RSA path is ever entered. Reviewed 2026-07-29; re-review 2026-10-29 or if HS256 stops
-    # being the only accepted algorithm.
+    # RUSTSEC-2023-0071: Marvin timing sidechannel in `rsa` private-key operations, fixed in
+    # 0.10.0. Two copies match: 0.9.10 from `jsonwebtoken`'s `rust_crypto` feature (no HMAC-only
+    # alternative, no 0.10 release) and 0.10.0-rc.19 from `webauthn-rs-core` via `crypto-glue`
+    # (a pre-release, so semver-below the fix). Not exploitable here: the server holds no RSA
+    # private key. `crates/auth/src/token.rs` pins `Algorithm::HS256`, test-enforced, and WebAuthn
+    # only verifies signatures against stored public keys. Reviewed 2026-11-23; re-review
+    # 2027-02-23, or if HS256 stops being the only accepted algorithm or the server ever
+    # decrypts or signs with an RSA key.
     "RUSTSEC-2023-0071",
 
-    # RUSTSEC-2026-0387: timing variability in `crypto-bigint` 0.5.x, reached only through
-    # `elliptic-curve` 0.13 (`jsonwebtoken`'s `rust_crypto` feature and `webauthn-rs`). The fix is
-    # 0.7.6, which the 0.13 curve crates cannot take, so no compatible release exists. Not
-    # exploitable here: JWTs are HS256-only (see RUSTSEC-2023-0071), and WebAuthn only verifies
-    # assertions against stored public keys, so no secret scalar ever passes through it. Reviewed
-    # 2026-10-26; re-review 2027-01-26, when `elliptic-curve` 0.14 reaches `jsonwebtoken` and
-    # `webauthn-rs`, or if the server ever signs with an EC key.
+    # RUSTSEC-2026-0387: timing variability in `crypto-bigint` 0.5.5, reached only through
+    # `elliptic-curve` 0.13 (`p256`/`p384` 0.13 under `jsonwebtoken`'s `rust_crypto` feature).
+    # `webauthn-rs-core` 0.6.2 is on `elliptic-curve` 0.14 and `crypto-bigint` 0.7.11, which is
+    # patched. The fix is 0.7.6, which the 0.13 curve crates cannot take, so no compatible release
+    # exists. Not exploitable here: JWTs are HS256-only (see RUSTSEC-2023-0071), so no secret
+    # scalar ever passes through it. Reviewed 2026-11-23; re-review 2027-02-23, when
+    # `elliptic-curve` 0.14 reaches `jsonwebtoken`, or if the server ever signs with an EC key.
     "RUSTSEC-2026-0387",
 
     # RUSTSEC-2026-0391, -0398, -0403: `zstd` 0.13 / `zstd-safe` 7, held there by `wreq-util`

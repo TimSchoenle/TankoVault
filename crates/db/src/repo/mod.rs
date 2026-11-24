@@ -8,6 +8,7 @@ pub mod audit;
 pub mod catalog;
 pub mod flags;
 pub mod gdpr;
+pub(crate) mod like;
 pub mod matching;
 pub mod permissions;
 pub mod privacy;

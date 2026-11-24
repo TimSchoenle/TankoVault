@@ -16,6 +16,7 @@
 //! and the series page counts distinct whole chapters, so the three figures can differ.
 
 use crate::error::DbResult;
+use crate::repo::like;
 use sqlx::{Connection as _, FromRow, PgConnection, PgExecutor, PgPool};
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -162,6 +163,9 @@ pub async fn list_for_maintenance(
     }
 
     let search = filter.search.trim();
+    let pattern = Some(search)
+        .filter(|s| !s.is_empty())
+        .map(like::contains_pattern);
     let orphaned = filter.health == SeriesHealth::Orphaned;
     let empty = filter.health == SeriesHealth::Empty;
 
@@ -183,7 +187,7 @@ pub async fn list_for_maintenance(
          ), matched AS ( \
              SELECT s.id, s.created_at FROM series s \
              LEFT JOIN carried c ON c.series_id = s.id \
-             WHERE ($1 = '' OR s.canonical_title ILIKE '%' || $1 || '%') \
+             WHERE ($1::text IS NULL OR s.canonical_title ILIKE $1 ESCAPE '\\') \
                AND ($2::text IS NULL OR $2 = ANY(c.slugs)) \
                AND (NOT $3::bool OR c.series_id IS NULL) \
                AND (NOT $4::bool OR (c.series_id IS NOT NULL AND c.chapters = 0)) \
@@ -206,7 +210,7 @@ pub async fn list_for_maintenance(
              SELECT count(*) FROM watchlist_entries we WHERE we.series_id = s.id \
          ) AS w(count) \
          ORDER BY s.created_at DESC, s.id",
-        search,
+        pattern,
         filter.provider_slug.as_deref(),
         orphaned,
         empty,

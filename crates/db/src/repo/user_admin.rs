@@ -10,6 +10,7 @@
 //! the self-service path so there is exactly one implementation of the cascade.
 
 use crate::error::{DbError, DbResult};
+use crate::repo::like;
 use sqlx::{FromRow, PgExecutor};
 use tankovault_domain::{AccountStatus, UserId};
 use time::OffsetDateTime;
@@ -95,21 +96,22 @@ pub async fn directory<'e, E: PgExecutor<'e>>(
         created_at: OffsetDateTime,
         total: i64,
     }
-    // `$1 = ''` short-circuits the pattern match so an unfiltered listing does not pay for a
+    // A NULL pattern short-circuits the match so an unfiltered listing does not pay for a
     // `LIKE '%%'` scan predicate on every row.
     //
-    // `ILIKE`, not `LIKE`: `username` and `email` are `citext`, but `'%' || $1 || '%'`
-    // concatenates to `text`, so `LIKE` would compare case-sensitively and miss `Alice` for
-    // `alice`. `repo::users::CiText` covers the equality lookups; no wrapper can fix this one,
-    // because the concatenation carries the type. A leading wildcard rules out an index
+    // `ILIKE`, not `LIKE`: the pattern is bound as `text`, so `LIKE` would compare
+    // case-sensitively and miss `Alice` for `alice`. A leading wildcard rules out an index
     // either way, so `ILIKE` costs nothing.
+    let pattern = Some(search)
+        .filter(|s| !s.is_empty())
+        .map(like::contains_pattern);
     let rows = sqlx::query_as!(
         Row,
         "WITH matched AS ( \
              SELECT u.* FROM users u \
-             WHERE $1 = '' \
-                OR u.username ILIKE '%' || $1 || '%' \
-                OR u.email ILIKE '%' || $1 || '%' \
+             WHERE $1::text IS NULL \
+                OR u.username ILIKE $1 ESCAPE '\\' \
+                OR u.email ILIKE $1 ESCAPE '\\' \
          ) \
          SELECT m.id, m.email::text AS \"email!\", m.username::text AS \"username!\", \
                 m.status AS \"status: AccountStatus\", \
@@ -126,7 +128,7 @@ pub async fn directory<'e, E: PgExecutor<'e>>(
                  AS w(count) \
          ORDER BY m.created_at DESC \
          LIMIT $2 OFFSET $3",
-        search,
+        pattern,
         limit,
         offset,
     )

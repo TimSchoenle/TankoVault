@@ -337,18 +337,8 @@ fn search_terms(search: Option<&str>) -> (Option<Uuid>, Option<String>) {
     if let Ok(id) = Uuid::parse_str(term) {
         return (Some(id), None);
     }
-    // The operator's text is matched literally: `%` and `_` in a title are characters, not
-    // wildcards. Backslash is Postgres' default `LIKE` escape.
-    let mut pattern = String::with_capacity(term.len() + 2);
-    pattern.push('%');
-    for c in term.chars() {
-        if matches!(c, '\\' | '%' | '_') {
-            pattern.push('\\');
-        }
-        pattern.push(c);
-    }
-    pattern.push('%');
-    (None, Some(pattern))
+    // Backslash is Postgres' default `LIKE` escape, so the statement needs no `ESCAPE` clause.
+    (None, Some(crate::repo::like::contains_pattern(term)))
 }
 
 /// One row of the projection above, before the domain newtypes are put back on.

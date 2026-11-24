@@ -9,7 +9,11 @@
 pub use progenitor_client::{ByteStream, ClientInfo, Error, ResponseValue};
 #[allow(unused_imports)]
 use progenitor_client::{ClientHooks, OperationInfo, QueryParam, RequestBuilderExt, encode_path};
-#[doc = r" Types used as operation parameters and responses."]
+#[doc = r" Items consumers will typically use such as the Client."]
+pub mod prelude {
+    pub use self::super::Client;
+}
+#[doc = " Types used as operation parameters and responses."]
 #[allow(clippy::all)]
 pub mod types {
     #[doc = "An account's persisted automatic-sync settings (design v2 §B.6/§B.8)."]
@@ -391,18 +395,6 @@ pub mod types {
         type Err = <::uuid::Uuid as ::std::str::FromStr>::Err;
         fn from_str(value: &str) -> ::std::result::Result<Self, Self::Err> {
             Ok(Self(value.parse()?))
-        }
-    }
-    impl ::std::convert::TryFrom<&str> for AuthorId {
-        type Error = <::uuid::Uuid as ::std::str::FromStr>::Err;
-        fn try_from(value: &str) -> ::std::result::Result<Self, Self::Error> {
-            value.parse()
-        }
-    }
-    impl ::std::convert::TryFrom<String> for AuthorId {
-        type Error = <::uuid::Uuid as ::std::str::FromStr>::Err;
-        fn try_from(value: String) -> ::std::result::Result<Self, Self::Error> {
-            value.parse()
         }
     }
     #[doc = "The provider's OAuth consent URL, for `GET /v1/me/sync/{provider}/authorize`."]
@@ -2757,18 +2749,6 @@ pub mod types {
             Ok(Self(value.parse()?))
         }
     }
-    impl ::std::convert::TryFrom<&str> for NotificationId {
-        type Error = <::uuid::Uuid as ::std::str::FromStr>::Err;
-        fn try_from(value: &str) -> ::std::result::Result<Self, Self::Error> {
-            value.parse()
-        }
-    }
-    impl ::std::convert::TryFrom<String> for NotificationId {
-        type Error = <::uuid::Uuid as ::std::str::FromStr>::Err;
-        fn try_from(value: String) -> ::std::result::Result<Self, Self::Error> {
-            value.parse()
-        }
-    }
     #[doc = "One inbox row, resolved to the fields a list can render without opening it.\n\nFlat, not a `kind`-discriminated `oneOf`: the generated client is what the frontend\nconsumes, and a `oneOf` there produces an enum that is painful to match on for a gain the\nretained `payload` already covers."]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct NotificationItem {
@@ -3626,18 +3606,6 @@ pub mod types {
         type Err = <::uuid::Uuid as ::std::str::FromStr>::Err;
         fn from_str(value: &str) -> ::std::result::Result<Self, Self::Err> {
             Ok(Self(value.parse()?))
-        }
-    }
-    impl ::std::convert::TryFrom<&str> for ProviderId {
-        type Error = <::uuid::Uuid as ::std::str::FromStr>::Err;
-        fn try_from(value: &str) -> ::std::result::Result<Self, Self::Error> {
-            value.parse()
-        }
-    }
-    impl ::std::convert::TryFrom<String> for ProviderId {
-        type Error = <::uuid::Uuid as ::std::str::FromStr>::Err;
-        fn try_from(value: String) -> ::std::result::Result<Self, Self::Error> {
-            value.parse()
         }
     }
     #[doc = "A registered external provider's identity, as listed by `GET /v1/me/sync/providers`."]
@@ -4623,18 +4591,6 @@ pub mod types {
             Ok(Self(value.parse()?))
         }
     }
-    impl ::std::convert::TryFrom<&str> for ScanRunId {
-        type Error = <::uuid::Uuid as ::std::str::FromStr>::Err;
-        fn try_from(value: &str) -> ::std::result::Result<Self, Self::Error> {
-            value.parse()
-        }
-    }
-    impl ::std::convert::TryFrom<String> for ScanRunId {
-        type Error = <::uuid::Uuid as ::std::str::FromStr>::Err;
-        fn try_from(value: String) -> ::std::result::Result<Self, Self::Error> {
-            value.parse()
-        }
-    }
     #[doc = "A page of scan runs plus how many the filter matches in total."]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct ScanRunPageView {
@@ -4773,18 +4729,6 @@ pub mod types {
         type Err = <::uuid::Uuid as ::std::str::FromStr>::Err;
         fn from_str(value: &str) -> ::std::result::Result<Self, Self::Err> {
             Ok(Self(value.parse()?))
-        }
-    }
-    impl ::std::convert::TryFrom<&str> for ScanTaskId {
-        type Error = <::uuid::Uuid as ::std::str::FromStr>::Err;
-        fn try_from(value: &str) -> ::std::result::Result<Self, Self::Error> {
-            value.parse()
-        }
-    }
-    impl ::std::convert::TryFrom<String> for ScanTaskId {
-        type Error = <::uuid::Uuid as ::std::str::FromStr>::Err;
-        fn try_from(value: String) -> ::std::result::Result<Self, Self::Error> {
-            value.parse()
         }
     }
     #[doc = "What the control plane answers when a scan is planned: the runs it created.\n\nPublished by `services/control-plane` on its internal `POST /internal/scans`, and\nrepublished verbatim by `services/api` on `POST /v1/admin/scans` and\n`POST /v1/admin/providers/{id}/resolve`. Both ends name this type, so removing `run_ids`\nfails to build at the producer and at the republisher, and the console's \"N scans queued\"\nreads the field the planner writes."]
@@ -4959,18 +4903,6 @@ pub mod types {
             Ok(Self(value.parse()?))
         }
     }
-    impl ::std::convert::TryFrom<&str> for SeriesId {
-        type Error = <::uuid::Uuid as ::std::str::FromStr>::Err;
-        fn try_from(value: &str) -> ::std::result::Result<Self, Self::Error> {
-            value.parse()
-        }
-    }
-    impl ::std::convert::TryFrom<String> for SeriesId {
-        type Error = <::uuid::Uuid as ::std::str::FromStr>::Err;
-        fn try_from(value: String) -> ::std::result::Result<Self, Self::Error> {
-            value.parse()
-        }
-    }
     #[doc = "Identifies a [`crate::entities::SeriesSource`]."]
     #[derive(
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Copy, Debug, Eq, Hash, PartialEq,
@@ -5002,18 +4934,6 @@ pub mod types {
         type Err = <::uuid::Uuid as ::std::str::FromStr>::Err;
         fn from_str(value: &str) -> ::std::result::Result<Self, Self::Err> {
             Ok(Self(value.parse()?))
-        }
-    }
-    impl ::std::convert::TryFrom<&str> for SeriesSourceId {
-        type Error = <::uuid::Uuid as ::std::str::FromStr>::Err;
-        fn try_from(value: &str) -> ::std::result::Result<Self, Self::Error> {
-            value.parse()
-        }
-    }
-    impl ::std::convert::TryFrom<String> for SeriesSourceId {
-        type Error = <::uuid::Uuid as ::std::str::FromStr>::Err;
-        fn try_from(value: String) -> ::std::result::Result<Self, Self::Error> {
-            value.parse()
         }
     }
     #[doc = "Publication status of a canonical series."]
@@ -5789,18 +5709,6 @@ pub mod types {
         type Err = <::uuid::Uuid as ::std::str::FromStr>::Err;
         fn from_str(value: &str) -> ::std::result::Result<Self, Self::Err> {
             Ok(Self(value.parse()?))
-        }
-    }
-    impl ::std::convert::TryFrom<&str> for TagId {
-        type Error = <::uuid::Uuid as ::std::str::FromStr>::Err;
-        fn try_from(value: &str) -> ::std::result::Result<Self, Self::Error> {
-            value.parse()
-        }
-    }
-    impl ::std::convert::TryFrom<String> for TagId {
-        type Error = <::uuid::Uuid as ::std::str::FromStr>::Err;
-        fn try_from(value: String) -> ::std::result::Result<Self, Self::Error> {
-            value.parse()
         }
     }
     #[doc = "One settled task in the live tail."]
@@ -6589,18 +6497,6 @@ pub mod types {
         type Err = <::uuid::Uuid as ::std::str::FromStr>::Err;
         fn from_str(value: &str) -> ::std::result::Result<Self, Self::Err> {
             Ok(Self(value.parse()?))
-        }
-    }
-    impl ::std::convert::TryFrom<&str> for UserId {
-        type Error = <::uuid::Uuid as ::std::str::FromStr>::Err;
-        fn try_from(value: &str) -> ::std::result::Result<Self, Self::Error> {
-            value.parse()
-        }
-    }
-    impl ::std::convert::TryFrom<String> for UserId {
-        type Error = <::uuid::Uuid as ::std::str::FromStr>::Err;
-        fn try_from(value: String) -> ::std::result::Result<Self, Self::Error> {
-            value.parse()
         }
     }
     #[doc = "`Value`"]
@@ -28600,7 +28496,7 @@ impl Client {
         builder::Tags::new(self)
     }
 }
-#[doc = r" Types for composing operation parameters."]
+#[doc = " Types for composing operation parameters."]
 #[allow(clippy::all)]
 pub mod builder {
     use super::types;
@@ -42871,8 +42767,4 @@ pub mod builder {
             }
         }
     }
-}
-#[doc = r" Items consumers will typically use such as the Client."]
-pub mod prelude {
-    pub use self::super::Client;
 }

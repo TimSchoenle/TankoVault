@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE external_accounts SET access_token = $5, refresh_token = $6 WHERE user_id = $1 AND provider = $2 AND access_token = $3 AND refresh_token IS NOT DISTINCT FROM $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "47e81c4ff774632853149c6fea67f07ef7aa8bc38ca245b5482c5e9c47a94c80"
+}

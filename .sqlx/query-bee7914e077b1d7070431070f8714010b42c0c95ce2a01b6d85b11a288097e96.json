@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE email_verification_tokens SET used_at = now() WHERE id = $1 AND used_at IS NULL AND expires_at > now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bee7914e077b1d7070431070f8714010b42c0c95ce2a01b6d85b11a288097e96"
+}

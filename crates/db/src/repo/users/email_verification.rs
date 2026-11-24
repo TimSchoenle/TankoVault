@@ -126,14 +126,18 @@ pub async fn find_email_verification<'e, E: PgExecutor<'e>>(
 
 /// Atomically marks a verification token consumed (single-use), returning the rows updated.
 ///
-/// `0` means no unconsumed token has `id`: it is unknown, was consumed earlier, or a concurrent
-/// request consumed it first.
+/// `0` means no live token has `id`: it is unknown, expired, was consumed earlier, or a
+/// concurrent request consumed it first.
+///
+/// The expiry is re-checked here, not only in the caller's lookup, so a token cannot be honoured
+/// past its expiry by a request that read it just before.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; every `0` case is `Ok(0)`, not an error.
 pub async fn consume_email_verification<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) -> DbResult<u64> {
     let result = sqlx::query!(
-        "UPDATE email_verification_tokens SET used_at = now() WHERE id = $1 AND used_at IS NULL",
+        "UPDATE email_verification_tokens SET used_at = now() \
+         WHERE id = $1 AND used_at IS NULL AND expires_at > now()",
         id,
     )
     .execute(exec)

@@ -116,8 +116,9 @@ pub async fn mfa_security_key_start(
     State(state): State<AppState>,
     Json(req): Json<MfaChallengeRequest>,
 ) -> ApiResult<Json<SecurityKeyChallenge>> {
-    // Deliberately does *not* charge an attempt: fetching a challenge is not a guess, and
-    // charging for it would let a client burn its own attempts by retrying a flaky network.
+    // Charges an attempt, like presenting a factor, so fetching challenges spends the same
+    // budget as guessing: a security-key sign-in costs two of `MAX_ATTEMPTS`, and a fetch loop
+    // exhausts the pending sign-in instead of minting ceremonies for free.
     let pending = tankovault_db::repo::users::mfa::charge_challenge_attempt(
         &state.pool,
         &tankovault_auth::hash_handle(&req.challenge_token),

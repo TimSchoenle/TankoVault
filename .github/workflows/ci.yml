@@ -1347,6 +1347,11 @@ jobs:
           TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY: ci-validation-only
           TANKOVAULT_INTERNAL_TOKEN_API: ci-validation-only
           TANKOVAULT_INTERNAL_TOKEN_WORKER: ci-validation-only
+          POSTGRES_PASSWORD: ci-validation-only
+          TANKOVAULT_NATS_PASSWORD_API: ci-validation-only
+          TANKOVAULT_NATS_PASSWORD_CONTROL_PLANE: ci-validation-only
+          TANKOVAULT_NATS_PASSWORD_WORKER: ci-validation-only
+          TANKOVAULT_NATS_PASSWORD_NOTIFIER: ci-validation-only
         run: docker compose -f deploy/docker-compose.yml config --quiet
 
   # `README.md` is generated from `.github/templates/README.md.hbs` (ENGINEERING_GUIDE rule 6).

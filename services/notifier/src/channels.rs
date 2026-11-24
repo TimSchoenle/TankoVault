@@ -8,6 +8,7 @@ use std::fmt::Write as _;
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Context as _;
 use async_trait::async_trait;
 use secrecy::{ExposeSecret as _, SecretString};
 use tankovault_domain::{Feature, SeriesId};
@@ -76,9 +77,27 @@ pub(crate) fn discord_payload(alert: &Alert) -> serde_json::Value {
     })
 }
 
+/// The longest email subject sent, in characters.
+const MAX_SUBJECT_CHARS: usize = 120;
+
 /// Returns the subject line for a new-chapter alert email (the shared summary).
 pub(crate) fn email_subject(alert: &Alert) -> String {
-    alert.summary()
+    single_line(&alert.summary(), MAX_SUBJECT_CHARS)
+}
+
+/// Flattens `s` to one line of at most `max_chars` characters.
+///
+/// Security: the summary carries a provider-controlled chapter title, and a CR/LF (or a Unicode
+/// line separator a mailer may fold on) in a header is how a `Bcc:` gets injected. Control
+/// characters become spaces, whitespace runs collapse to one space.
+fn single_line(s: &str, max_chars: usize) -> String {
+    s.split(|c: char| c.is_control() || c.is_whitespace())
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(max_chars)
+        .collect()
 }
 
 /// Returns the plain-text body of a new-chapter alert email.
@@ -247,14 +266,21 @@ fn warn_if_cleartext(channel: &str, url: &SecretString) {
 }
 
 /// Builds the set of enabled channels from config (empty when none are configured).
+///
+/// # Errors
+/// Returns an error if the webhook HTTP client cannot be built.
 pub(crate) fn build(
     cfg: &ChannelsConfig,
     email: &tankovault_config::EmailConfig,
-) -> Vec<Box<dyn NotificationChannel>> {
+) -> anyhow::Result<Vec<Box<dyn NotificationChannel>>> {
+    // Security: no redirects, because a receiver could bounce the POST (and the token in its
+    // URL) to an internal address no SSRF check here would see. Failing to build is an error,
+    // not `Client::default()`, which would deliver with no timeout at all.
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(cfg.timeout_secs))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
-        .unwrap_or_default();
+        .context("building the notification webhook client")?;
 
     let mut channels: Vec<Box<dyn NotificationChannel>> = Vec::new();
     if let Some(url) = cfg
@@ -289,7 +315,7 @@ pub(crate) fn build(
             "the notifier has email recipients but no relay is configured; set              TANKOVAULT_EMAIL__HOST and TANKOVAULT_EMAIL__FROM"
         );
     }
-    channels
+    Ok(channels)
 }
 
 #[cfg(test)]
@@ -394,7 +420,7 @@ mod tests {
             timeout_secs: 5,
             ..ChannelsConfig::default()
         };
-        let built = build(&cfg, &tankovault_config::EmailConfig::default());
+        let built = build(&cfg, &tankovault_config::EmailConfig::default()).expect("builds");
         assert_eq!(built.len(), 1);
         assert_eq!(built[0].name(), "discord");
 
@@ -403,6 +429,7 @@ mod tests {
                 &ChannelsConfig::default(),
                 &tankovault_config::EmailConfig::default()
             )
+            .expect("builds")
             .is_empty()
         );
     }
@@ -413,6 +440,19 @@ mod tests {
             email_subject(&sample()),
             "New chapter 12: The Duel (kunmanga)"
         );
+    }
+
+    /// Regression: the provider's chapter title went verbatim into the `Subject`, so a title
+    /// carrying CR/LF could inject headers such as `Bcc:`.
+    #[test]
+    fn a_hostile_title_cannot_break_out_of_the_subject() {
+        let mut a = sample();
+        a.chapter_title = Some("Duel\r\nBcc: x@y\u{2028}\u{2029}\u{85}\t  end".to_owned());
+        let subject = email_subject(&a);
+        assert_eq!(subject, "New chapter 12: Duel Bcc: x@y end (kunmanga)");
+
+        a.chapter_title = Some("é".repeat(500));
+        assert_eq!(email_subject(&a).chars().count(), MAX_SUBJECT_CHARS);
     }
 
     #[test]
@@ -447,17 +487,25 @@ mod tests {
         assert!(relay.is_enabled());
 
         // Relay, no recipients.
-        assert!(build(&ChannelsConfig::default(), &relay).is_empty());
+        assert!(
+            build(&ChannelsConfig::default(), &relay)
+                .expect("builds")
+                .is_empty()
+        );
 
         // Recipients, no relay: the mirror image, and equally not a working channel.
         let with_recipients = ChannelsConfig {
             email_to: vec!["reader@example.com".to_owned()],
             ..ChannelsConfig::default()
         };
-        assert!(build(&with_recipients, &tankovault_config::EmailConfig::default()).is_empty());
+        assert!(
+            build(&with_recipients, &tankovault_config::EmailConfig::default())
+                .expect("builds")
+                .is_empty()
+        );
 
         // Both: one email channel.
-        let built = build(&with_recipients, &relay);
+        let built = build(&with_recipients, &relay).expect("builds");
         assert_eq!(built.len(), 1);
         assert_eq!(built[0].name(), "email");
         assert_eq!(built[0].feature(), Feature::NotificationsEmail);
@@ -555,6 +603,39 @@ mod tests {
         assert!(discord.contains("discord"), "no channel in: {discord}");
     }
 
+    /// Regression: the webhook client followed up to ten redirects, so a receiver could bounce
+    /// the alert, and the token in its URL, to an internal address. A `3xx` is now a failure.
+    #[tokio::test]
+    async fn a_redirecting_webhook_is_not_followed() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/hook"))
+            .respond_with(
+                ResponseTemplate::new(307)
+                    .insert_header("location", format!("{}/internal", server.uri())),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(path("/internal"))
+            .respond_with(ResponseTemplate::new(204))
+            .expect(0)
+            .mount(&server)
+            .await;
+
+        let cfg = ChannelsConfig {
+            webhook_url: Some(SecretString::from(format!("{}/hook", server.uri()))),
+            timeout_secs: 5,
+            ..ChannelsConfig::default()
+        };
+        let channels = build(&cfg, &tankovault_config::EmailConfig::default()).expect("builds");
+        let err = channels[0]
+            .deliver(&sample())
+            .await
+            .expect_err("a redirect is a failed delivery");
+        assert!(err.to_string().contains("307"), "unexpected error: {err}");
+    }
+
     /// `timeout_secs`'s effect is invisible in the constructed value, and a silently ignored
     /// knob is worse than no knob. Driven through [`build`], since that's the wiring that
     /// could drop it.
@@ -572,7 +653,7 @@ mod tests {
             timeout_secs: 1,
             ..ChannelsConfig::default()
         };
-        let channels = build(&cfg, &tankovault_config::EmailConfig::default());
+        let channels = build(&cfg, &tankovault_config::EmailConfig::default()).expect("builds");
         assert_eq!(channels.len(), 1);
 
         let started = Instant::now();

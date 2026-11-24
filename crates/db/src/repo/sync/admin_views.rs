@@ -4,6 +4,7 @@
 //! read by `services/sync`.
 
 use crate::error::DbResult;
+use crate::repo::like;
 use serde::Serialize;
 use sqlx::{FromRow, PgExecutor};
 use tankovault_domain::{SeriesId, UserId};
@@ -146,9 +147,7 @@ pub struct UnmappedSeriesRow {
 }
 
 /// Series lacking a mapping for `provider`, richest (most sources) first. An optional
-/// case-insensitive title `query` narrows the list.
-///
-/// The `len() > 2` guard is on the wrapped `%…%` pattern, so it rejects only an empty query.
+/// case-insensitive title `query` narrows the list; a blank one is no filter.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; empty is the assign queue's goal state, not a failure.
@@ -158,9 +157,7 @@ pub async fn admin_list_unmapped<'e, E: PgExecutor<'e>>(
     query: Option<&str>,
     limit: i64,
 ) -> DbResult<Vec<UnmappedSeriesRow>> {
-    let like = query
-        .map(|q| format!("%{}%", q.trim()))
-        .filter(|q| q.len() > 2);
+    let pattern = title_pattern(query);
     let rows = sqlx::query_as!(
         UnmappedSeriesRow,
         "SELECT s.id AS series_id, s.canonical_title AS series_title, \
@@ -170,12 +167,12 @@ pub async fn admin_list_unmapped<'e, E: PgExecutor<'e>>(
          WHERE NOT EXISTS ( \
                  SELECT 1 FROM sync_mappings sm \
                  WHERE sm.series_id = s.id AND sm.provider = $1) \
-           AND ($2::text IS NULL OR s.canonical_title ILIKE $2) \
+           AND ($2::text IS NULL OR s.canonical_title ILIKE $2 ESCAPE '\\') \
          GROUP BY s.id, s.canonical_title \
          ORDER BY count(ss.id) DESC, s.canonical_title \
          LIMIT $3",
         provider,
-        like,
+        pattern,
         limit,
     )
     .fetch_all(exec)
@@ -207,6 +204,14 @@ pub struct RemoteEntryRow {
     pub start_year: Option<i32>,
 }
 
+/// Returns the escaped title pattern for an optional operator query, `None` when it is blank.
+fn title_pattern(query: Option<&str>) -> Option<String> {
+    query
+        .map(str::trim)
+        .filter(|q| !q.is_empty())
+        .map(like::contains_pattern)
+}
+
 /// Returns the unmatched remote entries for `provider`, alphabetically by title, the reverse
 /// view of [`admin_list_unmapped`]. `query` behaves identically.
 ///
@@ -218,20 +223,18 @@ pub async fn admin_list_unmatched_remote<'e, E: PgExecutor<'e>>(
     query: Option<&str>,
     limit: i64,
 ) -> DbResult<Vec<RemoteEntryRow>> {
-    let like = query
-        .map(|q| format!("%{}%", q.trim()))
-        .filter(|q| q.len() > 2);
+    let pattern = title_pattern(query);
     let rows = sqlx::query_as!(
         RemoteEntryRow,
         "SELECT re.user_id, u.username, re.provider, re.external_id, re.title, re.status, \
                 re.progress, re.content_type, re.start_year \
          FROM sync_remote_entries re JOIN users u ON u.id = re.user_id \
          WHERE re.series_id IS NULL AND re.provider = $1 \
-           AND ($2::text IS NULL OR re.title ILIKE $2) \
+           AND ($2::text IS NULL OR re.title ILIKE $2 ESCAPE '\\') \
          ORDER BY re.title \
          LIMIT $3",
         provider,
-        like,
+        pattern,
         limit,
     )
     .fetch_all(exec)

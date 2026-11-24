@@ -2,8 +2,7 @@
 //! backoff, rate-limiting, challenge-solving and retry decorators, outer to inner.
 //!
 //! Hard invariant: **no image or content fetch path exists**. [`FetchResponse::body`] is UTF-8
-//! text for HTML and JSON parsing only. The direct fetch caps it at 16 MiB; a page the solver
-//! rendered arrives uncapped.
+//! text for HTML and JSON parsing only, capped at 16 MiB on both the direct and the solver path.
 
 pub mod accounting;
 mod backoff;
@@ -33,3 +32,15 @@ pub use solver_client::HttpChallengeSolver;
 pub use solver_retry::RetryingSolver;
 pub use solving::{InMemorySessionStore, SessionStore, SolvedSession, SolvingFetcher};
 pub use types::{FetchRequest, FetchResponse};
+
+/// Seams for the out-of-workspace fuzz crate, which can only reach `pub` items.
+#[doc(hidden)]
+pub mod __fuzz {
+    /// Runs the multi-member gzip decoder the direct fetch applies to a `gzip` body.
+    ///
+    /// # Errors
+    /// Returns whatever error `decode_gzip` returns.
+    pub fn decode_gzip(raw: &[u8]) -> Result<Vec<u8>, crate::FetchError> {
+        crate::base::decode_gzip(raw)
+    }
+}

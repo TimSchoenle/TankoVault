@@ -2,8 +2,10 @@
 # step, every TankoVault backend service, and the frontend, all built from deploy/docker/Dockerfile.
 # Run: docker compose -f deploy/docker-compose.yml up --build, then open http://localhost:3000.
 #
-# Secrets here are DEV-ONLY placeholders, refused at boot when TANKOVAULT_PROFILE=production. Copy
-# deploy/local.env.example to deploy/local.env, fill it in, and pass `--env-file deploy/local.env`.
+# A DEVELOPMENT stack only, not a deployment: it serves plain HTTP with `COOKIE_SECURE=false` and
+# HSTS off, and permits an empty password pepper. Secrets here are DEV-ONLY placeholders, refused
+# at boot when TANKOVAULT_PROFILE=production. Copy deploy/local.env.example to deploy/local.env,
+# fill it in, and pass `--env-file deploy/local.env`.
 #
 # **Only `frontend` (3000) is published on the host.** `sync`, `control-plane`, `render` and
 # `challenge-solver` expose privileged contracts, and Docker's port publishing bypasses the host
@@ -72,7 +74,21 @@ x-internal-from-worker: &internal-from-worker
   TANKOVAULT_INTERNAL__IDENTITY: "token"
   TANKOVAULT_INTERNAL__PEERS__WORKER__TOKEN: *token-worker
 
-x-db-url: &db-url "postgres://tankovault:tankovault@postgres:5432/tankovault"
+# Required: a published database password is a credential to every table. URL-safe characters
+# only (`openssl rand -hex 32`), since it is spliced into the DSN unescaped.
+x-db-url: &db-url "postgres://tankovault:${POSTGRES_PASSWORD:?set it in deploy/local.env — see deploy/local.env.example; generate with `openssl rand -hex 32`}@postgres:5432/tankovault"
+
+# Broker credentials, one per service; the users and their subject permissions are
+# deploy/nats/nats.conf. URL-safe characters only (`openssl rand -hex 32`): each is spliced into
+# a `nats://user:pass@host` URL unescaped.
+x-nats-password-api: &nats-password-api
+  "${TANKOVAULT_NATS_PASSWORD_API:?set it in deploy/local.env — see deploy/local.env.example; generate with `openssl rand -hex 32`}"
+x-nats-password-control-plane: &nats-password-control-plane
+  "${TANKOVAULT_NATS_PASSWORD_CONTROL_PLANE:?set it in deploy/local.env — see deploy/local.env.example; generate with `openssl rand -hex 32`}"
+x-nats-password-worker: &nats-password-worker
+  "${TANKOVAULT_NATS_PASSWORD_WORKER:?set it in deploy/local.env — see deploy/local.env.example; generate with `openssl rand -hex 32`}"
+x-nats-password-notifier: &nats-password-notifier
+  "${TANKOVAULT_NATS_PASSWORD_NOTIFIER:?set it in deploy/local.env — see deploy/local.env.example; generate with `openssl rand -hex 32`}"
 
 # scratch images have no shell/wget/curl, so the service binary probes its own bind_addr instead
 # (`--healthcheck`, crates/service/src/healthcheck.rs). Liveness only, not readiness.
@@ -163,7 +179,7 @@ services:
     shm_size: 256mb
     environment:
       POSTGRES_USER: tankovault
-      POSTGRES_PASSWORD: tankovault
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set it in deploy/local.env — see deploy/local.env.example; generate with `openssl rand -hex 32`}"
       POSTGRES_DB: tankovault
     volumes: ["pgdata:/var/lib/postgresql"]
     healthcheck:
@@ -194,10 +210,19 @@ services:
       timeout: 3s
       retries: 12
 
+  # One user per service with subject permissions (deploy/nats/nats.conf), so a leaked broker
+  # credential cannot queue scan tasks or push notifications to arbitrary users.
   nats:
     image: nats:2-alpine@sha256:558394a23dd3c36f2d3a64b51865fd09908010e80a542cea5e75c2af543ed62a
     deploy: { resources: { limits: { memory: 512m } } }
-    command: ["-js", "-m", "8222"] # JetStream + HTTP monitoring (for the healthcheck)
+    command: ["-c", "/etc/nats/nats.conf"] # JetStream + HTTP monitoring (for the healthcheck)
+    environment:
+      TANKOVAULT_NATS_PASSWORD_API: *nats-password-api
+      TANKOVAULT_NATS_PASSWORD_CONTROL_PLANE: *nats-password-control-plane
+      TANKOVAULT_NATS_PASSWORD_WORKER: *nats-password-worker
+      TANKOVAULT_NATS_PASSWORD_NOTIFIER: *nats-password-notifier
+    volumes:
+      - ./nats/nats.conf:/etc/nats/nats.conf:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8222/healthz"]
       interval: 5s
@@ -304,7 +329,8 @@ services:
       TANKOVAULT_CONTROL_PLANE_URL: http://control-plane:8081
       TANKOVAULT_SYNC_URL: http://sync:8083
       TANKOVAULT_WORKER_URL: http://worker:8085
-      TANKOVAULT_NATS__URL: nats://nats:4222 # live per-user notification SSE relay (/v1/me/stream)
+      # Live per-user notification SSE relay (/v1/me/stream).
+      TANKOVAULT_NATS__URL: "nats://api:${TANKOVAULT_NATS_PASSWORD_API:?set it in deploy/local.env — see deploy/local.env.example}@nats:4222"
       # Optional: unset uses a no-op mailer and these flows skip sending.
       TANKOVAULT_EMAIL__BASE_URL: http://localhost:3000
       TANKOVAULT_EMAIL__HOST: "${TANKOVAULT_EMAIL__HOST:-pro3.mail.ovh.net}"
@@ -358,6 +384,9 @@ services:
       - ./legal:/etc/tankovault/legal:ro
     depends_on:
       migrate: { condition: service_completed_successfully }
+      # Registration is open once the api listens; a stranger who registers the admin's
+      # address or name first leaves the install with no administrator.
+      seed: { condition: service_completed_successfully }
       nats: { condition: service_healthy }
 
   control-plane:
@@ -371,7 +400,7 @@ services:
       <<: [*telemetry, *internal-from-api]
       TANKOVAULT_TELEMETRY__SERVICE_NAME: control-plane
       TANKOVAULT_DATABASE__URL: *db-url
-      TANKOVAULT_NATS__URL: nats://nats:4222
+      TANKOVAULT_NATS__URL: "nats://control-plane:${TANKOVAULT_NATS_PASSWORD_CONTROL_PLANE:?set it in deploy/local.env — see deploy/local.env.example}@nats:4222"
       TANKOVAULT_REDIS__URL: redis://redis:6379 # singleton-scheduler leader election (`docs/ARCHITECTURE.md` §12)
       # Duplicate-sweep budgets. The defaults are sized for a catalogue in a steady state, where
       # a sweep has a handful of pairs to judge; a first pass over an unswept catalogue is a
@@ -395,7 +424,7 @@ services:
       <<: [*telemetry, *internal-worker]
       TANKOVAULT_TELEMETRY__SERVICE_NAME: worker
       TANKOVAULT_DATABASE__URL: *db-url
-      TANKOVAULT_NATS__URL: nats://nats:4222
+      TANKOVAULT_NATS__URL: "nats://worker:${TANKOVAULT_NATS_PASSWORD_WORKER:?set it in deploy/local.env — see deploy/local.env.example}@nats:4222"
       TANKOVAULT_WORKER__CHALLENGE_SOLVER_ENDPOINT: http://challenge-solver:8090
       # Ops listener on 8085; Prometheus scrape on the isolated metrics port (default :9090).
       # Neither is published: compose can't map one host port to 2 replicas.
@@ -422,7 +451,7 @@ services:
       <<: *telemetry
       TANKOVAULT_TELEMETRY__SERVICE_NAME: notifier
       TANKOVAULT_DATABASE__URL: *db-url
-      TANKOVAULT_NATS__URL: nats://nats:4222
+      TANKOVAULT_NATS__URL: "nats://notifier:${TANKOVAULT_NATS_PASSWORD_NOTIFIER:?set it in deploy/local.env — see deploy/local.env.example}@nats:4222"
       # Shares the API's relay config so both send under the same envelope-sender policy.
       TANKOVAULT_EMAIL__HOST: "${TANKOVAULT_EMAIL__HOST:-}"
       TANKOVAULT_EMAIL__PORT: "${TANKOVAULT_EMAIL__PORT:-587}"

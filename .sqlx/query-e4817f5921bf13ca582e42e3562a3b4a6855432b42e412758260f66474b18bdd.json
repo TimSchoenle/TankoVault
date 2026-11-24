@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT re.user_id, u.username, re.provider, re.external_id, re.title, re.status, re.progress, re.content_type, re.start_year FROM sync_remote_entries re JOIN users u ON u.id = re.user_id WHERE re.series_id IS NULL AND re.provider = $1 AND ($2::text IS NULL OR re.title ILIKE $2) ORDER BY re.title LIMIT $3",
+  "query": "SELECT re.user_id, u.username, re.provider, re.external_id, re.title, re.status, re.progress, re.content_type, re.start_year FROM sync_remote_entries re JOIN users u ON u.id = re.user_id WHERE re.series_id IS NULL AND re.provider = $1 AND ($2::text IS NULL OR re.title ILIKE $2 ESCAPE '\\') ORDER BY re.title LIMIT $3",
   "describe": {
     "columns": [
       {
@@ -127,5 +127,5 @@
       true
     ]
   },
-  "hash": "d1da22a3de624821515e57406faeff7325808d4ae754e7a56430f430d2f4b32e"
+  "hash": "e4817f5921bf13ca582e42e3562a3b4a6855432b42e412758260f66474b18bdd"
 }

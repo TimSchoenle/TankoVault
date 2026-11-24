@@ -46,7 +46,8 @@ pub enum AdminOutcome {
         /// already held other accounts, or a super user.
         super_user: bool,
     },
-    /// An account with that address or name already existed; nothing was changed.
+    /// An account with that address or name already existed and administers permissions;
+    /// nothing was changed.
     AlreadyPresent,
 }
 
@@ -85,7 +86,8 @@ pub struct AdminReport {
 ///
 /// # Errors
 /// Returns an error when hashing the password, the ownership reconciliation, or any insert other
-/// than the "already present" conflict fails.
+/// than the "already present" conflict fails, and when the account already holding the address
+/// or name does not administer permissions.
 pub async fn seed_admin(pool: &PgPool, seed: &AdminSeed<'_>) -> anyhow::Result<AdminReport> {
     let hash = tankovault_auth::hash_password(seed.password, seed.pepper)
         .map_err(|e| anyhow::anyhow!("hash failed: {e}"))?;
@@ -110,6 +112,7 @@ pub async fn seed_admin(pool: &PgPool, seed: &AdminSeed<'_>) -> anyhow::Result<A
             }
         }
         Err(e) if e.is_unique_violation() || matches!(e, tankovault_db::DbError::Conflict(_)) => {
+            require_existing_admin(pool, seed).await?;
             AdminOutcome::AlreadyPresent
         }
         Err(e) => return Err(e.into()),
@@ -131,6 +134,40 @@ pub async fn seed_admin(pool: &PgPool, seed: &AdminSeed<'_>) -> anyhow::Result<A
         outcome,
         promoted_owner,
     })
+}
+
+/// Refuses an "already present" whose holder is not an administrator.
+///
+/// Registration is open while the api runs, so a stranger can claim the configured address or
+/// name before this job does. Reporting success then leaves the install with no administrator
+/// and nothing in the log saying so.
+async fn require_existing_admin(pool: &PgPool, seed: &AdminSeed<'_>) -> anyhow::Result<()> {
+    let mut holders = Vec::with_capacity(2);
+    for login in [seed.email, seed.username] {
+        let Some(found) = tankovault_db::repo::users::find_credentials(pool, login).await? else {
+            continue;
+        };
+        let principal = tankovault_db::repo::permissions::resolve(pool, found.user.id).await?;
+        holders.push(principal.is_some_and(|p| {
+            p.permissions
+                .has(tankovault_domain::Permission::UsersPermissions)
+        }));
+    }
+    check_holders(holders)
+}
+
+/// Fails unless every account holding the configured address or name administers permissions.
+fn check_holders(administers: impl IntoIterator<Item = bool>) -> anyhow::Result<()> {
+    if administers.into_iter().all(|a| a) {
+        return Ok(());
+    }
+    // Names no account: `rust/cleartext-logging` flags a username in the output.
+    anyhow::bail!(
+        "the configured administrator email or username is held by an account without \
+         users.permissions, most likely registered before seed-admin ran; this deployment has \
+         no administrator. Remove that account or set TANKOVAULT_SEED_ADMIN_EMAIL and \
+         TANKOVAULT_SEED_ADMIN_USERNAME to unused values, then re-run seed-admin"
+    )
 }
 
 /// What the reconcile did to one provider, for reporting.
@@ -357,7 +394,7 @@ pub async fn seed_providers(pool: &PgPool) -> anyhow::Result<ProviderReport> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Action, ExistingProvider, PresetView, ProviderOutcomeKind, plan};
+    use super::{Action, ExistingProvider, PresetView, ProviderOutcomeKind, check_holders, plan};
     use serde_json::json;
     use tankovault_domain::{AdapterKind, PresetLink, ProviderId};
 
@@ -387,6 +424,23 @@ mod tests {
             locked,
             synced_at: None,
         }
+    }
+
+    /// L15: open registration raced the seed, a stranger took the default admin name, and the
+    /// seed reported "already present" on an install that had no administrator at all.
+    #[test]
+    fn an_existing_account_must_administer_permissions() {
+        assert!(
+            check_holders([true]).is_ok(),
+            "re-run against the seeded admin"
+        );
+        assert!(check_holders([true, true]).is_ok());
+        assert!(
+            check_holders([false]).is_err(),
+            "registered before the seed"
+        );
+        // The email is the admin's, the name a stranger's: still not the account configured.
+        assert!(check_holders([true, false]).is_err());
     }
 
     /// A deployment that has never seen this preset gets the provider.

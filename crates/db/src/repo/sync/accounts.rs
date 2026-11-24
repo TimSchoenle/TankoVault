@@ -69,6 +69,39 @@ pub async fn upsert_account<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
+/// Replaces a link's token ciphertext only if it still holds `old_access`/`old_refresh`, and
+/// reports whether it did.
+///
+/// A compare-and-swap, so re-sealing tokens read earlier cannot overwrite a concurrent refresh.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only; a lost race is `Ok(false)`.
+pub async fn reseal_tokens<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+    provider: &str,
+    old_access: &[u8],
+    old_refresh: Option<&[u8]>,
+    access_token: &[u8],
+    refresh_token: Option<&[u8]>,
+) -> DbResult<bool> {
+    let result = sqlx::query!(
+        "UPDATE external_accounts \
+            SET access_token = $5, refresh_token = $6 \
+          WHERE user_id = $1 AND provider = $2 \
+            AND access_token = $3 AND refresh_token IS NOT DISTINCT FROM $4",
+        user_id.as_uuid(),
+        provider,
+        old_access,
+        old_refresh,
+        access_token,
+        refresh_token,
+    )
+    .execute(exec)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
 /// Fetches a user's account for `provider`, if linked.
 ///
 /// Never default a failure to `None`: the engine reads it as "skip this provider".

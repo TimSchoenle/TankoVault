@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM users u WHERE u.username = $1 AND u.email_verified_at IS NULL AND NOT EXISTS (SELECT 1 FROM user_permissions p WHERE p.user_id = u.id)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        {
+          "Custom": {
+            "name": "citext",
+            "kind": "Simple"
+          }
+        }
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "03e77a480d78b1b3ef8b4d2f87e0eb7e62cc1f2768690530b1ba0f9eba834a7a"
+}

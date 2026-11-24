@@ -126,14 +126,18 @@ pub async fn find_email_verification<'e, E: PgExecutor<'e>>(
 
 /// Atomically marks a verification token consumed (single-use), returning the rows updated.
 ///
-/// `0` means no unconsumed token has `id`: it is unknown, was consumed earlier, or a concurrent
-/// request consumed it first.
+/// `0` means no live token has `id`: it is unknown, expired, was consumed earlier, or a
+/// concurrent request consumed it first.
+///
+/// The expiry is re-checked here, not only in the caller's lookup, so a token cannot be honoured
+/// past its expiry by a request that read it just before.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; every `0` case is `Ok(0)`, not an error.
 pub async fn consume_email_verification<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) -> DbResult<u64> {
     let result = sqlx::query!(
-        "UPDATE email_verification_tokens SET used_at = now() WHERE id = $1 AND used_at IS NULL",
+        "UPDATE email_verification_tokens SET used_at = now() \
+         WHERE id = $1 AND used_at IS NULL AND expires_at > now()",
         id,
     )
     .execute(exec)
@@ -171,4 +175,29 @@ pub async fn is_email_verified<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) 
     .fetch_optional(exec)
     .await?;
     Ok(verified.unwrap_or(false))
+}
+
+/// Deletes the account holding `username` if it was never confirmed and holds no permission.
+///
+/// Registration calls this so an unconfirmed sign-up does not reserve its username: if it did,
+/// registering a name with a target email and then again with a throwaway one would answer
+/// differently depending on whether the target email already had an account. The permission
+/// guard keeps an account the bootstrap or an owner reconciliation promoted out of reach even if
+/// it is somehow unconfirmed.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only; nothing to release is `Ok(false)`.
+pub async fn release_unconfirmed_username<'e, E: PgExecutor<'e>>(
+    exec: E,
+    username: &str,
+) -> DbResult<bool> {
+    let deleted = sqlx::query!(
+        "DELETE FROM users u WHERE u.username = $1 AND u.email_verified_at IS NULL \
+         AND NOT EXISTS (SELECT 1 FROM user_permissions p WHERE p.user_id = u.id)",
+        CiText(username) as _,
+    )
+    .execute(exec)
+    .await?
+    .rows_affected();
+    Ok(deleted > 0)
 }

@@ -70,6 +70,10 @@ The complete surface (every `TANKOVAULT_*` key, its default, and which service r
 [`docs/CONFIGURATION.md`](../docs/CONFIGURATION.md). The short version:
 
 **Required, with no working default** (compose fails fast instead of booting insecure):
+- `POSTGRES_PASSWORD`: the compose Postgres password, also spliced into every service's DSN;
+  URL-safe, e.g. `openssl rand -hex 32`.
+- `TANKOVAULT_NATS_PASSWORD_{API,CONTROL_PLANE,WORKER,NOTIFIER}`: one NATS user per service,
+  each limited to its own subjects by `nats/nats.conf`; URL-safe.
 - `TANKOVAULT_AUTH__JWT_SECRET`: API token signing secret.
 - `TANKOVAULT_ANILIST__CLIENT_ID` / `__CLIENT_SECRET` / `__REDIRECT_URI`: AniList OAuth app.
 - `TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY`: base64 32-byte key for tokens at rest; generate

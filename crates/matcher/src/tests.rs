@@ -1230,3 +1230,434 @@ fn live_timing_corroborates_vetoes_or_abstains() {
     assert_eq!(read(Some(151.0)).reason, "alias_uncorroborated");
     assert_eq!(read(None).reason, "alias_uncorroborated");
 }
+
+// --- boundaries and branches the mutation run pins ---------------------------------------
+
+/// The edit window includes both bounds: twelve characters is long enough, 160 is not too long.
+#[test]
+fn the_edit_window_includes_its_bounds() {
+    let r = edit_ratio("abcdefghijkl", "abcdefghijkm");
+    assert!((r - 11.0 / 12.0).abs() < 1e-6, "got {r}");
+
+    let longest = "a".repeat(160);
+    let r = edit_ratio(&longest, &format!("{}b", "a".repeat(159)));
+    assert!((r - 159.0 / 160.0).abs() < 1e-6, "got {r}");
+}
+
+/// The length-gap shortcut rejects a gap over a sixth of the longer title and still runs the DP
+/// for a gap of exactly a sixth.
+#[test]
+fn the_length_gap_bound_is_a_sixth_of_the_longer_title() {
+    // 18 against 15: a gap of exactly 18 / 6, so three insertions are scored.
+    let r = edit_ratio("abcdefghijklmnopqr", "abcdefghijklmno");
+    assert!((r - 15.0 / 18.0).abs() < 1e-6, "got {r}");
+    // 24 against 12: a gap of 12, over 24 / 6, rejected although the DP would give 0.5.
+    assert_eq!(edit_ratio("abcdefghijklmnopqrstuvwx", "abcdefghijkl"), 0.0);
+}
+
+/// A deletion costs one edit, in the table's first column as well as inside it.
+#[test]
+fn edit_distance_charges_for_deletions() {
+    assert_eq!(edit_distance("abc", ""), 3);
+    assert_eq!(edit_distance("abc", "a"), 2);
+    assert_eq!(edit_distance("sitting", "kitten"), 3);
+}
+
+/// The name-set overlap is the shared names over the union, ignoring case.
+#[test]
+fn name_set_overlap_is_intersection_over_union() {
+    let a = ["Action".to_owned(), "Fantasy".to_owned()];
+    let b = ["action".to_owned(), "Romance".to_owned()];
+    assert_eq!(name_set_overlap(&a, &b), Some(1.0 / 3.0));
+}
+
+/// A pair that agrees on nothing is still explained against the candidate's canonical title,
+/// not an empty string.
+#[test]
+fn an_unmatched_pair_names_the_canonical_title() {
+    let q = query("berserk", ContentType::Unknown, None);
+    let c = cand(0.1, ContentType::Unknown, None, "solo leveling");
+    assert_eq!(explain(&q, &c).matched_candidate_title, "solo leveling");
+}
+
+/// A canonical title wins a tie against an alternative title, so a reordered alias cannot turn
+/// an exact hit into a discounted alias hit.
+#[test]
+fn the_canonical_title_wins_a_tie_with_an_alias() {
+    let q = query("solo leveling", ContentType::Unknown, None);
+    let mut c = cand(0.1, ContentType::Unknown, None, "solo leveling");
+    c.alt_normalized_titles = vec!["leveling solo".to_owned()];
+    let explained = explain(&q, &c);
+    assert!(!explained.via_alias, "{explained:?}");
+    assert!(explained.assessment.signals.exact_title, "{explained:?}");
+}
+
+/// A title one space from the other earns the identity bonus even when it is too short for the
+/// edit comparison and shares no word with it.
+#[test]
+fn a_short_title_a_space_apart_earns_the_identity_bonus() {
+    let q = query("one piece", ContentType::Unknown, None);
+    let c = cand(0.0, ContentType::Unknown, None, "onepiece");
+    let explained = explain(&q, &c);
+    assert!(
+        explained.assessment.signals.compact_identity,
+        "{explained:?}"
+    );
+    assert!(
+        explained
+            .terms
+            .iter()
+            .any(|t| t.rule == "title_identity" && (t.delta - 0.1).abs() < 1e-6),
+        "{:?}",
+        explained.terms
+    );
+}
+
+/// A listing title one space from the query is a source identity, not only an exact one.
+#[test]
+fn a_listing_title_a_space_apart_is_a_source_identity() {
+    let q = query("solo leveling", ContentType::Unknown, None);
+    let mut c = cand(0.1, ContentType::Unknown, None, "na honjaman level up");
+    c.source_titles = vec!["sololeveling".to_owned()];
+    let signals = assess(&q, &c).signals;
+    assert!(signals.source_title_identity, "{signals:?}");
+}
+
+/// `near_identical` is a title an edit or two from the other: never an identity, never two
+/// unrelated titles.
+#[test]
+fn near_identical_is_close_but_not_identical() {
+    let near = |a: &str, b: &str| {
+        assess(
+            &query(a, ContentType::Unknown, None),
+            &cand(0.1, ContentType::Unknown, None, b),
+        )
+        .signals
+        .near_identical
+    };
+    assert!(near(
+        "the beginning after the end",
+        "the beginning after the ent"
+    ));
+    assert!(!near("solo leveling", "solo leveling"));
+    assert!(!near("solo leveling", "sololeveling"));
+    assert!(!near("solo leveling", "berserk"));
+}
+
+/// Containment is the scorer's word-subset finding or a franchise alias hit; an alias hit that
+/// is no franchise name is not containment.
+#[test]
+fn containment_is_a_word_subset_or_a_franchise_alias() {
+    let q = query("solo leveling", ContentType::Unknown, None);
+    let c = cand(0.1, ContentType::Unknown, None, "solo leveling ragnarok");
+    assert!(assess(&q, &c).signals.containment);
+
+    let q = query("berserk", ContentType::Unknown, None);
+    let mut c = cand(0.1, ContentType::Unknown, None, "kenpuu denki");
+    c.alt_normalized_titles = vec!["berserk".to_owned()];
+    assert!(!assess(&q, &c).signals.containment);
+}
+
+/// Credits on one side only are missing data, not an author conflict.
+#[test]
+fn credits_on_one_side_are_not_an_author_conflict() {
+    let mut q = query("solo leveling", ContentType::Unknown, None);
+    q.authors = vec!["Chugong".to_owned()];
+    let c = cand(0.9, ContentType::Unknown, None, "solo leveling");
+    assert!(!assess(&q, &c).signals.author_conflict);
+
+    let mut credited = c;
+    credited.authors = vec!["Chugong".to_owned()];
+    let uncredited = query("solo leveling", ContentType::Unknown, None);
+    assert!(!assess(&uncredited, &credited).signals.author_conflict);
+}
+
+/// The numeric-conflict term is explained as the penalty it applies, a negative delta.
+#[test]
+fn the_numeric_conflict_term_is_a_penalty() {
+    let q = query("overlord 2", ContentType::Unknown, None);
+    let c = cand(0.9, ContentType::Unknown, None, "overlord");
+    let explained = explain(&q, &c);
+    let term = explained
+        .terms
+        .iter()
+        .find(|t| t.rule == "numeric_conflict")
+        .expect("a numeric conflict term");
+    assert!((term.delta + 0.3).abs() < 1e-6, "{term:?}");
+}
+
+/// The review floor and the automatic-merge threshold are both inclusive.
+#[test]
+fn adjudication_thresholds_are_inclusive() {
+    let t = Thresholds::default();
+    let at_floor = adjudicate(
+        Assessment {
+            score: t.low,
+            signals: MatchSignals::default(),
+        },
+        t,
+    );
+    assert_eq!(at_floor.verdict, MergeVerdict::Review);
+    assert_eq!(at_floor.reason, "no_structural_identity");
+
+    let identical = MatchSignals {
+        exact_title: true,
+        ..MatchSignals::default()
+    };
+    let at_auto = adjudicate(
+        Assessment {
+            score: t.auto_merge,
+            signals: identical,
+        },
+        t,
+    );
+    assert_eq!(at_auto.verdict, MergeVerdict::Auto);
+}
+
+/// An edition conflict refuses an attach that a listing title would otherwise earn.
+///
+/// The listing `tokyo ghoul re` filed under the series `tokyo ghoul` is an identity on the
+/// listing and a different edition from the canonical title.
+#[test]
+fn an_edition_conflict_refuses_an_attach_on_a_listing_title() {
+    let q = query("tokyo ghoul re", ContentType::Unknown, None);
+    let mut c = cand(1.0, ContentType::Unknown, None, "tokyo ghoul");
+    c.source_titles = vec!["tokyo ghoul re".to_owned()];
+    let signals = assess(&q, &c).signals;
+    assert!(
+        signals.source_title_identity && signals.edition_conflict,
+        "{signals:?}"
+    );
+    assert!(matches!(
+        decide(&q, &[c], Thresholds::default()),
+        Decision::Ambiguous { .. }
+    ));
+}
+
+/// Each veto refuses an attach on its own, including the two `assess` never sets today.
+#[test]
+fn every_veto_signal_vetoes_alone() {
+    for signals in [
+        MatchSignals {
+            numeric_conflict: true,
+            ..MatchSignals::default()
+        },
+        MatchSignals {
+            edition_conflict: true,
+            ..MatchSignals::default()
+        },
+        MatchSignals {
+            external_id_conflict: true,
+            ..MatchSignals::default()
+        },
+        MatchSignals {
+            live_timing_conflict: true,
+            ..MatchSignals::default()
+        },
+    ] {
+        assert!(crate::decide::has_veto(signals), "{signals:?}");
+    }
+    assert!(!crate::decide::has_veto(MatchSignals::default()));
+}
+
+/// Readings tied on class and score keep the first: the left side's canonical title.
+#[test]
+fn tied_readings_keep_the_left_canonical_reading() {
+    let alts = vec!["kenpuu denki".to_owned()];
+    // A trigram of 1.0 lifts every reading to the clamp ceiling with no identity behind any.
+    let reading = read_pair(side("berserk", &alts), side("vagabond", &[]), 1.0);
+    assert!(reading.query_is_left, "{reading:?}");
+    assert_eq!(reading.matched_query_title, "berserk");
+}
+
+/// A conflict only the pair rules find is explained once, as a zero-delta term, and one the
+/// scorer already explained is not explained twice.
+#[test]
+fn pair_rule_conflicts_are_explained_exactly_once() {
+    let count =
+        |reading: &PairReading, rule: &str| reading.terms.iter().filter(|t| t.rule == rule).count();
+
+    // The alias `dark lord` matches exactly; only the canonical titles carry different numbers.
+    let alias = vec!["dark lord".to_owned()];
+    let reading = read_pair(side("dark lord 2", &alias), side("dark lord", &[]), 0.3);
+    assert_eq!(reading.matched_query_title, "dark lord", "{reading:?}");
+    assert!(reading.assessment.signals.numeric_conflict);
+    assert_eq!(
+        count(&reading, "numeric_conflict"),
+        1,
+        "{:?}",
+        reading.terms
+    );
+
+    let reading = read_pair(side("overlord", &[]), side("overlord 2", &[]), 0.9);
+    assert_eq!(
+        count(&reading, "numeric_conflict"),
+        1,
+        "{:?}",
+        reading.terms
+    );
+
+    let alias = vec!["tokyo ghoul".to_owned()];
+    let reading = read_pair(
+        side("tokyo ghoul re", &alias),
+        side("tokyo ghoul", &[]),
+        0.3,
+    );
+    assert_eq!(reading.matched_query_title, "tokyo ghoul", "{reading:?}");
+    assert!(reading.assessment.signals.edition_conflict);
+    assert_eq!(
+        count(&reading, "edition_conflict"),
+        1,
+        "{:?}",
+        reading.terms
+    );
+
+    let reading = read_pair(side("tokyo ghoul re", &[]), side("tokyo ghoul", &[]), 0.3);
+    assert_eq!(
+        count(&reading, "edition_conflict"),
+        1,
+        "{:?}",
+        reading.terms
+    );
+}
+
+/// Live timing is wanted for an alias hit, even one already merging, and for a pair going to
+/// review, and for nothing else.
+#[test]
+fn live_timing_is_wanted_for_an_alias_or_a_review() {
+    let alts = vec!["na honjaman level up".to_owned()];
+    let (reading, verdict) = adjudicate_pair(
+        sourced("solo leveling", &[], &alts, Some("105398")),
+        sourced("na honjaman level up", &[], &[], Some("105398")),
+        0.3,
+        Thresholds::default(),
+    );
+    assert_eq!(verdict.verdict, MergeVerdict::Auto);
+    assert!(wants_live_timing(&reading, &verdict));
+
+    let (reading, verdict) = adjudicate_pair(
+        side("the beginning after the end", &[]),
+        side("the beginning after the ent", &[]),
+        0.9,
+        Thresholds::default(),
+    );
+    assert_eq!(verdict.verdict, MergeVerdict::Review);
+    assert!(wants_live_timing(&reading, &verdict));
+
+    let (reading, verdict) = adjudicate_pair(
+        side("solo leveling", &[]),
+        side("solo leveling", &[]),
+        1.0,
+        Thresholds::default(),
+    );
+    assert_eq!(verdict.verdict, MergeVerdict::Auto);
+    assert!(!wants_live_timing(&reading, &verdict));
+}
+
+/// Both live-timing bounds belong to the abstaining side: 72 hours still agrees, and exactly two
+/// weeks is not yet a conflict.
+#[test]
+fn live_timing_bounds_are_exact() {
+    let alts = vec!["na honjaman level up".to_owned()];
+    let read = |gap: f64| {
+        let mut reading = read_pair(
+            side("solo leveling", &alts),
+            side("na honjaman level up", &[]),
+            0.3,
+        );
+        let before = reading.terms.len();
+        apply_live_timing(
+            &mut reading,
+            LiveTiming {
+                shared_live_chapters: 5,
+                median_gap_hours: Some(gap),
+            },
+        );
+        (reading.assessment.signals, reading.terms.len() - before)
+    };
+    let (signals, added) = read(LIVE_AGREEMENT_HOURS);
+    assert!(signals.live_timing_agreement && added == 1, "{signals:?}");
+    let (signals, added) = read(LIVE_CONFLICT_HOURS);
+    assert!(
+        !signals.live_timing_agreement && !signals.live_timing_conflict && added == 0,
+        "{signals:?}"
+    );
+}
+
+/// A query-side listing title one space from the other side's canonical title is relabelled a
+/// source identity, not reported as the two canonical titles being compact-identical.
+#[test]
+fn a_compact_hit_through_a_listing_title_is_a_source_identity() {
+    let listings = vec!["sololeveling".to_owned()];
+    let reading = read_pair(
+        sourced("na honjaman level up", &listings, &[], None),
+        side("solo leveling", &[]),
+        0.1,
+    );
+    let signals = reading.assessment.signals;
+    assert!(
+        signals.source_title_identity && !signals.compact_identity,
+        "{signals:?}"
+    );
+}
+
+/// A query-side alias or listing title that matches nothing claims no identity.
+#[test]
+fn an_unmatched_query_side_title_claims_nothing() {
+    let alts = vec!["na honjaman level up".to_owned()];
+    let reading = read_pair(side("solo leveling", &alts), side("vagabond", &[]), 0.2);
+    assert!(!reading.assessment.signals.alias_identity, "{reading:?}");
+
+    let reading = read_pair(
+        sourced("solo leveling", &alts, &[], None),
+        side("vagabond", &[]),
+        0.2,
+    );
+    assert!(
+        !reading.assessment.signals.source_title_identity,
+        "{reading:?}"
+    );
+}
+
+/// The pair rules add containment and conflicts to a reading, never clear the scorer's.
+#[test]
+fn pair_rules_never_clear_what_the_scorer_found() {
+    // The exact alias hit is containment by the scorer's word-subset rule, and no franchise name.
+    let alts = vec!["na honjaman level up".to_owned()];
+    let reading = read_pair(
+        side("solo leveling", &alts),
+        side("na honjaman level up", &[]),
+        0.3,
+    );
+    assert!(reading.assessment.signals.alias_identity, "{reading:?}");
+    assert!(reading.assessment.signals.containment, "{reading:?}");
+
+    // The alias names a side story; the canonical titles carry no edition marker.
+    let alts = vec!["demon slayer gaiden".to_owned()];
+    let (reading, verdict) = adjudicate_pair(
+        side("kimetsu no yaiba", &alts),
+        side("demon slayer", &[]),
+        0.3,
+        Thresholds::default(),
+    );
+    assert_eq!(
+        reading.matched_query_title, "demon slayer gaiden",
+        "{reading:?}"
+    );
+    assert!(reading.assessment.signals.edition_conflict, "{reading:?}");
+    assert_eq!(verdict.reason, "edition_conflict");
+}
+
+/// A reading's claim outranks its score: an alias hit beats a reading the trigram alone lifts to
+/// the ceiling.
+#[test]
+fn the_strongest_claim_wins_over_the_highest_score() {
+    let alts = vec!["solo leveling".to_owned()];
+    let reading = read_pair(
+        side("solo leveling", &[]),
+        side("na honjaman level up", &alts),
+        1.0,
+    );
+    assert!(reading.assessment.signals.alias_identity, "{reading:?}");
+    assert_eq!(reading.matched_query_title, "solo leveling");
+}

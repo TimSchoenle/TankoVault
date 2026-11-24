@@ -1811,7 +1811,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e35d6e78f4cebb90e51d543db8fe41528851d6deeef6ef21ebd4bfdc1e784776"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3601,7 +3601,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -4424,7 +4424,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
@@ -4463,9 +4463,9 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4881,7 +4881,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4940,7 +4940,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5651,7 +5651,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -6477,6 +6477,7 @@ version = "11.2.2"
 dependencies = [
  "async-trait",
  "axum",
+ "futures",
  "metrics",
  "proptest",
  "serde",
@@ -6579,10 +6580,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6596,8 +6597,8 @@ dependencies = [
 
 [[package]]
 name = "terrace-config"
-version = "0.18.1"
-source = "git+https://github.com/TimSchoenle/terrace-config?tag=v0.18.1#da7d54b6290348a9a8e4728286fc3ce54bce6adc"
+version = "0.18.2"
+source = "git+https://github.com/TimSchoenle/terrace-config?tag=v0.18.2#f5055b02d8aae20b82eceb9551b277059c808e39"
 dependencies = [
  "figment",
  "notify",
@@ -6614,8 +6615,8 @@ dependencies = [
 
 [[package]]
 name = "terrace-config-macros"
-version = "0.18.1"
-source = "git+https://github.com/TimSchoenle/terrace-config?tag=v0.18.1#da7d54b6290348a9a8e4728286fc3ce54bce6adc"
+version = "0.18.2"
+source = "git+https://github.com/TimSchoenle/terrace-config?tag=v0.18.2#f5055b02d8aae20b82eceb9551b277059c808e39"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6624,8 +6625,8 @@ dependencies = [
 
 [[package]]
 name = "terrace-legal"
-version = "0.3.7"
-source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.7#e99a40654a549862fc1259de81ad8ae78ab4365f"
+version = "0.3.8"
+source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.8#4a9471e1688cb96e5255ec22ed1245ec3be48b2e"
 dependencies = [
  "base64 0.23.1",
  "serde",
@@ -6638,8 +6639,8 @@ dependencies = [
 
 [[package]]
 name = "terrace-legal-axum"
-version = "0.3.7"
-source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.7#e99a40654a549862fc1259de81ad8ae78ab4365f"
+version = "0.3.8"
+source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.8#4a9471e1688cb96e5255ec22ed1245ec3be48b2e"
 dependencies = [
  "axum",
  "http",
@@ -6651,8 +6652,8 @@ dependencies = [
 
 [[package]]
 name = "terrace-legal-model"
-version = "0.3.7"
-source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.7#e99a40654a549862fc1259de81ad8ae78ab4365f"
+version = "0.3.8"
+source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.8#4a9471e1688cb96e5255ec22ed1245ec3be48b2e"
 dependencies = [
  "serde",
  "thiserror 2.0.21",
@@ -7821,7 +7822,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

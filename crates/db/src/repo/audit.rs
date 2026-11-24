@@ -1,6 +1,7 @@
 //! Append-only audit log for privileged actions (`docs/ARCHITECTURE.md` §16).
 
 use crate::error::DbResult;
+use crate::repo::like;
 use serde_json::Value as Json;
 use sqlx::{FromRow, PgExecutor};
 use tankovault_domain::UserId;
@@ -157,7 +158,7 @@ pub async fn list_filtered<'e, E: PgExecutor<'e>>(
              SELECT a.* FROM audit_log a \
              WHERE ($1::uuid IS NULL OR a.actor_id = $1) \
                AND ($2::text IS NULL OR a.action = $2) \
-               AND ($3::text IS NULL OR a.target ILIKE '%' || $3 || '%') \
+               AND ($3::text IS NULL OR a.target ILIKE $3 ESCAPE '\\') \
                AND ($4::timestamptz IS NULL OR a.created_at >= $4) \
                AND ($5::timestamptz IS NULL OR a.created_at < $5) \
          ) \
@@ -169,7 +170,7 @@ pub async fn list_filtered<'e, E: PgExecutor<'e>>(
          LIMIT $6 OFFSET $7",
         filter.actor_id.map(UserId::as_uuid),
         filter.action,
-        filter.target,
+        filter.target.map(like::contains_pattern),
         filter.since,
         filter.until,
         limit,

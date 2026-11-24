@@ -593,6 +593,41 @@ async fn a_password_reset_invalidates_only_the_resetting_users_sessions() {
 // Email verification
 // ---------------------------------------------------------------------------
 
+/// An expired verification token cannot be consumed, mirroring the reset token.
+///
+/// The bug: `consume_email_verification` checked only `used_at`, so a token that expired
+/// between the handler's lookup and the consume was still honoured.
+#[tokio::test]
+async fn an_expired_verification_token_cannot_be_consumed() {
+    let db = TestDb::spawn().await;
+    let user = seed::user(&db, "stale-confirm")
+        .email("stale-confirm@example.test")
+        .create()
+        .await;
+    users::insert_email_verification(
+        &db.pool,
+        user,
+        "stale-verify-hash",
+        OffsetDateTime::now_utc() + Duration::hours(1),
+    )
+    .await
+    .expect("insert verification token");
+    db.execute("UPDATE email_verification_tokens SET expires_at = now() - interval '1 second'")
+        .await;
+
+    let record = users::find_email_verification(&db.pool, "stale-verify-hash")
+        .await
+        .expect("lookup")
+        .expect("an expired token is still findable");
+    assert_eq!(
+        users::consume_email_verification(&db.pool, record.id)
+            .await
+            .expect("consume"),
+        0,
+        "an expired verification token must not be consumable"
+    );
+}
+
 /// Verification tokens are single-use, and confirming twice keeps the original instant.
 ///
 /// `COALESCE(email_verified_at, now())` makes `mark_email_verified` idempotent. A plain

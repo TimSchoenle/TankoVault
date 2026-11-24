@@ -31,15 +31,15 @@ use wreq_util::{Emulation, Platform, Profile};
 const MAX_REDIRECTS: usize = 5;
 /// The hard cap on response body size, which guards memory and the no-binary-content invariant.
 ///
-/// The solver path returns the browser's rendered body uncapped, so a cap much tighter than
-/// the largest sitemap shard would make a provider's catalogue depend on whether its session
-/// happened to be cached.
+/// Shared with the solver path, which caps the rendered body at the same value: a different cap
+/// on either side would make a provider's catalogue depend on whether its session happened to
+/// be cached.
 ///
 /// The bound that matters is concurrency times this value: `Politeness::MAX_CONCURRENCY` is 16
 /// in-flight requests per provider, so a provider at the ceiling can hold 256 MiB of bodies.
 /// That fits the worker's compose memory limit, and only sitemap shards come near this size,
 /// fetched one at a time by a catalogue walk.
-const MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
+const MAX_BODY_BYTES: usize = tankovault_solver::MAX_BODY_BYTES;
 
 /// Resolves a browser family to a concrete emulation profile.
 ///
@@ -452,7 +452,7 @@ impl BaseHttpFetcher {
 /// # Errors
 /// [`FetchError::Transport`] if the stream is not valid gzip, a member cut in half included,
 /// [`FetchError::BodyTooLarge`] if it inflates past [`MAX_BODY_BYTES`].
-fn decode_gzip(raw: &[u8]) -> Result<Vec<u8>, FetchError> {
+pub(crate) fn decode_gzip(raw: &[u8]) -> Result<Vec<u8>, FetchError> {
     let cap = u64::try_from(MAX_BODY_BYTES).unwrap_or(u64::MAX);
     let mut out = Vec::new();
     // One byte past the cap, so a body landing exactly on it stays distinguishable from one

@@ -125,8 +125,8 @@ impl ChallengeSolver for HttpChallengeSolver {
                 SolveError::Unsolved(described)
             });
         }
-        resp.json::<SolveOutcome>()
-            .await
+        let bytes = tankovault_solver::read_capped(resp).await?;
+        serde_json::from_slice::<SolveOutcome>(&bytes)
             .map_err(|e| SolveError::Malformed(e.to_string()))
     }
 

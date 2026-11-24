@@ -39,7 +39,7 @@ const MAX_REDIRECTS: usize = 5;
 /// in-flight requests per provider, so a provider at the ceiling can hold 256 MiB of bodies.
 /// That fits the worker's compose memory limit, and only sitemap shards come near this size,
 /// fetched one at a time by a catalogue walk.
-const MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
+const MAX_BODY_BYTES: usize = tankovault_solver::MAX_BODY_BYTES;
 
 /// Resolves a browser family to a concrete emulation profile.
 ///

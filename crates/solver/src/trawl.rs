@@ -118,17 +118,15 @@ impl ChallengeSolver for TrawlSolver {
             })?;
 
         let status = http.status();
-        let body = http
-            .text()
-            .await
-            .map_err(|e| SolveError::Malformed(e.to_string()))?;
+        let bytes = crate::read_capped(http).await?;
+        let body = String::from_utf8_lossy(&bytes);
 
         if !status.is_success() {
             return Err(classify_failure(status.as_u16(), &body));
         }
 
         let parsed: ScrapeResult =
-            serde_json::from_str(&body).map_err(|e| SolveError::Malformed(e.to_string()))?;
+            serde_json::from_slice(&bytes).map_err(|e| SolveError::Malformed(e.to_string()))?;
 
         // The target was vetted before the solve, but TRAWL follows redirects in its own browser,
         // so a provider page can bounce it to `169.254.169.254` or a compose peer and hand the
@@ -299,6 +297,27 @@ mod tests {
             vec![("retry-after".to_owned(), "30".to_owned())]
         );
         assert_eq!(outcome.ttl_secs, 600);
+    }
+
+    /// Regression: TRAWL's answer was read with an uncapped `.text()`, so an oversized `html`
+    /// could exhaust the caller's memory before any size check ran.
+    #[tokio::test]
+    async fn an_answer_past_the_body_cap_is_refused() {
+        let server = MockServer::start().await;
+        mount_scrape(
+            &server,
+            ResponseTemplate::new(200).set_body_string(" ".repeat(crate::MAX_BODY_BYTES + 1)),
+        )
+        .await;
+
+        let err = TrawlSolver::new(server.uri(), 45_000, 600)
+            .solve(request())
+            .await
+            .expect_err("an oversized answer is refused");
+        assert!(
+            matches!(&err, SolveError::Malformed(m) if m.contains("exceeds")),
+            "not refused for size: {err:?}"
+        );
     }
 
     /// A solve without `responseHeaders` still succeeds.

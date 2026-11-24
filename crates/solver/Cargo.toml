@@ -24,6 +24,8 @@ async-trait = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 wreq = { workspace = true }
+# `bytes_stream()`, for the capped body reader in `body.rs`.
+futures = { workspace = true }
 thiserror = { workspace = true }
 # Used by the shared `/v1/solve` router (`http.rs`), which this crate gained after the audit
 # listed `tracing` as unused here.

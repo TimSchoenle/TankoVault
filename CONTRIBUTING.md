@@ -66,7 +66,10 @@ provably did not change is skipped. Three things to know before reading a run:
 - **`CI` is the only required status check**: the aggregate job at the bottom of `ci.yml`. Do not
   add individual jobs to branch protection: a required check that never reports is pending forever,
   so every skipped job would block its own pull request.
-- **Pull requests build two images, not eight.** The full matrix builds on `main` and weekly.
+- **Pull requests build images only when an image input changed**: the Dockerfile, the build
+  context, the dependency graph, the toolchain or a build script (the `image` filter in `ci.yml`;
+  the frontend image also on `web/frontend/**`). They then build two backend images, not eight,
+  and each links only its own binary. The full matrix builds on `main` and weekly.
 
 Force the whole suite from a branch with the `full` input (**Actions → CI → Run workflow**).
 `cargo mutants` runs only that way. Dependency updates come from Renovate (`renovate.json`).

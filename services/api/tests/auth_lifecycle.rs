@@ -128,6 +128,18 @@ async fn register(app: &TestApp, username: &str) -> Response<Body> {
     .await
 }
 
+/// Registers `username` and confirms its email directly, as if its link had been clicked.
+async fn register_confirmed(app: &TestApp, username: &str) {
+    register(app, username).await;
+    let holder = tankovault_db::repo::users::find_credentials(&app.db.pool, username)
+        .await
+        .expect("query")
+        .expect("just registered");
+    tankovault_db::repo::users::mark_email_verified(&app.db.pool, holder.user.id)
+        .await
+        .expect("confirm");
+}
+
 #[tokio::test]
 async fn registering_with_a_mailer_configured_requires_confirmation_and_issues_no_session() {
     let (app, mailer) = app_with_mail().await;
@@ -219,12 +231,12 @@ async fn a_taken_email_registers_like_a_new_one_and_notifies_the_owner() {
     assert!(intruder.is_none(), "no second account may be created");
 }
 
-/// A taken username is still refused, since the user must pick another, but says nothing about
-/// whether the email is registered.
+/// A username held by a confirmed account is still refused, since the user must pick another, but
+/// the refusal says nothing about whether the email is registered.
 #[tokio::test]
 async fn a_taken_username_is_refused_without_mentioning_the_email() {
     let (app, _mailer) = app_with_mail().await;
-    register(&app, "handle").await;
+    register_confirmed(&app, "handle").await;
 
     let resp = app
         .request(post(
@@ -251,7 +263,7 @@ async fn a_taken_username_is_refused_without_mentioning_the_email() {
 #[tokio::test]
 async fn a_taken_username_answers_the_same_for_a_registered_and_an_unused_email() {
     let (app, _mailer) = app_with_mail().await;
-    register(&app, "known").await;
+    register_confirmed(&app, "known").await;
     register(&app, "victim").await;
 
     let mut answers = Vec::new();
@@ -274,6 +286,76 @@ async fn a_taken_username_answers_the_same_for_a_registered_and_an_unused_email(
         answers[0], answers[1],
         "a registered email must not change the answer to a taken username"
     );
+}
+
+/// A name registered with a target email and then with a throwaway email answers the same whether
+/// the target email had an account or not.
+///
+/// # The bug this pins
+///
+/// An unconfirmed sign-up reserved its username, so the second registration answered 409 only
+/// when the first had created an account, that is, only when the target email had been new.
+#[tokio::test]
+async fn a_username_probe_cannot_tell_whether_an_email_is_registered() {
+    let (app, _mailer) = app_with_mail().await;
+    register(&app, "owner").await;
+
+    let mut answers = Vec::new();
+    for (target, probe) in [
+        ("owner@example.test", "probe-one"),
+        ("fresh@example.test", "probe-two"),
+    ] {
+        let mut statuses = Vec::new();
+        for email in [target, "throwaway@example.test"] {
+            let resp = app
+                .request(post(
+                    "/v1/auth/register",
+                    None,
+                    Some(json!({
+                        "email": email,
+                        "username": probe,
+                        "password": "correct horse battery",
+                    })),
+                ))
+                .await;
+            statuses.push(resp.status());
+        }
+        // The throwaway email is now registered; free it for the next probe.
+        tankovault_db::repo::users::release_unconfirmed_username(&app.db.pool, probe)
+            .await
+            .expect("release");
+        answers.push(statuses);
+    }
+    assert_eq!(answers[0], vec![StatusCode::OK, StatusCode::OK]);
+    assert_eq!(
+        answers[0], answers[1],
+        "whether the target email had an account must not change the second answer"
+    );
+}
+
+/// A registration takes a name an unconfirmed sign-up was holding, and that sign-up is gone.
+#[tokio::test]
+async fn an_unconfirmed_sign_up_does_not_keep_its_username() {
+    let (app, _mailer) = app_with_mail().await;
+    register(&app, "pending").await;
+
+    let resp = app
+        .request(post(
+            "/v1/auth/register",
+            None,
+            Some(json!({
+                "email": "second@example.test",
+                "username": "pending",
+                "password": "correct horse battery",
+            })),
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let holder = tankovault_db::repo::users::find_credentials(&app.db.pool, "pending")
+        .await
+        .expect("query")
+        .expect("the name is held");
+    assert_eq!(holder.user.email, "second@example.test");
 }
 
 #[tokio::test]

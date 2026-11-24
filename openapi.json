@@ -14882,7 +14882,7 @@
     },
     "/v1/auth/register": {
       "post": {
-        "description": "Validates the request and creates the user. When email delivery is configured the account\nis created **unconfirmed** and a confirmation link is emailed; the user must click it\nbefore they can sign in, and no session is issued. When email is not configured the\naccount is activated immediately and a session is issued exactly like [`login`], so\ndevelopment and SMTP-less self-hosting keep working.\n\nWith confirmation on, an already registered email gets the same response as a new one and\nits owner is emailed a notice instead, so the endpoint does not reveal who has an account.\nA taken username is still refused, since the user has to pick another.",
+        "description": "Validates the request and creates the user. When email delivery is configured the account\nis created **unconfirmed** and a confirmation link is emailed; the user must click it\nbefore they can sign in, and no session is issued. When email is not configured the\naccount is activated immediately and a session is issued exactly like [`login`], so\ndevelopment and SMTP-less self-hosting keep working.\n\nWith confirmation on, an already registered email gets the same response as a new one and\nits owner is emailed a notice instead, so the endpoint does not reveal who has an account.\nA username held by a confirmed account is still refused, since the user has to pick another;\none held only by an unconfirmed sign-up is released to the new registration.",
         "operationId": "register",
         "requestBody": {
           "content": {
@@ -14923,7 +14923,7 @@
                 }
               }
             },
-            "description": "Username already taken, or (email confirmation off) email or username already taken"
+            "description": "Username held by a confirmed account, or (email confirmation off) email or username already taken"
           }
         },
         "summary": "Register a new account",

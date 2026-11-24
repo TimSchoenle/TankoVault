@@ -70,7 +70,8 @@ pub struct RegisterResponse {
 ///
 /// With confirmation on, an already registered email gets the same response as a new one and
 /// its owner is emailed a notice instead, so the endpoint does not reveal who has an account.
-/// A taken username is still refused, since the user has to pick another.
+/// A username held by a confirmed account is still refused, since the user has to pick another;
+/// one held only by an unconfirmed sign-up is released to the new registration.
 #[utoipa::path(
     post,
     path = "/v1/auth/register",
@@ -79,7 +80,7 @@ pub struct RegisterResponse {
     responses(
         (status = 200, description = "Account created; either a confirmation email was sent or (email unconfigured) an access token was issued", body = RegisterResponse),
         (status = 400, description = "Invalid email, username or password", body = crate::error::ProblemDetails),
-        (status = 409, description = "Username already taken, or (email confirmation off) email or username already taken", body = crate::error::ProblemDetails),
+        (status = 409, description = "Username held by a confirmed account, or (email confirmation off) email or username already taken", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn register(
@@ -105,12 +106,16 @@ pub async fn register(
     if verifying {
         // The username is checked before the email: otherwise a known username paired with a
         // registered email answers 200 and with an unused one 409, which probes emails.
-        if username_taken(&state, username).await? {
+        if username_confirmed(&state, username).await? {
             return Err(ApiError::Conflict("username already taken".to_owned()));
         }
         if notify_existing_owner(&state, email).await? {
             return Ok((jar, Json(RegisterResponse::verification_sent())));
         }
+        // Released only after the email check, so a registered email leaves no trace. If an
+        // unconfirmed sign-up kept its name, a second registration with that name would answer
+        // 409 only when the first one's email had been new.
+        tankovault_db::repo::users::release_unconfirmed_username(&state.pool, username).await?;
     }
     let user = match tankovault_db::repo::users::create(&state.pool, email, username, &hash).await {
         Ok(user) => user,
@@ -173,16 +178,16 @@ async fn notify_existing_owner(state: &AppState, email: &str) -> ApiResult<bool>
     Ok(true)
 }
 
-/// Whether `username` belongs to an account.
+/// Whether `username` belongs to an account whose email has been confirmed.
 ///
 /// `validate_username` rejects `@`, so [`find_credentials`] matches the username column only.
 ///
 /// [`find_credentials`]: tankovault_db::repo::users::find_credentials
-async fn username_taken(state: &AppState, username: &str) -> ApiResult<bool> {
+async fn username_confirmed(state: &AppState, username: &str) -> ApiResult<bool> {
     Ok(
         tankovault_db::repo::users::find_credentials(&state.pool, username)
             .await?
-            .is_some(),
+            .is_some_and(|holder| holder.email_verified),
     )
 }
 

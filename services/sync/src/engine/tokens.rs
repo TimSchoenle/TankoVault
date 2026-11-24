@@ -162,10 +162,12 @@ mod tests {
 
     /// A fresh key per test: nothing here depends on the key's value.
     fn sealer() -> Sealer {
-        let mut key = [0u8; 32];
-        key[..16].copy_from_slice(uuid::Uuid::new_v4().as_bytes());
-        key[16..].copy_from_slice(uuid::Uuid::new_v4().as_bytes());
-        Sealer::new(&key)
+        let key = [
+            uuid::Uuid::new_v4().into_bytes(),
+            uuid::Uuid::new_v4().into_bytes(),
+        ]
+        .concat();
+        Sealer::from_key_bytes(&secrecy::SecretSlice::from(key)).unwrap()
     }
 
     /// The bug: tokens were sealed without associated data, so a database writer could copy

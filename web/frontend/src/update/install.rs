@@ -253,25 +253,73 @@ pub(crate) async fn stage(
     target: &Target,
     manifest_bytes: &[u8],
     signature: &str,
-    mut progress: impl FnMut(u8),
+    progress: impl FnMut(u8),
 ) -> Result<(), &'static str> {
     let dir = staging_dir().ok_or("settings.update.error.staging")?;
-    // A previous attempt's partial download, or a different version entirely, is not something to
-    // resume from.
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).map_err(|_| "settings.update.error.staging")?;
+    stage_in(
+        &dir,
+        client,
+        url,
+        target,
+        manifest_bytes,
+        signature,
+        progress,
+    )
+    .await
+}
+
+/// [`stage`], into `dir`.
+async fn stage_in(
+    dir: &Path,
+    client: &reqwest::Client,
+    url: &str,
+    target: &Target,
+    manifest_bytes: &[u8],
+    signature: &str,
+    mut progress: impl FnMut(u8),
+) -> Result<(), &'static str> {
+    let installer = dir.join(&target.file);
+    // Every automatic check restages the release on offer. Re-downloading it renames over the
+    // staged installer, which Windows refuses while anything holds it open without delete sharing.
+    // Checked against `target` from the manifest just verified, never against what is on disk.
+    if verify_file(&installer, target).is_ok() {
+        write(&dir.join(MANIFEST_FILE), manifest_bytes)?;
+        write(&dir.join(SIGNATURE_FILE), signature.as_bytes())?;
+        return Ok(());
+    }
+    // Not fatal: leftovers that collide with what is written below are refused, and logged, there.
+    if let Err(error) = fs::remove_dir_all(dir) {
+        if error.kind() != std::io::ErrorKind::NotFound {
+            tracing::warn!(?dir, %error, "the previous staged update could not be removed");
+        }
+    }
+    fs::create_dir_all(dir).map_err(staging_failed("create the staging directory", dir))?;
 
     let partial = dir.join(format!("{}{PARTIAL_SUFFIX}", target.file));
     let digest = download_to(client, url, &partial, target.size, &mut progress).await?;
 
     if digest != target.sha256.to_ascii_lowercase() {
-        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(dir);
         return Err("settings.update.error.checksum");
     }
-    fs::rename(&partial, dir.join(&target.file)).map_err(|_| "settings.update.error.staging")?;
+    fs::rename(&partial, &installer).map_err(staging_failed(
+        "move the verified download into place",
+        &installer,
+    ))?;
     write(&dir.join(MANIFEST_FILE), manifest_bytes)?;
     write(&dir.join(SIGNATURE_FILE), signature.as_bytes())?;
     Ok(())
+}
+
+/// Logs why the filesystem refused `step` on `path`, and answers the key the reader is shown.
+fn staging_failed<'a>(
+    step: &'static str,
+    path: &'a Path,
+) -> impl FnOnce(std::io::Error) -> &'static str + 'a {
+    move |error| {
+        tracing::warn!(step, ?path, %error, "could not stage the update");
+        "settings.update.error.staging"
+    }
 }
 
 /// Streams `url` into `path`, returning the lower-case hex SHA-256 of what was written.
@@ -294,7 +342,7 @@ async fn download_to(
         return Err("settings.update.error.network");
     }
 
-    let mut file = fs::File::create(path).map_err(|_| "settings.update.error.staging")?;
+    let mut file = fs::File::create(path).map_err(staging_failed("create the download", path))?;
     let mut hasher = sha2::Sha256::new();
     let mut written: u64 = 0;
     let mut reported = u8::MAX;
@@ -311,7 +359,7 @@ async fn download_to(
         }
         hasher.update(&chunk);
         file.write_all(&chunk)
-            .map_err(|_| "settings.update.error.staging")?;
+            .map_err(staging_failed("write the download", path))?;
 
         let percent = percentage(written, expected_size);
         if percent != reported {
@@ -320,7 +368,7 @@ async fn download_to(
         }
     }
     file.sync_all()
-        .map_err(|_| "settings.update.error.staging")?;
+        .map_err(staging_failed("flush the download", path))?;
     if written != expected_size {
         return Err("settings.update.error.checksum");
     }
@@ -338,10 +386,11 @@ fn percentage(written: u64, total: u64) -> u8 {
 
 /// Writes `bytes` to `path`, flushed to the device.
 fn write(path: &Path, bytes: &[u8]) -> Result<(), &'static str> {
-    let mut file = fs::File::create(path).map_err(|_| "settings.update.error.staging")?;
+    let mut file = fs::File::create(path).map_err(staging_failed("create a staged file", path))?;
     file.write_all(bytes)
-        .map_err(|_| "settings.update.error.staging")?;
-    file.sync_all().map_err(|_| "settings.update.error.staging")
+        .map_err(staging_failed("write a staged file", path))?;
+    file.sync_all()
+        .map_err(staging_failed("flush a staged file", path))
 }
 
 /// A staged update that has passed every check and may be executed.
@@ -1205,5 +1254,122 @@ mod tests {
         assert_eq!(percentage(200, 100), 100);
         assert_eq!(percentage(10, 0), 0);
         assert_eq!(percentage(u64::MAX, 1), 100);
+    }
+
+    const MANIFEST: &[u8] = br#"{"version":"11.3.0"}"#;
+    const SIGNATURE: &str = "untrusted comment: signature\nRUQ=\n";
+    const INSTALLER: &[u8] = b"installer bytes";
+
+    /// A directory as a successful [`stage`] leaves it, and the target it was staged for.
+    fn staged(name: &str) -> (PathBuf, Target) {
+        let dir =
+            std::env::temp_dir().join(format!("tankovault-staged-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("a scratch directory");
+        let target = Target {
+            file: "Tankovault_11.3.0_x64-setup.exe".to_owned(),
+            sha256: hex::encode(sha2::Sha256::digest(INSTALLER)),
+            size: INSTALLER.len() as u64,
+        };
+        fs::write(dir.join(&target.file), INSTALLER).expect("the installer");
+        fs::write(dir.join(MANIFEST_FILE), MANIFEST).expect("the manifest");
+        fs::write(dir.join(SIGNATURE_FILE), SIGNATURE).expect("the signature");
+        (dir, target)
+    }
+
+    /// Stages the release `staged` wrote, under `signature`, polling once with no runtime: a
+    /// download attempt stays pending or panics, so `Ready(Ok)` means nothing was fetched.
+    fn restage(
+        dir: &Path,
+        target: &Target,
+        signature: &str,
+    ) -> std::task::Poll<Result<(), &'static str>> {
+        use std::future::Future as _;
+        let client = reqwest::Client::new();
+        let future = stage_in(
+            dir,
+            &client,
+            "http://127.0.0.1:9/never-fetched",
+            target,
+            MANIFEST,
+            signature,
+            |_| {},
+        );
+        // Bound before returning: in a 2021 tail expression the pinned temporary outlives `client`.
+        let polled = std::pin::pin!(future)
+            .poll(&mut std::task::Context::from_waker(std::task::Waker::noop()));
+        polled
+    }
+
+    /// Every automatic check, and the install button pressed after one, staged the release on
+    /// offer again. Downloading it again meant renaming the new copy over the staged installer.
+    #[test]
+    fn a_release_already_staged_is_not_downloaded_again() {
+        let (dir, target) = staged("again");
+        assert_eq!(
+            restage(&dir, &target, SIGNATURE),
+            std::task::Poll::Ready(Ok(()))
+        );
+        assert_eq!(
+            fs::read(dir.join(&target.file)).expect("the staged installer"),
+            INSTALLER
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// The reported scenario, minus the network: the staged installer is held open without delete
+    /// sharing (a virus scan, Explorer), where a re-download's rename over it is refused with
+    /// "access denied". Re-signing the same installer must not force that re-download, and the
+    /// fresh signature has to replace the stored one.
+    #[cfg(windows)]
+    #[test]
+    fn a_held_open_installer_is_reused_when_only_the_signature_changed() {
+        use std::os::windows::fs::OpenOptionsExt as _;
+        const FILE_SHARE_READ: u32 = 0x1;
+        const FILE_SHARE_WRITE: u32 = 0x2;
+        const RESIGNED: &str = "untrusted comment: signed again\nRUR=\n";
+
+        let (dir, target) = staged("held");
+        let held = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+            .open(dir.join(&target.file))
+            .expect("the staged installer opened");
+        assert_eq!(
+            restage(&dir, &target, RESIGNED),
+            std::task::Poll::Ready(Ok(()))
+        );
+        drop(held);
+        assert_eq!(
+            fs::read_to_string(dir.join(SIGNATURE_FILE)).expect("the signature"),
+            RESIGNED
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Reuse rests on this check: a staged installer that is missing, or differs from the signed
+    /// manifest in length or content, must not pass for the release.
+    #[test]
+    fn a_staged_installer_passes_only_if_it_matches_the_manifest() {
+        let (dir, target) = staged("verify");
+        let installer = dir.join(&target.file);
+        assert_eq!(verify_file(&installer, &target), Ok(()));
+
+        fs::write(&installer, b"tampered bytes!").expect("same length, other bytes");
+        assert_eq!(
+            verify_file(&installer, &target),
+            Err("settings.update.error.checksum")
+        );
+        fs::write(&installer, b"short").expect("other length");
+        assert_eq!(
+            verify_file(&installer, &target),
+            Err("settings.update.error.checksum")
+        );
+        fs::remove_file(&installer).expect("the installer removed");
+        assert_eq!(
+            verify_file(&installer, &target),
+            Err("settings.update.error.staging")
+        );
+        let _ = fs::remove_dir_all(&dir);
     }
 }

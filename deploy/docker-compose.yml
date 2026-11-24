@@ -358,6 +358,9 @@ services:
       - ./legal:/etc/tankovault/legal:ro
     depends_on:
       migrate: { condition: service_completed_successfully }
+      # Registration is open once the api listens; a stranger who registers the admin's
+      # address or name first leaves the install with no administrator.
+      seed: { condition: service_completed_successfully }
       nats: { condition: service_healthy }
 
   control-plane:

@@ -229,19 +229,35 @@ mod tests {
     #[test]
     fn a_renamed_deployment_names_itself_everywhere() {
         let link = "https://app.example.com/verify";
-        for msg in [
-            welcome("MangaBox", "reader@example.com", "aster"),
-            verification("MangaBox", "reader@example.com", "aster", link),
-            password_reset("MangaBox", "reader@example.com", link),
-            email_changed("MangaBox", "old@example.com", "aster", "new@example.com"),
-            registration_attempted("MangaBox", "reader@example.com", "aster"),
+        for (kind, msg) in [
+            (
+                "welcome",
+                welcome("MangaBox", "reader@example.com", "aster"),
+            ),
+            (
+                "verification",
+                verification("MangaBox", "reader@example.com", "aster", link),
+            ),
+            (
+                "password_reset",
+                password_reset("MangaBox", "reader@example.com", link),
+            ),
+            (
+                "email_changed",
+                email_changed("MangaBox", "old@example.com", "aster", "new@example.com"),
+            ),
+            (
+                "registration_attempted",
+                registration_attempted("MangaBox", "reader@example.com", "aster"),
+            ),
         ] {
-            assert!(msg.subject.contains("MangaBox"), "{}", msg.subject);
-            // Named by subject, not by body: a body can carry a link or token.
-            assert!(!msg.text.contains("TankoVault"), "{}", msg.subject);
+            // Failures name the message kind, never a field: CodeQL's cleartext-logging query
+            // treats every field of a message built from a link as sensitive.
+            assert!(msg.subject.contains("MangaBox"), "{kind}");
+            assert!(!msg.text.contains("TankoVault"), "{kind}");
             let html = msg.html.as_deref().unwrap();
-            assert!(html.contains("MangaBox"), "{}", msg.subject);
-            assert!(!html.contains("TankoVault"), "{}", msg.subject);
+            assert!(html.contains("MangaBox"), "{kind}");
+            assert!(!html.contains("TankoVault"), "{kind}");
         }
     }
 

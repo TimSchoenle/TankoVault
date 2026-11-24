@@ -70,8 +70,8 @@ pub struct RegisterResponse {
 ///
 /// With confirmation on, an already registered email gets the same response as a new one and
 /// its owner is emailed a notice instead, so the endpoint does not reveal who has an account.
-/// A username held by a confirmed account is still refused, since the user has to pick another;
-/// one held only by an unconfirmed sign-up is released to the new registration.
+/// A username held by a confirmed or privileged account is still refused, since the user has to
+/// pick another; one held only by an unconfirmed sign-up is released to the new registration.
 #[utoipa::path(
     post,
     path = "/v1/auth/register",
@@ -106,7 +106,7 @@ pub async fn register(
     if verifying {
         // The username is checked before the email: otherwise a known username paired with a
         // registered email answers 200 and with an unused one 409, which probes emails.
-        if username_confirmed(&state, username).await? {
+        if username_protected(&state, username).await? {
             return Err(ApiError::Conflict("username already taken".to_owned()));
         }
         if notify_existing_owner(&state, email).await? {
@@ -178,17 +178,25 @@ async fn notify_existing_owner(state: &AppState, email: &str) -> ApiResult<bool>
     Ok(true)
 }
 
-/// Whether `username` belongs to an account whose email has been confirmed.
+/// Whether `username` belongs to an account registration must not release: one whose email is
+/// confirmed, or one holding any permission.
 ///
+/// Mirrors the guard in `release_unconfirmed_username`. A holder this refuses to release but did
+/// not refuse up front would answer 200 for a registered email and 409 for an unused one.
 /// `validate_username` rejects `@`, so [`find_credentials`] matches the username column only.
 ///
 /// [`find_credentials`]: tankovault_db::repo::users::find_credentials
-async fn username_confirmed(state: &AppState, username: &str) -> ApiResult<bool> {
-    Ok(
-        tankovault_db::repo::users::find_credentials(&state.pool, username)
-            .await?
-            .is_some_and(|holder| holder.email_verified),
-    )
+async fn username_protected(state: &AppState, username: &str) -> ApiResult<bool> {
+    let Some(holder) = tankovault_db::repo::users::find_credentials(&state.pool, username).await?
+    else {
+        return Ok(false);
+    };
+    if holder.email_verified {
+        return Ok(true);
+    }
+    let grants =
+        tankovault_db::repo::permissions::list_for_user(&state.pool, holder.user.id).await?;
+    Ok(!grants.is_empty())
 }
 
 /// Validates every field a registration writes, in the order the user filled them in.

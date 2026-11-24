@@ -358,6 +358,58 @@ async fn an_unconfirmed_sign_up_does_not_keep_its_username() {
     assert_eq!(holder.user.email, "second@example.test");
 }
 
+/// An unconfirmed account holding a permission keeps its username, and the refusal is the same
+/// whether the submitted email is registered or not.
+///
+/// # The bug this pins
+///
+/// Such an account was neither refused up front nor released, so a registered email answered 200
+/// and an unused one reached the username conflict and answered 409.
+#[tokio::test]
+async fn a_privileged_unconfirmed_account_keeps_its_name_whatever_the_email() {
+    let (app, _mailer) = app_with_mail().await;
+    register(&app, "warden").await;
+    register(&app, "victim").await;
+    let warden = tankovault_db::repo::users::find_credentials(&app.db.pool, "warden")
+        .await
+        .expect("query")
+        .expect("just registered");
+    tankovault_db::repo::permissions::grant(
+        &app.db.pool,
+        warden.user.id,
+        tankovault_domain::Permission::grantable()[0],
+        None,
+    )
+    .await
+    .expect("grant");
+
+    let mut answers = Vec::new();
+    for email in ["victim@example.test", "nobody@example.test"] {
+        let resp = app
+            .request(post(
+                "/v1/auth/register",
+                None,
+                Some(json!({
+                    "email": email,
+                    "username": "warden",
+                    "password": "correct horse battery",
+                })),
+            ))
+            .await;
+        answers.push((resp.status(), json_body(resp).await));
+    }
+    assert_eq!(answers[0].0, StatusCode::CONFLICT, "got {:?}", answers[0].1);
+    assert_eq!(
+        answers[0], answers[1],
+        "the email must not change the answer"
+    );
+    let holder = tankovault_db::repo::users::find_credentials(&app.db.pool, "warden")
+        .await
+        .expect("query")
+        .expect("the privileged account must survive");
+    assert_eq!(holder.user.id, warden.user.id);
+}
+
 #[tokio::test]
 async fn an_unconfirmed_account_cannot_log_in_and_is_told_why() {
     let (app, _mailer) = app_with_mail().await;

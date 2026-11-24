@@ -452,7 +452,7 @@ impl BaseHttpFetcher {
 /// # Errors
 /// [`FetchError::Transport`] if the stream is not valid gzip, a member cut in half included,
 /// [`FetchError::BodyTooLarge`] if it inflates past [`MAX_BODY_BYTES`].
-fn decode_gzip(raw: &[u8]) -> Result<Vec<u8>, FetchError> {
+pub(crate) fn decode_gzip(raw: &[u8]) -> Result<Vec<u8>, FetchError> {
     let cap = u64::try_from(MAX_BODY_BYTES).unwrap_or(u64::MAX);
     let mut out = Vec::new();
     // One byte past the cap, so a body landing exactly on it stays distinguishable from one

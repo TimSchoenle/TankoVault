@@ -46,6 +46,8 @@ figment = { version = "0.10", features = ["toml", "env", "test"] }
 # `config_env_load` (the resolved internal token). Same major as the root manifest.
 secrecy = { version = "0.10", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
+# `domain_ssrf_validate` matches on the parsed host. Same major as the root manifest.
+url = "2.5"
 
 # `-Z sanitizer=address` instruments the crate under test, so the fuzz binary must be built
 # with debug assertions on: the overflow checks that turned P-03's `(a - b).abs()` into a
@@ -96,6 +98,34 @@ bench = false
 [[bin]]
 name = "config_env_load"
 path = "fuzz_targets/config_env_load.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "adapters_astro_props"
+path = "fuzz_targets/adapters_astro_props.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fetch_decode_gzip"
+path = "fuzz_targets/fetch_decode_gzip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "domain_ssrf_validate"
+path = "fuzz_targets/domain_ssrf_validate.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "domain_normalize_title"
+path = "fuzz_targets/domain_normalize_title.rs"
 test = false
 doc = false
 bench = false

@@ -33,3 +33,15 @@ pub use solver_client::HttpChallengeSolver;
 pub use solver_retry::RetryingSolver;
 pub use solving::{InMemorySessionStore, SessionStore, SolvedSession, SolvingFetcher};
 pub use types::{FetchRequest, FetchResponse};
+
+/// Seams for the out-of-workspace fuzz crate, which can only reach `pub` items.
+#[doc(hidden)]
+pub mod __fuzz {
+    /// Runs the multi-member gzip decoder the direct fetch applies to a `gzip` body.
+    ///
+    /// # Errors
+    /// Returns whatever error `decode_gzip` returns.
+    pub fn decode_gzip(raw: &[u8]) -> Result<Vec<u8>, crate::FetchError> {
+        crate::base::decode_gzip(raw)
+    }
+}

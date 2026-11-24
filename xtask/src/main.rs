@@ -20,6 +20,7 @@ mod repo_lint;
 
 #[cfg(feature = "full")]
 use progenitor_impl::typify::typespace::TypespaceTrait;
+#[cfg(feature = "full")]
 use progenitor_impl::{GenerationSettings, Generator, InterfaceStyle, TypePatch};
 #[cfg(feature = "full")]
 use secrecy::{ExposeSecret as _, SecretSlice, SecretString};

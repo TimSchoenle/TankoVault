@@ -12,6 +12,63 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [11.3.0](https://github.com/TimSchoenle/TankoVault/compare/v11.2.2...v11.3.0) (2026-11-24)
+
+
+### Features
+
+* **console:** add a callout for inline errors, warnings and notes ([#693](https://github.com/TimSchoenle/TankoVault/issues/693)) ([4160786](https://github.com/TimSchoenle/TankoVault/commit/416078693655acd1cd55da5ea8d3e3c1c543790a))
+
+
+### Bug Fixes
+
+* **adapters:** bound astro prop unwrapping depth ([#718](https://github.com/TimSchoenle/TankoVault/issues/718)) ([c8291d5](https://github.com/TimSchoenle/TankoVault/commit/c8291d51089d637ff564624f46cbeaed1d31ad01))
+* **api:** accept only a same-host relative path for the adapter dry-run ([#707](https://github.com/TimSchoenle/TankoVault/issues/707)) ([62d150a](https://github.com/TimSchoenle/TankoVault/commit/62d150af96c5a30c6a85da172d2e1cd238df416a))
+* **api:** answer a taken email at registration like a new one ([#709](https://github.com/TimSchoenle/TankoVault/issues/709)) ([7ea58cc](https://github.com/TimSchoenle/TankoVault/commit/7ea58ccb80d2163efa7cec6451006a0dbaa3a56b))
+* **api:** cap permission grants at the caller's own set ([#697](https://github.com/TimSchoenle/TankoVault/issues/697)) ([c8ee0f2](https://github.com/TimSchoenle/TankoVault/commit/c8ee0f253c0a440c50c9d9ae1d14ff5fdf0a57b8))
+* **api:** cap the audit log offset ([#708](https://github.com/TimSchoenle/TankoVault/issues/708)) ([f893862](https://github.com/TimSchoenle/TankoVault/commit/f8938627e7b1498c154aede4e47314bcdba0da07))
+* **api:** end access tokens with the session that minted them ([#695](https://github.com/TimSchoenle/TankoVault/issues/695)) ([1e9616a](https://github.com/TimSchoenle/TankoVault/commit/1e9616a60346a2661b5bb1bd5f8318121560ed26))
+* **api:** export subject data only for open privacy requests ([#706](https://github.com/TimSchoenle/TankoVault/issues/706)) ([1f9defb](https://github.com/TimSchoenle/TankoVault/commit/1f9defb209d7e8828cf77d57c9ffe4615aebe230))
+* **api:** guard session revocation against the owner and outranking accounts ([#704](https://github.com/TimSchoenle/TankoVault/issues/704)) ([4d729fc](https://github.com/TimSchoenle/TankoVault/commit/4d729fcf761d002cb7f972b6fb6c1c618f8c9534))
+* **api:** lock credential checks after repeated failures per account ([#692](https://github.com/TimSchoenle/TankoVault/issues/692)) ([7934d5c](https://github.com/TimSchoenle/TankoVault/commit/7934d5c5d2abc03d8c063a1002f1032eeb2e961b))
+* **api:** refuse admin identity edits on accounts that outrank the caller ([#696](https://github.com/TimSchoenle/TankoVault/issues/696)) ([4e46d25](https://github.com/TimSchoenle/TankoVault/commit/4e46d2502d464e065e4dce9c5a7e6cb15be420e7))
+* **api:** refuse erasure requests aimed at the owner or the last administrator ([#705](https://github.com/TimSchoenle/TankoVault/issues/705)) ([3b2624b](https://github.com/TimSchoenle/TankoVault/commit/3b2624b388916ecd427be0cd9b22569fd77d9f42))
+* **api:** stop email confirmation from issuing a session ([#691](https://github.com/TimSchoenle/TankoVault/issues/691)) ([0e08226](https://github.com/TimSchoenle/TankoVault/commit/0e082261a86587da96fb76201992153636b83a5a))
+* **bootstrap:** seed the admin before the api opens registration ([#720](https://github.com/TimSchoenle/TankoVault/issues/720)) ([247dbb1](https://github.com/TimSchoenle/TankoVault/commit/247dbb1519c4a393a4ff3ea3bfaf96bb9e308ad1))
+* **db:** match admin search wildcards literally ([#712](https://github.com/TimSchoenle/TankoVault/issues/712)) ([e3f1d35](https://github.com/TimSchoenle/TankoVault/commit/e3f1d350d30d0713fa0ababad733564dfb2a7582))
+* **db:** refuse an expired email verification token on consume ([#710](https://github.com/TimSchoenle/TankoVault/issues/710)) ([a37ee2c](https://github.com/TimSchoenle/TankoVault/commit/a37ee2cb64bc80583cfa2f8d3c5fb8e44b8bc1b6))
+* **deploy:** give each service its own nats user with subject permissions ([#723](https://github.com/TimSchoenle/TankoVault/issues/723)) ([b177a24](https://github.com/TimSchoenle/TankoVault/commit/b177a24197cf2d2431afb888c1e35b931d8d5e93))
+* **deploy:** give trawl a redis of its own ([#701](https://github.com/TimSchoenle/TankoVault/issues/701)) ([a9a52b0](https://github.com/TimSchoenle/TankoVault/commit/a9a52b0c7aa5c439dffe7333b4ed364b889b5407))
+* **deploy:** require the compose postgres password ([#721](https://github.com/TimSchoenle/TankoVault/issues/721)) ([1d54683](https://github.com/TimSchoenle/TankoVault/commit/1d54683ea535147092136fd5b8e2efe381b18569))
+* **frontend:** send strict-transport-security on every response ([#703](https://github.com/TimSchoenle/TankoVault/issues/703)) ([b6f60bf](https://github.com/TimSchoenle/TankoVault/commit/b6f60bf719da856d740fcaa0ce144adec528253e))
+* **notifier:** flatten and cap the alert email subject ([#717](https://github.com/TimSchoenle/TankoVault/issues/717)) ([39803e4](https://github.com/TimSchoenle/TankoVault/commit/39803e415702dab4aac1258d5ef8f999eb1bdf50))
+* **notifier:** refuse webhook redirects and fail startup if the client cannot build ([#716](https://github.com/TimSchoenle/TankoVault/issues/716)) ([188f461](https://github.com/TimSchoenle/TankoVault/commit/188f461a9189e458c28f8813fe55d4821541bee7))
+* **render:** default chromium to its sandbox ([#698](https://github.com/TimSchoenle/TankoVault/issues/698)) ([17f7154](https://github.com/TimSchoenle/TankoVault/commit/17f71545ef9cebb83fd682ef5c9347937dd21d85))
+* **render:** switch off webrtc and dns prefetch in the browser ([#700](https://github.com/TimSchoenle/TankoVault/issues/700)) ([288f199](https://github.com/TimSchoenle/TankoVault/commit/288f199e2c605c1c737409a0f15a3c921bf00816))
+* **solver:** cap solver and render response bodies at the fetch body limit ([#715](https://github.com/TimSchoenle/TankoVault/issues/715)) ([0a9ced5](https://github.com/TimSchoenle/TankoVault/commit/0a9ced57463b87c2e73aec1c4ae8eec1142b5761))
+* **solver:** discard trawl solves that landed on a refused address ([#699](https://github.com/TimSchoenle/TankoVault/issues/699)) ([51a5f4f](https://github.com/TimSchoenle/TankoVault/commit/51a5f4f54602153c29f633aa20e63de220124de6))
+* **sync:** bind sealed tracker tokens to their user and provider ([#713](https://github.com/TimSchoenle/TankoVault/issues/713)) ([3c2f0fa](https://github.com/TimSchoenle/TankoVault/commit/3c2f0fadb2f22a5f77b3f6a1a3efb6887801ab43))
+* **sync:** cap anilist response bodies and truncate quoted error bodies ([#714](https://github.com/TimSchoenle/TankoVault/issues/714)) ([d288c74](https://github.com/TimSchoenle/TankoVault/commit/d288c7497b86e513983d5b5edf07c3bd68086ae9))
+
+
+### Code Refactoring
+
+* **console:** standardize tables, chips, hints and filters on inkstone-ui ([#702](https://github.com/TimSchoenle/TankoVault/issues/702)) ([37e7a37](https://github.com/TimSchoenle/TankoVault/commit/37e7a37462ac97773cc4fbb7a27dc75a36063351))
+
+
+### Build System
+
+* **deps:** re-review the rsa and crypto-bigint advisory ignores ([#722](https://github.com/TimSchoenle/TankoVault/issues/722)) ([4ac3948](https://github.com/TimSchoenle/TankoVault/commit/4ac394812f9270dc58e1b11bdcffdc119949e8c3))
+
+
+### Dependencies
+
+* **deps:** update rust crate async-nats to 0.53 ([#686](https://github.com/TimSchoenle/TankoVault/issues/686)) ([fa91dfd](https://github.com/TimSchoenle/TankoVault/commit/fa91dfdc85cb8736b65655b589da6740d17822ae))
+* **deps:** update rust crate progenitor-client to v0.17.0 ([#687](https://github.com/TimSchoenle/TankoVault/issues/687)) ([812356d](https://github.com/TimSchoenle/TankoVault/commit/812356d500d3d3c380863eea35e57ac08e03aaa8))
+* **deps:** update rust crate qrcode to 0.15 ([#690](https://github.com/TimSchoenle/TankoVault/issues/690)) ([74a772b](https://github.com/TimSchoenle/TankoVault/commit/74a772be94c3c44079713aeaed220782e656b55f))
+* **deps:** update rust crate terrace-config to v0.18.2 ([#685](https://github.com/TimSchoenle/TankoVault/issues/685)) ([161480f](https://github.com/TimSchoenle/TankoVault/commit/161480fb9b8310f62ce354932bc0bf3c30d804e4))
+* **deps:** update rust crate url to v2.5.9 [security] ([#682](https://github.com/TimSchoenle/TankoVault/issues/682)) ([f3db7d9](https://github.com/TimSchoenle/TankoVault/commit/f3db7d950691d01306596b8ef4ca39b8ea92f300))
+
 ## [11.2.2](https://github.com/TimSchoenle/TankoVault/compare/v11.2.1...v11.2.2) (2026-11-19)
 
 

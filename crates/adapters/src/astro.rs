@@ -88,14 +88,37 @@ impl AstroFlavour {
 /// No prop in either site's payload has that shape, and the alternative (threading Astro's
 /// type tags through) buys nothing, since every tag in use here denotes a plain JSON value.
 fn unwrap_astro(value: Value) -> Value {
+    unwrap_astro_at(value, 0)
+}
+
+/// How deep [`unwrap_astro`] descends; real props nest a handful of levels.
+///
+/// Security: the props are provider-controlled, and unbounded recursion on hostile nesting
+/// overflows the stack. `serde_json`'s own 128-level parse limit is not relied on, since a
+/// feature-unified `unbounded_depth` would silently lift it.
+const MAX_ASTRO_DEPTH: usize = 64;
+
+fn unwrap_astro_at(value: Value, depth: usize) -> Value {
+    // Past the limit the subtree is returned as-is: dropping it here would recurse too.
+    if depth >= MAX_ASTRO_DEPTH {
+        return value;
+    }
+    let next = depth + 1;
     match value {
         Value::Array(items) if items.len() == 2 && items[0].is_number() => {
-            unwrap_astro(items.into_iter().nth(1).unwrap_or(Value::Null))
+            unwrap_astro_at(items.into_iter().nth(1).unwrap_or(Value::Null), next)
         }
-        Value::Array(items) => Value::Array(items.into_iter().map(unwrap_astro).collect()),
-        Value::Object(map) => {
-            Value::Object(map.into_iter().map(|(k, v)| (k, unwrap_astro(v))).collect())
-        }
+        Value::Array(items) => Value::Array(
+            items
+                .into_iter()
+                .map(|v| unwrap_astro_at(v, next))
+                .collect(),
+        ),
+        Value::Object(map) => Value::Object(
+            map.into_iter()
+                .map(|(k, v)| (k, unwrap_astro_at(v, next)))
+                .collect(),
+        ),
         other => other,
     }
 }
@@ -452,6 +475,23 @@ mod tests {
         let decoded = unwrap_astro(raw);
         assert_eq!(decoded["chapters"][0]["number"], json!(196));
         assert_eq!(decoded["chapters"][0]["is_locked"], json!(true));
+    }
+
+    /// Regression: `unwrap_astro` recursed once per nesting level with no bound, so hostile
+    /// provider props nested deeply enough overflowed the stack and aborted the worker.
+    ///
+    /// Built in a loop, not parsed: `serde_json` would refuse this at 128 levels before
+    /// `unwrap_astro` ever saw it.
+    #[test]
+    fn hostile_nesting_does_not_overflow_the_stack() {
+        let mut value = json!(1);
+        for _ in 0..100_000 {
+            value = serde_json::Value::Array(vec![value]);
+        }
+        let decoded = unwrap_astro(value);
+        assert!(decoded.is_array());
+        // `Value`'s drop recurses as well; leaking keeps this test about `unwrap_astro`.
+        std::mem::forget(decoded);
     }
 
     #[test]

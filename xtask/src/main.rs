@@ -19,6 +19,8 @@ mod repair_series;
 mod repo_lint;
 
 #[cfg(feature = "full")]
+use progenitor_impl::typify::typespace::TypespaceTrait;
+#[cfg(feature = "full")]
 use progenitor_impl::{GenerationSettings, Generator, InterfaceStyle, TypePatch};
 #[cfg(feature = "full")]
 use secrecy::{ExposeSecret as _, SecretSlice, SecretString};
@@ -345,7 +347,7 @@ fn openapi(check: bool) -> anyhow::Result<()> {
     let mut settings = GenerationSettings::default();
     settings.with_interface(InterfaceStyle::Builder);
     // Every generated type crosses a Dioxus prop/signal boundary, which requires `PartialEq`.
-    settings.with_derive("PartialEq");
+    settings.map_typespace_settings(|s| s.with_required_trait(TypespaceTrait::PartialEq));
 
     // Map domain IDs back to their real newtypes instead of generating generic Uuids.
     for id_type in ID_TYPES {
@@ -359,8 +361,6 @@ fn openapi(check: bool) -> anyhow::Result<()> {
         );
     }
 
-    let mut generator = Generator::new(&settings);
-
     // progenitor rides on the `openapiv3` crate, which only understands OpenAPI 3.0, so the
     // 3.1 document is downgraded first; `x-rust-type` hints then steer domain newtypes.
     let mut spec_json = spec_value.clone();
@@ -370,7 +370,9 @@ fn openapi(check: bool) -> anyhow::Result<()> {
     let spec: openapiv3::OpenAPI = serde_json::from_value(spec_json)
         .map_err(|e| anyhow::anyhow!("Failed to parse OpenAPI for progenitor: {e}"))?;
 
-    let tokens = generator.generate_tokens(&spec)?;
+    let tokens = Generator::build(&settings, &spec)?
+        .generate_sdk()
+        .into_stream();
     // Piped through rustfmt here (not excluded via `rustfmt.toml`'s nightly-only `ignore`) so
     // `cargo fmt --check` and `xtask openapi --check` agree on one canonical form.
     let rendered_client = CLIENT_HEADER.to_owned()

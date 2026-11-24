@@ -78,6 +78,9 @@ allow = [
     "0BSD",
     # `webpki-roots`/`webpki-root-certs`: the Mozilla CA bundle, no copyleft or attribution.
     "CDLA-Permissive-2.0",
+    # `borrow-or-share` (progenitor-impl 0.17 → typify → jsonschema → fluent-uri, xtask only):
+    # MIT without the attribution clause, more permissive than MIT itself.
+    "MIT-0",
 ]
 
 # ---------------------------------------------------------------------------------
@@ -149,6 +152,12 @@ skip = [
     { crate = "r-efi" },
     # `tower-http` 0.6 arrives transitively; ours is pinned at 0.7.
     { crate = "tower-http" },
+    # The TOML parser stack: `figment` 0.10's `toml` 0.8 (under `terrace-config` and
+    # `crates/config`) holds `toml_edit` 0.22/`toml_datetime` 0.6/`winnow` 0.7, and progenitor-impl
+    # 0.17's typify stack (xtask only) brings the 1.x generation. Collapses when figment moves.
+    { crate = "toml_datetime" },
+    { crate = "toml_edit" },
+    { crate = "winnow" },
     # Compression backends split by the lock refreshes: the newer copies arrive through
     # `async-compression`'s `compression-codecs`, and the older ones are all `wreq-util`
     # 3.0.0-rc.14's, already its latest release: `zstd` 0.13/`zstd-safe` 7 beside 0.14/8, and

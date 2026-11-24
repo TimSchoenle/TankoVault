@@ -1,8 +1,8 @@
 # cargo-about configuration for the backend workspace: the input to `THIRD-PARTY-NOTICES`.
 #
 # Why this file exists at all: `deny.toml`'s `[licenses] allow` list is entirely permissive, and
-# every licence on it except `CC0-1.0` and `0BSD` requires its notice text to travel with a
-# binary distribution. A published image is a binary distribution, and the attested SBOM is
+# every licence on it except `CC0-1.0`, `0BSD` and `MIT-0` requires its notice text to travel
+# with a binary distribution. A published image is a binary distribution, and the attested SBOM is
 # evidence of *composition*, not a notice; it carries no licence text. So the terms of every
 # dependency ship as one generated file, beside the project's own `LICENSE`.
 #
@@ -33,6 +33,7 @@ accepted = [
     "BSL-1.0",
     "0BSD",
     "CDLA-Permissive-2.0",
+    "MIT-0",
 ]
 
 # What the images actually run. Every shipped backend binary is musl-linked on one of these two

@@ -117,5 +117,7 @@ fn rows_replay_under_their_stored_policy_and_tally_by_transition() {
         tally.transitions().collect::<Vec<_>>(),
         vec![("auto", "auto", 1), ("auto", "review", 2)]
     );
+    tally.add(&row, &lenient);
+    assert_eq!(tally.unchanged(), 2);
     assert!(parse_row("not json").is_err());
 }

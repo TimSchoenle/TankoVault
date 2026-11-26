@@ -436,7 +436,7 @@ jobs:
       - name: BoringSSL build dependencies
         uses: $/.github/actions/boringssl-deps
 
-      - uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-about
 
@@ -514,7 +514,7 @@ jobs:
 
       # The same recipe a developer runs, not a second spelling of it in YAML.
       - name: Install just
-        uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
+        uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: just
 
@@ -662,7 +662,7 @@ jobs:
 
       - name: collect the README payload
         id: variables
-        uses: TimSchoenle/actions/actions/common/readme-variables@54a4dc05fd351a9bf9e9638fa3ebbc572b5f2d7f # tag=actions-common-readme-variables-v2.1.7
+        uses: TimSchoenle/actions/actions/common/readme-variables@7594d1c64de290a99195e47fc6d7b5699243b951 # tag=actions-common-readme-variables-v2.1.8
         with:
           branch: ${{ github.event.repository.default_branch }}
           extra: ${{ steps.stack.outputs.json }}
@@ -670,7 +670,7 @@ jobs:
       # The same pin `ci.yml`'s `readme` job checks the file with, so the render committed here
       # and the render that gate compares against are the same renderer.
       - name: render README.md
-        uses: TimSchoenle/actions/actions/common/render-template@54a4dc05fd351a9bf9e9638fa3ebbc572b5f2d7f # tag=actions-common-render-template-v3.0.7
+        uses: TimSchoenle/actions/actions/common/render-template@7594d1c64de290a99195e47fc6d7b5699243b951 # tag=actions-common-render-template-v3.0.8
         with:
           template: .github/templates/README.md.hbs
           output: README.md

@@ -991,7 +991,7 @@ jobs:
       # action installs none of its own. It does put its own cosign on PATH, which is why it runs before
       # the job's cosign install: that one is added to PATH last and stays the cosign every signature uses.
       - name: install terrace-contract
-        uses: TimSchoenle/actions/actions/terrace/setup@54a4dc05fd351a9bf9e9638fa3ebbc572b5f2d7f # tag=actions-terrace-setup-v4.0.3
+        uses: TimSchoenle/actions/actions/terrace/setup@7594d1c64de290a99195e47fc6d7b5699243b951 # tag=actions-terrace-setup-v4.0.4
         with:
           # renovate: datasource=github-releases depName=TimSchoenle/terrace-config extractVersion=^terrace-contract-v(?<version>.+)$
           version: '0.14.2'
@@ -1516,7 +1516,7 @@ jobs:
 
       - name: open the chart update pull request
         id: chart
-        uses: TimSchoenle/actions/actions/helm/update-chart-version@ded012bb09f11e42381c9b1b7c3ff0dbc09156bf # tag=actions-helm-update-chart-version-v1.8.3
+        uses: TimSchoenle/actions/actions/helm/update-chart-version@7594d1c64de290a99195e47fc6d7b5699243b951 # tag=actions-helm-update-chart-version-v1.8.4
         with:
           app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}

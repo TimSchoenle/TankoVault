@@ -294,7 +294,7 @@ COPY --from=debug-bundler /debug/ /
 # prebuilt `wasm-bindgen` release matching web/frontend/Cargo.lock, so this base's glibc must be
 # at least what that release links against: 0.2.130's aarch64 build requires GLIBC_2.38, which
 # bookworm (2.36) lacks, and the failure only surfaces after the full wasm compile.
-FROM rust:1.100.0-trixie@sha256:223cc32ddca8f3ee90c436dbc94b6b5f052ea7f9653c5201e9612f08ad7d21b8 AS wasm-chef
+FROM rust:1.100.0-trixie@sha256:e84068000361bf3d4a5ba2b7647f62893528b1eb9f847d7a23b493f5ce8ea254 AS wasm-chef
 WORKDIR /app
 # Copied alone, before `rustup target add`: nothing guarantees the base image's toolchain is the
 # exact patch this file pins, so without this order wasm32-unknown-unknown can end up missing.

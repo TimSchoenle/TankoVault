@@ -998,7 +998,7 @@ jobs:
           oras: 'false'
 
       - name: install cosign
-        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        uses: sigstore/cosign-installer@881c63bd87e38389154debd8331404ce7ca8a3ab # v4.1.4
 
       # One OIDC token, minted here and handed to all four cosign calls below.
       #
@@ -1893,7 +1893,7 @@ jobs:
           exit 1
 
       - name: install cosign
-        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        uses: sigstore/cosign-installer@881c63bd87e38389154debd8331404ce7ca8a3ab # v4.1.4
 
       # Same one-token discipline as the `manifest` job, and for the same two reasons recorded
       # there: cosign otherwise fetches an ambient token per call, and the file must hold the JWT

@@ -189,7 +189,7 @@ services:
       retries: 12
 
   redis:
-    image: redis:8-alpine@sha256:7958cfbb9d152f87dadfbc89f1b0b15938f0b81ff8982feb327476f4911935c3
+    image: redis:8-alpine@sha256:5af80107c1eeecb484a2269b80a26d12bfa6521787da4663bd9f19f60a163483
     deploy: { resources: { limits: { memory: 256m } } }
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -201,7 +201,7 @@ services:
   # rate-limit buckets and the control-plane's leader lock, and TRAWL runs a browser on pages
   # someone else chose, so a compromise there could wipe login throttling or seize the lock.
   trawl-redis:
-    image: redis:8-alpine@sha256:7958cfbb9d152f87dadfbc89f1b0b15938f0b81ff8982feb327476f4911935c3
+    image: redis:8-alpine@sha256:5af80107c1eeecb484a2269b80a26d12bfa6521787da4663bd9f19f60a163483
     deploy: { resources: { limits: { memory: 128m } } }
     networks: [trawl-cache]
     healthcheck:

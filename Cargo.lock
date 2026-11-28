@@ -6074,7 +6074,7 @@ dependencies = [
  "tankovault-recsys",
  "tankovault-service",
  "tankovault-test-support",
- "terrace-config",
+ "terrace-config 0.18.3",
  "terrace-legal",
  "terrace-legal-axum",
  "thiserror 2.0.21",
@@ -6163,7 +6163,7 @@ dependencies = [
  "tankovault-db",
  "tankovault-domain",
  "tankovault-service",
- "terrace-config",
+ "terrace-config 0.18.3",
  "tokio",
 ]
 
@@ -6197,7 +6197,7 @@ dependencies = [
  "tankovault-config",
  "tankovault-service",
  "tankovault-solver",
- "terrace-config",
+ "terrace-config 0.18.3",
  "tokio",
  "tracing",
 ]
@@ -6210,7 +6210,7 @@ dependencies = [
  "serde",
  "tankovault-domain",
  "tankovault-matcher",
- "terrace-config",
+ "terrace-config 0.18.3",
 ]
 
 [[package]]
@@ -6229,7 +6229,7 @@ dependencies = [
  "tankovault-render",
  "tankovault-sync",
  "tankovault-worker",
- "terrace-config",
+ "terrace-config 0.18.3",
 ]
 
 [[package]]
@@ -6265,7 +6265,7 @@ dependencies = [
  "tankovault-recsys",
  "tankovault-service",
  "tankovault-test-support",
- "terrace-config",
+ "terrace-config 0.18.3",
  "time",
  "tokio",
  "tokio-util",
@@ -6300,7 +6300,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
- "terrace-config",
+ "terrace-config 0.18.3",
  "thiserror 2.0.21",
  "time",
  "tokio",
@@ -6358,7 +6358,7 @@ dependencies = [
  "serde",
  "tankovault-config",
  "tankovault-service",
- "terrace-config",
+ "terrace-config 0.18.3",
  "tokio",
  "tower",
  "tower-http 0.7.1",
@@ -6395,7 +6395,7 @@ dependencies = [
  "tankovault-domain",
  "tankovault-email",
  "tankovault-service",
- "terrace-config",
+ "terrace-config 0.18.3",
  "time",
  "tokio",
  "tokio-util",
@@ -6428,7 +6428,7 @@ dependencies = [
  "tankovault-domain",
  "tankovault-service",
  "tankovault-solver",
- "terrace-config",
+ "terrace-config 0.18.3",
  "tokio",
  "tracing",
 ]
@@ -6459,7 +6459,7 @@ dependencies = [
  "tankovault-config",
  "tankovault-db",
  "tankovault-domain",
- "terrace-config",
+ "terrace-config 0.18.3",
  "thiserror 2.0.21",
  "tokio",
  "tokio-rustls",
@@ -6512,7 +6512,7 @@ dependencies = [
  "tankovault-matcher",
  "tankovault-service",
  "tankovault-test-support",
- "terrace-config",
+ "terrace-config 0.18.3",
  "thiserror 2.0.21",
  "time",
  "tokio",
@@ -6564,7 +6564,7 @@ dependencies = [
  "tankovault-fetch",
  "tankovault-service",
  "tankovault-solver",
- "terrace-config",
+ "terrace-config 0.18.3",
  "thiserror 2.0.21",
  "time",
  "tokio",
@@ -6601,12 +6601,25 @@ version = "0.18.2"
 source = "git+https://github.com/TimSchoenle/terrace-config?tag=v0.18.2#f5055b02d8aae20b82eceb9551b277059c808e39"
 dependencies = [
  "figment",
+ "regex",
+ "serde",
+ "serde_json",
+ "terrace-config-macros 0.18.2",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "terrace-config"
+version = "0.18.3"
+source = "git+https://github.com/TimSchoenle/terrace-config?tag=v0.18.3#f74afde7a6cff6faa43eac2ea6ee645ee91e43e4"
+dependencies = [
+ "figment",
  "notify",
  "notify-debouncer-full",
  "regex",
  "serde",
  "serde_json",
- "terrace-config-macros",
+ "terrace-config-macros 0.18.3",
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
@@ -6624,6 +6637,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "terrace-config-macros"
+version = "0.18.3"
+source = "git+https://github.com/TimSchoenle/terrace-config?tag=v0.18.3#f74afde7a6cff6faa43eac2ea6ee645ee91e43e4"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.10",
+]
+
+[[package]]
 name = "terrace-legal"
 version = "0.3.8"
 source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.8#4a9471e1688cb96e5255ec22ed1245ec3be48b2e"
@@ -6631,7 +6654,7 @@ dependencies = [
  "base64 0.23.1",
  "serde",
  "sha2 0.11.1",
- "terrace-config",
+ "terrace-config 0.18.2",
  "terrace-legal-model",
  "thiserror 2.0.21",
  "url",

@@ -6027,7 +6027,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-adapters"
-version = "11.3.0"
+version = "11.3.1"
 dependencies = [
  "async-trait",
  "proptest",
@@ -6046,7 +6046,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-api"
-version = "11.3.0"
+version = "11.3.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6093,7 +6093,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-api-client"
-version = "11.3.0"
+version = "11.3.1"
 dependencies = [
  "progenitor-client",
  "reqwest",
@@ -6106,7 +6106,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-api-test-support"
-version = "11.3.0"
+version = "11.3.1"
 dependencies = [
  "axum",
  "reqwest",
@@ -6127,7 +6127,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-auth"
-version = "11.3.0"
+version = "11.3.1"
 dependencies = [
  "aes-gcm",
  "argon2 0.6.0",
@@ -6151,7 +6151,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-bootstrap"
-version = "11.3.0"
+version = "11.3.1"
 dependencies = [
  "anyhow",
  "secrecy",
@@ -6169,7 +6169,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-bus"
-version = "11.3.0"
+version = "11.3.1"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -6190,7 +6190,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-challenge-solver"
-version = "11.3.0"
+version = "11.3.1"
 dependencies = [
  "anyhow",
  "serde",
@@ -6204,7 +6204,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-config"
-version = "11.3.0"
+version = "11.3.1"
 dependencies = [
  "secrecy",
  "serde",
@@ -6215,7 +6215,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-config-contract"
-version = "11.3.0"
+version = "11.3.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -6234,7 +6234,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-contracts"
-version = "11.3.0"
+version = "11.3.1"
 dependencies = [
  "proptest",
  "serde",
@@ -6247,7 +6247,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-control-plane"
-version = "11.3.0"
+version = "11.3.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -6275,7 +6275,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-db"
-version = "11.3.0"
+version = "11.3.1"
 dependencies = [
  "secrecy",
  "serde",
@@ -6294,7 +6294,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-domain"
-version = "11.3.0"
+version = "11.3.1"
 dependencies = [
  "proptest",
  "serde",
@@ -6311,7 +6311,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-email"
-version = "11.3.0"
+version = "11.3.1"
 dependencies = [
  "async-trait",
  "lettre",
@@ -6324,7 +6324,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-fetch"
-version = "11.3.0"
+version = "11.3.1"
 dependencies = [
  "async-trait",
  "flate2",
@@ -6349,7 +6349,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-frontend"
-version = "11.3.0"
+version = "11.3.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -6367,7 +6367,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-matcher"
-version = "11.3.0"
+version = "11.3.1"
 dependencies = [
  "proptest",
  "serde",
@@ -6378,7 +6378,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-notifier"
-version = "11.3.0"
+version = "11.3.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6405,7 +6405,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-recsys"
-version = "11.3.0"
+version = "11.3.1"
 dependencies = [
  "proptest",
  "sha2 0.11.1",
@@ -6414,7 +6414,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-render"
-version = "11.3.0"
+version = "11.3.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6435,7 +6435,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-service"
-version = "11.3.0"
+version = "11.3.1"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -6473,7 +6473,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-solver"
-version = "11.3.0"
+version = "11.3.1"
 dependencies = [
  "async-trait",
  "axum",
@@ -6493,7 +6493,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-sync"
-version = "11.3.0"
+version = "11.3.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6525,7 +6525,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-test-support"
-version = "11.3.0"
+version = "11.3.1"
 dependencies = [
  "async-trait",
  "secrecy",
@@ -6546,7 +6546,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-worker"
-version = "11.3.0"
+version = "11.3.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -8303,7 +8303,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "11.3.0"
+version = "11.3.1"
 dependencies = [
  "anyhow",
  "openapiv3",

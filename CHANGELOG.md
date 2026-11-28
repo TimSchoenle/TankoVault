@@ -12,6 +12,24 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [11.3.1](https://github.com/TimSchoenle/TankoVault/compare/v11.3.0...v11.3.1) (2026-11-28)
+
+
+### Bug Fixes
+
+* **desktop:** reuse a verified staged installer instead of re-downloading it ([#730](https://github.com/TimSchoenle/TankoVault/issues/730)) ([8047769](https://github.com/TimSchoenle/TankoVault/commit/8047769b5043a84ea4ad982b8c7240d9b918f1be))
+
+
+### Dependencies
+
+* **deps:** update debian:13-slim docker digest to 8aa5a7b ([#737](https://github.com/TimSchoenle/TankoVault/issues/737)) ([0059ba5](https://github.com/TimSchoenle/TankoVault/commit/0059ba58ad31db70150a8b2618c25a7031eb9b1b))
+* **deps:** update docker/dockerfile:1 docker digest to 572cebb ([#731](https://github.com/TimSchoenle/TankoVault/issues/731)) ([707bfea](https://github.com/TimSchoenle/TankoVault/commit/707bfea106e0835507f9456cde94c310fcfcd853))
+* **deps:** update redis:8-alpine docker digest to 5af8010 ([#738](https://github.com/TimSchoenle/TankoVault/issues/738)) ([4845a55](https://github.com/TimSchoenle/TankoVault/commit/4845a55cdade7b9c242beb951dba1b5c3bd44578))
+* **deps:** update rust crate anyhow to v1.0.105 ([#736](https://github.com/TimSchoenle/TankoVault/issues/736)) ([34bab70](https://github.com/TimSchoenle/TankoVault/commit/34bab705d59b92b3b0f256b38a3316979881b80c))
+* **deps:** update rust crate progenitor-impl to 0.17.0 ([#689](https://github.com/TimSchoenle/TankoVault/issues/689)) ([9893bf6](https://github.com/TimSchoenle/TankoVault/commit/9893bf6ea97c575f0d6be01e9dfafd115f8930c0))
+* **deps:** update rust to v1.100.1 ([#740](https://github.com/TimSchoenle/TankoVault/issues/740)) ([811a87f](https://github.com/TimSchoenle/TankoVault/commit/811a87f8f20841feeadcb41a904051e19a979305))
+* **deps:** update rust:1.100.0-trixie docker digest to e840680 ([#732](https://github.com/TimSchoenle/TankoVault/issues/732)) ([9ea709c](https://github.com/TimSchoenle/TankoVault/commit/9ea709c2df3a8d425375c08b3d45cb41b91e123e))
+
 ## [11.3.0](https://github.com/TimSchoenle/TankoVault/compare/v11.2.2...v11.3.0) (2026-11-24)
 
 

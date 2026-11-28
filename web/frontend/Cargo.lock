@@ -6955,8 +6955,8 @@ dependencies = [
 
 [[package]]
 name = "terrace-legal-dioxus"
-version = "0.3.7"
-source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.7#e99a40654a549862fc1259de81ad8ae78ab4365f"
+version = "0.3.8"
+source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.8#4a9471e1688cb96e5255ec22ed1245ec3be48b2e"
 dependencies = [
  "dioxus",
  "terrace-legal-markdown",
@@ -6965,8 +6965,8 @@ dependencies = [
 
 [[package]]
 name = "terrace-legal-markdown"
-version = "0.3.7"
-source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.7#e99a40654a549862fc1259de81ad8ae78ab4365f"
+version = "0.3.8"
+source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.8#4a9471e1688cb96e5255ec22ed1245ec3be48b2e"
 dependencies = [
  "dioxus",
  "pulldown-cmark",
@@ -6974,8 +6974,8 @@ dependencies = [
 
 [[package]]
 name = "terrace-legal-model"
-version = "0.3.7"
-source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.7#e99a40654a549862fc1259de81ad8ae78ab4365f"
+version = "0.3.8"
+source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.8#4a9471e1688cb96e5255ec22ed1245ec3be48b2e"
 dependencies = [
  "serde",
  "thiserror 2.0.21",
